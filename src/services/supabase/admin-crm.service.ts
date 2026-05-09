@@ -81,6 +81,7 @@ export async function getAdminCrm(): Promise<AdminCrmData> {
         next_action,
         due_at,
         priority,
+        phone,
         notes,
         estimated_value,
         monthly_amount,

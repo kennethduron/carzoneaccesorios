@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import {
   Archive,
   CheckCircle2,
@@ -26,6 +27,14 @@ import type { CategoryOption, ProductAdminRow, ProductFormInput, ProductImageInp
 type ProductManagerProps = {
   products: ProductAdminRow[];
   categories: CategoryOption[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filters: {
+    query: string;
+    status: string;
+    categoryId: string;
+  };
 };
 
 const statusLabels: Record<ProductStatus, string> = {
@@ -120,10 +129,10 @@ function parseCsvLine(line: string) {
   return values;
 }
 
-export function ProductManager({ products, categories }: ProductManagerProps) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<ProductStatus | "all">("all");
-  const [categoryId, setCategoryId] = useState("all");
+export function ProductManager({ products, categories, total, page, pageSize, filters }: ProductManagerProps) {
+  const [query, setQuery] = useState(filters.query);
+  const [status, setStatus] = useState<ProductStatus | "all">(filters.status as ProductStatus | "all");
+  const [categoryId, setCategoryId] = useState(filters.categoryId);
   const [editing, setEditing] = useState<ProductFormInput | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -147,6 +156,26 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
   const lowStockCount = products.filter((product) => product.stock <= product.min_stock).length;
   const activeCount = products.filter((product) => product.active).length;
   const inventoryValue = products.reduce((sum, product) => sum + product.cost_price * product.stock, 0);
+  const hasNextPage = page * pageSize < total;
+
+  function buildPageHref(nextPage: number) {
+    const params = new URLSearchParams();
+    if (filters.query) {
+      params.set("q", filters.query);
+    }
+    if (filters.status && filters.status !== "all") {
+      params.set("status", filters.status);
+    }
+    if (filters.categoryId && filters.categoryId !== "all") {
+      params.set("category", filters.categoryId);
+    }
+    if (nextPage > 1) {
+      params.set("page", String(nextPage));
+    }
+
+    const queryString = params.toString();
+    return queryString ? `/admin/productos?${queryString}` : "/admin/productos";
+  }
 
   function updateField<K extends keyof ProductFormInput>(field: K, value: ProductFormInput[K]) {
     setEditing((current) => (current ? { ...current, [field]: value } : current));
@@ -301,10 +330,11 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto_auto]">
+        <form action="/admin/productos" className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto_auto]">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
             <input
+              name="q"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar por SKU, codigo interno, producto o marca"
@@ -312,6 +342,7 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
             />
           </label>
           <select
+            name="status"
             value={status}
             onChange={(event) => setStatus(event.target.value as ProductStatus | "all")}
             className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
@@ -324,6 +355,7 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
             ))}
           </select>
           <select
+            name="category"
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
             className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
@@ -335,6 +367,9 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
               </option>
             ))}
           </select>
+          <button className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+            Filtrar
+          </button>
           <Button onClick={() => setEditing(emptyProduct)} variant="dark">
             <Plus size={17} />
             Nuevo
@@ -353,9 +388,25 @@ export function ProductManager({ products, categories }: ProductManagerProps) {
               onChange={(event) => importCsv(event.target.files?.[0] ?? null)}
             />
           </label>
-        </div>
+        </form>
+        <p className="mt-3 text-sm text-black/55">
+          Pagina {page} - mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
+        </p>
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
+
+      <div className="flex justify-end gap-2">
+        {page > 1 ? (
+          <Link href={buildPageHref(page - 1)} className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+            Anterior
+          </Link>
+        ) : null}
+        {hasNextPage ? (
+          <Link href={buildPageHref(page + 1)} className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+            Siguiente
+          </Link>
+        ) : null}
+      </div>
 
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
         <div className="overflow-x-auto">

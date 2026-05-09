@@ -1,13 +1,14 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState } from "react";
-import type { CreateOrderInput, OrderStatus, StoreOrder } from "@/types/orders";
+import type { CreateOrderInput, OrderStatus, PaymentReviewStatus, StoreOrder } from "@/types/orders";
 
 type OrdersContextValue = {
   orders: StoreOrder[];
   createOrder: (input: CreateOrderInput) => StoreOrder;
   findOrder: (orderNumber: string) => StoreOrder | null;
   updateOrderStatus: (orderNumber: string, status: OrderStatus) => void;
+  updatePaymentStatus: (orderNumber: string, status: PaymentReviewStatus) => void;
 };
 
 const storageKey = "car-zone-orders";
@@ -20,7 +21,13 @@ function readStoredOrders() {
 
   try {
     const stored = window.sessionStorage.getItem(storageKey);
-    return stored ? (JSON.parse(stored) as StoreOrder[]) : [];
+    const orders = stored ? (JSON.parse(stored) as StoreOrder[]) : [];
+    return orders.map((order) => ({
+      ...order,
+      paymentReference: order.paymentReference ?? order.customer.bankTransferReference ?? null,
+      paymentProofFileName: order.paymentProofFileName ?? null,
+      paymentStatus: order.paymentStatus ?? "pending_review",
+    }));
   } catch {
     window.sessionStorage.removeItem(storageKey);
     return [];
@@ -58,6 +65,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           ...input,
           id: crypto.randomUUID(),
           orderNumber: `CZ-${Date.now().toString().slice(-8)}`,
+          paymentStatus: input.paymentStatus ?? "pending_review",
           status: "recibido",
           createdAt,
         };
@@ -78,6 +86,15 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         setOrders((current) => {
           const nextOrders = current.map((order) =>
             order.orderNumber === orderNumber ? { ...order, status } : order,
+          );
+          writeStoredOrders(nextOrders);
+          return nextOrders;
+        });
+      },
+      updatePaymentStatus(orderNumber, status) {
+        setOrders((current) => {
+          const nextOrders = current.map((order) =>
+            order.orderNumber === orderNumber ? { ...order, paymentStatus: status } : order,
           );
           writeStoredOrders(nextOrders);
           return nextOrders;

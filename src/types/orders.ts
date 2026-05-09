@@ -10,6 +10,8 @@ export type OrderStatus =
   | "entregado"
   | "cancelado";
 
+export type PaymentReviewStatus = "pending_review" | "confirmed" | "rejected";
+
 export type OrderItemSnapshot = {
   productId: string;
   sku: string;
@@ -32,11 +34,15 @@ export type StoreOrder = {
   tax: number;
   total: number;
   paymentMethod: CheckoutData["paymentMethod"];
+  paymentReference: string | null;
   paymentProofFileName: string | null;
+  paymentStatus: PaymentReviewStatus;
   status: OrderStatus;
   address: string;
   phone: string;
   createdAt: string;
 };
 
-export type CreateOrderInput = Omit<StoreOrder, "id" | "orderNumber" | "status" | "createdAt">;
+export type CreateOrderInput = Omit<StoreOrder, "id" | "orderNumber" | "status" | "createdAt" | "paymentStatus"> & {
+  paymentStatus?: PaymentReviewStatus;
+};

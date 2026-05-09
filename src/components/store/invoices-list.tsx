@@ -39,6 +39,12 @@ export function InvoicesList() {
             <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
             <p>{invoice.priceMode === "wholesale" ? "wholesale_price" : "retail_price"}</p>
           </div>
+          <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
+            <p>Método de pago: {invoice.paymentMethod}</p>
+            {invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference ? (
+              <p>Referencia: {invoice.paymentReference}</p>
+            ) : null}
+          </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               onClick={() => downloadInvoicePdf(invoice)}

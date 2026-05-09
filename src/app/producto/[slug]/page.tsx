@@ -1,15 +1,13 @@
 import { notFound } from "next/navigation";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ProductDetail } from "@/components/store/product-detail";
-import { products } from "@/lib/commerce";
+import { getProductBySlug } from "@/services/supabase/products.service";
 
-export function generateStaticParams() {
-  return products.map((product) => ({ slug: product.slug }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function ProductoPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = products.find((entry) => entry.slug === slug);
+  const product = await getProductBySlug(slug);
 
   if (!product) {
     notFound();

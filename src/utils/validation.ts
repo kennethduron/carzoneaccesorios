@@ -76,3 +76,27 @@ export function uuidLike(value: unknown, label = "ID") {
 
   return { ok: true as const, value: text };
 }
+
+export function normalizeHondurasPhone(value: unknown) {
+  const raw = cleanText(value);
+  const normalized = raw.replace(/[\s\-()]/g, "");
+  const digits = normalized.startsWith("+504")
+    ? normalized.slice(4)
+      : normalized.startsWith("504")
+        ? normalized.slice(3)
+        : normalized;
+
+  return `+504${digits}`;
+}
+
+export function hondurasPhone(value: unknown) {
+  const normalized = normalizeHondurasPhone(value);
+  const digits = normalized.slice(4);
+  const valid = /^[2389]\d{7}$/.test(digits) && digits !== "00000000";
+
+  if (!valid) {
+    return { ok: false as const, message: "Ingresa un número de teléfono válido de Honduras." };
+  }
+
+  return { ok: true as const, value: normalized };
+}

@@ -64,6 +64,38 @@ npx supabase link --project-ref TU_PROJECT_REF
 npx supabase db push
 ```
 
+## Orden De Desarrollo
+
+El proyecto se construye y valida en este orden para evitar dependencias rotas entre tienda, admin, precios, pedidos y facturacion:
+
+1. **Proyecto base**: Next.js, TypeScript, Tailwind CSS, ESLint, estructura `src/app`, componentes, servicios, tipos y utilidades.
+2. **Supabase**: variables de entorno, cliente SSR/browser, Auth, Storage y configuracion local/cloud.
+3. **Base de datos**: migraciones PostgreSQL, relaciones, indices, RLS y seed inicial.
+4. **Login**: registro, inicio de sesion, cierre de sesion y perfil de usuario.
+5. **Roles**: admin, vendedor, bodega, contadora y cliente con permisos separados.
+6. **Productos**: CRUD, categorias, imagenes, importacion/exportacion, stock y precios reales `retail_price`/`wholesale_price`.
+7. **Sistema mayorista**: codigos unicos por cliente, expiracion, estado, usos y validacion segura.
+8. **Cambio de precios**: modo global `retail`/`wholesale` usando `getProductPrice(product, priceMode)`.
+9. **Carrito**: agregar, quitar, cantidades, subtotal, ISV, total y respeto de stock/precio activo.
+10. **Checkout**: datos del cliente, Honduras solamente, transferencia, tarjeta preparada y efectivo.
+11. **Inventario**: entradas, salidas, ajustes, historial y alertas de bajo stock.
+12. **Pedidos**: estados, items, tipo de precio usado, cliente, direccion, telefono y pago.
+13. **Facturacion**: RTN, CAI, numero fiscal, ISV, PDF, reimpresion y anulacion.
+14. **Reportes**: ventas, productos mas vendidos, bajo stock, facturas, pedidos y clientes frecuentes con PDF/Excel/CSV.
+15. **CRM**: prospectos, seguimientos, llamadas, reuniones, notas, historial, valor estimado y mensualidad.
+16. **Seguridad**: validacion server-side, permisos, rutas protegidas, audit logs, backups y error boundaries.
+17. **Optimizacion**: paginacion, indices SQL, imagenes optimizadas, consultas limitadas y carga incremental de productos.
+18. **Deploy final**: migraciones aplicadas, variables en Vercel/Supabase, build limpio, smoke test y dominio/SSL.
+
+Antes de pasar al siguiente hito, deben pasar:
+
+```bash
+npm run lint
+npm run build
+```
+
+Para el deploy final, aplica migraciones en Supabase, configura `.env` en Vercel y valida al menos estos flujos: login admin, catalogo paginado, codigo mayorista, carrito, checkout, pedido, factura, reporte, CRM y seguridad.
+
 ## Autenticacion
 
 Rutas:

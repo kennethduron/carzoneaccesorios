@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
-import { products } from "@/lib/commerce";
+import { getCatalogProducts } from "@/services/supabase/products.service";
 
-export default function CategoriasPage() {
-  const categories = Array.from(new Set(products.map((product) => product.category))).map((category) => ({
-    name: category,
-    count: products.filter((product) => product.category === category).length,
-  }));
+export const dynamic = "force-dynamic";
+
+export default async function CategoriasPage() {
+  const catalog = await getCatalogProducts({ pageSize: 1 });
+  const categories = catalog.categories;
 
   return (
     <PublicStoreShell>
@@ -17,11 +17,11 @@ export default function CategoriasPage() {
           {categories.map((category) => (
             <Link
               key={category.name}
-              href={`/catalogo?categoria=${encodeURIComponent(category.name)}`}
+              href={`/catalogo?categoria=${encodeURIComponent(category.slug)}`}
               className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
             >
               <p className="text-xl font-semibold">{category.name}</p>
-              <p className="mt-2 text-sm text-black/55">{category.count} productos disponibles</p>
+              <p className="mt-2 text-sm text-black/55">Ver productos disponibles</p>
             </Link>
           ))}
         </div>

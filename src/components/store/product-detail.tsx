@@ -1,16 +1,23 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
 import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
+import { useProductRegistry } from "@/contexts/product-registry-context";
 import { formatCurrency, getProductPrice } from "@/utils/pricing";
 import { ProductImageGallery } from "@/components/store/product-image-gallery";
 
 export function ProductDetail({ product }: { product: Product }) {
   const { priceMode } = usePriceMode();
   const { addToCart, cartMessage } = useShoppingCart();
+  const { registerProducts } = useProductRegistry();
+
+  useEffect(() => {
+    registerProducts([product]);
+  }, [product, registerProducts]);
 
   return (
     <section className="mx-auto grid max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[0.95fr_1.05fr]">

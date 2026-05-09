@@ -1,6 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AppRole, Permission } from "@/types/auth";
-import type { AdminSecurityData, AuditLogRow, BackupLogRow, SecurityRoleSummary } from "@/types/security";
+import type { AdminSecurityData, AuditLogRow, BackupLogRow } from "@/types/security";
 
 type AuditLogQueryRow = Omit<AuditLogRow, "user_email" | "user_name"> & {
   users: {
@@ -71,7 +71,7 @@ export async function getAdminSecurity(): Promise<AdminSecurityData> {
   }
 
   return {
-    roles: ((roles ?? []) as SecurityRoleSummary[]).map((role) => ({
+    roles: (roles ?? []).map((role) => ({
       role: role.name,
       permissions: role.permissions,
     })),

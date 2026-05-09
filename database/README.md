@@ -17,6 +17,31 @@ La regla de precios del sistema exige que cada producto mantenga dos columnas re
 
 Los pedidos guardan un snapshot del precio aplicado en `order_items.unit_price`, junto con `retail_price_snapshot` y `wholesale_price_snapshot`, para que la factura no cambie si el producto se edita despues.
 
+## Pagos Por Transferencia
+
+La tabla `payments` mantiene campos normalizados para transferencias bancarias:
+
+- `payment_method`
+- `bank_reference_number`
+- `transfer_receipt_url`
+- `payment_status`
+- `created_at`
+- `updated_at`
+
+`bank_reference_number` es obligatorio solo cuando `payment_method = 'bank_transfer'`.
+
+No se exige nombre del banco, nombre del titular ni fecha de transferencia.
+
+## Telefono Del Cliente
+
+El telefono del cliente se guarda como dato obligatorio para pedidos:
+
+- `customers.phone`
+- `orders.customer_phone`
+- `crm_followups.phone` cuando el seguimiento esta asociado a un cliente con telefono
+
+El texto de UI recomendado es `Telefono / WhatsApp`.
+
 ## Tablas
 
 El esquema crea estas 18 tablas:

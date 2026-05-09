@@ -13,7 +13,16 @@ type UserRoleRow = {
 };
 
 export async function getSessionProfile(): Promise<AuthProfile | null> {
-  const supabase = await getSupabaseServerClient();
+  let supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>;
+  try {
+    supabase = await getSupabaseServerClient();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Missing NEXT_PUBLIC_SUPABASE")) {
+      return null;
+    }
+
+    throw error;
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

@@ -18,7 +18,7 @@ const adminModules = [
   },
   {
     title: "Pedidos",
-    href: null,
+    href: "/admin/pedidos",
     description: "Modulo preparado para seguimiento de pedidos y estados.",
   },
   {

@@ -37,4 +37,5 @@ export type CheckoutData = {
   country: string;
   address: string;
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo";
+  bankTransferReference: string;
 };

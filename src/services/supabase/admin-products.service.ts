@@ -1,6 +1,14 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CategoryOption, ProductAdminRow } from "@/types/products";
 
+export type AdminProductCatalogFilters = {
+  page?: number;
+  pageSize?: number;
+  query?: string;
+  status?: string;
+  categoryId?: string;
+};
+
 type ProductQueryRow = Omit<ProductAdminRow, "category_name" | "images"> & {
   categories: { name: string } | null;
   product_images: ProductAdminRow["images"] | null;
@@ -36,46 +44,89 @@ function normalizeProduct(row: ProductQueryRow): ProductAdminRow {
 }
 
 export async function getAdminProductCatalog() {
-  const supabase = await getSupabaseServerClient();
+  return getAdminProductCatalogPage();
+}
 
-  const [{ data: products, error: productsError }, { data: categories, error: categoriesError }] =
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
+export async function getAdminProductCatalogPage(filters: AdminProductCatalogFilters = {}) {
+  const supabase = await getSupabaseServerClient();
+  const page = normalizePage(filters.page);
+  const pageSize = normalizePageSize(filters.pageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const query = filters.query?.trim() ?? "";
+  const status = filters.status?.trim() ?? "all";
+  const categoryId = filters.categoryId?.trim() ?? "all";
+
+  let productsQuery = supabase
+    .from("products")
+    .select(
+      `
+      id,
+      category_id,
+      sku,
+      internal_code,
+      slug,
+      name,
+      brand,
+      description,
+      stock,
+      min_stock,
+      cost_price,
+      retail_price,
+      wholesale_price,
+      wholesale_min_quantity,
+      status,
+      active,
+      created_at,
+      updated_at,
+      categories(name),
+      product_images(
+        id,
+        public_url,
+        storage_path,
+        angle,
+        alt_text,
+        sort_order,
+        is_primary
+      )
+    `,
+      { count: "exact" },
+    );
+
+  if (query) {
+    productsQuery = productsQuery.or(`sku.ilike.%${query}%,internal_code.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
+  }
+
+  if (status !== "all") {
+    productsQuery = productsQuery.eq("status", status);
+  }
+
+  if (categoryId !== "all") {
+    productsQuery = productsQuery.eq("category_id", categoryId);
+  }
+
+  const pagedProductsQuery = productsQuery
+    .order("updated_at", { ascending: false })
+    .range(from, to)
+    .returns<ProductQueryRow[]>();
+
+  const [{ data: products, error: productsError, count }, { data: categories, error: categoriesError }] =
     await Promise.all([
-      supabase
-        .from("products")
-        .select(
-          `
-          id,
-          category_id,
-          sku,
-          internal_code,
-          slug,
-          name,
-          brand,
-          description,
-          stock,
-          min_stock,
-          cost_price,
-          retail_price,
-          wholesale_price,
-          wholesale_min_quantity,
-          status,
-          active,
-          created_at,
-          updated_at,
-          categories(name),
-          product_images(
-            id,
-            public_url,
-            storage_path,
-            angle,
-            alt_text,
-            sort_order,
-            is_primary
-          )
-        `,
-        )
-        .order("updated_at", { ascending: false })
-        .returns<ProductQueryRow[]>(),
+      pagedProductsQuery,
       supabase
         .from("categories")
         .select("id, name, slug")
@@ -94,5 +145,8 @@ export async function getAdminProductCatalog() {
   return {
     products: (products ?? []).map(normalizeProduct),
     categories: categories ?? [],
+    total: count ?? 0,
+    page,
+    pageSize,
   };
 }

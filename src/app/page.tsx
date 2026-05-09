@@ -4,10 +4,12 @@ import { ArrowRight, ShieldCheck, Truck } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { WholesaleCodePanel } from "@/components/store/wholesale-code-panel";
-import { products } from "@/lib/commerce";
+import { getFeaturedProducts } from "@/services/supabase/products.service";
 
-export default function HomePage() {
-  const featuredProducts = products.slice(0, 3);
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const featuredProducts = await getFeaturedProducts(3);
 
   return (
     <PublicStoreShell>

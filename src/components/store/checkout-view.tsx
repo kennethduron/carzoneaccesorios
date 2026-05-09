@@ -8,6 +8,7 @@ import { useShoppingCart } from "@/contexts/cart-context";
 import { useOrders } from "@/contexts/orders-context";
 import { Totals } from "@/components/store/cart-view";
 import { formatCurrency } from "@/utils/pricing";
+import { hondurasPhone } from "@/utils/validation";
 
 const emptyCheckout: CheckoutData = {
   customerName: "",
@@ -16,6 +17,7 @@ const emptyCheckout: CheckoutData = {
   country: "Honduras",
   address: "",
   paymentMethod: "Transferencia bancaria",
+  bankTransferReference: "",
 };
 
 export function CheckoutView() {
@@ -34,18 +36,24 @@ export function CheckoutView() {
       return;
     }
 
-    if (!checkout.customerName || !checkout.phone || !checkout.address || rows.length === 0) {
+    const phone = hondurasPhone(checkout.phone);
+    if (!phone.ok) {
+      setCheckoutMessage(phone.message);
+      return;
+    }
+
+    if (!checkout.customerName || !checkout.address || rows.length === 0) {
       setCheckoutMessage("Completa tus datos y agrega productos para crear el pedido.");
       return;
     }
 
-    if (checkout.paymentMethod === "Transferencia bancaria" && !proofFileName) {
-      setCheckoutMessage("Sube el comprobante de transferencia para continuar.");
+    if (checkout.paymentMethod === "Transferencia bancaria" && !checkout.bankTransferReference.trim()) {
+      setCheckoutMessage("Debes ingresar el número de referencia de la transferencia.");
       return;
     }
 
     const order = createOrder({
-      customer: checkout,
+      customer: { ...checkout, phone: phone.value },
       items: rows.map((item) => ({
         productId: item.product.id,
         sku: item.product.sku,
@@ -62,9 +70,11 @@ export function CheckoutView() {
       tax,
       total,
       paymentMethod: checkout.paymentMethod,
+      paymentReference:
+        checkout.paymentMethod === "Transferencia bancaria" ? checkout.bankTransferReference.trim() : null,
       paymentProofFileName: proofFileName || null,
       address: checkout.address,
-      phone: checkout.phone,
+      phone: phone.value,
     });
 
     setOrderNumber(order.orderNumber);
@@ -90,17 +100,19 @@ export function CheckoutView() {
 
         <div className="mt-5 grid gap-3">
           {([
-            ["customerName", "Nombre del cliente"],
-            ["email", "Correo"],
-            ["phone", "Telefono"],
-          ] as const).map(([field, label]) => (
-            <input
-              key={field}
-              value={checkout[field]}
-              onChange={(event) => setCheckout((current) => ({ ...current, [field]: event.target.value }))}
-              placeholder={label}
-              className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
-            />
+            ["customerName", "Nombre del cliente", "Nombre del cliente"],
+            ["email", "Correo", "Correo"],
+            ["phone", "Teléfono / WhatsApp", "Ej. 31986284"],
+          ] as const).map(([field, label, placeholder]) => (
+            <label key={field} className="grid gap-1">
+              <span className="text-xs font-medium uppercase text-black/50">{label}</span>
+              <input
+                value={checkout[field]}
+                onChange={(event) => setCheckout((current) => ({ ...current, [field]: event.target.value }))}
+                placeholder={placeholder}
+                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+              />
+            </label>
           ))}
           <label className="block">
             <span className="mb-1 block text-xs font-medium uppercase text-black/50">Pais de entrega</span>
@@ -169,13 +181,29 @@ export function CheckoutView() {
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Realiza la transferencia y sube el comprobante para que contabilidad confirme el pago.
+                    Realiza la transferencia e ingresa la referencia bancaria para que contabilidad confirme el pago.
                   </p>
                 </div>
               </div>
+              <label className="mt-4 block">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">
+                  Número de referencia de la transferencia
+                </span>
+                <input
+                  value={checkout.bankTransferReference}
+                  onChange={(event) =>
+                    setCheckout((current) => ({ ...current, bankTransferReference: event.target.value }))
+                  }
+                  placeholder="Ej. 839201746"
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+                />
+                <span className="mt-1 block text-xs text-black/50">
+                  Ingresa el número de referencia que aparece en tu comprobante bancario.
+                </span>
+              </label>
               <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-white px-4 py-4 text-sm font-medium">
                 <Upload size={17} />
-                {proofFileName || "Subir comprobante"}
+                {proofFileName || "Subir comprobante si aplica"}
                 <input
                   type="file"
                   accept="image/*,.pdf"

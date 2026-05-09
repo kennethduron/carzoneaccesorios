@@ -17,9 +17,11 @@ import {
   saveCrmNoteAction,
   setCrmFollowupStatusAction,
 } from "@/app/admin/crm/actions";
+import { ContactActionButtons } from "@/components/admin/contact-action-buttons";
 import { Button, Input } from "@/components/ui";
 import type {
   AdminCrmData,
+  CrmCustomerOption,
   CrmFollowupInput,
   CrmFollowupRow,
   CrmInteractionType,
@@ -78,6 +80,7 @@ const emptyFollowup: CrmFollowupInput = {
   next_action: "",
   due_at: "",
   priority: "media",
+  phone: "",
   notes: "",
   estimated_value: 0,
   monthly_amount: 0,
@@ -110,6 +113,8 @@ export function CrmManager({ data }: CrmManagerProps) {
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
   const [followup, setFollowup] = useState<CrmFollowupInput>(emptyFollowup);
   const [note, setNote] = useState<CrmNoteInput>(emptyNote);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
+  const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -131,6 +136,9 @@ export function CrmManager({ data }: CrmManagerProps) {
   const prospects = data.customers.filter((customer) => customer.lead_status !== "cliente");
   const estimatedPipeline = prospects.reduce((sum, customer) => sum + customer.estimated_value, 0);
   const monthlyPipeline = prospects.reduce((sum, customer) => sum + customer.monthly_amount, 0);
+  const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId) ?? data.customers[0] ?? null;
+  const selectedFollowup =
+    data.followups.find((item) => item.id === selectedFollowupId) ?? filteredFollowups[0] ?? data.followups[0] ?? null;
 
   function updateLead<K extends keyof CrmLeadInput>(field: K, value: CrmLeadInput[K]) {
     setLead((current) => ({ ...current, [field]: value }));
@@ -138,6 +146,15 @@ export function CrmManager({ data }: CrmManagerProps) {
 
   function updateFollowup<K extends keyof CrmFollowupInput>(field: K, value: CrmFollowupInput[K]) {
     setFollowup((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectFollowupCustomer(customerId: string) {
+    const customer = data.customers.find((item) => item.id === customerId);
+    setFollowup((current) => ({
+      ...current,
+      customer_id: customerId,
+      phone: customer?.phone ?? "",
+    }));
   }
 
   function submitLead() {
@@ -286,7 +303,7 @@ export function CrmManager({ data }: CrmManagerProps) {
               <CustomerSelect
                 customers={data.customers}
                 value={followup.customer_id}
-                onChange={(value) => updateFollowup("customer_id", value)}
+                onChange={selectFollowupCustomer}
               />
             </Field>
             <Field label="Tipo">
@@ -307,6 +324,13 @@ export function CrmManager({ data }: CrmManagerProps) {
             </Field>
             <Field label="Proxima accion">
               <Input value={followup.next_action} onChange={(event) => updateFollowup("next_action", event.target.value)} />
+            </Field>
+            <Field label="Teléfono / WhatsApp">
+              <Input
+                value={followup.phone}
+                onChange={(event) => updateFollowup("phone", event.target.value)}
+                placeholder="Ej. 31986284"
+              />
             </Field>
             <Field label="Fecha">
               <Input type="datetime-local" value={followup.due_at} onChange={(event) => updateFollowup("due_at", event.target.value)} />
@@ -382,6 +406,7 @@ export function CrmManager({ data }: CrmManagerProps) {
                     <td className="px-4 py-3">
                       <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
                       <p className="text-xs text-black/45">{item.customer_name}</p>
+                      <ContactActionButtons phone={item.phone} className="mt-2" />
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium">{item.title}</p>
@@ -407,6 +432,9 @@ export function CrmManager({ data }: CrmManagerProps) {
                         <IconButton label="Cancelar" onClick={() => setStatus(item.id, "cancelled")}>
                           <X size={16} />
                         </IconButton>
+                        <IconButton label="Ver detalle" onClick={() => setSelectedFollowupId(item.id)}>
+                          <Search size={16} />
+                        </IconButton>
                       </div>
                     </td>
                   </tr>
@@ -417,6 +445,42 @@ export function CrmManager({ data }: CrmManagerProps) {
         </div>
 
         <div className="space-y-5">
+          <CustomerDetailCard customer={selectedCustomer} />
+          <FollowupDetailCard followup={selectedFollowup} />
+
+          <div className="rounded-lg border border-black/10 bg-white p-5">
+            <h2 className="font-semibold">Clientes CRM</h2>
+            <div className="mt-4 space-y-3">
+              {data.customers.length === 0 ? (
+                <p className="text-sm text-black/55">No hay clientes registrados.</p>
+              ) : (
+                data.customers.slice(0, 8).map((customer) => (
+                  <article
+                    key={customer.id}
+                    className={`rounded-md p-3 text-sm transition-colors ${
+                      selectedCustomer?.id === customer.id ? "bg-[#e8f3f2]" : "bg-[#f7f7f2]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{customerDisplayName(customer)}</p>
+                        <p className="mt-1 text-xs text-black/45">{customer.phone || "Sin telefono"}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCustomerId(customer.id)}
+                        className="rounded-md border border-black/10 bg-white px-2 py-1 text-xs font-medium"
+                      >
+                        Detalle
+                      </button>
+                    </div>
+                    <ContactActionButtons phone={customer.phone} className="mt-2" />
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="rounded-lg border border-black/10 bg-white p-5">
             <div className="mb-4 flex items-center gap-2">
               <MessageSquarePlus size={19} />
@@ -463,6 +527,62 @@ export function CrmManager({ data }: CrmManagerProps) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function CustomerDetailCard({ customer }: { customer: CrmCustomerOption | null }) {
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-5">
+      <h2 className="font-semibold">Detalle del cliente</h2>
+      {customer ? (
+        <div className="mt-4 space-y-3 text-sm">
+          <div>
+            <p className="font-semibold">{customerDisplayName(customer)}</p>
+            <p className="text-xs text-black/45">{customer.email ?? "Sin correo registrado"}</p>
+          </div>
+          <InfoLine label="Teléfono" value={customer.phone || "Sin teléfono"} />
+          <InfoLine label="Estado" value={leadStatusLabels[customer.lead_status]} />
+          <InfoLine label="Valor estimado" value={formatCurrency(customer.estimated_value)} />
+          <InfoLine label="Mensualidad" value={formatCurrency(customer.monthly_amount)} />
+          <ContactActionButtons phone={customer.phone} />
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-black/55">No hay cliente seleccionado.</p>
+      )}
+    </div>
+  );
+}
+
+function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-5">
+      <h2 className="font-semibold">Detalle de seguimiento comercial</h2>
+      {followup ? (
+        <div className="mt-4 space-y-3 text-sm">
+          <div>
+            <p className="font-semibold">{followup.title}</p>
+            <p className="text-xs text-black/45">{followup.business_name ?? followup.customer_name ?? "Cliente"}</p>
+          </div>
+          <InfoLine label="Tipo" value={interactionLabels[followup.interaction_type]} />
+          <InfoLine label="Próxima acción" value={followup.next_action ?? "-"} />
+          <InfoLine label="Fecha" value={formatDateTime(followup.due_at)} />
+          <InfoLine label="Prioridad" value={priorityLabels[followup.priority]} />
+          <InfoLine label="Teléfono" value={followup.phone ?? "Sin teléfono"} />
+          <ContactActionButtons phone={followup.phone} />
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-black/55">No hay seguimiento seleccionado.</p>
+      )}
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md bg-[#f7f7f2] px-3 py-2">
+      <span className="text-xs font-medium uppercase text-black/50">{label}</span>
+      <span className="text-right font-medium">{value}</span>
     </div>
   );
 }

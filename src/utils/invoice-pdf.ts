@@ -24,9 +24,15 @@ export function generateInvoicePdf(invoice: StoreInvoice) {
   doc.text(`Tipo de precio: ${invoice.priceMode === "wholesale" ? "wholesale_price" : "retail_price"}`, 14, 60);
   doc.text(`Cliente: ${invoice.customerName}`, 14, 66);
   doc.text(`RTN cliente: ${invoice.customerRtn ?? "Consumidor final"}`, 14, 72);
+  doc.text(`Metodo de pago: ${invoice.paymentMethod}`, 14, 78);
+  const tableStartY = invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference ? 94 : 88;
+
+  if (invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference) {
+    doc.text(`Referencia: ${invoice.paymentReference}`, 14, 84);
+  }
 
   autoTable(doc, {
-    startY: 82,
+    startY: tableStartY,
     head: [["SKU", "Producto", "Cant.", "Precio", "Total"]],
     body: invoice.items.map((item) => [
       item.sku,

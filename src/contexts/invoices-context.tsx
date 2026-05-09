@@ -22,7 +22,12 @@ function readStoredInvoices() {
 
   try {
     const stored = window.sessionStorage.getItem(storageKey);
-    return stored ? (JSON.parse(stored) as StoreInvoice[]) : [];
+    const invoices = stored ? (JSON.parse(stored) as StoreInvoice[]) : [];
+    return invoices.map((invoice) => ({
+      ...invoice,
+      paymentMethod: invoice.paymentMethod ?? "Transferencia bancaria",
+      paymentReference: invoice.paymentReference ?? null,
+    }));
   } catch {
     window.sessionStorage.removeItem(storageKey);
     return [];
@@ -63,6 +68,8 @@ export function InvoicesProvider({ children }: { children: React.ReactNode }) {
           isv: order.tax,
           total: order.total,
           priceMode: order.priceMode,
+          paymentMethod: order.paymentMethod,
+          paymentReference: order.paymentReference,
           status: "emitida",
           issuedAt,
           cancelledAt: null,

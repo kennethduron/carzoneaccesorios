@@ -25,6 +25,7 @@ export type CrmFollowupRow = {
   next_action: string | null;
   due_at: string | null;
   priority: CrmPriority;
+  phone: string | null;
   notes: string | null;
   estimated_value: number;
   monthly_amount: number;
@@ -65,6 +66,7 @@ export type CrmFollowupInput = {
   next_action: string;
   due_at: string;
   priority: CrmPriority;
+  phone: string;
   notes: string;
   estimated_value: number;
   monthly_amount: number;

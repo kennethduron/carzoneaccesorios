@@ -15,6 +15,8 @@ export type StoreInvoice = {
   isv: number;
   total: number;
   priceMode: StoreOrder["priceMode"];
+  paymentMethod: StoreOrder["paymentMethod"];
+  paymentReference: string | null;
   status: InvoiceStatus;
   issuedAt: string;
   cancelledAt: string | null;

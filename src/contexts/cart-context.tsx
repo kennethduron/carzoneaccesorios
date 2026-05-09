@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useMemo, useState } from "react";
 import type { CartItem, Product } from "@/types/commerce";
-import { products } from "@/lib/commerce";
 import { getProductPrice } from "@/utils/pricing";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { useProductRegistry } from "@/contexts/product-registry-context";
 
 type CartRow = {
   product: Product;
@@ -62,11 +62,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>(readStoredCart);
   const [cartMessage, setCartMessage] = useState("");
   const { priceMode } = usePriceMode();
+  const { findProduct } = useProductRegistry();
 
   const rows = useMemo(() => {
     return cart
       .map((item) => {
-        const product = products.find((entry) => entry.id === item.productId);
+        const product = findProduct(item.productId);
         if (!product) {
           return null;
         }
@@ -80,7 +81,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         };
       })
       .filter(Boolean) as CartRow[];
-  }, [cart, priceMode]);
+  }, [cart, findProduct, priceMode]);
 
   const subtotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
   const tax = subtotal * 0.15;
@@ -97,7 +98,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       total,
       cartCount,
       addToCart(productId) {
-        const product = products.find((entry) => entry.id === productId);
+        const product = findProduct(productId);
         if (!product || product.stock <= 0) {
           setCartMessage("Producto sin stock disponible.");
           return false;
@@ -131,7 +132,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return added;
       },
       updateQuantity(productId, delta) {
-        const product = products.find((entry) => entry.id === productId);
+        const product = findProduct(productId);
         if (!product) {
           setCartMessage("Producto no encontrado.");
           return false;
@@ -177,7 +178,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCartMessage("");
       },
     }),
-    [cart, cartCount, cartMessage, rows, subtotal, tax, total],
+    [cart, cartCount, cartMessage, findProduct, rows, subtotal, tax, total],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
