@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
@@ -172,6 +173,13 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
 
       await replaceImages(input.id, input.images);
       await logInventoryAdjustment(input.id, Number(previous.stock), payload.stock);
+      await writeAuditLog({
+        tableName: "products",
+        recordId: input.id,
+        action: "product.updated",
+        oldData: { stock: Number(previous.stock) },
+        newData: payload,
+      });
       revalidatePath("/admin/productos");
       revalidatePath("/");
       return { ok: true, message: "Producto actualizado." };
@@ -187,6 +195,12 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
     if (payload.stock > 0) {
       await logInventoryAdjustment(data.id, 0, payload.stock);
     }
+    await writeAuditLog({
+      tableName: "products",
+      recordId: data.id,
+      action: "product.created",
+      newData: payload,
+    });
 
     revalidatePath("/admin/productos");
     revalidatePath("/");
@@ -212,6 +226,13 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
     return { ok: false, message: error.message };
   }
 
+  await writeAuditLog({
+    tableName: "products",
+    recordId: id,
+    action: active ? "product.activated" : "product.deactivated",
+    newData: { active },
+  });
+
   revalidatePath("/admin/productos");
   revalidatePath("/");
   return { ok: true, message: active ? "Producto activado." : "Producto desactivado." };
@@ -226,6 +247,12 @@ export async function deleteProductAction(id: string): Promise<ProductMutationRe
   if (error) {
     return { ok: false, message: error.message };
   }
+
+  await writeAuditLog({
+    tableName: "products",
+    recordId: id,
+    action: "product.deleted",
+  });
 
   revalidatePath("/admin/productos");
   revalidatePath("/");

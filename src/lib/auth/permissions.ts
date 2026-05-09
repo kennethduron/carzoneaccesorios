@@ -9,6 +9,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "payments:manage",
     "invoices:manage",
     "crm:manage",
+    "reports:read",
     "settings:manage",
     "audit:read",
   ],

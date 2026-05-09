@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { WholesaleCodeFormInput } from "@/types/wholesale";
@@ -52,13 +53,20 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
 
   const supabase = await getSupabaseServerClient();
   const query = input.id
-    ? supabase.from("wholesale_codes").update(payload).eq("id", input.id)
-    : supabase.from("wholesale_codes").insert(payload);
-  const { error } = await query;
+    ? supabase.from("wholesale_codes").update(payload).eq("id", input.id).select("id").single<{ id: string }>()
+    : supabase.from("wholesale_codes").insert(payload).select("id").single<{ id: string }>();
+  const { data, error } = await query;
 
   if (error) {
     return { ok: false, message: error.message };
   }
+
+  await writeAuditLog({
+    tableName: "wholesale_codes",
+    recordId: data.id,
+    action: input.id ? "wholesale_code.updated" : "wholesale_code.created",
+    newData: { ...payload, code_hash: "[redacted]" },
+  });
 
   revalidatePath("/admin/codigos-mayoristas");
   return { ok: true, message: input.id ? "Codigo mayorista actualizado." : "Codigo mayorista creado." };
@@ -76,6 +84,13 @@ export async function setWholesaleCodeActiveAction(id: string, active: boolean):
   if (error) {
     return { ok: false, message: error.message };
   }
+
+  await writeAuditLog({
+    tableName: "wholesale_codes",
+    recordId: id,
+    action: active ? "wholesale_code.activated" : "wholesale_code.deactivated",
+    newData: { active },
+  });
 
   revalidatePath("/admin/codigos-mayoristas");
   return { ok: true, message: active ? "Codigo activado." : "Codigo desactivado." };

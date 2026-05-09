@@ -28,7 +28,7 @@ const adminModules = [
   },
   {
     title: "Clientes",
-    href: null,
+    href: "/admin/crm",
     description: "Modulo preparado para CRM, notas y seguimiento comercial.",
   },
   {
@@ -38,8 +38,13 @@ const adminModules = [
   },
   {
     title: "Reportes",
-    href: null,
+    href: "/admin/reportes",
     description: "Modulo preparado para reportes, Excel, CSV y PDFs.",
+  },
+  {
+    title: "Seguridad",
+    href: "/admin/seguridad",
+    description: "Roles, permisos, logs, backups y control de errores.",
   },
 ];
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { InventoryMovementInput } from "@/types/inventory";
@@ -74,6 +75,19 @@ export async function createInventoryMovementAction(input: InventoryMovementInpu
   if (movementError) {
     return { ok: false, message: movementError.message };
   }
+
+  await writeAuditLog({
+    tableName: "inventory_movements",
+    recordId: input.product_id,
+    action: "inventory.movement.created",
+    newData: {
+      product_id: input.product_id,
+      movement_type: input.movement_type,
+      quantity: delta,
+      stock_before: stockBefore,
+      stock_after: stockAfter,
+    },
+  });
 
   revalidatePath("/admin/inventario");
   revalidatePath("/admin/productos");
