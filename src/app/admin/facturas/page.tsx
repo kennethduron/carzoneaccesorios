@@ -13,7 +13,7 @@ export default async function AdminInvoicesPage() {
   const profile = await requirePermission("invoices:read");
   const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
   const [invoices, fiscalSettings] = await Promise.all([getAdminInvoices(), getFiscalSettings()]);
-  const fiscalAlerts = getFiscalAlerts(fiscalSettings);
+  const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoices);
 
   return (
     <AdminShell title="Facturas">

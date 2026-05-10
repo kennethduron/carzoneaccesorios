@@ -8,7 +8,14 @@ export type OrderStatus =
   | "enviado"
   | "en_ruta"
   | "entregado"
-  | "cancelado";
+  | "cancelado"
+  | "pending"
+  | "confirmed"
+  | "paid"
+  | "preparing"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
 
 export type PaymentReviewStatus = "pending_review" | "confirmed" | "rejected";
 
@@ -45,6 +52,7 @@ export type StoreOrder = {
 };
 
 export type CreateOrderInput = Omit<StoreOrder, "id" | "orderNumber" | "status" | "createdAt" | "paymentStatus"> & {
+  orderNumber?: string;
   paymentStatus?: PaymentReviewStatus;
 };
 

@@ -5,6 +5,7 @@ import { Ban, Download, Eye, FileText, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { cancelInvoiceAction } from "@/app/admin/facturas/actions";
+import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { Button, Input } from "@/components/ui";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
@@ -167,20 +168,7 @@ export function AdminInvoicesManager({
 
   return (
     <div className="space-y-5">
-      {fiscalAlerts.length > 0 ? (
-        <div className="grid gap-2">
-          {fiscalAlerts.map((alert) => (
-            <p
-              key={alert.message}
-              className={`rounded-md p-3 text-sm font-medium ${
-                alert.type === "danger" ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff8df] text-[#7a5417]"
-              }`}
-            >
-              {alert.message}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      <FiscalAlertsPanel alerts={fiscalAlerts} />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Subtotal" value={formatCurrency(totals.subtotal)} />

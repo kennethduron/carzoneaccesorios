@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CarFront, Loader2, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SystemLoadingScreen } from "@/components/system-loading-screen";
 import { signInWithEmail, signUpWithEmail } from "@/services/supabase";
 
 type AuthCardProps = {
@@ -46,6 +47,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
   return (
     <section className="min-h-screen bg-[#f7f7f2] px-5 py-10 text-[#1c1d1b]">
+      {loading ? <SystemLoadingScreen fullScreen /> : null}
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-6">
           <div className="flex items-center gap-3">

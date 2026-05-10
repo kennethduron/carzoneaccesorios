@@ -53,6 +53,13 @@ export const orderStatusLabels: Record<OrderStatus, string> = {
   en_ruta: "En ruta",
   entregado: "Entregado",
   cancelado: "Cancelado",
+  pending: "Pendiente",
+  confirmed: "Confirmado",
+  paid: "Pagado",
+  preparing: "Preparacion",
+  shipped: "Enviado",
+  delivered: "Entregado",
+  cancelled: "Cancelado",
 };
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
@@ -66,7 +73,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         const order: StoreOrder = {
           ...input,
           id: crypto.randomUUID(),
-          orderNumber: `CZ-${Date.now().toString().slice(-8)}`,
+          orderNumber: input.orderNumber ?? `CZ-${Date.now().toString().slice(-8)}`,
           paymentStatus: input.paymentStatus ?? "pending_review",
           customerPhone: input.customerPhone,
           phone: input.phone,

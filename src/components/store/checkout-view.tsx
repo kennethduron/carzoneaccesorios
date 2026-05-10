@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { BadgeCheck, Banknote, CreditCard, ShieldCheck, Store, Upload } from "lucide-react";
+import { createCheckoutOrderAction } from "@/app/checkout/actions";
 import type { CheckoutData } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
@@ -25,6 +26,7 @@ export function CheckoutView() {
   const [proofFileName, setProofFileName] = useState("");
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
+  const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
   const { rows, subtotal, tax, total, clearCart } = useShoppingCart();
   const { createOrder } = useOrders();
@@ -63,34 +65,52 @@ export function CheckoutView() {
       return;
     }
 
-    const order = createOrder({
-      customer: { ...checkout, phone: phone.value },
-      items: rows.map((item) => ({
-        productId: item.product.id,
-        sku: item.product.sku,
-        name: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        lineTotal: item.lineTotal,
-        retailPriceSnapshot: item.product.retail_price,
-        wholesalePriceSnapshot: item.product.wholesale_price,
-      })),
-      priceMode,
-      wholesaleCode: wholesaleAccount?.code ?? null,
-      subtotal,
-      tax,
-      total,
-      paymentMethod: checkout.paymentMethod,
-      paymentReference: isBankTransfer ? bankTransferReference : null,
-      paymentProofFileName: isBankTransfer ? proofFileName || null : null,
-      address: checkout.address,
-      phone: phone.value,
-      customerPhone: phone.value,
-    });
+    startTransition(async () => {
+      const result = await createCheckoutOrderAction({
+        checkout: { ...checkout, phone: phone.value },
+        items: rows.map((item) => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+        priceMode,
+      });
 
-    setOrderNumber(order.orderNumber);
-    setCheckoutMessage("Pedido creado correctamente.");
-    clearCart();
+      if (!result.ok || !result.orderNumber) {
+        setCheckoutMessage(result.message);
+        return;
+      }
+
+      createOrder({
+        orderNumber: result.orderNumber,
+        customer: { ...checkout, phone: phone.value },
+        items: rows.map((item) => ({
+          productId: item.product.id,
+          sku: item.product.sku,
+          name: item.product.name,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineTotal: item.lineTotal,
+          retailPriceSnapshot: item.product.retail_price,
+          wholesalePriceSnapshot: item.product.wholesale_price,
+        })),
+        priceMode,
+        wholesaleCode: wholesaleAccount?.code ?? null,
+        subtotal,
+        tax,
+        total,
+        paymentMethod: checkout.paymentMethod,
+        paymentReference: isBankTransfer ? bankTransferReference : null,
+        paymentProofFileName: isBankTransfer ? proofFileName || null : null,
+        address: checkout.address,
+        phone: phone.value,
+        customerPhone: phone.value,
+        paymentStatus: "pending_review",
+      });
+
+      setOrderNumber(result.orderNumber);
+      setCheckoutMessage(result.message);
+      clearCart();
+    });
   }
 
   return (
@@ -272,11 +292,11 @@ export function CheckoutView() {
 
           <button
             onClick={submitOrder}
-            disabled={!sellsInHonduras}
+            disabled={!sellsInHonduras || isPending}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
-            Crear pedido
+            {isPending ? "Creando pedido" : "Crear pedido"}
           </button>
         </div>
       </div>

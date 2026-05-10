@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
 import { requirePermission } from "@/lib/auth/session";
+import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
+import { getAdminInvoices } from "@/services/supabase/admin-invoices.service";
 import type { Permission } from "@/types/auth";
+import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +73,16 @@ function canAccessModule(role: string, permissions: Permission[], modulePermissi
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
+  const canViewFiscalAlerts =
+    profile.role === "admin" ||
+    profile.permissions.includes("fiscal:read") ||
+    profile.permissions.includes("invoices:read") ||
+    profile.permissions.includes("reports:read");
+  const canReadInvoices = profile.role === "admin" || profile.permissions.includes("invoices:read");
+  const [fiscalSettings, invoices] = canViewFiscalAlerts
+    ? await Promise.all([getFiscalSettings(), canReadInvoices ? getAdminInvoices() : Promise.resolve([])])
+    : [null, []];
+  const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, invoices) : [];
 
   return (
     <AdminShell title="Panel administrativo">
@@ -80,6 +94,11 @@ export default async function AdminPage() {
         </div>
         <LogoutButton />
       </div>
+      {fiscalAlerts.length > 0 ? (
+        <div className="mb-6">
+          <FiscalAlertsPanel alerts={fiscalAlerts} />
+        </div>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {adminModules
           .filter((module) => canAccessModule(profile.role, profile.permissions, module.permissions))

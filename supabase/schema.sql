@@ -20,3 +20,4 @@
 \i ./migrations/202605100004_invoice_creation_permission.sql
 \i ./migrations/202605100005_fiscal_invoice_number_rpc.sql
 \i ./migrations/202605100006_accountant_customer_read.sql
+\i ./migrations/202605100007_public_checkout_orders.sql

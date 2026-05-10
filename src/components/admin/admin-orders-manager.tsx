@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, XCircle } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { generateInvoiceFromOrderAction } from "@/app/admin/pedidos/actions";
+import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "@/app/admin/pedidos/actions";
 import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
 import type { FiscalSettings } from "@/types/fiscal";
@@ -80,6 +80,17 @@ export function AdminOrdersManager({
     });
   }
 
+  function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected") {
+    startTransition(async () => {
+      const result = await updateOrderPaymentStatusAction(order.id, status);
+      setMessage(result.message);
+
+      if (result.ok) {
+        router.refresh();
+      }
+    });
+  }
+
   if (orders.length === 0) {
     return (
       <section className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
@@ -125,6 +136,8 @@ export function AdminOrdersManager({
           isPending={isPending}
           message={message}
           onGenerateInvoice={() => generateInvoice(selectedOrder)}
+          onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
+          onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
         />
       ) : null}
     </section>
@@ -139,6 +152,8 @@ function OrderDetail({
   isPending,
   message,
   onGenerateInvoice,
+  onApprovePayment,
+  onRejectPayment,
 }: {
   order: AdminOrderRow;
   fiscalSettings: FiscalSettings;
@@ -147,8 +162,12 @@ function OrderDetail({
   isPending: boolean;
   message: string;
   onGenerateInvoice: () => void;
+  onApprovePayment: () => void;
+  onRejectPayment: () => void;
 }) {
   const isBankTransfer = order.payment_method === "bank_transfer";
+  const paymentIsApproved = order.payment_status === "approved";
+  const paymentIsRejected = order.payment_status === "rejected";
 
   return (
     <article className="rounded-lg border border-black/10 bg-white p-5">
@@ -216,11 +235,11 @@ function OrderDetail({
         ) : null}
         {canManagePayments ? (
           <>
-            <Button disabled variant="primary">
+            <Button onClick={onApprovePayment} disabled={isPending || paymentIsApproved} variant="primary">
               <CheckCircle2 size={17} />
               Confirmar pago
             </Button>
-            <Button disabled variant="secondary">
+            <Button onClick={onRejectPayment} disabled={isPending || paymentIsRejected} variant="secondary">
               <XCircle size={17} />
               Rechazar pago
             </Button>
