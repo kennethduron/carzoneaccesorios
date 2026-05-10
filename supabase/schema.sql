@@ -17,3 +17,6 @@
 \i ./migrations/202605100001_api_grants.sql
 \i ./migrations/202605100002_fiscal_settings.sql
 \i ./migrations/202605100003_accountant_permissions.sql
+\i ./migrations/202605100004_invoice_creation_permission.sql
+\i ./migrations/202605100005_fiscal_invoice_number_rpc.sql
+\i ./migrations/202605100006_accountant_customer_read.sql
