@@ -108,8 +108,8 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
           <div className="grid gap-3 md:grid-cols-2">
             <ControlItem title="Rutas protegidas" description="/admin y /cuenta pasan por proxy y validacion server-side." />
             <ControlItem title="Permisos por rol" description="Cada pagina admin revalida permisos con requirePermission." />
-            <ControlItem title="Validacion de formularios" description="Acciones server-side limpian texto, numeros, fechas e IDs." />
-            <ControlItem title="Auditoria" description="Cambios criticos registran usuario, tabla, accion y datos relevantes." />
+            <ControlItem title="Validación de formularios" description="Acciónes server-side limpian texto, números, fechas e IDs." />
+            <ControlItem title="Auditoría" description="Cambios críticos registran usuario, tabla, acción y datos relevantes." />
             <ControlItem title="RLS Supabase" description="Policies limitan lectura y escritura por rol y propietario." />
             <ControlItem title="Control de errores" description="Error boundaries evitan pantallas rotas y permiten reintentar." />
           </div>
@@ -153,7 +153,7 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
         <DataTable
           title="Audit logs"
           icon={<FileClock size={19} />}
-          columns={["Fecha", "Usuario", "Tabla", "Accion", "Datos"]}
+          columns={["Fecha", "Usuario", "Tabla", "Acción", "Datos"]}
           rows={data.auditLogs.map((log) => [
             formatDateTime(log.created_at),
             log.user_name ?? log.user_email ?? "Sistema",

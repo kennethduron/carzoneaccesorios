@@ -108,6 +108,28 @@ function numberValue(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const productCsvHeaders = [
+  "sku",
+  "codigo_interno",
+  "nombre",
+  "marca",
+  "marca_carro",
+  "modelo_carro",
+  "anio_inicial",
+  "anio_final",
+  "categoria",
+  "stock",
+  "stock_minimo",
+  "precio_costo",
+  "precio_detalle",
+  "precio_mayorista",
+  "cantidad_minima_mayorista",
+  "estado",
+  "activo",
+  "url_imagen",
+  "angulo_imagen",
+];
+
 function csvValue(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -253,7 +275,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
   }
 
   function deleteProduct(product: ProductAdminRow) {
-    const confirmed = window.confirm(`Eliminar ${product.name}? Esta accion no se puede deshacer.`);
+    const confirmed = window.confirm(`¿Eliminar ${product.name}? Esta acción no se puede deshacer.`);
     if (!confirmed) {
       return;
     }
@@ -265,27 +287,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
   }
 
   function exportCsv() {
-    const headers = [
-      "sku",
-      "internal_code",
-      "name",
-      "brand",
-      "vehicle_brand",
-      "vehicle_model",
-      "vehicle_year_start",
-      "vehicle_year_end",
-      "category",
-      "stock",
-      "min_stock",
-      "cost_price",
-      "retail_price",
-      "wholesale_price",
-      "wholesale_min_quantity",
-      "status",
-      "active",
-      "image_url",
-      "image_angle",
-    ];
+    const headers = productCsvHeaders;
     const rows = filteredProducts.map((product) => [
       product.sku,
       product.internal_code,
@@ -335,24 +337,24 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
         return {
           ...emptyProduct,
           sku: row.sku ?? "",
-          internal_code: row.internal_code || null,
-          name: row.name ?? "",
-          brand: row.brand ?? "",
-          vehicle_brand: row.vehicle_brand || null,
-          vehicle_model: row.vehicle_model || null,
-          vehicle_year_start: row.vehicle_year_start ? numberValue(row.vehicle_year_start) : null,
-          vehicle_year_end: row.vehicle_year_end ? numberValue(row.vehicle_year_end) : null,
+          internal_code: row.internal_code || row.codigo_interno || row["código_interno"] || null,
+          name: row.name ?? row.nombre ?? "",
+          brand: row.brand ?? row.marca ?? "",
+          vehicle_brand: row.vehicle_brand || row.marca_carro || null,
+          vehicle_model: row.vehicle_model || row.modelo_carro || null,
+          vehicle_year_start: row.vehicle_year_start || row.anio_inicial ? numberValue(row.vehicle_year_start || row.anio_inicial) : null,
+          vehicle_year_end: row.vehicle_year_end || row.anio_final ? numberValue(row.vehicle_year_end || row.anio_final) : null,
           category_id: category?.id ?? null,
           stock: numberValue(row.stock ?? "0"),
-          min_stock: numberValue(row.min_stock ?? "5"),
-          cost_price: numberValue(row.cost_price ?? "0"),
-          retail_price: numberValue(row.retail_price ?? "0"),
-          wholesale_price: numberValue(row.wholesale_price ?? "0"),
-          wholesale_min_quantity: numberValue(row.wholesale_min_quantity ?? "1"),
-          status: (row.status as ProductStatus) || "active",
-          active: row.active !== "false",
-          images: row.image_url
-            ? [{ ...emptyImage, public_url: row.image_url, angle: row.image_angle || "principal" }]
+          min_stock: numberValue(row.min_stock ?? row.stock_minimo ?? row["stock_mínimo"] ?? "5"),
+          cost_price: numberValue(row.cost_price ?? row.precio_costo ?? "0"),
+          retail_price: numberValue(row.retail_price ?? row.precio_detalle ?? "0"),
+          wholesale_price: numberValue(row.wholesale_price ?? row.precio_mayorista ?? "0"),
+          wholesale_min_quantity: numberValue(row.wholesale_min_quantity ?? row.cantidad_minima_mayorista ?? row["cantidad_mínima_mayorista"] ?? "1"),
+          status: (row.status as ProductStatus) || (row.estado as ProductStatus) || "active",
+          active: row.active !== "false" && row.activo !== "false",
+          images: row.image_url || row.url_imagen
+            ? [{ ...emptyImage, public_url: row.image_url || row.url_imagen, angle: row.image_angle || row.angulo_imagen || row["ángulo_imagen"] || "principal" }]
             : [],
         };
       });
@@ -381,7 +383,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
               name="q"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por SKU, codigo interno, producto o marca"
+              placeholder="Buscar por SKU, código interno, producto o marca"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -404,7 +406,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
             onChange={(event) => setCategoryId(event.target.value)}
             className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
           >
-            <option value="all">Categorias</option>
+            <option value="all">Categorías</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -434,7 +436,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           </label>
         </form>
         <p className="mt-3 text-sm text-black/55">
-          Pagina {page} - mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
+          Página {page}: mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
         </p>
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
@@ -458,11 +460,11 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
             <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Producto</th>
-                <th className="px-4 py-3">Categoria</th>
+                <th className="px-4 py-3">Categoría</th>
                 <th className="px-4 py-3">Stock</th>
                 <th className="px-4 py-3">Costo</th>
-                <th className="px-4 py-3">retail_price</th>
-                <th className="px-4 py-3">wholesale_price</th>
+                <th className="px-4 py-3">Precio al detalle</th>
+                <th className="px-4 py-3">Precio mayorista</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
@@ -476,12 +478,12 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                       {product.sku} {product.internal_code ? `/ ${product.internal_code}` : ""}
                     </p>
                   </td>
-                  <td className="px-4 py-3">{product.category_name ?? "Sin categoria"}</td>
+                  <td className="px-4 py-3">{product.category_name ?? "Sin categoría"}</td>
                   <td className="px-4 py-3">
                     <span className={product.stock <= product.min_stock ? "font-semibold text-[#bd4f30]" : ""}>
                       {product.stock}
                     </span>
-                    <span className="text-black/45"> / min {product.min_stock}</span>
+                    <span className="text-black/45"> / mínimo {product.min_stock}</span>
                   </td>
                   <td className="px-4 py-3">{formatCurrency(product.cost_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.retail_price)}</td>
@@ -589,7 +591,7 @@ function ProductEditor({
               <Field label="SKU">
                 <Input value={product.sku} onChange={(event) => onField("sku", event.target.value)} />
               </Field>
-              <Field label="Codigo interno">
+              <Field label="Código interno">
                 <Input value={product.internal_code ?? ""} onChange={(event) => onField("internal_code", event.target.value)} />
               </Field>
               <Field label="Slug">
@@ -631,7 +633,7 @@ function ProductEditor({
               </Field>
             </div>
 
-            <Field label="Descripcion">
+            <Field label="Descripción">
               <textarea
                 value={product.description}
                 onChange={(event) => onField("description", event.target.value)}
@@ -640,13 +642,13 @@ function ProductEditor({
             </Field>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Categoria">
+              <Field label="Categoría">
                 <select
                   value={product.category_id ?? ""}
                   onChange={(event) => onField("category_id", event.target.value || null)}
                   className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
                 >
-                  <option value="">Sin categoria</option>
+                  <option value="">Sin categoría</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
@@ -682,10 +684,10 @@ function ProductEditor({
               <Field label="Stock">
                 <Input type="number" min={0} value={product.stock} onChange={(event) => onField("stock", numberValue(event.target.value))} />
               </Field>
-              <Field label="Stock minimo">
+              <Field label="Stock mínimo">
                 <Input type="number" min={0} value={product.min_stock} onChange={(event) => onField("min_stock", numberValue(event.target.value))} />
               </Field>
-              <Field label="Cantidad minima mayorista">
+              <Field label="Cantidad mínima mayorista">
                 <Input
                   type="number"
                   min={1}
@@ -696,13 +698,13 @@ function ProductEditor({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="cost_price">
+              <Field label="Precio de costo">
                 <Input type="number" min={0} step="0.01" value={product.cost_price} onChange={(event) => onField("cost_price", numberValue(event.target.value))} />
               </Field>
-              <Field label="retail_price">
+              <Field label="Precio al detalle">
                 <Input type="number" min={0} step="0.01" value={product.retail_price} onChange={(event) => onField("retail_price", numberValue(event.target.value))} />
               </Field>
-              <Field label="wholesale_price">
+              <Field label="Precio mayorista">
                 <Input type="number" min={0} step="0.01" value={product.wholesale_price} onChange={(event) => onField("wholesale_price", numberValue(event.target.value))} />
               </Field>
             </div>
@@ -710,7 +712,7 @@ function ProductEditor({
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Imagenes por angulo</h3>
+              <h3 className="font-semibold">Imágenes por ángulo</h3>
               <Button onClick={onAddImage} variant="ghost" className="px-3">
                 <Plus size={16} />
               </Button>

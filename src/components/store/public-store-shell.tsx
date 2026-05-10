@@ -8,8 +8,8 @@ import { useShoppingCart } from "@/contexts/cart-context";
 
 const links = [
   ["Inicio", "/"],
-  ["Catalogo", "/catalogo"],
-  ["Categorias", "/categorias"],
+  ["Catálogo", "/catálogo"],
+  ["Categorías", "/categorías"],
   ["Contacto", "/contacto"],
   ["Mi cuenta", "/cuenta"],
   ["Facturas", "/facturas"],
@@ -44,7 +44,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             <span className="hidden rounded-md border border-black/10 bg-white px-3 py-2 text-sm sm:inline-flex">
-              {priceMode === "wholesale" ? "wholesale_price activo" : "retail_price activo"}
+              {priceMode === "wholesale" ? "Precio mayorista activo" : "Precio al detalle activo"}
             </span>
             <Link
               href="/carrito"
@@ -94,7 +94,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Mision
             </Link>
-            <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
+            <Link href="/visión" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Vision
             </Link>
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">

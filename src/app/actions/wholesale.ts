@@ -22,7 +22,7 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
   if (!normalizedCode) {
     return {
       ok: false,
-      message: "Ingresa un codigo mayorista.",
+      message: "Ingresa un código mayorista.",
       account: null,
     };
   }
@@ -36,7 +36,7 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
     if (error) {
       return {
         ok: false,
-        message: "No se pudo validar el codigo mayorista.",
+        message: "No se pudo validar el código mayorista.",
         account: null,
       };
     }
@@ -47,14 +47,14 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
     if (!account) {
       return {
         ok: false,
-        message: "Codigo mayorista invalido, inactivo, vencido o sin usos disponibles.",
+        message: "Código mayorista inválido, inactivo, vencido o sin usos disponibles.",
         account: null,
       };
     }
 
     return {
       ok: true,
-      message: `Modo mayorista activo para ${account.business_name ?? account.label}. Usando wholesale_price.`,
+      message: `Modo mayorista activo para ${account.business_name ?? account.label}. Usando precio mayorista.`,
       account: {
         id: account.id,
         code: account.code,
@@ -70,7 +70,7 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
   } catch {
     return {
       ok: false,
-      message: "Configura Supabase para validar codigos mayoristas reales.",
+      message: "Configura Supabase para validar códigos mayoristas reales.",
       account: null,
     };
   }

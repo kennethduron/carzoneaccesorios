@@ -14,8 +14,8 @@ export function OrdersList() {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5">
         <p className="text-sm text-black/60">Tus pedidos apareceran aqui cuando completes compras en la tienda.</p>
-        <Link href="/catalogo" className="mt-4 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
-          Ver catalogo
+        <Link href="/catálogo" className="mt-4 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
+          Ver catálogo
         </Link>
       </div>
     );
@@ -45,8 +45,8 @@ export function OrdersList() {
             </span>
           </div>
           <div className="mt-4 grid gap-2 text-sm md:grid-cols-3">
-            <p>Metodo: {order.paymentMethod}</p>
-            <p>Precio: {order.priceMode === "wholesale" ? "wholesale_price" : "retail_price"}</p>
+            <p>Método: {order.paymentMethod}</p>
+            <p>Precio: {order.priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}</p>
             <p className="font-semibold">Total: {formatCurrency(order.total)}</p>
           </div>
           <div className="mt-4 divide-y divide-black/10 rounded-md border border-black/10">

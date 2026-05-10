@@ -35,7 +35,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
           <div className="flex items-end justify-between">
             <div>
               <p className="text-xs text-black/45">
-                {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}
+                {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
               </p>
               <p className="text-2xl font-semibold">{formatCurrency(getProductPrice(product, priceMode))}</p>
             </div>

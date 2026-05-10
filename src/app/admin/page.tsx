@@ -24,7 +24,7 @@ const adminModules = [
   {
     title: "Facturas",
     href: null,
-    description: "Modulo preparado para facturacion y documentos fiscales.",
+    description: "Modulo preparado para facturación y documentos fiscales.",
   },
   {
     title: "Clientes",
@@ -32,9 +32,9 @@ const adminModules = [
     description: "Modulo preparado para CRM, notas y seguimiento comercial.",
   },
   {
-    title: "Codigos mayoristas",
+    title: "Códigos mayoristas",
     href: "/admin/codigos-mayoristas",
-    description: "Crear, activar y auditar codigos que habilitan wholesale_price.",
+    description: "Crear, activar y auditar códigos que habilitan precio mayorista.",
   },
   {
     title: "Reportes",
@@ -55,7 +55,7 @@ export default async function AdminPage() {
     <AdminShell title="Panel administrativo">
       <div className="mb-6 flex flex-col justify-between gap-3 rounded-lg border border-black/10 bg-white p-4 sm:flex-row sm:items-center">
         <div>
-          <p className="text-sm text-black/50">Sesion activa</p>
+          <p className="text-sm text-black/50">Sesión activa</p>
           <p className="font-semibold">{profile.full_name || profile.email}</p>
           <p className="text-sm capitalize text-black/55">Rol: {profile.role}</p>
         </div>

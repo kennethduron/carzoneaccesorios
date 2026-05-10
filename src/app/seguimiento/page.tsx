@@ -9,7 +9,7 @@ export default function SeguimientoPage() {
           <p className="text-sm text-black/50">Seguimiento de pedido</p>
           <h1 className="mt-2 text-4xl font-semibold">Consulta el estado de tu compra</h1>
           <p className="mt-4 max-w-2xl text-black/60">
-            Ingresa tu numero de pedido para consultar preparacion, despacho y entrega.
+            Ingresa tu número de pedido para consultar preparacion, despacho y entrega.
           </p>
         </div>
         <OrderTracking />

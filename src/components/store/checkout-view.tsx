@@ -100,7 +100,7 @@ export function CheckoutView() {
           <div>
             <h1 className="text-2xl font-semibold">Checkout</h1>
             <p className="mt-2 text-sm text-black/55">
-              Precio aplicado: {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}
+              Precio aplicado: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
             </p>
           </div>
           <p className="inline-flex w-fit items-center gap-2 rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
@@ -126,7 +126,7 @@ export function CheckoutView() {
             </label>
           ))}
           <label className="block">
-            <span className="mb-1 block text-xs font-medium uppercase text-black/50">Pais de entrega</span>
+            <span className="mb-1 block text-xs font-medium uppercase text-black/50">País de entrega</span>
             <select
               value={checkout.country}
               onChange={(event) => {
@@ -145,8 +145,8 @@ export function CheckoutView() {
               <option>El Salvador</option>
               <option>Nicaragua</option>
               <option>Costa Rica</option>
-              <option>Panama</option>
-              <option>Otro pais</option>
+              <option>Panamá</option>
+              <option>Otro país</option>
             </select>
           </label>
           {!sellsInHonduras ? (
@@ -157,11 +157,11 @@ export function CheckoutView() {
           <input
             value={checkout.address}
             onChange={(event) => setCheckout((current) => ({ ...current, address: event.target.value }))}
-            placeholder="Direccion de entrega"
+            placeholder="Dirección de entrega"
             className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
           />
           <div className="mt-2">
-            <p className="mb-2 text-sm font-semibold">Metodo de pago</p>
+            <p className="mb-2 text-sm font-semibold">Método de pago</p>
             <div className="grid grid-cols-3 gap-2">
             {[
               ["Transferencia bancaria", Banknote],
@@ -233,14 +233,14 @@ export function CheckoutView() {
               <div className="flex items-start gap-3">
                 <CreditCard size={19} className="mt-0.5 text-[#246a73]" />
                 <div>
-                  <h2 className="font-semibold">Tarjeta de credito/debito</h2>
+                  <h2 className="font-semibold">Tarjeta de crédito/débito</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Preparado para conectar una pasarela de pago. El pedido quedara pendiente de autorizacion.
+                    Preparado para conectar una pasarela de pago. El pedido quedará pendiente de autorización.
                   </p>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input disabled placeholder="Numero de tarjeta" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/40" />
+                <input disabled placeholder="Número de tarjeta" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/40" />
                 <input disabled placeholder="MM/AA  CVC" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/40" />
               </div>
             </section>
@@ -253,7 +253,7 @@ export function CheckoutView() {
                 <div>
                   <h2 className="font-semibold">Pago contra entrega</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Pagaras en efectivo al recibir tu pedido. Nuestro equipo confirmara disponibilidad y despacho.
+                    Pagarás en efectivo al recibir tu pedido. Nuestro equipo confirmará disponibilidad y despacho.
                   </p>
                 </div>
               </div>
@@ -299,14 +299,14 @@ export function CheckoutView() {
         </div>
         {wholesaleAccount ? (
           <p className="mt-4 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
-            Codigo mayorista: {wholesaleAccount.code}
+            Código mayorista: {wholesaleAccount.code}
           </p>
         ) : null}
         <Totals subtotal={subtotal} tax={tax} total={total} />
         {orderNumber ? (
           <div className="mt-5 rounded-md bg-[#e8f3f2] p-4 text-sm">
             <p className="font-semibold">Pedido creado: {orderNumber}</p>
-            <p className="mt-1 text-black/60">La factura usara {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}.</p>
+            <p className="mt-1 text-black/60">La factura usará {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}.</p>
           </div>
         ) : null}
       </aside>

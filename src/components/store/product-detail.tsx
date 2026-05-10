@@ -23,8 +23,8 @@ export function ProductDetail({ product }: { product: Product }) {
     <section className="mx-auto grid max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[0.95fr_1.05fr]">
       <ProductImageGallery product={product} />
       <div className="space-y-5">
-        <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
-          Volver al catalogo
+        <Link href="/catálogo" className="text-sm font-medium text-[#246a73]">
+          Volver al catálogo
         </Link>
         <div>
           <p className="text-sm uppercase text-black/45">{product.sku} / {product.brand}</p>
@@ -36,7 +36,7 @@ export function ProductDetail({ product }: { product: Product }) {
             <p className="text-sm text-black/45">Precio aplicado</p>
             <p className="mt-1 text-3xl font-semibold">{formatCurrency(getProductPrice(product, priceMode))}</p>
             <p className="mt-1 text-sm text-black/55">
-              Fuente: {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}
+              Fuente: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
             </p>
           </div>
           <div className="rounded-lg border border-black/10 bg-white p-4">

@@ -11,7 +11,7 @@ export function InvoicesList() {
   if (invoices.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
-        No hay facturas emitidas en esta sesion.
+        No hay facturas emitidas en esta sesión.
       </div>
     );
   }
@@ -37,7 +37,7 @@ export function InvoicesList() {
             <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
             <p>ISV: {formatCurrency(invoice.isv)}</p>
             <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
-            <p>{invoice.priceMode === "wholesale" ? "wholesale_price" : "retail_price"}</p>
+            <p>{invoice.priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}</p>
           </div>
           <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
             <p>Método de pago: {invoice.paymentMethod}</p>

@@ -135,7 +135,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "car-zone-codigos-mayoristas.csv";
+    link.download = "car-zone-códigos-mayoristas.csv";
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -143,7 +143,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="Codigos activos" value={activeCount.toLocaleString("es-HN")} />
+        <Metric label="Códigos activos" value={activeCount.toLocaleString("es-HN")} />
         <Metric label="Usos registrados" value={totalUses.toLocaleString("es-HN")} />
         <Metric label="Vencidos por fecha" value={expiredCount.toLocaleString("es-HN")} />
       </div>
@@ -155,13 +155,13 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por codigo o cliente"
+              placeholder="Buscar por código o cliente"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
           <Button onClick={() => setEditing(emptyCode)} variant="dark">
             <KeyRound size={17} />
-            Nuevo codigo
+            Nuevo código
           </Button>
           <Button onClick={exportCsv} variant="ghost">
             <Download size={17} />
@@ -176,13 +176,13 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
               <tr>
-                <th className="px-4 py-3">Codigo</th>
+                <th className="px-4 py-3">Código</th>
                 <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3">Expira</th>
                 <th className="px-4 py-3">Usos</th>
                 <th className="px-4 py-3">Minimo</th>
-                <th className="px-4 py-3 text-right">Acciones</th>
+                <th className="px-4 py-3 text-right">Acciónes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
@@ -276,8 +276,8 @@ function CodeEditor({
       <section className="mx-auto my-8 w-full max-w-3xl rounded-lg bg-white text-[#1c1d1b]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
-            <p className="text-sm text-black/50">{code.id ? "Editar codigo" : "Crear codigo"}</p>
-            <h2 className="text-xl font-semibold">{code.code || "Nuevo codigo mayorista"}</h2>
+            <p className="text-sm text-black/50">{code.id ? "Editar código" : "Crear código"}</p>
+            <h2 className="text-xl font-semibold">{code.code || "Nuevo código mayorista"}</h2>
           </div>
           <button onClick={onClose} className="grid size-10 place-items-center rounded-md border border-black/10" aria-label="Cerrar">
             <X size={18} />
@@ -299,7 +299,7 @@ function CodeEditor({
               ))}
             </select>
           </Field>
-          <Field label="Codigo unico">
+          <Field label="Código unico">
             <Input value={code.code} onChange={(event) => onField("code", event.target.value.toUpperCase())} placeholder="MAYOREO-LOPEZ2026" />
           </Field>
           <Field label="Etiqueta">
@@ -324,7 +324,7 @@ function CodeEditor({
           <Field label="Fecha de expiracion">
             <Input type="date" value={code.expires_at ?? ""} onChange={(event) => onField("expires_at", event.target.value || null)} />
           </Field>
-          <Field label="Pedido minimo">
+          <Field label="Pedido mínimo">
             <Input type="number" min={0} value={code.minimum_order} onChange={(event) => onField("minimum_order", numberValue(event.target.value))} />
           </Field>
           <Field label="Maximo de usos">
@@ -345,7 +345,7 @@ function CodeEditor({
               onChange={(event) => onField("active", event.target.checked)}
               className="size-4"
             />
-            Codigo activo
+            Código activo
           </label>
         </div>
 
@@ -355,7 +355,7 @@ function CodeEditor({
           </Button>
           <Button onClick={onSubmit} disabled={pending} variant="dark">
             <Save size={17} />
-            {pending ? "Guardando..." : "Guardar codigo"}
+            {pending ? "Guardando..." : "Guardar código"}
           </Button>
         </div>
       </section>

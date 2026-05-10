@@ -20,7 +20,7 @@ export async function requestBackupAction(
 
   const allowedTypes: BackupType[] = ["manual", "scheduled", "pre_deploy"];
   if (!allowedTypes.includes(backupType)) {
-    return { ok: false, message: "Tipo de backup no valido." };
+    return { ok: false, message: "Tipo de backup no válido." };
   }
 
   const supabase = await getSupabaseServerClient();

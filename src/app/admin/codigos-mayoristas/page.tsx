@@ -12,7 +12,7 @@ export default async function AdminWholesaleCodesPage() {
   const { codes, customers } = await getAdminWholesaleCodes();
 
   return (
-    <AdminShell title="Codigos mayoristas">
+    <AdminShell title="Códigos mayoristas">
       <div className="mb-5">
         <Link
           href="/admin"

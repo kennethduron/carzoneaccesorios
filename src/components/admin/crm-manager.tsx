@@ -210,7 +210,7 @@ export function CrmManager({ data }: CrmManagerProps) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar cliente, accion o nota"
+              placeholder="Buscar cliente, acción o nota"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -234,7 +234,7 @@ export function CrmManager({ data }: CrmManagerProps) {
             <Field label="Cliente">
               <Input value={lead.contact_name} onChange={(event) => updateLead("contact_name", event.target.value)} />
             </Field>
-            <Field label="Telefono">
+            <Field label="Teléfono">
               <Input value={lead.phone} onChange={(event) => updateLead("phone", event.target.value)} />
             </Field>
             <Field label="Correo">
@@ -275,7 +275,7 @@ export function CrmManager({ data }: CrmManagerProps) {
                 ))}
               </select>
             </Field>
-            <Field label="Direccion">
+            <Field label="Dirección">
               <Input value={lead.address} onChange={(event) => updateLead("address", event.target.value)} />
             </Field>
             <label className="block sm:col-span-2">
@@ -322,7 +322,7 @@ export function CrmManager({ data }: CrmManagerProps) {
             <Field label="Titulo">
               <Input value={followup.title} onChange={(event) => updateFollowup("title", event.target.value)} />
             </Field>
-            <Field label="Proxima accion">
+            <Field label="Próxima acción">
               <Input value={followup.next_action} onChange={(event) => updateFollowup("next_action", event.target.value)} />
             </Field>
             <Field label="Teléfono / WhatsApp">
@@ -392,12 +392,12 @@ export function CrmManager({ data }: CrmManagerProps) {
                 <tr>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Actividad</th>
-                  <th className="px-4 py-3">Proxima accion</th>
+                  <th className="px-4 py-3">Próxima acción</th>
                   <th className="px-4 py-3">Fecha</th>
                   <th className="px-4 py-3">Prioridad</th>
                   <th className="px-4 py-3">Valor</th>
                   <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
+                  <th className="px-4 py-3 text-right">Acciónes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/10">

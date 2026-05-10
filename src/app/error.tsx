@@ -10,7 +10,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
         <AlertTriangle className="mx-auto text-[#9b341b]" size={36} />
         <h1 className="mt-4 text-2xl font-semibold">No pudimos cargar esta vista</h1>
         <p className="mt-2 text-sm text-black/60">
-          El sistema encontro un error controlado. Puedes reintentar sin perder la sesion.
+          El sistema encontro un error controlado. Puedes reintentar sin perder la sesión.
         </p>
         <Button onClick={reset} variant="dark" className="mt-5">
           <RotateCcw size={17} />

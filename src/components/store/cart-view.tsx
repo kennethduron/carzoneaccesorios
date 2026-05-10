@@ -17,7 +17,7 @@ export function CartView() {
           <div>
             <h1 className="text-2xl font-semibold">Carrito</h1>
             <p className="mt-1 text-sm text-black/55">
-              Precios calculados con {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}.
+              Precios calculados con {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}.
             </p>
           </div>
           <span className="w-fit rounded-md bg-[#f7f7f2] px-3 py-2 text-sm">
@@ -41,7 +41,7 @@ export function CartView() {
                     {item.product.sku} / {formatCurrency(item.unitPrice)} por unidad
                   </p>
                   <p className="mt-1 text-xs text-black/45">
-                    Fuente: {priceMode === "wholesale" ? "wholesale_price" : "retail_price"}
+                    Fuente: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -67,7 +67,7 @@ export function CartView() {
         <h2 className="font-semibold">Resumen</h2>
         {wholesaleAccount ? (
           <p className="mt-3 rounded-md bg-[#e8f3f2] p-3 text-sm text-[#1e5960]">
-            Codigo aplicado: {wholesaleAccount.code}
+            Código aplicado: {wholesaleAccount.code}
           </p>
         ) : null}
         <Totals subtotal={subtotal} tax={tax} total={total} />

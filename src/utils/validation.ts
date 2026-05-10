@@ -35,7 +35,7 @@ export function nonNegativeNumber(value: unknown, label: string) {
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed) || parsed < 0) {
-    return { ok: false as const, message: `${label} debe ser un numero mayor o igual a 0.` };
+    return { ok: false as const, message: `${label} debe ser un número mayor o igual a 0.` };
   }
 
   return { ok: true as const, value: parsed };
@@ -71,7 +71,7 @@ export function uuidLike(value: unknown, label = "ID") {
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   if (!uuidPattern.test(text)) {
-    return { ok: false as const, message: `${label} no es valido.` };
+    return { ok: false as const, message: `${label} no es válido.` };
   }
 
   return { ok: true as const, value: text };

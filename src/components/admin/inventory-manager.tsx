@@ -137,13 +137,13 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {lowStockProducts.length === 0 ? (
-              <p className="text-sm text-black/55">No hay productos bajo minimo.</p>
+              <p className="text-sm text-black/55">No hay productos bajo mínimo.</p>
             ) : (
               lowStockProducts.map((product) => (
                 <div key={product.id} className="rounded-md bg-[#fff0ea] p-3 text-sm">
                   <p className="font-semibold text-[#9b341b]">{product.name}</p>
                   <p className="text-black/60">
-                    Stock {product.stock} / minimo {product.min_stock}
+                    Stock {product.stock} / mínimo {product.min_stock}
                   </p>
                 </div>
               ))

@@ -7,7 +7,7 @@ import { usePriceMode } from "@/contexts/price-mode-context";
 
 export function WholesaleCodePanel() {
   const [code, setCode] = useState("");
-  const [message, setMessage] = useState("La tienda muestra retail_price por defecto.");
+  const [message, setMessage] = useState("La tienda muestra precio al detalle por defecto.");
   const [messageType, setMessageType] = useState<"neutral" | "success" | "error">("neutral");
   const [isPending, startTransition] = useTransition();
   const { wholesaleAccount, activateWholesaleMode, clearWholesaleMode } = usePriceMode();
@@ -17,14 +17,14 @@ export function WholesaleCodePanel() {
       const result = await validateWholesaleCodeAction(code);
       if (!result.ok || !result.account) {
         clearWholesaleMode();
-        setMessage(`${result.message} Se mantiene retail_price.`);
+        setMessage(`${result.message} Se mantiene precio al detalle.`);
         setMessageType("error");
         return;
       }
 
       activateWholesaleMode(result.account);
       setCode(result.account.code);
-      setMessage(`Codigo aplicado correctamente. ${result.account.businessName}: wholesale_price activo.`);
+      setMessage(`Código aplicado correctamente. ${result.account.businessName}: Precio mayorista activo.`);
       setMessageType("success");
     });
   }
@@ -32,7 +32,7 @@ export function WholesaleCodePanel() {
   function clearCode() {
     clearWholesaleMode();
     setCode("");
-    setMessage("Modo mayorista desactivado. La tienda vuelve a retail_price.");
+    setMessage("Modo mayorista desactivado. La tienda vuelve a precio al detalle.");
     setMessageType("neutral");
   }
 
@@ -71,7 +71,7 @@ export function WholesaleCodePanel() {
       {wholesaleAccount ? (
         <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
           <p className="font-medium text-[#1c1d1b]">{wholesaleAccount.businessName}</p>
-          <p>Codigo: {wholesaleAccount.code}</p>
+          <p>Código: {wholesaleAccount.code}</p>
           <button onClick={clearCode} className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#9b341b]">
             <X size={16} />
             Quitar mayorista

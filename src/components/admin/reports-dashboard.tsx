@@ -222,7 +222,7 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
       {
         key: "stock",
         label: reportLabels.stock,
-        description: "Productos que llegaron al minimo o estan por debajo.",
+        description: "Productos que llegaron al mínimo o estan por debajo.",
         columns: ["SKU", "Producto", "Marca", "Stock", "Minimo", "Estado"],
         rows: data.products
           .filter((product) => product.stock <= product.min_stock)
@@ -246,7 +246,7 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
           Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
           RTN: invoice.rtn ?? "-",
           CAI: invoice.cai ?? "-",
-          "Tipo precio": invoice.price_mode === "wholesale" ? "wholesale_price" : "retail_price",
+          "Tipo precio": invoice.price_mode === "wholesale" ? "precio mayorista" : "precio al detalle",
           Estado: invoice.status,
           Total: formatCurrency(invoice.total),
         })),
@@ -261,7 +261,7 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
           Fecha: formatDate(order.created_at),
           Cliente: order.customer_name,
           Pago: paymentLabels[order.payment_method] ?? order.payment_method,
-          "Tipo precio": order.price_mode === "wholesale" ? "wholesale_price" : "retail_price",
+          "Tipo precio": order.price_mode === "wholesale" ? "precio mayorista" : "precio al detalle",
           Estado: order.status,
           Total: formatCurrency(order.total),
         })),
@@ -270,12 +270,12 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
         key: "customers",
         label: reportLabels.customers,
         description: "Clientes ordenados por frecuencia de compra.",
-        columns: ["Cliente", "Telefono", "Pedidos", "Total comprado"],
+        columns: ["Cliente", "Teléfono", "Pedidos", "Total comprado"],
         rows: Array.from(customerSales.values())
           .sort((left, right) => right.orders - left.orders || right.total - left.total)
           .map((customer) => ({
             Cliente: customer.customer,
-            Telefono: customer.phone,
+            Teléfono: customer.phone,
             Pedidos: customer.orders,
             "Total comprado": formatCurrency(customer.total),
           })),

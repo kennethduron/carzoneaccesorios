@@ -7,7 +7,7 @@ export default function SinPermisoPage() {
         <p className="text-sm font-medium text-[#d55d3b]">Acceso restringido</p>
         <h1 className="mt-2 text-3xl font-semibold">No tienes permiso para esta ruta.</h1>
         <p className="mt-3 text-black/60">
-          Tu sesion existe, pero tu rol no tiene los permisos requeridos para entrar aqui.
+          Tu sesión existe, pero tu rol no tiene los permisos requeridos para entrar aqui.
         </p>
         <Link
           className="mt-5 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white"

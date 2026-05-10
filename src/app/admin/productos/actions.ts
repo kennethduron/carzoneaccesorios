@@ -92,7 +92,7 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
   }
 
   if (input.wholesale_price > input.retail_price) {
-    throw new Error("wholesale_price no puede ser mayor que retail_price.");
+    throw new Error("El precio mayorista no puede ser mayor que el precio al detalle.");
   }
 
   return {

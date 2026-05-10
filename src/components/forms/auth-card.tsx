@@ -61,7 +61,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             {isLogin ? "Ingresa al sistema comercial." : "Crea tu cuenta de cliente."}
           </h1>
           <p className="max-w-lg text-black/60">
-            Los roles separan permisos para administracion, ventas, bodega, contabilidad y clientes.
+            Los roles separan permisos para administración, ventas, bodega, contabilidad y clientes.
           </p>
         </div>
 
@@ -69,7 +69,7 @@ export function AuthCard({ mode }: AuthCardProps) {
           <div className="mb-5">
             <h2 className="text-xl font-semibold">{isLogin ? "Login" : "Registro"}</h2>
             <p className="mt-1 text-sm text-black/55">
-              {isLogin ? "Usa tu correo y contrasena." : "Tu cuenta se crea con rol Cliente."}
+              {isLogin ? "Usa tu correo y contraseña." : "Tu cuenta se crea con rol Cliente."}
             </p>
           </div>
 
@@ -92,7 +92,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <Input
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Contrasena"
+              placeholder="Contraseña"
               type="password"
               minLength={6}
               required
@@ -111,7 +111,7 @@ export function AuthCard({ mode }: AuthCardProps) {
           <p className="mt-4 text-center text-sm text-black/55">
             {isLogin ? "No tienes cuenta?" : "Ya tienes cuenta?"}{" "}
             <Link className="font-medium text-[#246a73]" href={isLogin ? "/registro" : "/login"}>
-              {isLogin ? "Registrate" : "Inicia sesion"}
+              {isLogin ? "Registrate" : "Inicia sesión"}
             </Link>
           </p>
         </form>

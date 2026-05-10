@@ -24,12 +24,12 @@ export default async function HomePage() {
               Accesorios automotrices listos para vender, instalar y despachar.
             </h1>
             <p className="mt-5 max-w-2xl text-white/70">
-              Compra al detalle o activa tu codigo mayorista para trabajar con wholesale_price en todo el flujo.
+              Compra al detalle o activa tu código mayorista para trabajar con precio mayorista en todo el flujo.
             </p>
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/catalogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#1c1d1b]">
-              Ver catalogo
+            <Link href="/catálogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#1c1d1b]">
+              Ver catálogo
               <ArrowRight size={17} />
             </Link>
             <Link href="/contacto" className="inline-flex items-center gap-2 rounded-md border border-white/20 px-4 py-3 text-sm font-semibold text-white">
@@ -49,9 +49,9 @@ export default async function HomePage() {
 
       <section className="mx-auto grid max-w-7xl gap-4 px-5 pb-8 md:grid-cols-3">
         {[
-          ["Catalogo completo", "Iluminacion, seguridad, interior, exterior, tecnologia y herramientas."],
+          ["Catálogo completo", "Iluminacion, seguridad, interior, exterior, tecnologia y herramientas."],
           ["Despacho organizado", "Pedidos preparados con seguimiento y control de inventario."],
-          ["Mayoreo profesional", "Un codigo valido cambia todo el sistema a wholesale_price."],
+          ["Mayoreo profesional", "Un código válido cambia todo el sistema a precio mayorista."],
         ].map(([title, text]) => (
           <article key={title} className="rounded-lg border border-black/10 bg-white p-5">
             <Truck size={20} className="mb-4 text-[#246a73]" />
@@ -65,7 +65,7 @@ export default async function HomePage() {
         <div>
           <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-semibold">Productos destacados</h2>
-            <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
+            <Link href="/catálogo" className="text-sm font-medium text-[#246a73]">
               Ver todos
             </Link>
           </div>

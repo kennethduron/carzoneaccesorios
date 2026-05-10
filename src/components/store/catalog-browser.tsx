@@ -63,7 +63,7 @@ export function CatalogBrowser({
       params.set("q", search.trim());
     }
     if (selectedCategory) {
-      params.set("categoria", selectedCategory);
+      params.set("categoría", selectedCategory);
     }
     if (selectedMinPrice.trim()) {
       params.set("precio_min", selectedMinPrice.trim());
@@ -85,13 +85,13 @@ export function CatalogBrowser({
     }
 
     const queryString = params.toString();
-    return queryString ? `/catalogo?${queryString}` : "/catalogo";
+    return queryString ? `/catálogo?${queryString}` : "/catálogo";
   }
 
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1fr_360px]">
       <div className="space-y-5">
-        <form action="/catalogo" className="rounded-lg border border-black/10 bg-white p-4">
+        <form action="/catálogo" className="rounded-lg border border-black/10 bg-white p-4">
           <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
             <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
               <Search size={18} className="text-black/45" />
@@ -105,7 +105,7 @@ export function CatalogBrowser({
             </label>
             <select
               value={selectedCategory}
-              name="categoria"
+              name="categoría"
               onChange={(event) => setSelectedCategory(event.target.value)}
               className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
@@ -194,7 +194,7 @@ export function CatalogBrowser({
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/50">
             <SlidersHorizontal size={14} />
-            <span>El filtro de precio usa retail_price, el precio publico por defecto.</span>
+            <span>El filtro de precio usa precio al detalle, el precio público por defecto.</span>
             <Car size={14} />
             <span>Compatibilidad por marca, modelo y año del carro.</span>
           </div>
@@ -223,7 +223,7 @@ export function CatalogBrowser({
         <section className="rounded-lg border border-black/10 bg-white p-4">
           <h2 className="font-semibold">Atencion comercial</h2>
           <p className="mt-2 text-sm text-black/60">
-            Para pedidos de volumen, solicita tu codigo mayorista y el catalogo cambiara a wholesale_price.
+            Para pedidos de volumen, solicita tu código mayorista y el catálogo cambiará a precio mayorista.
           </p>
         </section>
       </aside>
