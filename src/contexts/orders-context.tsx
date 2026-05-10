@@ -27,6 +27,8 @@ function readStoredOrders() {
       paymentReference: order.paymentReference ?? order.customer.bankTransferReference ?? null,
       paymentProofFileName: order.paymentProofFileName ?? null,
       paymentStatus: order.paymentStatus ?? "pending_review",
+      customerPhone: order.customerPhone ?? order.phone ?? order.customer.phone,
+      phone: order.phone ?? order.customerPhone ?? order.customer.phone,
     }));
   } catch {
     window.sessionStorage.removeItem(storageKey);
@@ -66,6 +68,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           id: crypto.randomUUID(),
           orderNumber: `CZ-${Date.now().toString().slice(-8)}`,
           paymentStatus: input.paymentStatus ?? "pending_review",
+          customerPhone: input.customerPhone,
+          phone: input.phone,
           status: "recibido",
           createdAt,
         };

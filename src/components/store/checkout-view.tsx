@@ -8,7 +8,7 @@ import { useShoppingCart } from "@/contexts/cart-context";
 import { useOrders } from "@/contexts/orders-context";
 import { Totals } from "@/components/store/cart-view";
 import { formatCurrency } from "@/utils/pricing";
-import { hondurasPhone } from "@/utils/validation";
+import { validateHondurasPhone } from "@/utils/validation";
 
 const emptyCheckout: CheckoutData = {
   customerName: "",
@@ -36,7 +36,7 @@ export function CheckoutView() {
       return;
     }
 
-    const phone = hondurasPhone(checkout.phone);
+    const phone = validateHondurasPhone(checkout.phone);
     if (!phone.ok) {
       setCheckoutMessage(phone.message);
       return;
@@ -47,7 +47,18 @@ export function CheckoutView() {
       return;
     }
 
-    if (checkout.paymentMethod === "Transferencia bancaria" && !checkout.bankTransferReference.trim()) {
+    const stockIssue = rows.find((item) => item.quantity > item.product.stock);
+    if (stockIssue) {
+      setCheckoutMessage(
+        `No puedes comprar ${stockIssue.quantity} unidades de ${stockIssue.product.name}; solo hay ${stockIssue.product.stock} disponibles.`,
+      );
+      return;
+    }
+
+    const isBankTransfer = checkout.paymentMethod === "Transferencia bancaria";
+    const bankTransferReference = checkout.bankTransferReference.trim();
+
+    if (isBankTransfer && !bankTransferReference) {
       setCheckoutMessage("Debes ingresar el número de referencia de la transferencia.");
       return;
     }
@@ -70,11 +81,11 @@ export function CheckoutView() {
       tax,
       total,
       paymentMethod: checkout.paymentMethod,
-      paymentReference:
-        checkout.paymentMethod === "Transferencia bancaria" ? checkout.bankTransferReference.trim() : null,
-      paymentProofFileName: proofFileName || null,
+      paymentReference: isBankTransfer ? bankTransferReference : null,
+      paymentProofFileName: isBankTransfer ? proofFileName || null : null,
       address: checkout.address,
       phone: phone.value,
+      customerPhone: phone.value,
     });
 
     setOrderNumber(order.orderNumber);
@@ -161,6 +172,9 @@ export function CheckoutView() {
                 key={method as string}
                 onClick={() => {
                   setCheckout((current) => ({ ...current, paymentMethod: method as CheckoutData["paymentMethod"] }));
+                  if (method !== "Transferencia bancaria") {
+                    setProofFileName("");
+                  }
                   setCheckoutMessage("");
                 }}
                 className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-md border px-2 text-xs ${

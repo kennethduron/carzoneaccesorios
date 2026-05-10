@@ -13,3 +13,4 @@
 \i ./migrations/202605090010_optimization_step20.sql
 \i ./migrations/202605090011_payments_transfer_step2.sql
 \i ./migrations/202605090012_customer_phone_step5.sql
+\i ./migrations/202605090013_vehicle_filters_step9.sql

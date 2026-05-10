@@ -5,7 +5,14 @@ import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
-import { hondurasPhone, nonNegativeNumber, optionalDateTime, optionalText, requireText, uuidLike } from "@/utils/validation";
+import {
+  nonNegativeNumber,
+  optionalDateTime,
+  optionalText,
+  requireText,
+  uuidLike,
+  validateHondurasPhone,
+} from "@/utils/validation";
 
 type CrmMutationResult = {
   ok: boolean;
@@ -16,7 +23,7 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
   await requirePermission("crm:manage");
 
   const contactName = requireText(input.contact_name, "Cliente");
-  const phone = hondurasPhone(input.phone);
+  const phone = validateHondurasPhone(input.phone);
   const estimatedValue = nonNegativeNumber(input.estimated_value, "Valor estimado");
   const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Mensualidad");
 
@@ -70,7 +77,7 @@ export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<Cr
   const dueAt = optionalDateTime(input.due_at);
   const estimatedValue = nonNegativeNumber(input.estimated_value, "Valor estimado");
   const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Mensualidad");
-  const phone = input.phone.trim() ? hondurasPhone(input.phone) : { ok: true as const, value: null };
+  const phone = input.phone.trim() ? validateHondurasPhone(input.phone) : { ok: true as const, value: null };
 
   for (const result of [customerId, title, dueAt, estimatedValue, monthlyAmount, phone]) {
     if (!result.ok) {

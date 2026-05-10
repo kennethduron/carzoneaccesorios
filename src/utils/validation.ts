@@ -89,7 +89,7 @@ export function normalizeHondurasPhone(value: unknown) {
   return `+504${digits}`;
 }
 
-export function hondurasPhone(value: unknown) {
+export function validateHondurasPhone(value: unknown) {
   const normalized = normalizeHondurasPhone(value);
   const digits = normalized.slice(4);
   const valid = /^[2389]\d{7}$/.test(digits) && digits !== "00000000";
@@ -100,3 +100,5 @@ export function hondurasPhone(value: unknown) {
 
   return { ok: true as const, value: normalized };
 }
+
+export const hondurasPhone = validateHondurasPhone;

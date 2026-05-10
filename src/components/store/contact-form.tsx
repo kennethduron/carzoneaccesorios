@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { hondurasPhone } from "@/utils/validation";
+import { validateHondurasPhone } from "@/utils/validation";
 
 export function ContactForm() {
   const [phone, setPhone] = useState("");
@@ -10,7 +10,7 @@ export function ContactForm() {
   function submitContact(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const phoneResult = hondurasPhone(phone);
+    const phoneResult = validateHondurasPhone(phone);
     if (!phoneResult.ok) {
       setMessage(phoneResult.message);
       return;

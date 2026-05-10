@@ -40,6 +40,7 @@ export type StoreOrder = {
   status: OrderStatus;
   address: string;
   phone: string;
+  customerPhone: string;
   createdAt: string;
 };
 

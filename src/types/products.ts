@@ -19,6 +19,10 @@ export type ProductAdminRow = {
   slug: string;
   name: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   description: string;
   stock: number;
   min_stock: number;
@@ -41,6 +45,10 @@ export type ProductFormInput = {
   slug: string;
   name: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   description: string;
   stock: number;
   min_stock: number;

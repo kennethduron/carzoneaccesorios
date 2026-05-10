@@ -17,7 +17,7 @@ import {
   saveCrmNoteAction,
   setCrmFollowupStatusAction,
 } from "@/app/admin/crm/actions";
-import { ContactActionButtons } from "@/components/admin/contact-action-buttons";
+import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
 import type {
   AdminCrmData,
@@ -406,7 +406,11 @@ export function CrmManager({ data }: CrmManagerProps) {
                     <td className="px-4 py-3">
                       <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
                       <p className="text-xs text-black/45">{item.customer_name}</p>
-                      <ContactActionButtons phone={item.phone} className="mt-2" />
+                      <ContactActions
+                        phone={item.phone}
+                        customerName={item.business_name ?? item.customer_name}
+                        className="mt-2"
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <p className="font-medium">{item.title}</p>
@@ -474,7 +478,7 @@ export function CrmManager({ data }: CrmManagerProps) {
                         Detalle
                       </button>
                     </div>
-                    <ContactActionButtons phone={customer.phone} className="mt-2" />
+                    <ContactActions phone={customer.phone} customerName={customerDisplayName(customer)} className="mt-2" />
                   </article>
                 ))
               )}
@@ -545,7 +549,7 @@ function CustomerDetailCard({ customer }: { customer: CrmCustomerOption | null }
           <InfoLine label="Estado" value={leadStatusLabels[customer.lead_status]} />
           <InfoLine label="Valor estimado" value={formatCurrency(customer.estimated_value)} />
           <InfoLine label="Mensualidad" value={formatCurrency(customer.monthly_amount)} />
-          <ContactActionButtons phone={customer.phone} />
+          <ContactActions phone={customer.phone} customerName={customerDisplayName(customer)} />
         </div>
       ) : (
         <p className="mt-3 text-sm text-black/55">No hay cliente seleccionado.</p>
@@ -569,7 +573,7 @@ function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
           <InfoLine label="Fecha" value={formatDateTime(followup.due_at)} />
           <InfoLine label="Prioridad" value={priorityLabels[followup.priority]} />
           <InfoLine label="Teléfono" value={followup.phone ?? "Sin teléfono"} />
-          <ContactActionButtons phone={followup.phone} />
+          <ContactActions phone={followup.phone} customerName={followup.business_name ?? followup.customer_name} />
         </div>
       ) : (
         <p className="mt-3 text-sm text-black/55">No hay seguimiento seleccionado.</p>

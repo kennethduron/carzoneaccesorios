@@ -7,6 +7,11 @@ export type ProductCatalogFilters = {
   pageSize?: number;
   query?: string;
   category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  vehicleBrand?: string;
+  vehicleModel?: string;
+  vehicleYear?: number;
 };
 
 export type ProductCatalogPage = {
@@ -15,6 +20,11 @@ export type ProductCatalogPage = {
   page: number;
   pageSize: number;
   categories: Array<{ name: string; slug: string; count?: number }>;
+  filterOptions: {
+    vehicleBrands: string[];
+    vehicleModels: string[];
+    vehicleYears: number[];
+  };
 };
 
 const defaultPageSize = 24;
@@ -35,6 +45,10 @@ type CatalogProductRow = {
   slug: string;
   name: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   description: string;
   stock: number;
   retail_price: unknown;
@@ -49,6 +63,13 @@ type CatalogProductRow = {
 type CategoryRow = {
   name: string;
   slug: string;
+};
+
+type ProductFilterOptionRow = {
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
 };
 
 function toNumber(value: unknown) {
@@ -67,6 +88,19 @@ function normalizePageSize(value: unknown) {
   }
 
   return Math.min(Math.floor(pageSize), 48);
+}
+
+function normalizeOptionalNumber(value: unknown) {
+  if (typeof value === "string" && !value.trim()) {
+    return null;
+  }
+
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeAngle(value: string): ProductAngle {
@@ -96,6 +130,10 @@ function normalizeProduct(row: CatalogProductRow): Product {
     slug: row.slug,
     category: row.categories?.name ?? "Sin categoria",
     brand: row.brand,
+    vehicle_brand: row.vehicle_brand,
+    vehicle_model: row.vehicle_model,
+    vehicle_year_start: row.vehicle_year_start,
+    vehicle_year_end: row.vehicle_year_end,
     image: images[0]?.url ?? "/window.svg",
     images,
     stock: toNumber(row.stock),
@@ -103,6 +141,36 @@ function normalizeProduct(row: CatalogProductRow): Product {
     wholesale_price: toNumber(row.wholesale_price),
     description: row.description,
   };
+}
+
+function uniqueSorted(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])).sort((left, right) =>
+    left.localeCompare(right, "es-HN"),
+  );
+}
+
+function buildVehicleYears(products: ProductFilterOptionRow[]) {
+  const years = new Set<number>();
+
+  products.forEach((product) => {
+    const start = product.vehicle_year_start;
+    const end = product.vehicle_year_end;
+    if (!start && !end) {
+      return;
+    }
+
+    const firstYear = start ?? end;
+    const lastYear = end ?? start;
+    if (!firstYear || !lastYear) {
+      return;
+    }
+
+    for (let year = firstYear; year <= lastYear; year += 1) {
+      years.add(year);
+    }
+  });
+
+  return Array.from(years).sort((left, right) => right - left);
 }
 
 export async function getActiveProducts() {
@@ -117,6 +185,11 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const to = from + pageSize - 1;
   const query = filters.query?.trim() ?? "";
   const category = filters.category?.trim() ?? "";
+  const minPrice = normalizeOptionalNumber(filters.minPrice);
+  const maxPrice = normalizeOptionalNumber(filters.maxPrice);
+  const vehicleBrand = filters.vehicleBrand?.trim() ?? "";
+  const vehicleModel = filters.vehicleModel?.trim() ?? "";
+  const vehicleYear = normalizeOptionalNumber(filters.vehicleYear);
 
   try {
     const supabase = await getSupabaseServerClient();
@@ -129,6 +202,10 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         slug,
         name,
         brand,
+        vehicle_brand,
+        vehicle_model,
+        vehicle_year_start,
+        vehicle_year_end,
         description,
         stock,
         retail_price,
@@ -155,12 +232,32 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       productsQuery = productsQuery.eq("categories.slug", category);
     }
 
+    if (minPrice !== null) {
+      productsQuery = productsQuery.gte("retail_price", minPrice);
+    }
+
+    if (maxPrice !== null) {
+      productsQuery = productsQuery.lte("retail_price", maxPrice);
+    }
+
+    if (vehicleBrand) {
+      productsQuery = productsQuery.ilike("vehicle_brand", vehicleBrand);
+    }
+
+    if (vehicleModel) {
+      productsQuery = productsQuery.ilike("vehicle_model", vehicleModel);
+    }
+
+    if (vehicleYear !== null) {
+      productsQuery = productsQuery.lte("vehicle_year_start", vehicleYear).gte("vehicle_year_end", vehicleYear);
+    }
+
     const pagedProductsQuery = productsQuery
       .order("name", { ascending: true })
       .range(from, to)
       .returns<CatalogProductRow[]>();
 
-    const [{ data, error, count }, { data: categories, error: categoriesError }] = await Promise.all([
+    const [{ data, error, count }, { data: categories, error: categoriesError }, { data: filterRows, error: filterError }] = await Promise.all([
       pagedProductsQuery,
       supabase
         .from("categories")
@@ -168,6 +265,11 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         .eq("active", true)
         .order("name", { ascending: true })
         .returns<CategoryRow[]>(),
+      supabase
+        .from("products")
+        .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
+        .eq("active", true)
+        .returns<ProductFilterOptionRow[]>(),
     ]);
 
     if (error) {
@@ -178,20 +280,47 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       throw new Error(categoriesError.message);
     }
 
+    if (filterError) {
+      throw new Error(filterError.message);
+    }
+
     return {
       products: (data ?? []).map(normalizeProduct),
       total: count ?? 0,
       page,
       pageSize,
       categories: categories ?? [],
+      filterOptions: {
+        vehicleBrands: uniqueSorted((filterRows ?? []).map((row) => row.vehicle_brand)),
+        vehicleModels: uniqueSorted((filterRows ?? []).map((row) => row.vehicle_model)),
+        vehicleYears: buildVehicleYears(filterRows ?? []),
+      },
     };
   } catch {
     const filtered = fallbackProducts.filter((product) => {
       const matchesQuery = query
-        ? `${product.name} ${product.sku} ${product.brand}`.toLowerCase().includes(query.toLowerCase())
+        ? `${product.name} ${product.sku} ${product.brand} ${product.vehicle_brand ?? ""} ${product.vehicle_model ?? ""}`
+            .toLowerCase()
+            .includes(query.toLowerCase())
         : true;
       const matchesCategory = category ? product.category.toLowerCase().replaceAll(" ", "-") === category : true;
-      return matchesQuery && matchesCategory;
+      const matchesMinPrice = minPrice === null || product.retail_price >= minPrice;
+      const matchesMaxPrice = maxPrice === null || product.retail_price <= maxPrice;
+      const matchesVehicleBrand = vehicleBrand ? product.vehicle_brand?.toLowerCase() === vehicleBrand.toLowerCase() : true;
+      const matchesVehicleModel = vehicleModel ? product.vehicle_model?.toLowerCase() === vehicleModel.toLowerCase() : true;
+      const matchesVehicleYear =
+        vehicleYear === null ||
+        ((!product.vehicle_year_start || product.vehicle_year_start <= vehicleYear) &&
+          (!product.vehicle_year_end || product.vehicle_year_end >= vehicleYear));
+      return (
+        matchesQuery &&
+        matchesCategory &&
+        matchesMinPrice &&
+        matchesMaxPrice &&
+        matchesVehicleBrand &&
+        matchesVehicleModel &&
+        matchesVehicleYear
+      );
     });
 
     return {
@@ -203,6 +332,11 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         name,
         slug: name.toLowerCase().replaceAll(" ", "-"),
       })),
+      filterOptions: {
+        vehicleBrands: uniqueSorted(fallbackProducts.map((product) => product.vehicle_brand)),
+        vehicleModels: uniqueSorted(fallbackProducts.map((product) => product.vehicle_model)),
+        vehicleYears: buildVehicleYears(fallbackProducts),
+      },
     };
   }
 }
@@ -224,6 +358,10 @@ export async function getProductBySlug(slug: string) {
         slug,
         name,
         brand,
+        vehicle_brand,
+        vehicle_model,
+        vehicle_year_start,
+        vehicle_year_end,
         description,
         stock,
         retail_price,

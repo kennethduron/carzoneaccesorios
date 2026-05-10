@@ -18,6 +18,10 @@ type ProductDbPayload = {
   slug: string;
   name: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   description: string;
   stock: number;
   low_stock_threshold: number;
@@ -75,6 +79,10 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     slug,
     name,
     brand: input.brand.trim(),
+    vehicle_brand: cleanText(input.vehicle_brand),
+    vehicle_model: cleanText(input.vehicle_model),
+    vehicle_year_start: input.vehicle_year_start ? positiveInteger(input.vehicle_year_start) : null,
+    vehicle_year_end: input.vehicle_year_end ? positiveInteger(input.vehicle_year_end) : null,
     description: input.description.trim(),
     stock: positiveInteger(input.stock),
     low_stock_threshold: positiveInteger(input.min_stock),

@@ -17,6 +17,10 @@ export type Product = {
   slug: string;
   category: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   image: string;
   images: ProductAngleImage[];
   stock: number;

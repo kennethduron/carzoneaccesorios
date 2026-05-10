@@ -60,6 +60,10 @@ const emptyProduct: ProductFormInput = {
   slug: "",
   name: "",
   brand: "",
+  vehicle_brand: null,
+  vehicle_model: null,
+  vehicle_year_start: null,
+  vehicle_year_end: null,
   description: "",
   stock: 0,
   min_stock: 5,
@@ -81,6 +85,10 @@ function toFormProduct(product: ProductAdminRow): ProductFormInput {
     slug: product.slug,
     name: product.name,
     brand: product.brand,
+    vehicle_brand: product.vehicle_brand,
+    vehicle_model: product.vehicle_model,
+    vehicle_year_start: product.vehicle_year_start,
+    vehicle_year_end: product.vehicle_year_end,
     description: product.description,
     stock: product.stock,
     min_stock: product.min_stock,
@@ -238,6 +246,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       "internal_code",
       "name",
       "brand",
+      "vehicle_brand",
+      "vehicle_model",
+      "vehicle_year_start",
+      "vehicle_year_end",
       "category",
       "stock",
       "min_stock",
@@ -255,6 +267,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       product.internal_code,
       product.name,
       product.brand,
+      product.vehicle_brand,
+      product.vehicle_model,
+      product.vehicle_year_start,
+      product.vehicle_year_end,
       product.category_name,
       product.stock,
       product.min_stock,
@@ -298,6 +314,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           internal_code: row.internal_code || null,
           name: row.name ?? "",
           brand: row.brand ?? "",
+          vehicle_brand: row.vehicle_brand || null,
+          vehicle_model: row.vehicle_model || null,
+          vehicle_year_start: row.vehicle_year_start ? numberValue(row.vehicle_year_start) : null,
+          vehicle_year_end: row.vehicle_year_end ? numberValue(row.vehicle_year_end) : null,
           category_id: category?.id ?? null,
           stock: numberValue(row.stock ?? "0"),
           min_stock: numberValue(row.min_stock ?? "5"),
@@ -556,6 +576,31 @@ function ProductEditor({
               </Field>
               <Field label="Marca">
                 <Input value={product.brand} onChange={(event) => onField("brand", event.target.value)} />
+              </Field>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Field label="Marca del carro">
+                <Input value={product.vehicle_brand ?? ""} onChange={(event) => onField("vehicle_brand", event.target.value || null)} />
+              </Field>
+              <Field label="Modelo del carro">
+                <Input value={product.vehicle_model ?? ""} onChange={(event) => onField("vehicle_model", event.target.value || null)} />
+              </Field>
+              <Field label="Año inicial">
+                <Input
+                  type="number"
+                  min={1900}
+                  value={product.vehicle_year_start ?? ""}
+                  onChange={(event) => onField("vehicle_year_start", event.target.value ? numberValue(event.target.value) : null)}
+                />
+              </Field>
+              <Field label="Año final">
+                <Input
+                  type="number"
+                  min={1900}
+                  value={product.vehicle_year_end ?? ""}
+                  onChange={(event) => onField("vehicle_year_end", event.target.value ? numberValue(event.target.value) : null)}
+                />
               </Field>
             </div>
 

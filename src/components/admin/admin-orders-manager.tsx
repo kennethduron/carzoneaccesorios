@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, PackageCheck, XCircle } from "lucide-react";
-import { ContactActionButtons } from "@/components/admin/contact-action-buttons";
+import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
 import { orderStatusLabels, useOrders } from "@/contexts/orders-context";
 import type { PaymentReviewStatus, StoreOrder } from "@/types/orders";
@@ -81,6 +81,7 @@ function OrderDetail({
   onPaymentStatus: (status: PaymentReviewStatus) => void;
 }) {
   const isBankTransfer = order.paymentMethod === "Transferencia bancaria";
+  const customerPhone = order.customerPhone || order.phone;
 
   return (
     <article className="rounded-lg border border-black/10 bg-white p-5">
@@ -92,9 +93,9 @@ function OrderDetail({
             {order.orderNumber}
           </h2>
           <p className="mt-2 text-sm text-black/60">
-            {order.customer.customerName} / {order.phone}
+            {order.customer.customerName} / {customerPhone}
           </p>
-          <ContactActionButtons phone={order.phone} className="mt-3" />
+          <ContactActions phone={customerPhone} customerName={order.customer.customerName} className="mt-3" />
         </div>
         <span className="w-fit rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
           {orderStatusLabels[order.status]}

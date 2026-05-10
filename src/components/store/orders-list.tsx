@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { PackageCheck } from "lucide-react";
+import { ContactActions } from "@/components/contact-actions";
 import { orderStatusLabels, useOrders } from "@/contexts/orders-context";
 import { formatCurrency } from "@/utils/pricing";
 import { InvoiceActions } from "@/components/store/invoice-actions";
@@ -22,7 +23,10 @@ export function OrdersList() {
 
   return (
     <div className="mt-6 grid gap-4">
-      {orders.map((order) => (
+      {orders.map((order) => {
+        const customerPhone = order.customerPhone || order.phone;
+
+        return (
         <article key={order.id} className="rounded-lg border border-black/10 bg-white p-5">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
@@ -32,8 +36,9 @@ export function OrdersList() {
                 {order.orderNumber}
               </h2>
               <p className="mt-2 text-sm text-black/60">
-                {order.customer.customerName} / {order.phone}
+                {order.customer.customerName} / {customerPhone}
               </p>
+              <ContactActions phone={customerPhone} customerName={order.customer.customerName} className="mt-3" />
             </div>
             <span className="w-fit rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
               {orderStatusLabels[order.status]}
@@ -56,7 +61,8 @@ export function OrdersList() {
           </div>
           <InvoiceActions order={order} />
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

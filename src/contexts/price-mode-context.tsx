@@ -11,32 +11,10 @@ type PriceModeContextValue = {
   clearWholesaleMode: () => void;
 };
 
-const storageKey = "car-zone-price-mode";
-
 const PriceModeContext = createContext<PriceModeContextValue | null>(null);
 
 export function PriceModeProvider({ children }: { children: React.ReactNode }) {
-  const [wholesaleAccount, setWholesaleAccount] = useState<WholesaleAccount | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    try {
-      const stored = window.sessionStorage.getItem(storageKey);
-      if (!stored) {
-        return null;
-      }
-
-      const parsed = JSON.parse(stored) as WholesaleAccount;
-      if (parsed?.status === "active" && parsed.code) {
-        return parsed;
-      }
-    } catch {
-      window.sessionStorage.removeItem(storageKey);
-    }
-
-    return null;
-  });
+  const [wholesaleAccount, setWholesaleAccount] = useState<WholesaleAccount | null>(null);
 
   const value = useMemo<PriceModeContextValue>(() => {
     const priceMode: PriceMode = wholesaleAccount ? "wholesale" : "retail";
@@ -46,15 +24,9 @@ export function PriceModeProvider({ children }: { children: React.ReactNode }) {
       wholesaleAccount,
       activateWholesaleMode(account) {
         setWholesaleAccount(account);
-        if (typeof window !== "undefined") {
-          window.sessionStorage.setItem(storageKey, JSON.stringify(account));
-        }
       },
       clearWholesaleMode() {
         setWholesaleAccount(null);
-        if (typeof window !== "undefined") {
-          window.sessionStorage.removeItem(storageKey);
-        }
       },
     };
   }, [wholesaleAccount]);

@@ -17,6 +17,10 @@ export type Product = {
   slug: string;
   category: string;
   brand: string;
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
+  vehicle_year_start: number | null;
+  vehicle_year_end: number | null;
   image: string;
   images: ProductAngleImage[];
   stock: number;
@@ -78,6 +82,10 @@ export const products: Product[] = [
     slug: "luces-led-9005-probeam",
     category: "Iluminacion",
     brand: "ProBeam",
+    vehicle_brand: "Toyota",
+    vehicle_model: "Hilux",
+    vehicle_year_start: 2016,
+    vehicle_year_end: 2026,
     image:
       "https://images.unsplash.com/photo-1629226462984-f06fda337aec?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
@@ -98,6 +106,10 @@ export const products: Product[] = [
     slug: "camara-reversa-hd",
     category: "Seguridad",
     brand: "DriveSafe",
+    vehicle_brand: null,
+    vehicle_model: null,
+    vehicle_year_start: null,
+    vehicle_year_end: null,
     image:
       "https://images.unsplash.com/photo-1619405399517-d7fce0f13302?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
@@ -118,6 +130,10 @@ export const products: Product[] = [
     slug: "alfombras-premium-5-piezas",
     category: "Interior",
     brand: "AutoFit",
+    vehicle_brand: "Honda",
+    vehicle_model: "Civic",
+    vehicle_year_start: 2012,
+    vehicle_year_end: 2026,
     image:
       "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
@@ -138,6 +154,10 @@ export const products: Product[] = [
     slug: "cobertor-impermeable-suv",
     category: "Exterior",
     brand: "CoverMax",
+    vehicle_brand: null,
+    vehicle_model: "SUV",
+    vehicle_year_start: null,
+    vehicle_year_end: null,
     image:
       "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
@@ -158,6 +178,10 @@ export const products: Product[] = [
     slug: "dash-cam-4k-wifi",
     category: "Tecnologia",
     brand: "RoadView",
+    vehicle_brand: null,
+    vehicle_model: null,
+    vehicle_year_start: null,
+    vehicle_year_end: null,
     image:
       "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
@@ -178,6 +202,10 @@ export const products: Product[] = [
     slug: "compresor-portatil-digital",
     category: "Herramientas",
     brand: "TorqueGo",
+    vehicle_brand: null,
+    vehicle_model: null,
+    vehicle_year_start: null,
+    vehicle_year_end: null,
     image:
       "https://images.unsplash.com/photo-1600661653561-629509216228?auto=format&fit=crop&w=900&q=80",
     images: buildProductImages(
