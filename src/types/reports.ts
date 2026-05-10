@@ -89,4 +89,7 @@ export type AdminReportsData = {
   products: ReportProduct[];
   customers: ReportCustomer[];
   payments: ReportPayment[];
+  totalRecords?: number;
+  page?: number;
+  pageSize?: number;
 };

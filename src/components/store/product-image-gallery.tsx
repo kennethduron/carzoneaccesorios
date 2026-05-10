@@ -4,6 +4,7 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Product } from "@/types/commerce";
+import { productImageUrl } from "@/utils/image-optimization";
 
 export function ProductImageGallery({ product }: { product: Product }) {
   const images = useMemo(
@@ -37,11 +38,13 @@ export function ProductImageGallery({ product }: { product: Product }) {
     <div className="space-y-3">
       <div className="relative overflow-hidden rounded-lg border border-black/10 bg-white">
         <Image
-          src={activeImage.url}
+          src={productImageUrl(activeImage.url, "detail")}
           alt={activeImage.alt}
-          width={1200}
-          height={820}
+          width={1400}
+          height={1000}
           priority
+          sizes="(min-width: 1024px) 58vw, 100vw"
+          quality={82}
           className="h-[360px] w-full object-cover md:h-[560px]"
         />
         <div className="absolute left-3 top-3 rounded-md bg-white/90 px-3 py-2 text-sm font-medium">
@@ -82,7 +85,16 @@ export function ProductImageGallery({ product }: { product: Product }) {
             }`}
             aria-label={`Ver imagen ${image.label}`}
           >
-            <Image src={image.url} alt={image.alt} width={220} height={150} className="h-16 w-full object-cover" />
+            <Image
+              src={productImageUrl(image.url, "thumbnail")}
+              alt={image.alt}
+              width={220}
+              height={150}
+              sizes="20vw"
+              loading="lazy"
+              quality={60}
+              className="h-16 w-full object-cover"
+            />
             <span className="block truncate px-2 py-1 text-xs text-black/60">{image.label}</span>
           </button>
         ))}
@@ -99,10 +111,12 @@ export function ProductImageGallery({ product }: { product: Product }) {
               <X size={18} />
             </button>
             <Image
-              src={activeImage.url}
+              src={productImageUrl(activeImage.url, "zoom")}
               alt={activeImage.alt}
-              width={1600}
-              height={1100}
+              width={1800}
+              height={1400}
+              sizes="100vw"
+              quality={86}
               className="max-h-[86vh] w-full rounded-lg object-contain"
             />
           </div>

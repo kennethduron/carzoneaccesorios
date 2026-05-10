@@ -17,8 +17,10 @@ import {
   saveCrmNoteAction,
   setCrmFollowupStatusAction,
 } from "@/app/admin/crm/actions";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type {
   AdminCrmData,
   CrmCustomerOption,
@@ -34,6 +36,8 @@ import { formatCurrency } from "@/utils/pricing";
 
 type CrmManagerProps = {
   data: AdminCrmData;
+  basePath?: string;
+  focus?: "customers" | "followups";
 };
 
 const interactionLabels: Record<CrmInteractionType, string> = {
@@ -108,7 +112,7 @@ function isOverdue(followup: CrmFollowupRow) {
   return followup.status === "pending" && followup.due_at ? new Date(followup.due_at) < new Date() : false;
 }
 
-export function CrmManager({ data }: CrmManagerProps) {
+export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" }: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
   const [followup, setFollowup] = useState<CrmFollowupInput>(emptyFollowup);
@@ -117,9 +121,10 @@ export function CrmManager({ data }: CrmManagerProps) {
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredFollowups = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = debouncedQuery.trim().toLowerCase();
     return data.followups.filter((item) => {
       if (!normalized) {
         return true;
@@ -129,14 +134,27 @@ export function CrmManager({ data }: CrmManagerProps) {
         .toLowerCase()
         .includes(normalized);
     });
-  }, [data.followups, query]);
+  }, [data.followups, debouncedQuery]);
+
+  const filteredCustomers = useMemo(() => {
+    const normalized = debouncedQuery.trim().toLowerCase();
+    return data.customers.filter((customer) => {
+      if (!normalized) {
+        return true;
+      }
+
+      return `${customer.contact_name} ${customer.business_name ?? ""} ${customer.email ?? ""} ${customer.phone}`
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }, [data.customers, debouncedQuery]);
 
   const pendingFollowups = data.followups.filter((item) => item.status === "pending");
   const overdueCount = data.followups.filter(isOverdue).length;
   const prospects = data.customers.filter((customer) => customer.lead_status !== "cliente");
   const estimatedPipeline = prospects.reduce((sum, customer) => sum + customer.estimated_value, 0);
   const monthlyPipeline = prospects.reduce((sum, customer) => sum + customer.monthly_amount, 0);
-  const selectedCustomer = data.customers.find((customer) => customer.id === selectedCustomerId) ?? data.customers[0] ?? null;
+  const selectedCustomer = filteredCustomers.find((customer) => customer.id === selectedCustomerId) ?? filteredCustomers[0] ?? data.customers[0] ?? null;
   const selectedFollowup =
     data.followups.find((item) => item.id === selectedFollowupId) ?? filteredFollowups[0] ?? data.followups[0] ?? null;
 
@@ -196,6 +214,14 @@ export function CrmManager({ data }: CrmManagerProps) {
 
   return (
     <div className="space-y-5">
+      <PaginationControls
+        basePath={basePath}
+        page={focus === "customers" ? data.customerPage : data.followupPage}
+        pageSize={data.pageSize}
+        total={focus === "customers" ? data.customersTotal : data.followupsTotal}
+        label={focus === "customers" ? "clientes" : "seguimientos"}
+      />
+
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Prospectos" value={prospects.length.toLocaleString("es-HN")} />
         <Metric label="Pendientes" value={pendingFollowups.length.toLocaleString("es-HN")} />
@@ -210,7 +236,7 @@ export function CrmManager({ data }: CrmManagerProps) {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar cliente, acción o nota"
+              placeholder={focus === "customers" ? "Buscar cliente, empresa, correo o teléfono" : "Buscar cliente, acción o nota"}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -384,7 +410,9 @@ export function CrmManager({ data }: CrmManagerProps) {
         <div className="overflow-hidden rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-5">
             <h2 className="font-semibold">Historial CRM</h2>
-            <p className="mt-1 text-sm text-black/55">Seguimientos, llamadas, notas y reuniones.</p>
+            <p className="mt-1 text-sm text-black/55">
+              {filteredFollowups.length.toLocaleString("es-HN")} seguimientos en esta pagina.
+            </p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
@@ -454,11 +482,12 @@ export function CrmManager({ data }: CrmManagerProps) {
 
           <div className="rounded-lg border border-black/10 bg-white p-5">
             <h2 className="font-semibold">Clientes CRM</h2>
+            <p className="mt-1 text-sm text-black/55">{filteredCustomers.length.toLocaleString("es-HN")} clientes en esta pagina.</p>
             <div className="mt-4 space-y-3">
-              {data.customers.length === 0 ? (
+              {filteredCustomers.length === 0 ? (
                 <p className="text-sm text-black/55">No hay clientes registrados.</p>
               ) : (
-                data.customers.slice(0, 8).map((customer) => (
+                filteredCustomers.map((customer) => (
                   <article
                     key={customer.id}
                     className={`rounded-md p-3 text-sm transition-colors ${

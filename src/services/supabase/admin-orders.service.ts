@@ -1,6 +1,13 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
 
+export type AdminOrdersPage = {
+  orders: AdminOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -76,9 +83,27 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
   };
 }
 
-export async function getAdminOrders(): Promise<AdminOrderRow[]> {
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
+export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {}): Promise<AdminOrdersPage> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase
+  const page = normalizePage(rawPage);
+  const pageSize = normalizePageSize(rawPageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await supabase
     .from("orders")
     .select(
       `
@@ -113,14 +138,25 @@ export async function getAdminOrders(): Promise<AdminOrderRow[]> {
       invoices(id, invoice_number),
       customers(tax_id)
     `,
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    .limit(500)
+    .range(from, to)
     .returns<OrderQueryRow[]>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map(normalizeOrder);
+  return {
+    orders: (data ?? []).map(normalizeOrder),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+export async function getAdminOrders(): Promise<AdminOrderRow[]> {
+  const page = await getAdminOrdersPage();
+  return page.orders;
 }

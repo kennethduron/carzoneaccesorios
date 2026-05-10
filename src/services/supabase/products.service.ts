@@ -1,6 +1,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { products as fallbackProducts } from "@/lib/commerce";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
+import { productImageUrl } from "@/utils/image-optimization";
 
 export type ProductCatalogFilters = {
   page?: number;
@@ -32,6 +33,7 @@ const validAngles: ProductAngle[] = ["frontal", "lateral", "trasera", "superior"
 
 type ProductImageRow = {
   id: string;
+  product_id: string;
   public_url: string | null;
   angle: string;
   alt_text: string | null;
@@ -57,7 +59,7 @@ type CatalogProductRow = {
     name: string;
     slug: string;
   } | null;
-  product_images: ProductImageRow[] | null;
+  product_images?: ProductImageRow[] | null;
 };
 
 type CategoryRow = {
@@ -107,21 +109,25 @@ function normalizeAngle(value: string): ProductAngle {
   return validAngles.includes(value as ProductAngle) ? (value as ProductAngle) : "frontal";
 }
 
-function normalizeImages(product: CatalogProductRow): ProductAngleImage[] {
-  return (product.product_images ?? [])
+function normalizeImages(
+  product: CatalogProductRow,
+  images = product.product_images ?? [],
+  size: "catalog" | "detail" | "thumbnail" = "catalog",
+): ProductAngleImage[] {
+  return images
     .filter((image) => image.public_url)
     .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order)
     .map((image) => ({
       id: image.id,
       angle: normalizeAngle(image.angle),
       label: image.angle || "Principal",
-      url: image.public_url ?? "",
+      url: productImageUrl(image.public_url ?? "", size),
       alt: image.alt_text ?? product.name,
     }));
 }
 
-function normalizeProduct(row: CatalogProductRow): Product {
-  const images = normalizeImages(row);
+function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[], imageSize: "catalog" | "detail" = "catalog"): Product {
+  const normalizedImages = normalizeImages(row, images, imageSize);
 
   return {
     id: row.id,
@@ -134,13 +140,41 @@ function normalizeProduct(row: CatalogProductRow): Product {
     vehicle_model: row.vehicle_model,
     vehicle_year_start: row.vehicle_year_start,
     vehicle_year_end: row.vehicle_year_end,
-    image: images[0]?.url ?? "/window.svg",
-    images,
+    image: normalizedImages[0]?.url ?? "/window.svg",
+    images: normalizedImages,
     stock: toNumber(row.stock),
     retail_price: toNumber(row.retail_price),
     wholesale_price: toNumber(row.wholesale_price),
     description: row.description,
   };
+}
+
+async function getPrimaryImagesForProducts(productIds: string[]) {
+  if (productIds.length === 0) {
+    return new Map<string, ProductImageRow[]>();
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("product_images")
+    .select("id, product_id, public_url, angle, alt_text, sort_order, is_primary")
+    .in("product_id", productIds)
+    .eq("is_primary", true)
+    .order("sort_order", { ascending: true })
+    .returns<ProductImageRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const imageByProduct = new Map<string, ProductImageRow[]>();
+  (data ?? []).forEach((image) => {
+    if (!imageByProduct.has(image.product_id)) {
+      imageByProduct.set(image.product_id, [image]);
+    }
+  });
+
+  return imageByProduct;
 }
 
 function uniqueSorted(values: Array<string | null | undefined>) {
@@ -210,15 +244,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         stock,
         retail_price,
         wholesale_price,
-        categories!inner(name, slug),
-        product_images(
-          id,
-          public_url,
-          angle,
-          alt_text,
-          sort_order,
-          is_primary
-        )
+        categories!inner(name, slug)
       `,
         { count: "exact" },
       )
@@ -284,8 +310,10 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       throw new Error(filterError.message);
     }
 
+    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
+
     return {
-      products: (data ?? []).map(normalizeProduct),
+      products: (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id))),
       total: count ?? 0,
       page,
       pageSize,
@@ -342,8 +370,42 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 }
 
 export async function getFeaturedProducts(limit = 3) {
-  const page = await getCatalogProducts({ page: 1, pageSize: limit });
-  return page.products;
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        `
+        id,
+        sku,
+        slug,
+        name,
+        brand,
+        vehicle_brand,
+        vehicle_model,
+        vehicle_year_start,
+        vehicle_year_end,
+        description,
+        stock,
+        retail_price,
+        wholesale_price,
+        categories(name, slug)
+      `,
+      )
+      .eq("active", true)
+      .order("updated_at", { ascending: false })
+      .limit(limit)
+      .returns<CatalogProductRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
+    return (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id)));
+  } catch {
+    return fallbackProducts.slice(0, limit);
+  }
 }
 
 export async function getProductBySlug(slug: string) {
@@ -385,16 +447,31 @@ export async function getProductBySlug(slug: string) {
       throw new Error(error.message);
     }
 
-    return data ? normalizeProduct(data) : null;
+    return data ? normalizeProduct(data, undefined, "detail") : null;
   } catch {
     return fallbackProducts.find((product) => product.slug === slug) ?? null;
   }
 }
 
 export async function getCategorySummaries() {
-  const catalog = await getCatalogProducts({ pageSize: 1 });
-  return catalog.categories.map((category) => ({
-    ...category,
-    count: category.count,
-  }));
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("categories")
+      .select("name, slug")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .returns<CategoryRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data ?? [];
+  } catch {
+    return Array.from(new Set(fallbackProducts.map((product) => product.category))).map((name) => ({
+      name,
+      slug: name.toLowerCase().replaceAll(" ", "-"),
+    }));
+  }
 }

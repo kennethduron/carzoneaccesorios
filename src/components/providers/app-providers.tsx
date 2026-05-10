@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { PriceModeProvider } from "@/contexts/price-mode-context";
 import { CartProvider } from "@/contexts/cart-context";
 import { OrdersProvider } from "@/contexts/orders-context";
@@ -15,7 +16,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           <OrdersProvider>
             <InvoicesProvider>
               {children}
-              <NavigationLoadingOverlay />
+              <Suspense fallback={null}>
+                <NavigationLoadingOverlay />
+              </Suspense>
             </InvoicesProvider>
           </OrdersProvider>
         </CartProvider>

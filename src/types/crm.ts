@@ -81,4 +81,9 @@ export type AdminCrmData = {
   customers: CrmCustomerOption[];
   followups: CrmFollowupRow[];
   notes: CrmNoteRow[];
+  customersTotal: number;
+  followupsTotal: number;
+  customerPage: number;
+  followupPage: number;
+  pageSize: number;
 };

@@ -21,7 +21,7 @@ export function SystemLoadingScreen({ fullScreen = false }: SystemLoadingScreenP
         <p className="mt-4 text-xl font-semibold">Car Zone Accesorios</p>
         <div className="mx-auto mt-5 size-10 rounded-full border-2 border-black/10 border-t-[#246a73] motion-safe:animate-spin" />
         <h1 className="mt-5 text-2xl font-semibold">Cargando sistema...</h1>
-        <p className="mt-2 text-sm leading-6 text-black/55">Preparando la información, por favor espera.</p>
+        <p className="mt-2 text-sm leading-6 text-black/55">Preparando la informacion, por favor espera.</p>
       </section>
     </div>
   );

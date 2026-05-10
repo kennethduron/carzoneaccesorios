@@ -10,9 +10,17 @@ import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminReportsPage() {
+export default async function AdminReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   await requirePermission("reports:read");
-  const [reports, fiscalSettings] = await Promise.all([getAdminReports(), getFiscalSettings()]);
+  const params = await searchParams;
+  const [reports, fiscalSettings] = await Promise.all([
+    getAdminReports({ page: Number(params.page ?? 1), pageSize: 50 }),
+    getFiscalSettings(),
+  ]);
   const fiscalAlerts = getFiscalAlerts(fiscalSettings, reports.invoices);
 
   return (

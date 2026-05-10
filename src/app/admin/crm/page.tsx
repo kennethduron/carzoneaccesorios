@@ -7,9 +7,14 @@ import { getAdminCrm } from "@/services/supabase/admin-crm.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminCrmPage() {
+export default async function AdminCrmPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   await requirePermission("crm:manage");
-  const crm = await getAdminCrm();
+  const params = await searchParams;
+  const crm = await getAdminCrm({ customerPage: 1, followupPage: Number(params.page ?? 1), pageSize: 50 });
 
   return (
     <AdminShell title="CRM">
@@ -22,7 +27,7 @@ export default async function AdminCrmPage() {
           Panel administrativo
         </Link>
       </div>
-      <CrmManager data={crm} />
+      <CrmManager data={crm} basePath="/admin/crm" focus="followups" />
     </AdminShell>
   );
 }

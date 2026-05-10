@@ -13,6 +13,20 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
 type OrderQueryRow = Omit<
   ReportOrder,
   "subtotal" | "tax" | "shipping_total" | "total" | "order_items"
@@ -92,15 +106,19 @@ function normalizePayment(row: PaymentQueryRow): ReportPayment {
   };
 }
 
-export async function getAdminReports(): Promise<AdminReportsData> {
+export async function getAdminReports({ page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {}): Promise<AdminReportsData> {
   const supabase = await getSupabaseServerClient();
+  const page = normalizePage(rawPage);
+  const pageSize = normalizePageSize(rawPageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
 
   const [
-    { data: orders, error: ordersError },
-    { data: invoices, error: invoicesError },
-    { data: products, error: productsError },
-    { data: customers, error: customersError },
-    { data: payments, error: paymentsError },
+    { data: orders, error: ordersError, count: ordersTotal },
+    { data: invoices, error: invoicesError, count: invoicesTotal },
+    { data: products, error: productsError, count: productsTotal },
+    { data: customers, error: customersError, count: customersTotal },
+    { data: payments, error: paymentsError, count: paymentsTotal },
   ] = await Promise.all([
     supabase
       .from("orders")
@@ -130,9 +148,10 @@ export async function getAdminReports(): Promise<AdminReportsData> {
           line_total
         )
       `,
+        { count: "exact" },
       )
       .order("created_at", { ascending: false })
-      .limit(1000)
+      .range(from, to)
       .returns<OrderQueryRow[]>(),
     supabase
       .from("invoices")
@@ -153,27 +172,28 @@ export async function getAdminReports(): Promise<AdminReportsData> {
         issued_at,
         created_at
       `,
+        { count: "exact" },
       )
       .order("created_at", { ascending: false })
-      .limit(1000)
+      .range(from, to)
       .returns<InvoiceQueryRow[]>(),
     supabase
       .from("products")
-      .select("id, sku, internal_code, name, brand, stock, min_stock, retail_price, wholesale_price, cost_price, status")
+      .select("id, sku, internal_code, name, brand, stock, min_stock, retail_price, wholesale_price, cost_price, status", { count: "exact" })
       .order("name", { ascending: true })
-      .limit(5000)
+      .range(from, to)
       .returns<ProductQueryRow[]>(),
     supabase
       .from("customers")
-      .select("id, business_name, contact_name, email, phone, is_wholesale, created_at")
+      .select("id, business_name, contact_name, email, phone, is_wholesale, created_at", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(1000)
+      .range(from, to)
       .returns<ReportCustomer[]>(),
     supabase
       .from("payments")
-      .select("id, order_id, payment_method, bank_reference_number, reference, amount, created_at")
+      .select("id, order_id, payment_method, bank_reference_number, reference, amount, created_at", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(1000)
+      .range(from, to)
       .returns<PaymentQueryRow[]>(),
   ]);
 
@@ -203,5 +223,8 @@ export async function getAdminReports(): Promise<AdminReportsData> {
     products: (products ?? []).map(normalizeProduct),
     customers: customers ?? [],
     payments: (payments ?? []).map(normalizePayment),
+    totalRecords: Math.max(ordersTotal ?? 0, invoicesTotal ?? 0, productsTotal ?? 0, customersTotal ?? 0, paymentsTotal ?? 0),
+    page,
+    pageSize,
   };
 }

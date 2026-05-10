@@ -4,15 +4,23 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminOrdersManager } from "@/components/admin/admin-orders-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
-import { getAdminOrders } from "@/services/supabase/admin-orders.service";
+import { getAdminOrdersPage } from "@/services/supabase/admin-orders.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminOrdersPage() {
+export default async function AdminOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const profile = await requirePermission("admin:access");
+  const params = await searchParams;
   const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
   const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");
-  const [orders, fiscalSettings] = await Promise.all([getAdminOrders(), getFiscalSettings()]);
+  const [ordersPage, fiscalSettings] = await Promise.all([
+    getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50 }),
+    getFiscalSettings(),
+  ]);
 
   return (
     <AdminShell title="Pedidos">
@@ -26,7 +34,10 @@ export default async function AdminOrdersPage() {
         </Link>
       </div>
       <AdminOrdersManager
-        orders={orders}
+        orders={ordersPage.orders}
+        total={ordersPage.total}
+        page={ordersPage.page}
+        pageSize={ordersPage.pageSize}
         fiscalSettings={fiscalSettings}
         canManagePayments={canManagePayments}
         canGenerateInvoices={canGenerateInvoices}

@@ -4,16 +4,24 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { AdminInvoicesManager } from "@/components/admin/admin-invoices-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
-import { getAdminInvoices } from "@/services/supabase/admin-invoices.service";
+import { getAdminInvoicesPage } from "@/services/supabase/admin-invoices.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminInvoicesPage() {
+export default async function AdminInvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const profile = await requirePermission("invoices:read");
+  const params = await searchParams;
   const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
-  const [invoices, fiscalSettings] = await Promise.all([getAdminInvoices(), getFiscalSettings()]);
-  const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoices);
+  const [invoicesPage, fiscalSettings] = await Promise.all([
+    getAdminInvoicesPage({ page: Number(params.page ?? 1), pageSize: 50 }),
+    getFiscalSettings(),
+  ]);
+  const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoicesPage.invoices);
 
   return (
     <AdminShell title="Facturas">
@@ -34,7 +42,10 @@ export default async function AdminInvoicesPage() {
         </Link>
       </div>
       <AdminInvoicesManager
-        invoices={invoices}
+        invoices={invoicesPage.invoices}
+        total={invoicesPage.total}
+        page={invoicesPage.page}
+        pageSize={invoicesPage.pageSize}
         fiscalSettings={fiscalSettings}
         fiscalAlerts={fiscalAlerts}
         canCancelInvoices={canCancelInvoices}

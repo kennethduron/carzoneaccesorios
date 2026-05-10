@@ -1,6 +1,13 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
 
+export type AdminInvoicesPage = {
+  invoices: AdminInvoiceRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -64,10 +71,28 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
   };
 }
 
-export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
-  const supabase = await getSupabaseServerClient();
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
 
-  const { data: invoices, error: invoicesError } = await supabase
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
+export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {}): Promise<AdminInvoicesPage> {
+  const supabase = await getSupabaseServerClient();
+  const page = normalizePage(rawPage);
+  const pageSize = normalizePageSize(rawPageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data: invoices, error: invoicesError, count } = await supabase
     .from("invoices")
     .select(
       `
@@ -98,9 +123,10 @@ export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
         wholesale_price_snapshot
       )
     `,
+      { count: "exact" },
     )
     .order("created_at", { ascending: false })
-    .limit(1000)
+    .range(from, to)
     .returns<InvoiceQueryRow[]>();
 
   if (invoicesError) {
@@ -132,5 +158,15 @@ export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
     }
   });
 
-  return (invoices ?? []).map((invoice) => normalizeInvoice(invoice, paymentByOrder));
+  return {
+    invoices: (invoices ?? []).map((invoice) => normalizeInvoice(invoice, paymentByOrder)),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
+  const page = await getAdminInvoicesPage();
+  return page.invoices;
 }

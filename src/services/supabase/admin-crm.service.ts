@@ -1,6 +1,20 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AdminCrmData, CrmCustomerOption, CrmFollowupRow, CrmNoteRow } from "@/types/crm";
 
+export type AdminCrmPageFilters = {
+  customerPage?: number;
+  followupPage?: number;
+  pageSize?: number;
+};
+
+export type AdminCrmPageData = AdminCrmData & {
+  customersTotal: number;
+  followupsTotal: number;
+  customerPage: number;
+  followupPage: number;
+  pageSize: number;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -55,19 +69,38 @@ function normalizeNote(row: NoteQueryRow): CrmNoteRow {
   };
 }
 
-export async function getAdminCrm(): Promise<AdminCrmData> {
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
+export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<AdminCrmPageData> {
   const supabase = await getSupabaseServerClient();
+  const customerPage = normalizePage(filters.customerPage);
+  const followupPage = normalizePage(filters.followupPage);
+  const pageSize = normalizePageSize(filters.pageSize);
+  const customerFrom = (customerPage - 1) * pageSize;
+  const followupFrom = (followupPage - 1) * pageSize;
 
   const [
-    { data: customers, error: customersError },
-    { data: followups, error: followupsError },
+    { data: customers, error: customersError, count: customersTotal },
+    { data: followups, error: followupsError, count: followupsTotal },
     { data: notes, error: notesError },
   ] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, business_name, contact_name, email, phone, lead_status, estimated_value, monthly_amount")
+      .select("id, business_name, contact_name, email, phone, lead_status, estimated_value, monthly_amount", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(1000)
+      .range(customerFrom, customerFrom + pageSize - 1)
       .returns<CustomerQueryRow[]>(),
     supabase
       .from("crm_followups")
@@ -90,9 +123,10 @@ export async function getAdminCrm(): Promise<AdminCrmData> {
         created_at,
         customers(contact_name, business_name)
       `,
+        { count: "exact" },
       )
       .order("due_at", { ascending: true, nullsFirst: false })
-      .limit(500)
+      .range(followupFrom, followupFrom + pageSize - 1)
       .returns<FollowupQueryRow[]>(),
     supabase
       .from("crm_notes")
@@ -118,5 +152,10 @@ export async function getAdminCrm(): Promise<AdminCrmData> {
     customers: (customers ?? []).map(normalizeCustomer),
     followups: (followups ?? []).map(normalizeFollowup),
     notes: (notes ?? []).map(normalizeNote),
+    customersTotal: customersTotal ?? 0,
+    followupsTotal: followupsTotal ?? 0,
+    customerPage,
+    followupPage,
+    pageSize,
   };
 }

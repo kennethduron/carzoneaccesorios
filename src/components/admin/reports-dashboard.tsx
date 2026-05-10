@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import type { AdminReportsData, ReportOrder, ReportPaymentMethod } from "@/types/reports";
 import type { InvoiceStatus } from "@/types/invoices";
@@ -416,6 +417,14 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
 
   return (
     <div className="space-y-5">
+      <PaginationControls
+        basePath="/admin/reportes"
+        page={data.page ?? 1}
+        pageSize={data.pageSize ?? 50}
+        total={data.totalRecords ?? data.orders.length}
+        label="registros por tabla"
+      />
+
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Total vendido" value={formatCurrency(totalSold)} />
         <Metric label="Total ISV" value={formatCurrency(totalIsv)} />

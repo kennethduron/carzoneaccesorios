@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
-import { getCatalogProducts } from "@/services/supabase/products.service";
+import { getCategorySummaries } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function CategoríasPage() {
-  const catalog = await getCatalogProducts({ pageSize: 1 });
-  const categories = catalog.categories;
+  const categories = await getCategorySummaries();
 
   return (
     <PublicStoreShell>

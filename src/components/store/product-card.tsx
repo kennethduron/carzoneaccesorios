@@ -18,8 +18,11 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
         <Image
           src={product.image}
           alt={product.name}
-          width={900}
-          height={520}
+          width={520}
+          height={360}
+          sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
+          loading="lazy"
+          quality={72}
           className="h-44 w-full object-cover"
         />
         <div className="space-y-3 p-4">

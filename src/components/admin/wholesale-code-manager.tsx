@@ -7,6 +7,7 @@ import {
   setWholesaleCodeActiveAction,
 } from "@/app/admin/codigos-mayoristas/actions";
 import { Button, Input } from "@/components/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency } from "@/utils/pricing";
 import type {
   WholesaleCodeAdminRow,
@@ -74,9 +75,10 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
   const [editing, setEditing] = useState<WholesaleCodeFormInput | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredCodes = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
 
     return codes.filter((code) => {
       if (!normalizedQuery) {
@@ -87,7 +89,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
         .toLowerCase()
         .includes(normalizedQuery);
     });
-  }, [codes, query]);
+  }, [codes, debouncedQuery]);
 
   const activeCount = codes.filter((code) => code.active && code.status === "active").length;
   const totalUses = codes.reduce((sum, code) => sum + code.used_count, 0);

@@ -2,18 +2,23 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "@/app/admin/pedidos/actions";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminOrderRow } from "@/types/orders";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminOrdersManagerProps = {
   orders: AdminOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
   fiscalSettings: FiscalSettings;
   canManagePayments: boolean;
   canGenerateInvoices: boolean;
@@ -54,18 +59,37 @@ const paymentLabels: Record<string, string> = {
 
 export function AdminOrdersManager({
   orders,
+  total,
+  page,
+  pageSize,
   fiscalSettings,
   canManagePayments,
   canGenerateInvoices,
 }: AdminOrdersManagerProps) {
   const router = useRouter();
+  const [query, setQuery] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const debouncedQuery = useDebouncedValue(query, 400);
+
+  const filteredOrders = useMemo(() => {
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
+
+    return orders.filter((order) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return `${order.order_number} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${order.bank_reference_number ?? ""} ${order.invoice_number ?? ""}`
+        .toLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [debouncedQuery, orders]);
 
   const selectedOrder = useMemo(
-    () => orders.find((order) => order.id === selectedOrderId) ?? orders[0] ?? null,
-    [orders, selectedOrderId],
+    () => filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? orders[0] ?? null,
+    [filteredOrders, orders, selectedOrderId],
   );
 
   function generateInvoice(order: AdminOrderRow) {
@@ -100,47 +124,64 @@ export function AdminOrdersManager({
   }
 
   return (
-    <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-      <div className="rounded-lg border border-black/10 bg-white">
-        <div className="border-b border-black/10 p-4">
-          <h2 className="font-semibold">Pedidos</h2>
-          <p className="mt-1 text-sm text-black/55">{orders.length.toLocaleString("es-HN")} pedidos registrados</p>
+    <div className="space-y-5">
+      <PaginationControls basePath="/admin/pedidos" page={page} pageSize={pageSize} total={total} label="pedidos" />
+      <section className="rounded-lg border border-black/10 bg-white p-4">
+        <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
+          <Search size={18} className="text-black/45" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por pedido, cliente, teléfono, referencia o factura"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+          />
+        </label>
+      </section>
+      <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
+        <div className="rounded-lg border border-black/10 bg-white">
+          <div className="border-b border-black/10 p-4">
+            <h2 className="font-semibold">Pedidos</h2>
+            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta pagina</p>
+          </div>
+          <div className="divide-y divide-black/10">
+            {filteredOrders.length === 0 ? (
+              <p className="p-4 text-sm text-black/55">No hay pedidos para mostrar.</p>
+            ) : null}
+            {filteredOrders.map((order) => (
+              <button
+                key={order.id}
+                type="button"
+                onClick={() => setSelectedOrderId(order.id)}
+                className={`block w-full p-4 text-left transition-colors ${
+                  selectedOrder?.id === order.id ? "bg-[#e8f3f2]" : "bg-white hover:bg-[#f7f7f2]"
+                }`}
+              >
+                <p className="font-semibold">{order.order_number}</p>
+                <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
+                <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p>
+                {order.invoice_number ? (
+                  <p className="mt-1 text-xs font-medium text-[#1e5960]">Factura {order.invoice_number}</p>
+                ) : null}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-black/10">
-          {orders.map((order) => (
-            <button
-              key={order.id}
-              type="button"
-              onClick={() => setSelectedOrderId(order.id)}
-              className={`block w-full p-4 text-left transition-colors ${
-                selectedOrder?.id === order.id ? "bg-[#e8f3f2]" : "bg-white hover:bg-[#f7f7f2]"
-              }`}
-            >
-              <p className="font-semibold">{order.order_number}</p>
-              <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
-              <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p>
-              {order.invoice_number ? (
-                <p className="mt-1 text-xs font-medium text-[#1e5960]">Factura {order.invoice_number}</p>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {selectedOrder ? (
-        <OrderDetail
-          order={selectedOrder}
-          fiscalSettings={fiscalSettings}
-          canManagePayments={canManagePayments}
-          canGenerateInvoices={canGenerateInvoices}
-          isPending={isPending}
-          message={message}
-          onGenerateInvoice={() => generateInvoice(selectedOrder)}
-          onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
-          onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
-        />
-      ) : null}
-    </section>
+        {selectedOrder ? (
+          <OrderDetail
+            order={selectedOrder}
+            fiscalSettings={fiscalSettings}
+            canManagePayments={canManagePayments}
+            canGenerateInvoices={canGenerateInvoices}
+            isPending={isPending}
+            message={message}
+            onGenerateInvoice={() => generateInvoice(selectedOrder)}
+            onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
+            onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
+          />
+        ) : null}
+      </section>
+    </div>
   );
 }
 

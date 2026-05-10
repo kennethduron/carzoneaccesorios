@@ -22,6 +22,7 @@ import {
   uploadProductImageAction,
 } from "@/app/admin/productos/actions";
 import { Button, Input } from "@/components/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency } from "@/utils/pricing";
 import type { CategoryOption, ProductAdminRow, ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 
@@ -167,9 +168,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
   const [editing, setEditing] = useState<ProductFormInput | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredProducts = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
 
     return products.filter((product) => {
       const matchesQuery =
@@ -182,7 +184,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
       return matchesQuery && matchesStatus && matchesCategory;
     });
-  }, [categoryId, products, query, status]);
+  }, [categoryId, debouncedQuery, products, status]);
 
   const lowStockCount = products.filter((product) => product.stock <= product.min_stock).length;
   const activeCount = products.filter((product) => product.active).length;

@@ -6,13 +6,18 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { cancelInvoiceAction } from "@/app/admin/facturas/actions";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminInvoicesManagerProps = {
   invoices: AdminInvoiceRow[];
+  total: number;
+  page: number;
+  pageSize: number;
   fiscalSettings: FiscalSettings;
   fiscalAlerts: FiscalAlert[];
   canCancelInvoices: boolean;
@@ -51,6 +56,9 @@ function downloadBlob(content: string, fileName: string, type: string) {
 
 export function AdminInvoicesManager({
   invoices,
+  total,
+  page,
+  pageSize,
   fiscalSettings,
   fiscalAlerts,
   canCancelInvoices,
@@ -61,9 +69,10 @@ export function AdminInvoicesManager({
   const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoiceRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredInvoices = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = debouncedQuery.trim().toLowerCase();
     return invoices.filter((invoice) => {
       const matchesStatus = status === "all" || invoice.status === status;
       const matchesPayment = paymentMethod === "all" || invoice.payment_method === paymentMethod;
@@ -75,7 +84,7 @@ export function AdminInvoicesManager({
 
       return matchesStatus && matchesPayment && matchesQuery;
     });
-  }, [invoices, paymentMethod, query, status]);
+  }, [debouncedQuery, invoices, paymentMethod, status]);
 
   const totals = filteredInvoices.reduce(
     (summary, invoice) => ({
@@ -170,6 +179,8 @@ export function AdminInvoicesManager({
     <div className="space-y-5">
       <FiscalAlertsPanel alerts={fiscalAlerts} />
 
+      <PaginationControls basePath="/admin/facturas" page={page} pageSize={pageSize} total={total} label="facturas" />
+
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Subtotal" value={formatCurrency(totals.subtotal)} />
         <Metric label="ISV" value={formatCurrency(totals.tax)} />
@@ -227,7 +238,7 @@ export function AdminInvoicesManager({
             <FileText size={18} />
             Lista de facturas fiscales
           </h2>
-          <p className="mt-1 text-sm text-black/55">{filteredInvoices.length.toLocaleString("es-HN")} facturas</p>
+          <p className="mt-1 text-sm text-black/55">{filteredInvoices.length.toLocaleString("es-HN")} facturas en esta pagina</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left text-sm">
