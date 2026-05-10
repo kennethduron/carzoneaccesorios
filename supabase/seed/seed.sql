@@ -107,7 +107,7 @@ insert into public.wholesale_codes (
 values (
   (select id from public.customers where business_name = 'Auto Repuestos Lopez' order by created_at desc limit 1),
   'MAYOREO-LOPEZ2026',
-  encode(digest('MAYOREO-LOPEZ2026', 'sha256'), 'hex'),
+  encode(extensions.digest('MAYOREO-LOPEZ2026', 'sha256'), 'hex'),
   'Codigo mayorista Auto Repuestos Lopez',
   5000,
   null,

@@ -21,7 +21,7 @@ alter table public.wholesale_codes
   alter column code set not null;
 
 update public.wholesale_codes
-set code_hash = encode(digest(upper(trim(code)), 'sha256'), 'hex')
+set code_hash = encode(extensions.digest(upper(trim(code)), 'sha256'), 'hex')
 where code_hash is null
    or code_hash = '';
 

@@ -19,6 +19,7 @@ import {
   importProductsAction,
   saveProductAction,
   setProductActiveAction,
+  uploadProductImageAction,
 } from "@/app/admin/productos/actions";
 import { Button, Input } from "@/components/ui";
 import { formatCurrency } from "@/utils/pricing";
@@ -204,6 +205,29 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           return { ...image, ...patch };
         }),
       };
+    });
+  }
+
+  function uploadImage(index: number, file: File | null) {
+    if (!file || !editing) {
+      return;
+    }
+
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("productSlug", editing.slug || editing.sku || editing.name || "producto");
+      formData.set("angle", editing.images[index]?.angle || "principal");
+
+      const result = await uploadProductImageAction(formData);
+      setMessage(result.message);
+
+      if (result.ok && result.publicUrl) {
+        updateImage(index, {
+          public_url: result.publicUrl,
+          storage_path: result.storagePath,
+        });
+      }
     });
   }
 
@@ -494,6 +518,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           onSubmit={submitProduct}
           onField={updateField}
           onImage={updateImage}
+          onUploadImage={uploadImage}
           onAddImage={() => updateField("images", [...editing.images, { ...emptyImage, is_primary: false, sort_order: editing.images.length }])}
         />
       ) : null}
@@ -532,6 +557,7 @@ function ProductEditor({
   onSubmit,
   onField,
   onImage,
+  onUploadImage,
   onAddImage,
 }: {
   categories: CategoryOption[];
@@ -541,6 +567,7 @@ function ProductEditor({
   onSubmit: () => void;
   onField: <K extends keyof ProductFormInput>(field: K, value: ProductFormInput[K]) => void;
   onImage: (index: number, patch: Partial<ProductImageInput>) => void;
+  onUploadImage: (index: number, file: File | null) => void;
   onAddImage: () => void;
 }) {
   return (
@@ -695,6 +722,16 @@ function ProductEditor({
                   onChange={(event) => onImage(index, { public_url: event.target.value })}
                   placeholder="URL de imagen"
                 />
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f7f7f2] px-3 py-3 text-sm font-medium">
+                  <Upload size={16} />
+                  Subir a Cloudinary
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => onUploadImage(index, event.target.files?.[0] ?? null)}
+                  />
+                </label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input value={image.angle} onChange={(event) => onImage(index, { angle: event.target.value })} placeholder="principal, lateral..." />
                   <Input

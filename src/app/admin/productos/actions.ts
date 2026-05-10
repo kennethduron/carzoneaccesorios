@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { v2 as cloudinary } from "cloudinary";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -9,6 +10,11 @@ import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types
 type ProductMutationResult = {
   ok: boolean;
   message: string;
+};
+
+type ProductImageUploadResult = ProductMutationResult & {
+  publicUrl?: string;
+  storagePath?: string;
 };
 
 type ProductDbPayload = {
@@ -56,6 +62,23 @@ function positiveNumber(value: unknown, fallback = 0) {
 
 function positiveInteger(value: unknown, fallback = 0) {
   return Math.floor(positiveNumber(value, fallback));
+}
+
+function getCloudinaryConfig() {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+  if (!cloudName || !apiKey || !apiSecret) {
+    throw new Error("Faltan variables de Cloudinary en .env.local.");
+  }
+
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
+    secure: true,
+  });
 }
 
 function productPayload(input: ProductFormInput): ProductDbPayload {
@@ -152,6 +175,74 @@ async function logInventoryAdjustment(productId: string, previousStock: number, 
 
   if (error) {
     throw new Error(error.message);
+  }
+}
+
+export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
+  await requirePermission("products:manage");
+
+  try {
+    getCloudinaryConfig();
+
+    const file = formData.get("file");
+    const productSlug = String(formData.get("productSlug") ?? "producto").trim() || "producto";
+    const angle = String(formData.get("angle") ?? "principal").trim() || "principal";
+
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, message: "Selecciona una imagen valida." };
+    }
+
+    if (!file.type.startsWith("image/")) {
+      return { ok: false, message: "Solo se permiten archivos de imagen." };
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      return { ok: false, message: "La imagen no puede superar 8 MB." };
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const folder = `car-zone/productos/${slugify(productSlug) || "producto"}`;
+    const publicId = `${angle}-${Date.now()}`;
+
+    const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          public_id: publicId,
+          resource_type: "image",
+          overwrite: true,
+          transformation: [
+            { width: 1600, height: 1200, crop: "limit" },
+            { quality: "auto", fetch_format: "auto" },
+          ],
+        },
+        (error, uploadResult) => {
+          if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
+            reject(error ?? new Error("Cloudinary no devolvio una URL valida."));
+            return;
+          }
+
+          resolve({
+            secure_url: uploadResult.secure_url,
+            public_id: uploadResult.public_id,
+          });
+        },
+      );
+
+      stream.end(buffer);
+    });
+
+    return {
+      ok: true,
+      message: "Imagen subida a Cloudinary.",
+      publicUrl: result.secure_url,
+      storagePath: result.public_id,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "No se pudo subir la imagen.",
+    };
   }
 }
 
