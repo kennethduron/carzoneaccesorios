@@ -5,6 +5,7 @@ import type {
   ReportInvoice,
   ReportOrder,
   ReportOrderItem,
+  ReportPayment,
   ReportProduct,
 } from "@/types/reports";
 
@@ -44,6 +45,10 @@ type ProductQueryRow = Omit<
   cost_price: unknown;
 };
 
+type PaymentQueryRow = Omit<ReportPayment, "amount"> & {
+  amount: unknown;
+};
+
 function normalizeOrder(row: OrderQueryRow): ReportOrder {
   return {
     ...row,
@@ -80,6 +85,13 @@ function normalizeProduct(row: ProductQueryRow): ReportProduct {
   };
 }
 
+function normalizePayment(row: PaymentQueryRow): ReportPayment {
+  return {
+    ...row,
+    amount: toNumber(row.amount),
+  };
+}
+
 export async function getAdminReports(): Promise<AdminReportsData> {
   const supabase = await getSupabaseServerClient();
 
@@ -88,6 +100,7 @@ export async function getAdminReports(): Promise<AdminReportsData> {
     { data: invoices, error: invoicesError },
     { data: products, error: productsError },
     { data: customers, error: customersError },
+    { data: payments, error: paymentsError },
   ] = await Promise.all([
     supabase
       .from("orders")
@@ -146,7 +159,7 @@ export async function getAdminReports(): Promise<AdminReportsData> {
       .returns<InvoiceQueryRow[]>(),
     supabase
       .from("products")
-      .select("id, sku, name, brand, stock, min_stock, retail_price, wholesale_price, cost_price, status")
+      .select("id, sku, internal_code, name, brand, stock, min_stock, retail_price, wholesale_price, cost_price, status")
       .order("name", { ascending: true })
       .limit(5000)
       .returns<ProductQueryRow[]>(),
@@ -156,6 +169,12 @@ export async function getAdminReports(): Promise<AdminReportsData> {
       .order("created_at", { ascending: false })
       .limit(1000)
       .returns<ReportCustomer[]>(),
+    supabase
+      .from("payments")
+      .select("id, order_id, payment_method, bank_reference_number, reference, amount, created_at")
+      .order("created_at", { ascending: false })
+      .limit(1000)
+      .returns<PaymentQueryRow[]>(),
   ]);
 
   if (ordersError) {
@@ -174,10 +193,15 @@ export async function getAdminReports(): Promise<AdminReportsData> {
     throw new Error(customersError.message);
   }
 
+  if (paymentsError) {
+    throw new Error(paymentsError.message);
+  }
+
   return {
     orders: (orders ?? []).map(normalizeOrder),
     invoices: (invoices ?? []).map(normalizeInvoice),
     products: (products ?? []).map(normalizeProduct),
     customers: customers ?? [],
+    payments: (payments ?? []).map(normalizePayment),
   };
 }

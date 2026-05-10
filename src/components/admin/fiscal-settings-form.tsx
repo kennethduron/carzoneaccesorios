@@ -1,0 +1,127 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { Save } from "lucide-react";
+import { saveFiscalSettingsAction } from "@/app/admin/configuracion-fiscal/actions";
+import { Button, Input } from "@/components/ui";
+import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
+
+type FiscalSettingsFormProps = {
+  settings: FiscalSettings;
+  alerts: FiscalAlert[];
+};
+
+const fieldClass = "mb-1 block text-xs font-medium uppercase text-black/50";
+
+export function FiscalSettingsForm({ settings, alerts }: FiscalSettingsFormProps) {
+  const [form, setForm] = useState(settings);
+  const [message, setMessage] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  function updateField<K extends keyof FiscalSettings>(field: K, value: FiscalSettings[K]) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function submit() {
+    startTransition(async () => {
+      const result = await saveFiscalSettingsAction(form);
+      setMessage(result.message);
+    });
+  }
+
+  return (
+    <div className="space-y-5">
+      {alerts.length > 0 ? (
+        <div className="grid gap-2">
+          {alerts.map((alert) => (
+            <p
+              key={alert.message}
+              className={`rounded-md p-3 text-sm font-medium ${
+                alert.type === "danger" ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff8df] text-[#7a5417]"
+              }`}
+            >
+              {alert.message}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      <section className="rounded-lg border border-black/10 bg-white p-5">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Field label="Nombre legal de la empresa">
+            <Input value={form.legal_name} onChange={(event) => updateField("legal_name", event.target.value)} />
+          </Field>
+          <Field label="RTN de la empresa">
+            <Input value={form.rtn} onChange={(event) => updateField("rtn", event.target.value)} />
+          </Field>
+          <Field label="CAI">
+            <Input value={form.cai} onChange={(event) => updateField("cai", event.target.value)} />
+          </Field>
+          <Field label="Fecha límite de emisión">
+            <Input
+              type="date"
+              value={form.emission_deadline ?? ""}
+              onChange={(event) => updateField("emission_deadline", event.target.value || null)}
+            />
+          </Field>
+          <Field label="Rango inicial de facturación">
+            <Input
+              value={form.invoice_range_start}
+              onChange={(event) => updateField("invoice_range_start", event.target.value)}
+            />
+          </Field>
+          <Field label="Rango final de facturación">
+            <Input
+              value={form.invoice_range_end}
+              onChange={(event) => updateField("invoice_range_end", event.target.value)}
+            />
+          </Field>
+          <Field label="Número actual de factura">
+            <Input
+              value={form.current_invoice_number}
+              onChange={(event) => updateField("current_invoice_number", event.target.value)}
+            />
+          </Field>
+          <Field label="Logo">
+            <Input
+              value={form.logo_url ?? ""}
+              onChange={(event) => updateField("logo_url", event.target.value || null)}
+              placeholder="https://res.cloudinary.com/..."
+            />
+          </Field>
+          <Field label="Teléfono">
+            <Input value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
+          </Field>
+          <Field label="Correo">
+            <Input type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
+          </Field>
+          <label className="lg:col-span-2">
+            <span className={fieldClass}>Dirección fiscal</span>
+            <textarea
+              value={form.fiscal_address}
+              onChange={(event) => updateField("fiscal_address", event.target.value)}
+              className="min-h-28 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#246a73]"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Button onClick={submit} disabled={isPending} variant="dark">
+            <Save size={17} />
+            {isPending ? "Guardando" : "Guardar configuración"}
+          </Button>
+          {message ? <p className="text-sm text-black/60">{message}</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label>
+      <span className={fieldClass}>{label}</span>
+      {children}
+    </label>
+  );
+}

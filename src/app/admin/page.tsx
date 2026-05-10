@@ -1,7 +1,7 @@
+import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { LogoutButton } from "@/components/auth";
 import { requirePermission } from "@/lib/auth/session";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -19,17 +19,17 @@ const adminModules = [
   {
     title: "Pedidos",
     href: "/admin/pedidos",
-    description: "Modulo preparado para seguimiento de pedidos y estados.",
+    description: "Seguimiento de pedidos, pagos y facturación.",
   },
   {
     title: "Facturas",
-    href: null,
-    description: "Modulo preparado para facturación y documentos fiscales.",
+    href: "/admin/facturas",
+    description: "Facturas fiscales, referencias bancarias, PDF y anulación.",
   },
   {
     title: "Clientes",
-    href: "/admin/crm",
-    description: "Modulo preparado para CRM, notas y seguimiento comercial.",
+    href: "/admin/clientes",
+    description: "CRM, notas y seguimiento comercial.",
   },
   {
     title: "Códigos mayoristas",
@@ -39,12 +39,17 @@ const adminModules = [
   {
     title: "Reportes",
     href: "/admin/reportes",
-    description: "Modulo preparado para reportes, Excel, CSV y PDFs.",
+    description: "Reportes contables, filtros, Excel, CSV y PDF.",
   },
   {
     title: "Seguridad",
     href: "/admin/seguridad",
     description: "Roles, permisos, logs, backups y control de errores.",
+  },
+  {
+    title: "Configuración fiscal",
+    href: "/admin/configuracion-fiscal",
+    description: "RTN, CAI, rango fiscal, fecha límite y datos legales.",
   },
 ];
 
@@ -62,28 +67,16 @@ export default async function AdminPage() {
         <LogoutButton />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {adminModules.map((module) => {
-          const content = (
-            <>
-              <h2 className="font-semibold">{module.title}</h2>
-              <p className="mt-2 text-sm text-black/55">{module.description}</p>
-            </>
-          );
-
-          return module.href ? (
-            <Link
-              key={module.title}
-              href={module.href}
-              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
-            >
-              {content}
-            </Link>
-          ) : (
-            <article key={module.title} className="rounded-lg border border-black/10 bg-white p-5">
-              {content}
-            </article>
-          );
-        })}
+        {adminModules.map((module) => (
+          <Link
+            key={module.title}
+            href={module.href}
+            className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
+          >
+            <h2 className="font-semibold">{module.title}</h2>
+            <p className="mt-2 text-sm text-black/55">{module.description}</p>
+          </Link>
+        ))}
       </div>
     </AdminShell>
   );

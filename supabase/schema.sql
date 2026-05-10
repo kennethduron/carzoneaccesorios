@@ -14,3 +14,5 @@
 \i ./migrations/202605090011_payments_transfer_step2.sql
 \i ./migrations/202605090012_customer_phone_step5.sql
 \i ./migrations/202605090013_vehicle_filters_step9.sql
+\i ./migrations/202605100001_api_grants.sql
+\i ./migrations/202605100002_fiscal_settings.sql

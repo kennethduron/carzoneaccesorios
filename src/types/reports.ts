@@ -52,6 +52,7 @@ export type ReportInvoice = {
 export type ReportProduct = {
   id: string;
   sku: string;
+  internal_code: string | null;
   name: string;
   brand: string;
   stock: number;
@@ -72,9 +73,20 @@ export type ReportCustomer = {
   created_at: string;
 };
 
+export type ReportPayment = {
+  id: string;
+  order_id: string;
+  payment_method: ReportPaymentMethod;
+  bank_reference_number: string | null;
+  reference: string | null;
+  amount: number;
+  created_at: string;
+};
+
 export type AdminReportsData = {
   orders: ReportOrder[];
   invoices: ReportInvoice[];
   products: ReportProduct[];
   customers: ReportCustomer[];
+  payments: ReportPayment[];
 };
