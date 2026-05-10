@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { LogoutButton } from "@/components/auth";
 import { requirePermission } from "@/lib/auth/session";
+import type { Permission } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,48 +11,61 @@ const adminModules = [
     title: "Productos",
     href: "/admin/productos",
     description: "Crear, editar, desactivar, eliminar, importar y exportar productos.",
+    permissions: ["products:manage"] satisfies Permission[],
   },
   {
     title: "Inventario",
     href: "/admin/inventario",
     description: "Entradas, salidas, ajustes, historial y alertas de bajo stock.",
+    permissions: ["inventory:manage"] satisfies Permission[],
   },
   {
     title: "Pedidos",
     href: "/admin/pedidos",
     description: "Seguimiento de pedidos, pagos y facturación.",
+    permissions: ["orders:read", "orders:manage"] satisfies Permission[],
   },
   {
     title: "Facturas",
     href: "/admin/facturas",
     description: "Facturas fiscales, referencias bancarias, PDF y anulación.",
+    permissions: ["invoices:read", "invoices:manage"] satisfies Permission[],
   },
   {
     title: "Clientes",
     href: "/admin/clientes",
     description: "CRM, notas y seguimiento comercial.",
+    permissions: ["crm:manage", "customers:manage"] satisfies Permission[],
   },
   {
     title: "Códigos mayoristas",
     href: "/admin/codigos-mayoristas",
     description: "Crear, activar y auditar códigos que habilitan precio mayorista.",
+    permissions: ["customers:manage"] satisfies Permission[],
   },
   {
     title: "Reportes",
     href: "/admin/reportes",
     description: "Reportes contables, filtros, Excel, CSV y PDF.",
+    permissions: ["reports:read"] satisfies Permission[],
   },
   {
     title: "Seguridad",
     href: "/admin/seguridad",
     description: "Roles, permisos, logs, backups y control de errores.",
+    permissions: ["settings:manage", "audit:read"] satisfies Permission[],
   },
   {
     title: "Configuración fiscal",
     href: "/admin/configuracion-fiscal",
     description: "RTN, CAI, rango fiscal, fecha límite y datos legales.",
+    permissions: ["fiscal:read", "settings:manage"] satisfies Permission[],
   },
 ];
+
+function canAccessModule(role: string, permissions: Permission[], modulePermissions: Permission[]) {
+  return role === "admin" || modulePermissions.some((permission) => permissions.includes(permission));
+}
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
@@ -67,16 +81,18 @@ export default async function AdminPage() {
         <LogoutButton />
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {adminModules.map((module) => (
-          <Link
-            key={module.title}
-            href={module.href}
-            className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
-          >
-            <h2 className="font-semibold">{module.title}</h2>
-            <p className="mt-2 text-sm text-black/55">{module.description}</p>
-          </Link>
-        ))}
+        {adminModules
+          .filter((module) => canAccessModule(profile.role, profile.permissions, module.permissions))
+          .map((module) => (
+            <Link
+              key={module.title}
+              href={module.href}
+              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
+            >
+              <h2 className="font-semibold">{module.title}</h2>
+              <p className="mt-2 text-sm text-black/55">{module.description}</p>
+            </Link>
+          ))}
       </div>
     </AdminShell>
   );

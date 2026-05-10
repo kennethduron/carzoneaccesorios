@@ -14,6 +14,7 @@ type AdminInvoicesManagerProps = {
   invoices: AdminInvoiceRow[];
   fiscalSettings: FiscalSettings;
   fiscalAlerts: FiscalAlert[];
+  canCancelInvoices: boolean;
 };
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -47,7 +48,12 @@ function downloadBlob(content: string, fileName: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-export function AdminInvoicesManager({ invoices, fiscalSettings, fiscalAlerts }: AdminInvoicesManagerProps) {
+export function AdminInvoicesManager({
+  invoices,
+  fiscalSettings,
+  fiscalAlerts,
+  canCancelInvoices,
+}: AdminInvoicesManagerProps) {
   const [status, setStatus] = useState<InvoiceStatus | "all">("all");
   const [paymentMethod, setPaymentMethod] = useState("all");
   const [query, setQuery] = useState("");
@@ -280,13 +286,15 @@ export function AdminInvoicesManager({ invoices, fiscalSettings, fiscalAlerts }:
                         <IconButton label="Descargar PDF" onClick={() => exportInvoicePdf(invoice)}>
                           <Printer size={16} />
                         </IconButton>
-                        <IconButton
-                          label="Anular factura"
-                          onClick={() => cancelInvoice(invoice)}
-                          disabled={isPending || invoice.status === "anulada"}
-                        >
-                          <Ban size={16} />
-                        </IconButton>
+                        {canCancelInvoices ? (
+                          <IconButton
+                            label="Anular factura"
+                            onClick={() => cancelInvoice(invoice)}
+                            disabled={isPending || invoice.status === "anulada"}
+                          >
+                            <Ban size={16} />
+                          </IconButton>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

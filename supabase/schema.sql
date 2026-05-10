@@ -16,3 +16,4 @@
 \i ./migrations/202605090013_vehicle_filters_step9.sql
 \i ./migrations/202605100001_api_grants.sql
 \i ./migrations/202605100002_fiscal_settings.sql
+\i ./migrations/202605100003_accountant_permissions.sql

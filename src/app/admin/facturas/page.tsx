@@ -10,7 +10,8 @@ import { getFiscalAlerts } from "@/utils/fiscal";
 export const dynamic = "force-dynamic";
 
 export default async function AdminInvoicesPage() {
-  await requirePermission("invoices:manage");
+  const profile = await requirePermission("invoices:read");
+  const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
   const [invoices, fiscalSettings] = await Promise.all([getAdminInvoices(), getFiscalSettings()]);
   const fiscalAlerts = getFiscalAlerts(fiscalSettings);
 
@@ -32,7 +33,12 @@ export default async function AdminInvoicesPage() {
           Configuración fiscal
         </Link>
       </div>
-      <AdminInvoicesManager invoices={invoices} fiscalSettings={fiscalSettings} fiscalAlerts={fiscalAlerts} />
+      <AdminInvoicesManager
+        invoices={invoices}
+        fiscalSettings={fiscalSettings}
+        fiscalAlerts={fiscalAlerts}
+        canCancelInvoices={canCancelInvoices}
+      />
     </AdminShell>
   );
 }

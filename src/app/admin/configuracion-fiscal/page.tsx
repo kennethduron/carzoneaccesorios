@@ -9,7 +9,8 @@ import { getFiscalAlerts } from "@/utils/fiscal";
 export const dynamic = "force-dynamic";
 
 export default async function AdminFiscalSettingsPage() {
-  await requirePermission("settings:manage");
+  const profile = await requirePermission("fiscal:read");
+  const canEdit = profile.role === "admin" || profile.permissions.includes("settings:manage");
   const settings = await getFiscalSettings();
   const alerts = getFiscalAlerts(settings);
 
@@ -24,7 +25,7 @@ export default async function AdminFiscalSettingsPage() {
           Panel administrativo
         </Link>
       </div>
-      <FiscalSettingsForm settings={settings} alerts={alerts} />
+      <FiscalSettingsForm settings={settings} alerts={alerts} canEdit={canEdit} />
     </AdminShell>
   );
 }

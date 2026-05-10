@@ -3,7 +3,7 @@ values
   (
     'admin',
     'Acceso completo al panel administrativo.',
-    '["admin:access","products:manage","inventory:manage","orders:manage","payments:manage","invoices:manage","crm:manage","settings:manage","audit:read"]'::jsonb
+    '["admin:access","products:manage","inventory:manage","orders:manage","payments:read","payments:manage","invoices:read","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","settings:manage","audit:read"]'::jsonb
   ),
   (
     'vendedor',
@@ -17,8 +17,8 @@ values
   ),
   (
     'contadora',
-    'Gestiona pagos, facturas y reportes financieros.',
-    '["admin:access","orders:read","payments:manage","invoices:manage","reports:read"]'::jsonb
+    'Revisa facturas fiscales, referencias bancarias, rangos fiscales, ISV y reportes contables.',
+    '["admin:access","orders:read","payments:read","invoices:read","fiscal:read","reports:read","reports:export"]'::jsonb
   ),
   (
     'cliente',
