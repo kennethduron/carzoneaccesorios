@@ -92,4 +92,5 @@ export type AdminOrderRow = {
   transfer_receipt_url: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
+  invoice_issued_at: string | null;
 };

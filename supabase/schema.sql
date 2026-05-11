@@ -24,3 +24,4 @@
 \i ./migrations/202605100008_create_checkout_order_rpc.sql
 \i ./migrations/202605100009_confirmed_order_inventory.sql
 \i ./migrations/202605100010_fiscal_invoice_rpc.sql
+\i ./migrations/202605100011_guest_checkout_invoice_corrections.sql

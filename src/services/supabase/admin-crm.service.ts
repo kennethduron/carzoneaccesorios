@@ -108,6 +108,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
         `
         id,
         customer_id,
+        order_id,
         assigned_user_id,
         title,
         interaction_type,

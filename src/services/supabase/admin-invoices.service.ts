@@ -12,15 +12,20 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "payment_method" | "bank_reference_number" | "transfer_receipt_url" | "items" | "subtotal" | "tax" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "bank_reference_number" | "transfer_receipt_url" | "items" | "subtotal" | "tax" | "total"> & {
   subtotal: unknown;
   tax: unknown;
   total: unknown;
   orders: {
     order_number: string;
     customer_name: string;
+    phone: string;
+    delivery_address: string;
     payment_method: string;
   } | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_address: string | null;
   invoice_items: Array<Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
     quantity: unknown;
     unit_price: unknown;
@@ -47,7 +52,9 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     order_id: row.order_id,
     order_number: row.orders?.order_number ?? "-",
     customer_id: row.customer_id,
-    customer_name: row.orders?.customer_name ?? "Cliente no registrado",
+    customer_name: row.customer_name ?? row.orders?.customer_name ?? "Cliente no registrado",
+    customer_phone: row.customer_phone ?? row.orders?.phone ?? null,
+    customer_address: row.customer_address ?? row.orders?.delivery_address ?? null,
     rtn: row.rtn,
     cai: row.cai,
     customer_rtn: row.customer_rtn,
@@ -102,6 +109,9 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       invoice_number,
       order_id,
       customer_id,
+      customer_name,
+      customer_phone,
+      customer_address,
       rtn,
       cai,
       customer_rtn,
@@ -113,7 +123,7 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       issued_at,
       cancelled_at,
       created_at,
-      orders(order_number, customer_name, payment_method),
+      orders(order_number, customer_name, phone, delivery_address, payment_method),
       invoice_items(
         id,
         sku,

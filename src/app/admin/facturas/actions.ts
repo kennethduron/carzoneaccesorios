@@ -75,3 +75,31 @@ export async function cancelInvoiceAction(invoiceId: string) {
   revalidatePath("/admin/reportes");
   return { ok: true, message: "Factura anulada correctamente." };
 }
+
+export async function updateInvoiceCustomerDataAction(input: {
+  invoiceId: string;
+  customerName: string;
+  customerRtn: string;
+  customerPhone: string;
+  customerAddress: string;
+}) {
+  await requirePermission("invoices:create");
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("update_invoice_customer_data", {
+    target_invoice_id: input.invoiceId,
+    corrected_customer_name: input.customerName,
+    corrected_customer_rtn: input.customerRtn || null,
+    corrected_customer_phone: input.customerPhone || null,
+    corrected_customer_address: input.customerAddress || null,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "No se pudieron corregir los datos de la factura." };
+  }
+
+  revalidatePath("/admin/facturas");
+  revalidatePath("/admin/pedidos");
+  revalidatePath("/admin/reportes");
+
+  return { ok: true, message: "Datos del cliente corregidos. Puedes reimprimir la factura sin cambiar el numero fiscal." };
+}

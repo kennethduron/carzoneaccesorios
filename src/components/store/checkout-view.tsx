@@ -15,6 +15,7 @@ const emptyCheckout: CheckoutData = {
   customerName: "",
   email: "",
   phone: "",
+  rtn: "",
   country: "Honduras",
   address: "",
   paymentMethod: "Transferencia bancaria",
@@ -146,6 +147,7 @@ export function CheckoutView() {
             ["customerName", "Nombre del cliente", "Nombre del cliente"],
             ["email", "Correo", "Correo"],
             ["phone", "Teléfono / WhatsApp", "Ej. 31986284"],
+            ["rtn", "RTN para factura", "Opcional"],
           ] as const).map(([field, label, placeholder]) => (
             <label key={field} className="grid gap-1">
               <span className="text-xs font-medium uppercase text-black/50">{label}</span>

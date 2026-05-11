@@ -602,7 +602,16 @@ function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
           <InfoLine label="Fecha" value={formatDateTime(followup.due_at)} />
           <InfoLine label="Prioridad" value={priorityLabels[followup.priority]} />
           <InfoLine label="Teléfono" value={followup.phone ?? "Sin teléfono"} />
+          {followup.notes ? <p className="whitespace-pre-line rounded-md bg-[#f7f7f2] p-3">{followup.notes}</p> : null}
           <ContactActions phone={followup.phone} customerName={followup.business_name ?? followup.customer_name} />
+          {followup.order_id ? (
+            <a
+              href="/admin/pedidos"
+              className="inline-flex items-center rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
+            >
+              Abrir pedido
+            </a>
+          ) : null}
         </div>
       ) : (
         <p className="mt-3 text-sm text-black/55">No hay seguimiento seleccionado.</p>

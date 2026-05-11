@@ -38,6 +38,7 @@ export type CheckoutData = {
   customerName: string;
   email: string;
   phone: string;
+  rtn: string;
   country: string;
   address: string;
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo";

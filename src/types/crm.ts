@@ -17,6 +17,7 @@ export type CrmCustomerOption = {
 export type CrmFollowupRow = {
   id: string;
   customer_id: string;
+  order_id: string | null;
   customer_name: string | null;
   business_name: string | null;
   assigned_user_id: string | null;

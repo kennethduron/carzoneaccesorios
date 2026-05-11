@@ -102,6 +102,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const customerName = input.checkout.customerName.trim();
   const phone = input.checkout.phone.trim();
+  const customerRtn = input.checkout.rtn.trim() || null;
   const deliveryAddress = input.checkout.address.trim();
   const email = input.checkout.email.trim() || null;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
@@ -151,6 +152,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       customer_name: customerName,
       customer_email: email,
       customer_phone: phone,
+      customer_rtn: customerRtn,
       delivery_address: deliveryAddress,
       requested_price_mode: input.priceMode,
       requested_payment_method: paymentMethod,

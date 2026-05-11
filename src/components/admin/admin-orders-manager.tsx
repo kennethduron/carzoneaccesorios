@@ -270,7 +270,7 @@ function OrderDetail({
             variant="ghost"
           >
             <Printer size={17} />
-            Descargar PDF
+            Reimprimir factura
           </Button>
         ) : null}
         {canManagePayments ? (
@@ -326,7 +326,7 @@ async function exportGeneratedInvoicePdf(
   doc.text(`CAI: ${fiscalSettings.cai || "-"}`, 14, 29);
   doc.text(`Factura: ${invoiceNumber}`, 140, 16);
   doc.text(`Pedido: ${order.order_number}`, 140, 23);
-  doc.text(`Fecha: ${new Date().toLocaleDateString("es-HN")}`, 140, 29);
+  doc.text(`Fecha: ${new Date(order.invoice_issued_at ?? order.created_at).toLocaleDateString("es-HN")}`, 140, 29);
   doc.text(`Cliente: ${order.customer_name}`, 14, 42);
   doc.text(`RTN cliente: ${order.customer_rtn ?? "-"}`, 14, 48);
   doc.text(`Teléfono: ${order.phone}`, 14, 54);

@@ -45,6 +45,8 @@ export type AdminInvoiceRow = {
   order_number: string;
   customer_id: string | null;
   customer_name: string;
+  customer_phone: string | null;
+  customer_address: string | null;
   rtn: string | null;
   cai: string | null;
   customer_rtn: string | null;

@@ -24,6 +24,7 @@ type OrderQueryRow = Omit<
   | "transfer_receipt_url"
   | "invoice_id"
   | "invoice_number"
+  | "invoice_issued_at"
   | "customer_rtn"
 > & {
   subtotal: unknown;
@@ -47,9 +48,11 @@ type OrderQueryRow = Omit<
   invoices: Array<{
     id: string;
     invoice_number: string;
+    issued_at: string | null;
   }> | {
     id: string;
     invoice_number: string;
+    issued_at: string | null;
   } | null;
   customers: {
     tax_id: string | null;
@@ -72,6 +75,7 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     transfer_receipt_url: payment?.transfer_receipt_url ?? null,
     invoice_id: invoice?.id ?? null,
     invoice_number: invoice?.invoice_number ?? null,
+    invoice_issued_at: invoice?.issued_at ?? null,
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -135,7 +139,7 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
         wholesale_price_snapshot
       ),
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
-      invoices(id, invoice_number),
+      invoices(id, invoice_number, issued_at),
       customers(tax_id)
     `,
       { count: "exact" },
