@@ -1,11 +1,16 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { WholesaleCodeManager } from "@/components/admin/wholesale-code-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminWholesaleCodes } from "@/services/supabase/admin-wholesale-codes.service";
 
 export const dynamic = "force-dynamic";
+
+const WholesaleCodeManager = nextDynamic(
+  () => import("@/components/admin/wholesale-code-manager").then((module) => module.WholesaleCodeManager),
+  { loading: () => <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">Cargando codigos mayoristas...</div> },
+);
 
 export default async function AdminWholesaleCodesPage() {
   await requirePermission("customers:manage");

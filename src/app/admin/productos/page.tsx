@@ -1,11 +1,16 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
-import { ProductManager } from "@/components/admin/product-manager";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminProductCatalogPage } from "@/services/supabase/admin-products.service";
 
 export const dynamic = "force-dynamic";
+
+const ProductManager = nextDynamic(
+  () => import("@/components/admin/product-manager").then((module) => module.ProductManager),
+  { loading: () => <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">Cargando productos...</div> },
+);
 
 export default async function AdminProductsPage({
   searchParams,

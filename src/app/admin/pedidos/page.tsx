@@ -1,12 +1,17 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { AdminOrdersManager } from "@/components/admin/admin-orders-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminOrdersPage } from "@/services/supabase/admin-orders.service";
 
 export const dynamic = "force-dynamic";
+
+const AdminOrdersManager = nextDynamic(
+  () => import("@/components/admin/admin-orders-manager").then((module) => module.AdminOrdersManager),
+  { loading: () => <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">Cargando pedidos...</div> },
+);
 
 export default async function AdminOrdersPage({
   searchParams,

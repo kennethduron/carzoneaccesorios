@@ -1,5 +1,8 @@
 "use server";
 
+import { randomUUID } from "crypto";
+import { revalidatePath } from "next/cache";
+import { configureCloudinary } from "@/lib/cloudinary";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 
@@ -12,20 +15,16 @@ type CreateCheckoutOrderInput = {
   checkout: CheckoutData;
   items: CheckoutOrderItemInput[];
   priceMode: PriceMode;
+  wholesaleCode?: string | null;
+  wholesaleCodeId?: string | null;
 };
 
-type ProductForOrder = {
-  id: string;
-  sku: string;
-  name: string;
-  stock: number;
-  retail_price: number;
-  wholesale_price: number;
+type CheckoutActionResult = {
+  ok: boolean;
+  message: string;
+  orderNumber?: string;
+  transferReceiptUrl?: string | null;
 };
-
-function roundCurrency(value: number) {
-  return Math.round(value * 100) / 100;
-}
 
 function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   if (method === "Tarjeta") {
@@ -39,12 +38,68 @@ function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   return "bank_transfer";
 }
 
-function createOrderNumber() {
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `CZ-${Date.now().toString().slice(-8)}-${suffix}`;
+function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
+  return {
+    checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
+    items: JSON.parse(String(formData.get("items") ?? "[]")) as CheckoutOrderItemInput[],
+    priceMode: String(formData.get("priceMode") ?? "retail") as PriceMode,
+    wholesaleCode: String(formData.get("wholesaleCode") ?? "").trim() || null,
+    wholesaleCodeId: String(formData.get("wholesaleCodeId") ?? "").trim() || null,
+  };
 }
 
-export async function createCheckoutOrderAction(input: CreateCheckoutOrderInput) {
+async function uploadTransferReceipt(file: File | null, bankReference: string) {
+  if (!file || file.size === 0) {
+    return null;
+  }
+
+  const isImage = file.type.startsWith("image/");
+  const isPdf = file.type === "application/pdf";
+
+  if (!isImage && !isPdf) {
+    throw new Error("Solo se permiten comprobantes en imagen o PDF.");
+  }
+
+  if (file.size > 8 * 1024 * 1024) {
+    throw new Error("El comprobante no puede superar 8 MB.");
+  }
+
+  const cloudinary = configureCloudinary();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "archivo";
+  const publicId = `${bankReference.replace(/[^a-z0-9]/gi, "-").slice(0, 40) || "transferencia"}-${randomUUID()}.${extension}`;
+
+  return new Promise<string>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "car-zone/comprobantes-transferencia",
+        public_id: publicId,
+        resource_type: "auto",
+        overwrite: false,
+      },
+      (error, uploadResult) => {
+        if (error || !uploadResult?.secure_url) {
+          reject(error ?? new Error("Cloudinary no devolvio una URL valida para el comprobante."));
+          return;
+        }
+
+        resolve(uploadResult.secure_url);
+      },
+    );
+
+    stream.end(buffer);
+  });
+}
+
+export async function createCheckoutOrderAction(formData: FormData): Promise<CheckoutActionResult> {
+  let input: CreateCheckoutOrderInput;
+
+  try {
+    input = parseCheckoutOrderInput(formData);
+  } catch {
+    return { ok: false, message: "No se pudo leer la informacion del checkout." };
+  }
+
   const customerName = input.checkout.customerName.trim();
   const phone = input.checkout.phone.trim();
   const deliveryAddress = input.checkout.address.trim();
@@ -57,7 +112,11 @@ export async function createCheckoutOrderAction(input: CreateCheckoutOrderInput)
   }
 
   if (paymentMethod === "bank_transfer" && !bankReference) {
-    return { ok: false, message: "Debes ingresar el número de referencia de la transferencia." };
+    return { ok: false, message: "Debes ingresar el numero de referencia de la transferencia." };
+  }
+
+  if (input.priceMode === "wholesale" && (!input.wholesaleCode?.trim() || !input.wholesaleCodeId?.trim())) {
+    return { ok: false, message: "Debes validar un codigo mayorista antes de comprar con precio mayorista." };
   }
 
   const normalizedItems = input.items
@@ -68,111 +127,64 @@ export async function createCheckoutOrderAction(input: CreateCheckoutOrderInput)
     .filter((item) => item.productId && item.quantity > 0);
 
   if (normalizedItems.length === 0) {
-    return { ok: false, message: "Agrega productos válidos para crear el pedido." };
+    return { ok: false, message: "Agrega productos validos para crear el pedido." };
+  }
+
+  let transferReceiptUrl: string | null = null;
+
+  try {
+    const receiptFile = formData.get("transferReceipt");
+    transferReceiptUrl =
+      paymentMethod === "bank_transfer" && receiptFile instanceof File
+        ? await uploadTransferReceipt(receiptFile, bankReference)
+        : null;
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "No se pudo subir el comprobante de transferencia.",
+    };
   }
 
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const productIds = [...new Set(normalizedItems.map((item) => item.productId))];
-  const { data: products, error: productsError } = await supabase
-    .from("products")
-    .select("id, sku, name, stock, retail_price, wholesale_price")
-    .in("id", productIds)
-    .returns<ProductForOrder[]>();
+  const { data, error } = await supabase
+    .rpc("create_checkout_order", {
+      customer_name: customerName,
+      customer_email: email,
+      customer_phone: phone,
+      delivery_address: deliveryAddress,
+      requested_price_mode: input.priceMode,
+      requested_payment_method: paymentMethod,
+      bank_reference_number: paymentMethod === "bank_transfer" ? bankReference : null,
+      order_items: normalizedItems.map((item) => ({
+        product_id: item.productId,
+        quantity: item.quantity,
+      })),
+      wholesale_code: input.wholesaleCode?.trim().toUpperCase() || null,
+      wholesale_code_id: input.wholesaleCodeId || null,
+      transfer_receipt_url: transferReceiptUrl,
+    })
+    .returns<Array<{ order_id: string; order_number: string }>>();
 
-  if (productsError) {
-    return { ok: false, message: productsError.message };
+  if (error) {
+    return { ok: false, message: error.message || "No se pudo crear el pedido." };
   }
 
-  const productById = new Map((products ?? []).map((product) => [product.id, product]));
-  const orderItems = [];
+  const rows = (Array.isArray(data) ? data : []) as Array<{ order_id: string; order_number: string }>;
+  const createdOrder = rows[0];
 
-  for (const item of normalizedItems) {
-    const product = productById.get(item.productId);
-    if (!product) {
-      return { ok: false, message: "Uno de los productos ya no está disponible." };
-    }
-
-    if (item.quantity > product.stock) {
-      return { ok: false, message: `Solo hay ${product.stock} unidades disponibles de ${product.name}.` };
-    }
-
-    const unitPrice = input.priceMode === "wholesale" ? product.wholesale_price : product.retail_price;
-    orderItems.push({
-      product,
-      quantity: item.quantity,
-      unitPrice: roundCurrency(unitPrice),
-      lineTotal: roundCurrency(unitPrice * item.quantity),
-    });
+  if (!createdOrder) {
+    return { ok: false, message: "No se pudo crear el pedido." };
   }
 
-  const subtotal = roundCurrency(orderItems.reduce((sum, item) => sum + item.lineTotal, 0));
-  const tax = roundCurrency(subtotal * 0.15);
-  const total = roundCurrency(subtotal + tax);
-  const orderId = crypto.randomUUID();
-  const orderNumber = createOrderNumber();
-
-  const { error: orderError } = await supabase.from("orders").insert({
-    id: orderId,
-    order_number: orderNumber,
-    user_id: user?.id ?? null,
-    customer_name: customerName,
-    email,
-    phone,
-    delivery_address: deliveryAddress,
-    payment_method: paymentMethod,
-    price_mode: input.priceMode,
-    subtotal,
-    tax,
-    shipping_total: 0,
-    total,
-    status: "pending",
-  });
-
-  if (orderError) {
-    return { ok: false, message: orderError.message };
-  }
-
-  const { error: itemsError } = await supabase.from("order_items").insert(
-    orderItems.map((item) => ({
-      order_id: orderId,
-      product_id: item.product.id,
-      sku: item.product.sku,
-      product_name: item.product.name,
-      quantity: item.quantity,
-      applied_price_mode: input.priceMode,
-      unit_price: item.unitPrice,
-      line_total: item.lineTotal,
-      retail_price_snapshot: roundCurrency(item.product.retail_price),
-      wholesale_price_snapshot: roundCurrency(item.product.wholesale_price),
-    })),
-  );
-
-  if (itemsError) {
-    return { ok: false, message: itemsError.message };
-  }
-
-  const { error: paymentError } = await supabase.from("payments").insert({
-    order_id: orderId,
-    method: paymentMethod,
-    payment_method: paymentMethod,
-    status: "pending",
-    payment_status: "pending",
-    amount: total,
-    reference: paymentMethod === "bank_transfer" ? bankReference : null,
-    bank_reference_number: paymentMethod === "bank_transfer" ? bankReference : null,
-    provider: paymentMethod === "card" ? "pending_gateway" : null,
-  });
-
-  if (paymentError) {
-    return { ok: false, message: paymentError.message };
-  }
+  revalidatePath("/admin/pedidos");
+  revalidatePath("/admin/inventario");
+  revalidatePath("/admin/reportes");
+  revalidatePath("/catalogo");
 
   return {
     ok: true,
-    message: "Pedido creado correctamente. El admin o la contadora podrán revisarlo para facturación.",
-    orderNumber,
+    message: "Pedido creado correctamente. El admin o la contadora podran revisarlo para facturacion.",
+    orderNumber: createdOrder.order_number,
+    transferReceiptUrl,
   };
 }

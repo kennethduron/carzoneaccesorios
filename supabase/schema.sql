@@ -21,3 +21,6 @@
 \i ./migrations/202605100005_fiscal_invoice_number_rpc.sql
 \i ./migrations/202605100006_accountant_customer_read.sql
 \i ./migrations/202605100007_public_checkout_orders.sql
+\i ./migrations/202605100008_create_checkout_order_rpc.sql
+\i ./migrations/202605100009_confirmed_order_inventory.sql
+\i ./migrations/202605100010_fiscal_invoice_rpc.sql

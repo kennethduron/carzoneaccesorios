@@ -1,11 +1,16 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { CrmManager } from "@/components/admin/crm-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminCrm } from "@/services/supabase/admin-crm.service";
 
 export const dynamic = "force-dynamic";
+
+const CrmManager = nextDynamic(
+  () => import("@/components/admin/crm-manager").then((module) => module.CrmManager),
+  { loading: () => <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">Cargando CRM...</div> },
+);
 
 export default async function AdminCrmPage({
   searchParams,

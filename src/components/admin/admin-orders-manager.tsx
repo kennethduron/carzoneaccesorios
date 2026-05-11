@@ -3,8 +3,6 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "@/app/admin/pedidos/actions";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -12,6 +10,7 @@ import { Button } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminOrderRow } from "@/types/orders";
+import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminOrdersManagerProps = {
@@ -98,7 +97,7 @@ export function AdminOrdersManager({
       setMessage(result.message);
 
       if (result.ok && result.invoiceNumber) {
-        exportGeneratedInvoicePdf(order, fiscalSettings, result.invoiceNumber, result.bankReference ?? order.bank_reference_number);
+        await exportGeneratedInvoicePdf(order, fiscalSettings, result.invoiceNumber, result.bankReference ?? order.bank_reference_number);
         router.refresh();
       }
     });
@@ -262,12 +261,12 @@ function OrderDetail({
         {canGenerateInvoices && !order.invoice_number ? (
           <Button onClick={onGenerateInvoice} disabled={isPending} variant="dark">
             <FileText size={17} />
-            {isPending ? "Generando" : "Generar factura"}
+            {isPending ? "Generando..." : "Generar factura"}
           </Button>
         ) : null}
         {order.invoice_number ? (
           <Button
-            onClick={() => exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number)}
+            onClick={() => void exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number)}
             variant="ghost"
           >
             <Printer size={17} />
@@ -278,11 +277,11 @@ function OrderDetail({
           <>
             <Button onClick={onApprovePayment} disabled={isPending || paymentIsApproved} variant="primary">
               <CheckCircle2 size={17} />
-              Confirmar pago
+              {isPending ? "Procesando..." : "Confirmar pago"}
             </Button>
             <Button onClick={onRejectPayment} disabled={isPending || paymentIsRejected} variant="secondary">
               <XCircle size={17} />
-              Rechazar pago
+              {isPending ? "Procesando..." : "Rechazar pago"}
             </Button>
           </>
         ) : null}
@@ -313,13 +312,13 @@ function OrderDetail({
   );
 }
 
-function exportGeneratedInvoicePdf(
+async function exportGeneratedInvoicePdf(
   order: AdminOrderRow,
   fiscalSettings: FiscalSettings,
   invoiceNumber: string,
   bankReference: string | null,
 ) {
-  const doc = new jsPDF();
+  const { doc, autoTable } = await createPdfDocument();
   doc.setFontSize(14);
   doc.text(fiscalSettings.legal_name || "Car Zone Accesorios", 14, 16);
   doc.setFontSize(9);
@@ -351,7 +350,7 @@ function exportGeneratedInvoicePdf(
     headStyles: { fillColor: [36, 106, 115] },
   });
 
-  const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 90;
+  const finalY = getLastAutoTableY(doc);
   doc.text(`Subtotal: ${formatCurrency(order.subtotal)}`, 140, finalY + 10);
   doc.text(`ISV: ${formatCurrency(order.tax)}`, 140, finalY + 16);
   doc.text(`Total: ${formatCurrency(order.total)}`, 140, finalY + 22);

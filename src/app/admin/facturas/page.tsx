@@ -1,13 +1,18 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { ArrowLeft, Settings } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { AdminInvoicesManager } from "@/components/admin/admin-invoices-manager";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminInvoicesPage } from "@/services/supabase/admin-invoices.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
+
+const AdminInvoicesManager = nextDynamic(
+  () => import("@/components/admin/admin-invoices-manager").then((module) => module.AdminInvoicesManager),
+  { loading: () => <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">Cargando facturas...</div> },
+);
 
 export default async function AdminInvoicesPage({
   searchParams,

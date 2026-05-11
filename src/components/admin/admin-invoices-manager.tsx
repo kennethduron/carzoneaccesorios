@@ -1,9 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Ban, Download, Eye, FileText, Printer } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { Ban, Download, ExternalLink, Eye, FileText, Printer } from "lucide-react";
 import { cancelInvoiceAction } from "@/app/admin/facturas/actions";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
@@ -11,6 +9,7 @@ import { Button, Input } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
+import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminInvoicesManagerProps = {
@@ -128,8 +127,8 @@ export function AdminInvoicesManager({
     );
   }
 
-  function exportInvoicePdf(invoice: AdminInvoiceRow) {
-    const doc = new jsPDF();
+  async function exportInvoicePdf(invoice: AdminInvoiceRow) {
+    const { doc, autoTable } = await createPdfDocument();
     doc.setFontSize(14);
     doc.text(fiscalSettings.legal_name || "Car Zone Accesorios", 14, 16);
     doc.setFontSize(9);
@@ -143,8 +142,11 @@ export function AdminInvoicesManager({
     if (invoice.bank_reference_number) {
       doc.text(`Referencia bancaria: ${invoice.bank_reference_number}`, 14, 60);
     }
+    if (invoice.transfer_receipt_url) {
+      doc.text("Comprobante transferencia: disponible como referencia interna", 14, invoice.bank_reference_number ? 66 : 60);
+    }
     autoTable(doc, {
-      startY: invoice.bank_reference_number ? 68 : 62,
+      startY: invoice.transfer_receipt_url ? (invoice.bank_reference_number ? 74 : 68) : invoice.bank_reference_number ? 68 : 62,
       head: [["SKU", "Producto", "Cantidad", "Precio", "Total"]],
       body: invoice.items.map((item) => [
         item.sku,
@@ -156,7 +158,7 @@ export function AdminInvoicesManager({
       styles: { fontSize: 8 },
       headStyles: { fillColor: [36, 106, 115] },
     });
-    const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 90;
+    const finalY = getLastAutoTableY(doc);
     doc.text(`Subtotal: ${formatCurrency(invoice.subtotal)}`, 140, finalY + 10);
     doc.text(`ISV: ${formatCurrency(invoice.tax)}`, 140, finalY + 16);
     doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 22);
@@ -282,7 +284,7 @@ export function AdminInvoicesManager({
                         <IconButton label="Ver factura" onClick={() => setSelectedInvoice(invoice)}>
                           <Eye size={16} />
                         </IconButton>
-                        <IconButton label="Descargar PDF" onClick={() => exportInvoicePdf(invoice)}>
+                        <IconButton label="Descargar PDF" onClick={() => void exportInvoicePdf(invoice)}>
                           <Printer size={16} />
                         </IconButton>
                         {canCancelInvoices ? (
@@ -337,6 +339,22 @@ function InvoiceModal({
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
           <Info label="Método de pago" value={paymentLabels[invoice.payment_method] ?? invoice.payment_method} />
           <Info label="Referencia bancaria" value={invoice.bank_reference_number ?? "-"} />
+          <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+            <p className="text-sm text-black/50">Comprobante interno</p>
+            {invoice.transfer_receipt_url ? (
+              <a
+                href={invoice.transfer_receipt_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
+              >
+                <ExternalLink size={16} />
+                Ver comprobante
+              </a>
+            ) : (
+              <p className="mt-1 font-semibold">-</p>
+            )}
+          </div>
           <Info label="Estado" value={statusLabels[invoice.status]} />
           <Info label="Fecha" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
         </div>

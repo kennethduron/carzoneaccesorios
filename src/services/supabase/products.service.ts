@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { products as fallbackProducts } from "@/lib/commerce";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
@@ -207,6 +208,45 @@ function buildVehicleYears(products: ProductFilterOptionRow[]) {
   return Array.from(years).sort((left, right) => right - left);
 }
 
+const getCachedActiveCategories = unstable_cache(
+  async () => {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("categories")
+      .select("name, slug")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .returns<CategoryRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data ?? [];
+  },
+  ["active-categories"],
+  { revalidate: 3600, tags: ["categories"] },
+);
+
+const getCachedProductFilterOptions = unstable_cache(
+  async () => {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("products")
+      .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
+      .eq("active", true)
+      .returns<ProductFilterOptionRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data ?? [];
+  },
+  ["product-filter-options"],
+  { revalidate: 3600, tags: ["products", "vehicle-filters"] },
+);
+
 export async function getActiveProducts() {
   const page = await getCatalogProducts({ pageSize: 48 });
   return { data: page.products, error: null };
@@ -283,31 +323,14 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       .range(from, to)
       .returns<CatalogProductRow[]>();
 
-    const [{ data, error, count }, { data: categories, error: categoriesError }, { data: filterRows, error: filterError }] = await Promise.all([
+    const [{ data, error, count }, categories, filterRows] = await Promise.all([
       pagedProductsQuery,
-      supabase
-        .from("categories")
-        .select("name, slug")
-        .eq("active", true)
-        .order("name", { ascending: true })
-        .returns<CategoryRow[]>(),
-      supabase
-        .from("products")
-        .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
-        .eq("active", true)
-        .returns<ProductFilterOptionRow[]>(),
+      getCachedActiveCategories(),
+      getCachedProductFilterOptions(),
     ]);
 
     if (error) {
       throw new Error(error.message);
-    }
-
-    if (categoriesError) {
-      throw new Error(categoriesError.message);
-    }
-
-    if (filterError) {
-      throw new Error(filterError.message);
     }
 
     const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
@@ -317,11 +340,11 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       total: count ?? 0,
       page,
       pageSize,
-      categories: categories ?? [],
+      categories,
       filterOptions: {
-        vehicleBrands: uniqueSorted((filterRows ?? []).map((row) => row.vehicle_brand)),
-        vehicleModels: uniqueSorted((filterRows ?? []).map((row) => row.vehicle_model)),
-        vehicleYears: buildVehicleYears(filterRows ?? []),
+        vehicleBrands: uniqueSorted(filterRows.map((row) => row.vehicle_brand)),
+        vehicleModels: uniqueSorted(filterRows.map((row) => row.vehicle_model)),
+        vehicleYears: buildVehicleYears(filterRows),
       },
     };
   } catch {
@@ -369,7 +392,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   }
 }
 
-export async function getFeaturedProducts(limit = 3) {
+export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
   try {
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
@@ -406,7 +429,7 @@ export async function getFeaturedProducts(limit = 3) {
   } catch {
     return fallbackProducts.slice(0, limit);
   }
-}
+}, ["featured-products"], { revalidate: 900, tags: ["products", "featured-products"] });
 
 export async function getProductBySlug(slug: string) {
   try {
@@ -455,19 +478,7 @@ export async function getProductBySlug(slug: string) {
 
 export async function getCategorySummaries() {
   try {
-    const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase
-      .from("categories")
-      .select("name, slug")
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .returns<CategoryRow[]>();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data ?? [];
+    return await getCachedActiveCategories();
   } catch {
     return Array.from(new Set(fallbackProducts.map((product) => product.category))).map((name) => ({
       name,

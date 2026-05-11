@@ -1,9 +1,9 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { v2 as cloudinary } from "cloudinary";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import { configureCloudinary } from "@/lib/cloudinary";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 
@@ -64,21 +64,13 @@ function positiveInteger(value: unknown, fallback = 0) {
   return Math.floor(positiveNumber(value, fallback));
 }
 
-function getCloudinaryConfig() {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
-  if (!cloudName || !apiKey || !apiSecret) {
-    throw new Error("Faltan variables de Cloudinary en .env.local.");
-  }
-
-  cloudinary.config({
-    cloud_name: cloudName,
-    api_key: apiKey,
-    api_secret: apiSecret,
-    secure: true,
-  });
+function revalidateProductCatalog() {
+  revalidatePath("/admin/productos");
+  revalidatePath("/");
+  revalidatePath("/catalogo");
+  revalidateTag("products", "max");
+  revalidateTag("featured-products", "max");
+  revalidateTag("vehicle-filters", "max");
 }
 
 function productPayload(input: ProductFormInput): ProductDbPayload {
@@ -182,7 +174,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
   await requirePermission("products:manage");
 
   try {
-    getCloudinaryConfig();
+    const cloudinary = configureCloudinary();
 
     const file = formData.get("file");
     const productSlug = String(formData.get("productSlug") ?? "producto").trim() || "producto";
@@ -279,8 +271,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
         oldData: { stock: Number(previous.stock) },
         newData: payload,
       });
-      revalidatePath("/admin/productos");
-      revalidatePath("/");
+      revalidateProductCatalog();
       return { ok: true, message: "Producto actualizado." };
     }
 
@@ -301,8 +292,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
       newData: payload,
     });
 
-    revalidatePath("/admin/productos");
-    revalidatePath("/");
+    revalidateProductCatalog();
     return { ok: true, message: "Producto creado." };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el producto." };
@@ -332,8 +322,7 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
     newData: { active },
   });
 
-  revalidatePath("/admin/productos");
-  revalidatePath("/");
+  revalidateProductCatalog();
   return { ok: true, message: active ? "Producto activado." : "Producto desactivado." };
 }
 
@@ -353,8 +342,7 @@ export async function deleteProductAction(id: string): Promise<ProductMutationRe
     action: "product.deleted",
   });
 
-  revalidatePath("/admin/productos");
-  revalidatePath("/");
+  revalidateProductCatalog();
   return { ok: true, message: "Producto eliminado." };
 }
 

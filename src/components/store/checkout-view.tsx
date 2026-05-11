@@ -24,6 +24,7 @@ const emptyCheckout: CheckoutData = {
 export function CheckoutView() {
   const [checkout, setCheckout] = useState<CheckoutData>(emptyCheckout);
   const [proofFileName, setProofFileName] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -66,14 +67,23 @@ export function CheckoutView() {
     }
 
     startTransition(async () => {
-      const result = await createCheckoutOrderAction({
-        checkout: { ...checkout, phone: phone.value },
-        items: rows.map((item) => ({
-          productId: item.product.id,
-          quantity: item.quantity,
-        })),
-        priceMode,
-      });
+      const items = rows.map((item) => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+      }));
+      const formData = new FormData();
+
+      formData.set("checkout", JSON.stringify({ ...checkout, phone: phone.value }));
+      formData.set("items", JSON.stringify(items));
+      formData.set("priceMode", priceMode);
+      formData.set("wholesaleCode", wholesaleAccount?.code ?? "");
+      formData.set("wholesaleCodeId", wholesaleAccount?.id ?? "");
+
+      if (isBankTransfer && proofFile) {
+        formData.set("transferReceipt", proofFile);
+      }
+
+      const result = await createCheckoutOrderAction(formData);
 
       if (!result.ok || !result.orderNumber) {
         setCheckoutMessage(result.message);
@@ -109,6 +119,8 @@ export function CheckoutView() {
 
       setOrderNumber(result.orderNumber);
       setCheckoutMessage(result.message);
+      setProofFile(null);
+      setProofFileName("");
       clearCart();
     });
   }
@@ -194,6 +206,7 @@ export function CheckoutView() {
                   setCheckout((current) => ({ ...current, paymentMethod: method as CheckoutData["paymentMethod"] }));
                   if (method !== "Transferencia bancaria") {
                     setProofFileName("");
+                    setProofFile(null);
                   }
                   setCheckoutMessage("");
                 }}
@@ -242,7 +255,11 @@ export function CheckoutView() {
                   type="file"
                   accept="image/*,.pdf"
                   className="hidden"
-                  onChange={(event) => setProofFileName(event.target.files?.[0]?.name ?? "")}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setProofFile(file);
+                    setProofFileName(file?.name ?? "");
+                  }}
                 />
               </label>
             </section>

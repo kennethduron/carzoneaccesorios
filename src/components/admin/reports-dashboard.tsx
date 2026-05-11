@@ -2,8 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, Printer } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import type { AdminReportsData, ReportOrder, ReportPaymentMethod } from "@/types/reports";
@@ -118,6 +116,7 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
   const [endDate, setEndDate] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<ReportPaymentMethod | "all">("all");
   const [invoiceStatus, setInvoiceStatus] = useState<InvoiceStatus | "all">("all");
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const paymentByOrder = useMemo(() => {
     const map = new Map<string, AdminReportsData["payments"][number]>();
@@ -399,20 +398,29 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
     );
   }
 
-  function exportPdf() {
-    const doc = new jsPDF({ orientation: currentReport.columns.length > 5 ? "landscape" : "portrait" });
-    doc.setFontSize(16);
-    doc.text(`Car Zone Accesorios - ${currentReport.label}`, 14, 16);
-    doc.setFontSize(9);
-    doc.text(`Rango: ${startDate || "inicio"} a ${endDate || "hoy"}`, 14, 23);
-    autoTable(doc, {
-      startY: 30,
-      head: [currentReport.columns],
-      body: currentReport.rows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [36, 106, 115] },
-    });
-    doc.save(`car-zone-${currentReport.key}.pdf`);
+  async function exportPdf() {
+    setExportingPdf(true);
+    try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const doc = new jsPDF({ orientation: currentReport.columns.length > 5 ? "landscape" : "portrait" });
+      doc.setFontSize(16);
+      doc.text(`Car Zone Accesorios - ${currentReport.label}`, 14, 16);
+      doc.setFontSize(9);
+      doc.text(`Rango: ${startDate || "inicio"} a ${endDate || "hoy"}`, 14, 23);
+      autoTable(doc, {
+        startY: 30,
+        head: [currentReport.columns],
+        body: currentReport.rows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [36, 106, 115] },
+      });
+      doc.save(`car-zone-${currentReport.key}.pdf`);
+    } finally {
+      setExportingPdf(false);
+    }
   }
 
   return (
@@ -482,9 +490,9 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
               <FileSpreadsheet size={16} />
               Excel
             </Button>
-            <Button variant="dark" onClick={exportPdf}>
+            <Button variant="dark" onClick={() => void exportPdf()} disabled={exportingPdf}>
               <Printer size={16} />
-              PDF
+              {exportingPdf ? "Generando..." : "PDF"}
             </Button>
           </div>
         </div>
