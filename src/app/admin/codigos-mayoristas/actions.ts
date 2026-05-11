@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { WholesaleCodeFormInput } from "@/types/wholesale";
+import type { WholesaleCodeFormInput, WholesaleCustomerFormInput } from "@/types/wholesale";
+import { requireText, validateHondurasPhone } from "@/utils/validation";
 
 type WholesaleCodeMutationResult = {
   ok: boolean;
@@ -33,8 +35,8 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
   await requirePermission("customers:manage");
 
   const code = normalizeCode(input.code);
-  if (!code || !input.label.trim()) {
-    return { ok: false, message: "Codigo y etiqueta son obligatorios." };
+  if (!code || !input.label.trim() || !input.customer_id) {
+    return { ok: false, message: "Codigo, etiqueta y cliente mayorista son obligatorios." };
   }
 
   const payload = {
@@ -70,6 +72,77 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
 
   revalidatePath("/admin/codigos-mayoristas");
   return { ok: true, message: input.id ? "Codigo mayorista actualizado." : "Codigo mayorista creado." };
+}
+
+export async function createWholesaleCustomerAction(
+  input: WholesaleCustomerFormInput,
+): Promise<WholesaleCodeMutationResult> {
+  await requirePermission("customers:manage");
+
+  const businessName = requireText(input.business_name, "Empresa");
+  const contactName = requireText(input.contact_name, "Contacto");
+  const phone = validateHondurasPhone(input.phone);
+  const email = input.email.trim().toLowerCase();
+
+  for (const result of [businessName, contactName, phone]) {
+    if (!result.ok) {
+      return { ok: false, message: result.message };
+    }
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, message: "Ingresa un correo valido para asociar la cuenta mayorista." };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: userProfile, error: userError } = await admin
+    .from("users")
+    .select("id, email, active")
+    .ilike("email", email)
+    .maybeSingle<{ id: string; email: string | null; active: boolean }>();
+
+  if (userError) {
+    return { ok: false, message: userError.message };
+  }
+
+  const hasAccount = Boolean(userProfile?.id);
+  const normalizedStatus = hasAccount ? input.status : "pending_account";
+  const payload = {
+    user_id: userProfile?.id ?? null,
+    business_name: businessName.value,
+    company_name: businessName.value,
+    contact_name: contactName.value,
+    email,
+    phone: phone.value,
+    is_wholesale: true,
+    status: normalizedStatus,
+    active: normalizedStatus === "active",
+    notes: hasAccount
+      ? `Cliente mayorista asociado a ${userProfile?.email ?? email}.`
+      : "Cuenta mayorista pendiente de crear.",
+  };
+
+  const { data, error } = await admin.from("customers").insert(payload).select("id").single<{ id: string }>();
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: data.id,
+    action: "wholesale_customer.created",
+    newData: payload,
+  });
+
+  revalidatePath("/admin/codigos-mayoristas");
+  revalidatePath("/admin/clientes");
+  return {
+    ok: true,
+    message: hasAccount
+      ? "Cliente mayorista creado y asociado a la cuenta."
+      : "Cliente mayorista creado. Cuenta mayorista pendiente de crear.",
+  };
 }
 
 export async function setWholesaleCodeActiveAction(id: string, active: boolean): Promise<WholesaleCodeMutationResult> {

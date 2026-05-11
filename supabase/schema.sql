@@ -29,3 +29,10 @@
 \i ./migrations/202605100013_fix_wholesale_code_read_grants.sql
 \i ./migrations/202605100014_error_logs.sql
 \i ./migrations/202605100015_stability_grants.sql
+\i ./migrations/202605110001_secure_wholesale_access.sql
+\i ./migrations/202605110002_wholesale_customer_link_guard.sql
+\i ./migrations/202605110003_split_wholesale_validation_rpcs.sql
+\i ./migrations/202605110004_checkout_wholesale_error_contract.sql
+\i ./migrations/202605110005_wholesale_pending_accounts.sql
+\i ./migrations/202605110006_wholesale_message_contract.sql
+\i ./migrations/202605110007_public_gen_random_bytes_wrapper.sql

@@ -16,12 +16,21 @@ export type WholesaleValidationResult = {
   ok: boolean;
   message: string;
   account: WholesaleAccount | null;
+  requiresLogin?: boolean;
+  code?: string;
 };
 
 export type WholesaleCustomerOption = {
   id: string;
   business_name: string | null;
   contact_name: string;
+  email: string | null;
+  phone: string;
+  user_id: string | null;
+  status: "active" | "inactive" | "disabled" | "pending_account";
+  active: boolean;
+  account_email: string | null;
+  account_active: boolean | null;
 };
 
 export type WholesaleCodeAdminRow = {
@@ -29,6 +38,12 @@ export type WholesaleCodeAdminRow = {
   customer_id: string | null;
   customer_name: string | null;
   business_name: string | null;
+  customer_email: string | null;
+  customer_user_id: string | null;
+  customer_status: "active" | "inactive" | "disabled" | "pending_account" | null;
+  customer_active: boolean | null;
+  account_email: string | null;
+  account_active: boolean | null;
   code: string;
   label: string;
   minimum_order: number;
@@ -55,4 +70,12 @@ export type WholesaleCodeFormInput = {
   active: boolean;
   starts_at: string | null;
   expires_at: string | null;
+};
+
+export type WholesaleCustomerFormInput = {
+  business_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  status: "active" | "inactive" | "disabled" | "pending_account";
 };

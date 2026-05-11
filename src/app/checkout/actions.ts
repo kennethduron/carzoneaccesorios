@@ -27,6 +27,28 @@ type CheckoutActionResult = {
   transferReceiptUrl?: string | null;
 };
 
+type WholesaleCodeActivationRow = {
+  id: string;
+};
+
+type WholesaleCodePublicRow = {
+  is_valid: boolean;
+};
+
+type CustomerAuthorizationRow = {
+  id: string;
+  is_wholesale: boolean;
+  status: "active" | "inactive" | "disabled" | "pending_account";
+  active: boolean;
+};
+
+const wholesaleMessages = {
+  invalidCode: "Código mayorista inválido.",
+  loginRequired: "Código válido. Inicia sesión con tu cuenta mayorista para activar precios.",
+  codeNotOwned: "Este código mayorista no pertenece a tu cuenta.",
+  accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
+};
+
 function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   if (method === "Tarjeta") {
     return "card";
@@ -130,7 +152,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   if (input.priceMode === "wholesale" && (!input.wholesaleCode?.trim() || !input.wholesaleCodeId?.trim())) {
-    return { ok: false, message: "Debes validar un codigo mayorista antes de comprar con precio mayorista." };
+    return { ok: false, message: wholesaleMessages.invalidCode };
   }
 
   const normalizedItems = rawItems
@@ -142,6 +164,53 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   if (normalizedItems.length === 0) {
     return { ok: false, message: "Agrega productos validos para crear el pedido." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+
+  if (input.priceMode === "wholesale") {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { ok: false, message: wholesaleMessages.loginRequired };
+    }
+
+    const { data: publicValidationData } = await supabase
+      .rpc("validate_wholesale_code_public", { raw_code: input.wholesaleCode?.trim().toUpperCase() || "" })
+      .returns<WholesaleCodePublicRow[]>();
+
+    const publicValidationRows = Array.isArray(publicValidationData) ? publicValidationData : [];
+    if (!publicValidationRows[0]?.is_valid) {
+      return { ok: false, message: wholesaleMessages.invalidCode };
+    }
+
+    const { data: activatedData, error: activationError } = await supabase
+      .rpc("activate_wholesale_account", { raw_code: input.wholesaleCode?.trim().toUpperCase() || "" })
+      .returns<WholesaleCodeActivationRow[]>();
+
+    if (activationError) {
+      return { ok: false, message: wholesaleMessages.accountNotAuthorized };
+    }
+
+    const activatedRows = Array.isArray(activatedData) ? activatedData : [];
+    if (!activatedRows.some((row) => row.id === input.wholesaleCodeId)) {
+      const { data: customerRows } = await supabase
+        .from("customers")
+        .select("id, is_wholesale, status, active")
+        .eq("user_id", user.id)
+        .returns<CustomerAuthorizationRow[]>();
+
+      const hasAuthorizedWholesaleAccount = (customerRows ?? []).some(
+        (customer) => customer.is_wholesale && customer.active && customer.status === "active",
+      );
+
+      return {
+        ok: false,
+        message: hasAuthorizedWholesaleAccount ? wholesaleMessages.codeNotOwned : wholesaleMessages.accountNotAuthorized,
+      };
+    }
   }
 
   let transferReceiptUrl: string | null = null;
@@ -159,7 +228,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     };
   }
 
-  const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .rpc("create_checkout_order", {
       customer_name: customerName,
