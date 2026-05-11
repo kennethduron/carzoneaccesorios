@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ImageOff, Plus } from "lucide-react";
+import { useState } from "react";
 import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
@@ -12,20 +13,31 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const { priceMode } = usePriceMode();
   const { addToCart, cartMessage } = useShoppingCart();
   const primaryImage = product.images.find((image) => image.angle === "frontal") ?? product.images[0];
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
     <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
       <Link href={`/producto/${product.slug}`} className="block">
-        <Image
-          src={primaryImage?.url ?? product.image}
-          alt={primaryImage?.alt ?? product.name}
-          width={520}
-          height={360}
-          sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
-          loading="lazy"
-          quality={72}
-          className="h-44 w-full object-cover"
-        />
+        {imageFailed ? (
+          <div className="grid h-44 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+            <div className="flex flex-col items-center gap-2 text-sm">
+              <ImageOff size={24} />
+              Imagen no disponible
+            </div>
+          </div>
+        ) : (
+          <Image
+            src={primaryImage?.url ?? product.image}
+            alt={primaryImage?.alt ?? product.name}
+            width={520}
+            height={360}
+            sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
+            loading="lazy"
+            quality={72}
+            className="h-44 w-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
+        )}
         <div className="space-y-3 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>

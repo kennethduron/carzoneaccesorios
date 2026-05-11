@@ -67,7 +67,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const rows = useMemo(() => {
     return cart
       .map((item) => {
-        const product = findProduct(item.productId);
+        const product = findProduct(item.productId) ?? item.productSnapshot ?? null;
         if (!product) {
           return null;
         }
@@ -116,14 +116,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
           if (existing) {
             const nextCart = current.map((item) =>
-              item.productId === productId ? { ...item, quantity: item.quantity + 1 } : item,
+              item.productId === productId ? { ...item, quantity: item.quantity + 1, productSnapshot: product } : item,
             );
             writeStoredCart(nextCart);
             setCartMessage("");
             added = true;
             return nextCart;
           }
-          const nextCart = [...current, { productId, quantity: 1 }];
+          const nextCart = [...current, { productId, quantity: 1, productSnapshot: product }];
           writeStoredCart(nextCart);
           setCartMessage("");
           added = true;
@@ -132,14 +132,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return added;
       },
       updateQuantity(productId, delta) {
-        const product = findProduct(productId);
-        if (!product) {
-          setCartMessage("Producto no encontrado.");
-          return false;
-        }
-
         let updated = false;
         setCart((current) => {
+          const existing = current.find((item) => item.productId === productId);
+          const product = findProduct(productId) ?? existing?.productSnapshot ?? null;
+
+          if (!product) {
+            setCartMessage("Producto no encontrado.");
+            return current;
+          }
+
           const nextCart = current
             .map((item) => {
               if (item.productId !== productId) {
@@ -154,7 +156,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
               setCartMessage("");
               updated = true;
-              return { ...item, quantity: nextQuantity };
+              return { ...item, quantity: nextQuantity, productSnapshot: product };
             })
             .filter((item) => item.quantity > 0);
           writeStoredCart(nextCart);

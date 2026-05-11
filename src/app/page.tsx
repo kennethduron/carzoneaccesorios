@@ -28,7 +28,7 @@ export default async function HomePage() {
             </p>
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/catálogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#1c1d1b]">
+            <Link href="/catalogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#1c1d1b]">
               Ver catálogo
               <ArrowRight size={17} />
             </Link>
@@ -65,7 +65,7 @@ export default async function HomePage() {
         <div>
           <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-semibold">Productos destacados</h2>
-            <Link href="/catálogo" className="text-sm font-medium text-[#246a73]">
+            <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
               Ver todos
             </Link>
           </div>

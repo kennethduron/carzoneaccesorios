@@ -8,8 +8,8 @@ import { useShoppingCart } from "@/contexts/cart-context";
 
 const links = [
   ["Inicio", "/"],
-  ["Catálogo", "/catálogo"],
-  ["Categorías", "/categorías"],
+  ["Catálogo", "/catalogo"],
+  ["Categorías", "/categorias"],
   ["Contacto", "/contacto"],
   ["Mi cuenta", "/cuenta"],
   ["Facturas", "/facturas"],
@@ -21,15 +21,15 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const { cartCount } = useShoppingCart();
 
   return (
-    <main className="min-h-screen bg-[#f7f7f2] text-[#1c1d1b]">
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-[#1c1d1b]">
       <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f7f7f2]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
-          <Link href="/" className="flex items-center gap-3">
-            <span className="grid size-11 place-items-center rounded-md bg-[#171717] text-white">
+        <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-2 px-5 py-4 sm:gap-4">
+          <Link href="/" className="flex min-w-0 flex-1 items-center gap-3 pr-24 sm:pr-0">
+            <span className="grid size-11 shrink-0 place-items-center rounded-md bg-[#171717] text-white">
               <CarFront size={24} />
             </span>
-            <span>
-              <span className="block text-lg font-semibold">Car Zone Accesorios</span>
+            <span className="min-w-0">
+              <span className="block truncate text-lg font-semibold">Car Zone Accesorios</span>
               <span className="block text-xs text-black/55">Accesorios automotrices</span>
             </span>
           </Link>
@@ -42,16 +42,16 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="fixed right-5 top-4 z-50 flex shrink-0 items-center gap-2 sm:static sm:z-auto">
             <span className="hidden rounded-md border border-black/10 bg-white px-3 py-2 text-sm sm:inline-flex">
               {priceMode === "wholesale" ? "Precio mayorista activo" : "Precio al detalle activo"}
             </span>
             <Link
               href="/carrito"
-              className="inline-flex items-center gap-2 rounded-md bg-[#1c1d1b] px-3 py-2 text-sm text-white"
+              className="grid size-10 shrink-0 place-items-center rounded-md bg-[#1c1d1b] text-sm text-white sm:inline-flex sm:w-auto sm:gap-2 sm:px-3 sm:py-2"
             >
               <ShoppingCart size={16} />
-              {cartCount}
+              <span className="hidden sm:inline">{cartCount}</span>
             </Link>
             <button
               onClick={() => setOpen((current) => !current)}
@@ -94,7 +94,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Mision
             </Link>
-            <Link href="/visión" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
+            <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Vision
             </Link>
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">

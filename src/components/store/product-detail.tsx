@@ -23,7 +23,7 @@ export function ProductDetail({ product }: { product: Product }) {
     <section className="mx-auto grid max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[0.95fr_1.05fr]">
       <ProductImageGallery product={product} />
       <div className="space-y-5">
-        <Link href="/catálogo" className="text-sm font-medium text-[#246a73]">
+        <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
           Volver al catálogo
         </Link>
         <div>

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import { validateHondurasPhone } from "@/utils/validation";
 
 type CheckoutOrderItemInput = {
   productId: string;
@@ -100,15 +101,27 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "No se pudo leer la informacion del checkout." };
   }
 
-  const customerName = input.checkout.customerName.trim();
-  const phone = input.checkout.phone.trim();
-  const customerRtn = input.checkout.rtn.trim() || null;
-  const deliveryAddress = input.checkout.address.trim();
-  const email = input.checkout.email.trim() || null;
+  const customerName = String(input.checkout.customerName ?? "").trim();
+  const country = String(input.checkout.country ?? "").trim();
+  const phoneResult = validateHondurasPhone(input.checkout.phone);
+  const customerRtn = String(input.checkout.rtn ?? "").trim() || null;
+  const deliveryAddress = String(input.checkout.address ?? "").trim();
+  const email = String(input.checkout.email ?? "").trim() || null;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
-  const bankReference = input.checkout.bankTransferReference.trim();
+  const bankReference = String(input.checkout.bankTransferReference ?? "").trim();
+  const rawItems = Array.isArray(input.items) ? input.items : [];
 
-  if (!customerName || !phone || !deliveryAddress || input.items.length === 0) {
+  if (country !== "Honduras") {
+    return { ok: false, message: "Actualmente solo realizamos ventas dentro de Honduras." };
+  }
+
+  if (!phoneResult.ok) {
+    return { ok: false, message: phoneResult.message };
+  }
+
+  const phone = phoneResult.value;
+
+  if (!customerName || !deliveryAddress || rawItems.length === 0) {
     return { ok: false, message: "Completa tus datos y agrega productos para crear el pedido." };
   }
 
@@ -120,7 +133,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "Debes validar un codigo mayorista antes de comprar con precio mayorista." };
   }
 
-  const normalizedItems = input.items
+  const normalizedItems = rawItems
     .map((item) => ({
       productId: item.productId,
       quantity: Math.trunc(Number(item.quantity)),

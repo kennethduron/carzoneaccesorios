@@ -42,7 +42,7 @@ type OrderQueryRow = Omit<
   }> | null;
 };
 
-type InvoiceQueryRow = Omit<ReportInvoice, "subtotal" | "tax" | "total"> & {
+type InvoiceQueryRow = Omit<ReportInvoice, "subtotal" | "tax" | "total" | "payment_method" | "bank_reference_number" | "reference"> & {
   subtotal: unknown;
   tax: unknown;
   total: unknown;
@@ -79,9 +79,14 @@ function normalizeOrder(row: OrderQueryRow): ReportOrder {
   };
 }
 
-function normalizeInvoice(row: InvoiceQueryRow): ReportInvoice {
+function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, PaymentQueryRow>): ReportInvoice {
+  const payment = paymentByOrder.get(row.order_id);
+
   return {
     ...row,
+    payment_method: payment?.payment_method ?? null,
+    bank_reference_number: payment?.bank_reference_number ?? null,
+    reference: payment?.reference ?? null,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
     total: toNumber(row.total),
@@ -161,6 +166,7 @@ export async function getAdminReports({ page: rawPage, pageSize: rawPageSize }: 
         invoice_number,
         order_id,
         customer_id,
+        customer_name,
         rtn,
         cai,
         customer_rtn,
@@ -217,9 +223,34 @@ export async function getAdminReports({ page: rawPage, pageSize: rawPageSize }: 
     throw new Error(paymentsError.message);
   }
 
+  const invoiceOrderIds = [...new Set((invoices ?? []).map((invoice) => invoice.order_id))];
+  let invoicePayments: PaymentQueryRow[] = [];
+
+  if (invoiceOrderIds.length > 0) {
+    const { data, error } = await supabase
+      .from("payments")
+      .select("id, order_id, payment_method, bank_reference_number, reference, amount, created_at")
+      .in("order_id", invoiceOrderIds)
+      .order("created_at", { ascending: false })
+      .returns<PaymentQueryRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    invoicePayments = data ?? [];
+  }
+
+  const paymentByInvoiceOrder = new Map<string, PaymentQueryRow>();
+  invoicePayments.forEach((payment) => {
+    if (!paymentByInvoiceOrder.has(payment.order_id)) {
+      paymentByInvoiceOrder.set(payment.order_id, payment);
+    }
+  });
+
   return {
     orders: (orders ?? []).map(normalizeOrder),
-    invoices: (invoices ?? []).map(normalizeInvoice),
+    invoices: (invoices ?? []).map((invoice) => normalizeInvoice(invoice, paymentByInvoiceOrder)),
     products: (products ?? []).map(normalizeProduct),
     customers: customers ?? [],
     payments: (payments ?? []).map(normalizePayment),

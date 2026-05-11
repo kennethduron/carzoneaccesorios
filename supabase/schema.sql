@@ -27,3 +27,5 @@
 \i ./migrations/202605100011_guest_checkout_invoice_corrections.sql
 \i ./migrations/202605100012_fiscal_audit_controls.sql
 \i ./migrations/202605100013_fix_wholesale_code_read_grants.sql
+\i ./migrations/202605100014_error_logs.sql
+\i ./migrations/202605100015_stability_grants.sql

@@ -14,7 +14,7 @@ export function OrdersList() {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5">
         <p className="text-sm text-black/60">Tus pedidos apareceran aqui cuando completes compras en la tienda.</p>
-        <Link href="/catálogo" className="mt-4 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
+        <Link href="/catalogo" className="mt-4 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
           Ver catálogo
         </Link>
       </div>

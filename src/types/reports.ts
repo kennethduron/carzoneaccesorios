@@ -37,11 +37,15 @@ export type ReportInvoice = {
   invoice_number: string;
   order_id: string;
   customer_id: string | null;
+  customer_name: string | null;
   rtn: string | null;
   cai: string | null;
   customer_rtn: string | null;
   status: InvoiceStatus;
   price_mode: PriceMode;
+  payment_method: ReportPaymentMethod | null;
+  bank_reference_number: string | null;
+  reference: string | null;
   subtotal: number;
   tax: number;
   total: number;

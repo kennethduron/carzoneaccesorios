@@ -196,7 +196,7 @@ export function CheckoutView() {
           />
           <div className="mt-2">
             <p className="mb-2 text-sm font-semibold">Método de pago</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid gap-2 sm:grid-cols-3">
             {[
               ["Transferencia bancaria", Banknote],
               ["Tarjeta", CreditCard],

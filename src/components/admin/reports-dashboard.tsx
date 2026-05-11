@@ -150,7 +150,7 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
         const matchesDate = isInsideRange(invoice.issued_at ?? invoice.created_at, startDate, endDate);
         const matchesStatus = invoiceStatus === "all" || invoice.status === invoiceStatus;
         const order = data.orders.find((item) => item.id === invoice.order_id);
-        const matchesPayment = paymentMethod === "all" || order?.payment_method === paymentMethod;
+        const matchesPayment = paymentMethod === "all" || invoice.payment_method === paymentMethod || order?.payment_method === paymentMethod;
         return matchesDate && matchesStatus && matchesPayment;
       }),
     [data.invoices, data.orders, endDate, invoiceStatus, paymentMethod, startDate],
@@ -244,13 +244,16 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
         .map((invoice) => {
           const order = data.orders.find((item) => item.id === invoice.order_id);
           const payment = paymentByOrder.get(invoice.order_id);
+          const paymentMethod = invoice.payment_method ?? order?.payment_method ?? null;
+          const bankReference =
+            invoice.bank_reference_number ?? invoice.reference ?? payment?.bank_reference_number ?? payment?.reference ?? null;
           return {
             Factura: invoice.invoice_number,
             Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
-            Cliente: order?.customer_name ?? "-",
+            Cliente: invoice.customer_name ?? order?.customer_name ?? "-",
             RTN: invoice.customer_rtn ?? invoice.rtn ?? "-",
-            "Método de pago": order ? paymentLabels[order.payment_method] ?? order.payment_method : "-",
-            "Referencia bancaria": payment?.bank_reference_number ?? payment?.reference ?? "-",
+            "Método de pago": paymentMethod ? paymentLabels[paymentMethod] ?? paymentMethod : "-",
+            "Referencia bancaria": bankReference ?? "-",
             Estado: invoiceStatusLabels[invoice.status] ?? invoice.status,
             Total: formatCurrency(invoice.total),
           };

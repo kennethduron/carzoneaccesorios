@@ -16,7 +16,7 @@ export default async function CategoríasPage() {
           {categories.map((category) => (
             <Link
               key={category.name}
-              href={`/catálogo?categoría=${encodeURIComponent(category.slug)}`}
+              href={`/catalogo?categoria=${encodeURIComponent(category.slug)}`}
               className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
             >
               <p className="text-xl font-semibold">{category.name}</p>

@@ -262,7 +262,9 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
         throw new Error(error.message);
       }
 
-      await replaceImages(input.id, input.images);
+      if (input.images.length > 0) {
+        await replaceImages(input.id, input.images);
+      }
       await logInventoryAdjustment(input.id, Number(previous.stock), payload.stock);
       await writeAuditLog({
         tableName: "products",
@@ -348,10 +350,30 @@ export async function deleteProductAction(id: string): Promise<ProductMutationRe
 
 export async function importProductsAction(products: ProductFormInput[]): Promise<ProductMutationResult> {
   await requirePermission("products:manage");
+  const supabase = await getSupabaseServerClient();
 
   let saved = 0;
   for (const product of products) {
-    const result = await saveProductAction(product);
+    const sku = product.sku.trim().toUpperCase();
+    let productWithId = product;
+
+    if (!product.id && sku) {
+      const { data, error } = await supabase
+        .from("products")
+        .select("id")
+        .eq("sku", sku)
+        .maybeSingle<{ id: string }>();
+
+      if (error) {
+        return { ok: false, message: `Importacion detenida en ${product.sku}: ${error.message}` };
+      }
+
+      if (data?.id) {
+        productWithId = { ...product, id: data.id };
+      }
+    }
+
+    const result = await saveProductAction(productWithId);
     if (!result.ok) {
       return { ok: false, message: `Importacion detenida en ${product.sku}: ${result.message}` };
     }

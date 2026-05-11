@@ -32,6 +32,7 @@ export type Product = {
 export type CartItem = {
   productId: string;
   quantity: number;
+  productSnapshot?: Product;
 };
 
 export type CheckoutData = {
