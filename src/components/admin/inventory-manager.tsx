@@ -10,6 +10,7 @@ import type {
   InventoryMovementType,
   InventoryProductOption,
 } from "@/types/inventory";
+import { formatHnDateTime } from "@/utils/format";
 
 type InventoryManagerProps = {
   products: InventoryProductOption[];
@@ -173,7 +174,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
             <tbody className="divide-y divide-black/10">
               {movements.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-4 py-3">{new Date(item.created_at).toLocaleString("es-HN")}</td>
+                  <td className="px-4 py-3">{formatHnDateTime(item.created_at)}</td>
                   <td className="px-4 py-3">
                     <p className="font-medium">{item.product_name ?? "Producto"}</p>
                     <p className="text-xs text-black/45">{item.product_sku}</p>

@@ -46,7 +46,7 @@ export async function getAdminSecurity(): Promise<AdminSecurityData> {
     supabase.from("roles").select("name, permissions").order("name").returns<RoleQueryRow[]>(),
     supabase
       .from("audit_logs")
-      .select("id, user_id, table_name, record_id, action, old_data, new_data, created_at, users(email, full_name)")
+      .select("id, user_id, actor_role, table_name, record_id, action, old_data, new_data, created_at, users(email, full_name)")
       .order("created_at", { ascending: false })
       .limit(100)
       .returns<AuditLogQueryRow[]>(),

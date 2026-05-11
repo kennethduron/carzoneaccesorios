@@ -44,7 +44,7 @@ export default async function AdminReportsPage({
           <FiscalAlertsPanel alerts={fiscalAlerts} />
         </div>
       ) : null}
-      <ReportsDashboard data={reports} />
+      <ReportsDashboard data={reports} fiscalSettings={fiscalSettings} />
     </AdminShell>
   );
 }

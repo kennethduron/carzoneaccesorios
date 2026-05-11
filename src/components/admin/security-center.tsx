@@ -5,6 +5,7 @@ import { DatabaseBackup, FileClock, LockKeyhole, ShieldCheck } from "lucide-reac
 import { requestBackupAction } from "@/app/admin/seguridad/actions";
 import { Button } from "@/components/ui";
 import type { AdminSecurityData, BackupType } from "@/types/security";
+import { formatHnDateTime } from "@/utils/format";
 
 type SecurityCenterProps = {
   data: AdminSecurityData;
@@ -17,7 +18,7 @@ const backupTypeLabels: Record<BackupType, string> = {
 };
 
 function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString("es-HN") : "-";
+  return formatHnDateTime(value);
 }
 
 function compactJson(value: Record<string, unknown> | null) {
@@ -153,10 +154,11 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
         <DataTable
           title="Audit logs"
           icon={<FileClock size={19} />}
-          columns={["Fecha", "Usuario", "Tabla", "Acción", "Datos"]}
+          columns={["Fecha", "Usuario", "Rol", "Tabla", "Acción", "Datos"]}
           rows={data.auditLogs.map((log) => [
             formatDateTime(log.created_at),
             log.user_name ?? log.user_email ?? "Sistema",
+            log.actor_role ?? "-",
             log.table_name,
             log.action,
             compactJson(log.new_data),

@@ -32,6 +32,7 @@ import type {
   CrmNoteInput,
   CrmPriority,
 } from "@/types/crm";
+import { formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
 type CrmManagerProps = {
@@ -105,7 +106,7 @@ function customerDisplayName(customer: { business_name: string | null; contact_n
 }
 
 function formatDateTime(value: string | null) {
-  return value ? new Date(value).toLocaleString("es-HN") : "Sin fecha";
+  return value ? formatHnDateTime(value) : "Sin fecha";
 }
 
 function isOverdue(followup: CrmFollowupRow) {

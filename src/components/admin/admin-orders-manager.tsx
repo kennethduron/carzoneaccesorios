@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { logInvoiceReprintAction } from "@/app/admin/facturas/actions";
 import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "@/app/admin/pedidos/actions";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminOrderRow } from "@/types/orders";
+import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -114,6 +116,22 @@ export function AdminOrdersManager({
     });
   }
 
+  function reprintInvoice(order: AdminOrderRow) {
+    if (!order.invoice_id || !order.invoice_number) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await logInvoiceReprintAction(order.invoice_id ?? "");
+      setMessage(result.message);
+
+      if (result.ok) {
+        await exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number);
+        router.refresh();
+      }
+    });
+  }
+
   if (orders.length === 0) {
     return (
       <section className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
@@ -169,7 +187,6 @@ export function AdminOrdersManager({
         {selectedOrder ? (
           <OrderDetail
             order={selectedOrder}
-            fiscalSettings={fiscalSettings}
             canManagePayments={canManagePayments}
             canGenerateInvoices={canGenerateInvoices}
             isPending={isPending}
@@ -177,6 +194,7 @@ export function AdminOrdersManager({
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
             onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
             onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
+            onReprintInvoice={() => reprintInvoice(selectedOrder)}
           />
         ) : null}
       </section>
@@ -186,7 +204,6 @@ export function AdminOrdersManager({
 
 function OrderDetail({
   order,
-  fiscalSettings,
   canManagePayments,
   canGenerateInvoices,
   isPending,
@@ -194,9 +211,9 @@ function OrderDetail({
   onGenerateInvoice,
   onApprovePayment,
   onRejectPayment,
+  onReprintInvoice,
 }: {
   order: AdminOrderRow;
-  fiscalSettings: FiscalSettings;
   canManagePayments: boolean;
   canGenerateInvoices: boolean;
   isPending: boolean;
@@ -204,6 +221,7 @@ function OrderDetail({
   onGenerateInvoice: () => void;
   onApprovePayment: () => void;
   onRejectPayment: () => void;
+  onReprintInvoice: () => void;
 }) {
   const isBankTransfer = order.payment_method === "bank_transfer";
   const paymentIsApproved = order.payment_status === "approved";
@@ -213,7 +231,7 @@ function OrderDetail({
     <article className="rounded-lg border border-black/10 bg-white p-5">
       <div className="flex flex-col justify-between gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start">
         <div>
-          <p className="text-sm text-black/50">{new Date(order.created_at).toLocaleString("es-HN")}</p>
+          <p className="text-sm text-black/50">{formatHnDateTime(order.created_at)}</p>
           <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
             <PackageCheck size={22} />
             {order.order_number}
@@ -266,7 +284,7 @@ function OrderDetail({
         ) : null}
         {order.invoice_number ? (
           <Button
-            onClick={() => void exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number)}
+            onClick={onReprintInvoice}
             variant="ghost"
           >
             <Printer size={17} />
@@ -326,7 +344,7 @@ async function exportGeneratedInvoicePdf(
   doc.text(`CAI: ${fiscalSettings.cai || "-"}`, 14, 29);
   doc.text(`Factura: ${invoiceNumber}`, 140, 16);
   doc.text(`Pedido: ${order.order_number}`, 140, 23);
-  doc.text(`Fecha: ${new Date(order.invoice_issued_at ?? order.created_at).toLocaleDateString("es-HN")}`, 140, 29);
+  doc.text(`Fecha: ${formatHnDate(order.invoice_issued_at ?? order.created_at)}`, 140, 29);
   doc.text(`Cliente: ${order.customer_name}`, 14, 42);
   doc.text(`RTN cliente: ${order.customer_rtn ?? "-"}`, 14, 48);
   doc.text(`Teléfono: ${order.phone}`, 14, 54);

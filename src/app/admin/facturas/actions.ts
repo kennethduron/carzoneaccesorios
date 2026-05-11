@@ -103,3 +103,19 @@ export async function updateInvoiceCustomerDataAction(input: {
 
   return { ok: true, message: "Datos del cliente corregidos. Puedes reimprimir la factura sin cambiar el numero fiscal." };
 }
+
+export async function logInvoiceReprintAction(invoiceId: string) {
+  await requirePermission("invoices:create");
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("log_invoice_reprint", {
+    target_invoice_id: invoiceId,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "No se pudo registrar la reimpresion fiscal." };
+  }
+
+  revalidatePath("/admin/facturas");
+  revalidatePath("/admin/seguridad");
+  return { ok: true, message: "Reimpresion fiscal registrada en auditoria." };
+}

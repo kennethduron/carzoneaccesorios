@@ -3,13 +3,14 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Download, ExternalLink, Eye, FileText, Printer } from "lucide-react";
-import { cancelInvoiceAction, updateInvoiceCustomerDataAction } from "@/app/admin/facturas/actions";
+import { cancelInvoiceAction, logInvoiceReprintAction, updateInvoiceCustomerDataAction } from "@/app/admin/facturas/actions";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
+import { formatHnDate } from "@/utils/format";
 import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -38,7 +39,7 @@ const paymentLabels: Record<string, string> = {
 };
 
 function formatDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString("es-HN") : "-";
+  return formatHnDate(value);
 }
 
 function csvEscape(value: string | number) {
@@ -169,6 +170,20 @@ export function AdminInvoicesManager({
     doc.text(`ISV: ${formatCurrency(invoice.tax)}`, 140, finalY + 16);
     doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 22);
     doc.save(`${invoice.invoice_number}.pdf`);
+  }
+
+  function reprintInvoice(invoice: AdminInvoiceRow) {
+    startTransition(async () => {
+      const result = await logInvoiceReprintAction(invoice.id);
+      if (!result.ok) {
+        setMessage(result.message);
+        return;
+      }
+
+      await exportInvoicePdf(invoice);
+      setMessage(result.message);
+      router.refresh();
+    });
   }
 
   function cancelInvoice(invoice: AdminInvoiceRow) {
@@ -306,7 +321,7 @@ export function AdminInvoicesManager({
                         <IconButton label="Ver factura" onClick={() => setSelectedInvoice(invoice)}>
                           <Eye size={16} />
                         </IconButton>
-        <IconButton label="Reimprimir factura" onClick={() => void exportInvoicePdf(invoice)}>
+        <IconButton label="Reimprimir factura" onClick={() => reprintInvoice(invoice)}>
                           <Printer size={16} />
                         </IconButton>
                         {canCancelInvoices ? (
@@ -335,7 +350,7 @@ export function AdminInvoicesManager({
           canCorrectInvoices={canCorrectInvoices}
           isPending={isPending}
           onCorrect={correctInvoiceCustomerData}
-          onReprint={() => void exportInvoicePdf(selectedInvoice)}
+          onReprint={() => reprintInvoice(selectedInvoice)}
           onClose={() => setSelectedInvoice(null)}
         />
       ) : null}

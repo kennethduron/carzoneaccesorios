@@ -4,8 +4,11 @@ import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, Printer } from "lucide-react";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
+import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminReportsData, ReportOrder, ReportPaymentMethod } from "@/types/reports";
 import type { InvoiceStatus } from "@/types/invoices";
+import { invoiceNumberValue } from "@/utils/fiscal";
+import { formatHnDate, formatHnMonth } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
 type ReportKey =
@@ -14,6 +17,8 @@ type ReportKey =
   | "monthly"
   | "issuedInvoices"
   | "cancelledInvoices"
+  | "fiscalCorrelatives"
+  | "missingCorrelatives"
   | "paymentMethods"
   | "bankTransfers"
   | "topProducts"
@@ -32,6 +37,7 @@ type ReportDefinition = {
 
 type ReportsDashboardProps = {
   data: AdminReportsData;
+  fiscalSettings: FiscalSettings;
 };
 
 const paymentLabels: Record<string, string> = {
@@ -48,11 +54,11 @@ const invoiceStatusLabels: Record<string, string> = {
 };
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("es-HN");
+  return formatHnDate(value);
 }
 
 function formatMonth(value: string) {
-  return new Intl.DateTimeFormat("es-HN", { month: "long", year: "numeric" }).format(new Date(value));
+  return formatHnMonth(value);
 }
 
 function normalizeDay(value: string) {
@@ -110,7 +116,7 @@ function buildExcelTable(title: string, columns: string[], rows: ReportRow[]) {
   `;
 }
 
-export function ReportsDashboard({ data }: ReportsDashboardProps) {
+export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps) {
   const [activeReport, setActiveReport] = useState<ReportKey>("daily");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -167,6 +173,21 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
     const productSales = new Map<string, { sku: string; internalCode: string; product: string; units: number; total: number; stock: number }>();
 
     const productById = new Map(data.products.map((product) => [product.id, product]));
+    const rangeStart = invoiceNumberValue(fiscalSettings.invoice_range_start);
+    const rangeEnd = invoiceNumberValue(fiscalSettings.invoice_range_end);
+    const usedInvoiceValues = new Map<number, AdminReportsData["invoices"][number]>();
+
+    filteredInvoices.forEach((invoice) => {
+      const value = invoiceNumberValue(invoice.invoice_number);
+      if (value !== null) {
+        usedInvoiceValues.set(value, invoice);
+      }
+    });
+
+    const missingCorrelatives =
+      rangeStart !== null && rangeEnd !== null && rangeStart <= rangeEnd && rangeEnd - rangeStart <= 5000
+        ? Array.from({ length: rangeEnd - rangeStart + 1 }, (_, index) => rangeStart + index).filter((value) => !usedInvoiceValues.has(value))
+        : [];
 
     revenueOrders.forEach((order) => {
       const dayKey = normalizeDay(order.created_at);
@@ -296,6 +317,37 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
         rows: invoiceRows("anulada"),
       },
       {
+        key: "fiscalCorrelatives",
+        label: "Correlativos usados",
+        description: "Numeros fiscales utilizados, con estado, CAI, ISV y total para revision fiscal.",
+        columns: ["Correlativo", "Factura", "Fecha", "CAI", "Estado", "ISV", "Total"],
+        rows: filteredInvoices
+          .map((invoice) => ({
+            Correlativo: invoiceNumberValue(invoice.invoice_number) ?? "-",
+            Factura: invoice.invoice_number,
+            Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
+            CAI: invoice.cai ?? fiscalSettings.cai ?? "-",
+            Estado: invoiceStatusLabels[invoice.status] ?? invoice.status,
+            ISV: formatCurrency(invoice.tax),
+            Total: formatCurrency(invoice.total),
+          }))
+          .sort((left, right) => String(left.Correlativo).localeCompare(String(right.Correlativo), "es-HN", { numeric: true })),
+      },
+      {
+        key: "missingCorrelatives",
+        label: "Correlativos faltantes",
+        description:
+          rangeStart !== null && rangeEnd !== null && rangeEnd - rangeStart > 5000
+            ? "El rango autorizado es demasiado amplio para listar faltantes en pantalla. Exporta por periodos mas pequenos."
+            : "Numeros dentro del rango autorizado que todavia no tienen factura emitida o anulada en el sistema.",
+        columns: ["Correlativo faltante", "Rango autorizado", "CAI"],
+        rows: missingCorrelatives.map((value) => ({
+          "Correlativo faltante": value,
+          "Rango autorizado": `${fiscalSettings.invoice_range_start || "-"} a ${fiscalSettings.invoice_range_end || "-"}`,
+          CAI: fiscalSettings.cai || "-",
+        })),
+      },
+      {
         key: "paymentMethods",
         label: "Ventas por método de pago",
         description: "Totales de venta agrupados por método de pago.",
@@ -378,7 +430,7 @@ export function ReportsDashboard({ data }: ReportsDashboardProps) {
           })),
       },
     ];
-  }, [data.orders, data.products, filteredInvoices, paymentByOrder, revenueOrders, totalIsv, totalItems, totalNet, totalSold]);
+  }, [data.orders, data.products, filteredInvoices, fiscalSettings, paymentByOrder, revenueOrders, totalIsv, totalItems, totalNet, totalSold]);
 
   const currentReport = reportDefinitions.find((report) => report.key === activeReport) ?? reportDefinitions[0];
 

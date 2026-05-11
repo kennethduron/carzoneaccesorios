@@ -8,6 +8,7 @@ import {
 } from "@/app/admin/codigos-mayoristas/actions";
 import { Button, Input } from "@/components/ui";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { formatHnDate } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 import type {
   WholesaleCodeAdminRow,
@@ -198,7 +199,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
                   <td className="px-4 py-3">
                     <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs">{statusLabels[code.status]}</span>
                   </td>
-                  <td className="px-4 py-3">{code.expires_at ? new Date(code.expires_at).toLocaleDateString("es-HN") : "Sin fecha"}</td>
+                  <td className="px-4 py-3">{code.expires_at ? formatHnDate(code.expires_at) : "Sin fecha"}</td>
                   <td className="px-4 py-3">
                     {code.used_count}
                     {code.max_uses ? <span className="text-black/45"> / {code.max_uses}</span> : null}

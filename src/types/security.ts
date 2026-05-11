@@ -5,6 +5,7 @@ export type AuditLogRow = {
   user_id: string | null;
   user_email: string | null;
   user_name: string | null;
+  actor_role: string | null;
   table_name: string;
   record_id: string | null;
   action: string;
