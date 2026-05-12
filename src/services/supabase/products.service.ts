@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
-import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { writeErrorLog } from "@/lib/error-logging";
+import { getSupabasePublicClient } from "@/lib/supabase";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
 
 export type ProductCatalogFilters = {
@@ -147,12 +148,34 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
   };
 }
 
+async function logProductServiceError(action: string, error: unknown, metadata?: Record<string, unknown>) {
+  const message = error instanceof Error ? error.message : "Unknown product service error";
+  const stack = error instanceof Error ? error.stack : null;
+
+  console.error(action, message);
+
+  try {
+    await writeErrorLog({
+      route: "/catalogo",
+      action,
+      errorMessage: message,
+      errorStack: stack,
+      metadata: {
+        source: "products.service",
+        ...metadata,
+      },
+    });
+  } catch (logError) {
+    console.error("Product service error log failed", logError instanceof Error ? logError.message : logError);
+  }
+}
+
 async function getPrimaryImagesForProducts(productIds: string[]) {
   if (productIds.length === 0) {
     return new Map<string, ProductImageRow[]>();
   }
 
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabasePublicClient();
   const { data, error } = await supabase
     .from("product_images")
     .select("id, product_id, public_url, angle, alt_text, sort_order, is_primary")
@@ -207,7 +230,7 @@ function buildVehicleYears(products: ProductFilterOptionRow[]) {
 
 const getCachedActiveCategories = unstable_cache(
   async () => {
-    const supabase = await getSupabaseServerClient();
+    const supabase = getSupabasePublicClient();
     const { data, error } = await supabase
       .from("categories")
       .select("name, slug")
@@ -227,7 +250,7 @@ const getCachedActiveCategories = unstable_cache(
 
 const getCachedProductFilterOptions = unstable_cache(
   async () => {
-    const supabase = await getSupabaseServerClient();
+    const supabase = getSupabasePublicClient();
     const { data, error } = await supabase
       .from("products")
       .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
@@ -263,7 +286,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const vehicleYear = normalizeOptionalNumber(filters.vehicleYear);
 
   try {
-    const supabase = await getSupabaseServerClient();
+    const supabase = getSupabasePublicClient();
     let productsQuery = supabase
       .from("products")
       .select(
@@ -344,7 +367,8 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         vehicleYears: buildVehicleYears(filterRows),
       },
     };
-  } catch {
+  } catch (error) {
+    await logProductServiceError("catalog.products.load_failed", error, { filters });
     return {
       products: [],
       total: 0,
@@ -362,7 +386,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 
 export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
   try {
-    const supabase = await getSupabaseServerClient();
+    const supabase = getSupabasePublicClient();
     const { data, error } = await supabase
       .from("products")
       .select(
@@ -394,14 +418,15 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
 
     const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
     return (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id)));
-  } catch {
+  } catch (error) {
+    await logProductServiceError("catalog.featured_products.load_failed", error, { limit });
     return [];
   }
 }, ["featured-products"], { revalidate: 900, tags: ["products", "featured-products"] });
 
 export async function getProductBySlug(slug: string) {
   try {
-    const supabase = await getSupabaseServerClient();
+    const supabase = getSupabasePublicClient();
     const { data, error } = await supabase
       .from("products")
       .select(
@@ -439,7 +464,8 @@ export async function getProductBySlug(slug: string) {
     }
 
     return data ? normalizeProduct(data) : null;
-  } catch {
+  } catch (error) {
+    await logProductServiceError("catalog.product_detail.load_failed", error, { slug });
     return null;
   }
 }

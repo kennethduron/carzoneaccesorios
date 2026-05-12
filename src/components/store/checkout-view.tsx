@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { BadgeCheck, Banknote, CreditCard, ShieldCheck, Store, Upload } from "lucide-react";
+import Link from "next/link";
+import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
 import { createCheckoutOrderAction } from "@/app/checkout/actions";
 import type { CheckoutData } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -18,9 +19,40 @@ const emptyCheckout: CheckoutData = {
   phone: "",
   rtn: "",
   country: "Honduras",
+  department: "",
+  city: "",
   address: "",
   paymentMethod: "Transferencia bancaria",
   bankTransferReference: "",
+};
+
+const hondurasDepartments = [
+  "Atlántida",
+  "Choluteca",
+  "Colón",
+  "Comayagua",
+  "Copán",
+  "Cortés",
+  "El Paraíso",
+  "Francisco Morazán",
+  "Gracias a Dios",
+  "Intibucá",
+  "Islas de la Bahía",
+  "La Paz",
+  "Lempira",
+  "Ocotepeque",
+  "Olancho",
+  "Santa Bárbara",
+  "Valle",
+  "Yoro",
+];
+
+type OrderConfirmation = {
+  orderNumber: string;
+  trackingCode: string;
+  paymentMethod: CheckoutData["paymentMethod"];
+  total: number;
+  currentStatus: string;
 };
 
 export function CheckoutView() {
@@ -31,6 +63,7 @@ export function CheckoutView() {
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [orderNumber, setOrderNumber] = useState("");
+  const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
   const { rows, invalidItemCount, subtotal, tax, total, clearCart, clearInvalidCartItems } = useShoppingCart();
@@ -58,7 +91,7 @@ export function CheckoutView() {
 
   function submitOrder() {
     if (!sellsInHonduras) {
-      showCheckoutError("country", "Actualmente solo realizamos ventas dentro de Honduras.");
+      showCheckoutError("country", "Actualmente solo realizamos entregas dentro de Honduras.");
       return;
     }
 
@@ -70,6 +103,16 @@ export function CheckoutView() {
     const phone = validateHondurasPhone(checkout.phone);
     if (!phone.ok) {
       showCheckoutError("phone", "Ingresa un número de teléfono válido.");
+      return;
+    }
+
+    if (!checkout.department.trim()) {
+      showCheckoutError("department", "Selecciona el departamento de entrega.");
+      return;
+    }
+
+    if (!checkout.city.trim()) {
+      showCheckoutError("city", "Ingresa la ciudad o municipio de entrega.");
       return;
     }
 
@@ -137,7 +180,7 @@ export function CheckoutView() {
 
       const result = await createCheckoutOrderAction(formData);
 
-      if (!result.ok || !result.orderNumber) {
+      if (!result.ok || !result.orderNumber || !result.trackingCode) {
         setCheckoutMessage(result.message);
         toast.error(result.message || "No se pudo crear el pedido. Revisa la informacion e intenta nuevamente.");
         return;
@@ -145,6 +188,7 @@ export function CheckoutView() {
 
       createOrder({
         orderNumber: result.orderNumber,
+        trackingCode: result.trackingCode,
         customer: { ...checkout, phone: phone.value },
         items: rows.map((item) => ({
           productId: item.product.id,
@@ -172,6 +216,18 @@ export function CheckoutView() {
 
       setOrderNumber(result.orderNumber);
       setCheckoutMessage(result.message);
+      setConfirmation({
+        orderNumber: result.orderNumber,
+        trackingCode: result.trackingCode,
+        paymentMethod: checkout.paymentMethod,
+        total,
+        currentStatus:
+          checkout.paymentMethod === "Transferencia bancaria"
+            ? "Tu pedido está pendiente de revisión de pago."
+            : checkout.paymentMethod === "Efectivo"
+              ? "Tu pedido está pendiente de confirmación."
+              : "Tu pedido será procesado cuando el pago sea aprobado.",
+      });
       setFieldErrors({});
       toast.success("Pedido creado correctamente. Te contactaremos para confirmar el pago.");
       setProofFile(null);
@@ -182,6 +238,7 @@ export function CheckoutView() {
   }
 
   return (
+    <>
     <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1fr_420px]">
       <div className="rounded-lg border border-black/10 bg-white p-5">
         <div className="flex flex-col justify-between gap-3 border-b border-black/10 pb-5 sm:flex-row sm:items-start">
@@ -219,33 +276,52 @@ export function CheckoutView() {
           ))}
           <label className="block">
             <span className="mb-1 block text-xs font-medium uppercase text-black/50">País de entrega</span>
-            <select
+            <input
               value={checkout.country}
-              onChange={(event) => {
-                const country = event.target.value;
-                updateCheckoutField("country", country);
-                setCheckoutMessage(
-                  country === "Honduras"
-                    ? ""
-                    : "Actualmente solo realizamos ventas dentro de Honduras.",
-                );
-              }}
-              className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
-            >
-              <option>Honduras</option>
-              <option>Guatemala</option>
-              <option>El Salvador</option>
-              <option>Nicaragua</option>
-              <option>Costa Rica</option>
-              <option>Panamá</option>
-              <option>Otro país</option>
-            </select>
+              readOnly
+              className="w-full rounded-md border border-black/10 bg-[#f7f7f2] px-3 py-2 text-sm outline-none"
+            />
+            <span className="mt-1 block text-xs text-black/50">
+              Por ahora solo realizamos entregas dentro de Honduras.
+            </span>
           </label>
           {!sellsInHonduras ? (
             <p className="rounded-md bg-[#fff0ea] p-3 text-sm font-medium text-[#9b341b]">
-              Actualmente solo realizamos ventas dentro de Honduras.
+              Actualmente solo realizamos entregas dentro de Honduras.
             </p>
           ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="text-xs font-medium uppercase text-black/50">Departamento</span>
+              <select
+                value={checkout.department}
+                onChange={(event) => updateCheckoutField("department", event.target.value)}
+                className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
+                  fieldErrors.department ? "border-[#d55d3b]" : "border-black/10"
+                }`}
+              >
+                <option value="">Seleccionar departamento</option>
+                {hondurasDepartments.map((department) => (
+                  <option key={department} value={department}>
+                    {department}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.department ? <span className="text-xs text-[#9b341b]">{fieldErrors.department}</span> : null}
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs font-medium uppercase text-black/50">Ciudad o municipio</span>
+              <input
+                value={checkout.city}
+                onChange={(event) => updateCheckoutField("city", event.target.value)}
+                placeholder="Ej. San Pedro Sula"
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  fieldErrors.city ? "border-[#d55d3b]" : "border-black/10"
+                }`}
+              />
+              {fieldErrors.city ? <span className="text-xs text-[#9b341b]">{fieldErrors.city}</span> : null}
+            </label>
+          </div>
           <input
             value={checkout.address}
             onChange={(event) => updateCheckoutField("address", event.target.value)}
@@ -466,5 +542,64 @@ export function CheckoutView() {
         ) : null}
       </aside>
     </section>
+    {confirmation ? (
+      <div className="fixed inset-0 z-[70] grid place-items-center bg-black/45 px-4 py-6">
+        <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#1c1d1b] shadow-xl">
+          <div className="grid size-12 place-items-center rounded-md bg-[#e8f3f2] text-[#1e5960]">
+            <BadgeCheck size={24} />
+          </div>
+          <h2 className="mt-4 text-2xl font-semibold">Pedido creado correctamente</h2>
+          <p className="mt-2 text-sm text-black/60">
+            Gracias por tu compra. Guarda este código para consultar el estado de tu pedido.
+          </p>
+
+          <div className="mt-5 space-y-2 rounded-lg border border-black/10 bg-[#f7f7f2] p-4 text-sm">
+            <InfoRow label="Número de pedido" value={confirmation.orderNumber} />
+            <InfoRow label="Código de seguimiento" value={confirmation.trackingCode} strong />
+            <InfoRow label="Método de pago" value={confirmation.paymentMethod} />
+            <InfoRow label="Estado actual" value={confirmation.currentStatus} />
+            <InfoRow label="Total" value={formatCurrency(confirmation.total)} strong />
+          </div>
+
+          <div className="mt-5 grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(confirmation.trackingCode);
+                toast.success("Código de seguimiento copiado.");
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-semibold"
+            >
+              <Copy size={16} />
+              Copiar código
+            </button>
+            <Link
+              href={`/rastreo?codigo=${encodeURIComponent(confirmation.trackingCode)}`}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#246a73] px-3 py-2 text-sm font-semibold text-white"
+            >
+              <SearchCheck size={16} />
+              Ver estado
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-semibold"
+            >
+              <Home size={16} />
+              Volver al inicio
+            </Link>
+          </div>
+        </section>
+      </div>
+    ) : null}
+    </>
+  );
+}
+
+function InfoRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-black/55">{label}</span>
+      <span className={`text-right ${strong ? "font-semibold" : "font-medium"}`}>{value}</span>
+    </div>
   );
 }

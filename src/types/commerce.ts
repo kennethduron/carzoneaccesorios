@@ -41,6 +41,8 @@ export type CheckoutData = {
   phone: string;
   rtn: string;
   country: string;
+  department: string;
+  city: string;
   address: string;
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo";
   bankTransferReference: string;

@@ -24,6 +24,7 @@ function readStoredOrders() {
     const orders = stored ? (JSON.parse(stored) as StoreOrder[]) : [];
     return orders.map((order) => ({
       ...order,
+      trackingCode: order.trackingCode ?? null,
       paymentReference: order.paymentReference ?? order.customer.bankTransferReference ?? null,
       paymentProofFileName: order.paymentProofFileName ?? null,
       paymentStatus: order.paymentStatus ?? "pending_review",
@@ -74,6 +75,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           ...input,
           id: crypto.randomUUID(),
           orderNumber: input.orderNumber ?? `CZ-${Date.now().toString().slice(-8)}`,
+          trackingCode: input.trackingCode ?? null,
           paymentStatus: input.paymentStatus ?? "pending_review",
           customerPhone: input.customerPhone,
           phone: input.phone,

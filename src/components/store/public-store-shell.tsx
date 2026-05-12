@@ -11,6 +11,7 @@ const links = [
   ["Catálogo", "/catalogo"],
   ["Categorías", "/categorias"],
   ["Contacto", "/contacto"],
+  ["Rastrear pedido", "/rastreo"],
   ["Mi cuenta", "/cuenta"],
   ["Facturas", "/facturas"],
 ];

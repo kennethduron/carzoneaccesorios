@@ -69,6 +69,14 @@ function normalizeCustomer(row: WholesaleCustomerQueryRow): WholesaleCustomerOpt
   };
 }
 
+function toServiceError(error: { message: string; code?: string; details?: string | null; hint?: string | null }) {
+  return Object.assign(new Error(error.message), {
+    code: error.code ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  });
+}
+
 export async function getAdminWholesaleCodes() {
   const supabase = getSupabaseAdminClient();
 
@@ -113,11 +121,11 @@ export async function getAdminWholesaleCodes() {
   ]);
 
   if (codesError) {
-    throw new Error(codesError.message);
+    throw toServiceError(codesError);
   }
 
   if (customersError) {
-    throw new Error(customersError.message);
+    throw toServiceError(customersError);
   }
 
   return {

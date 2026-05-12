@@ -25,6 +25,7 @@ type CheckoutActionResult = {
   ok: boolean;
   message: string;
   orderNumber?: string;
+  trackingCode?: string;
   transferReceiptUrl?: string | null;
 };
 
@@ -49,6 +50,7 @@ const wholesaleMessages = {
   codeNotOwned: "Este código mayorista no pertenece a tu cuenta.",
   accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
 };
+const hondurasOnlyMessage = "Actualmente solo realizamos entregas dentro de Honduras.";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isUuid(value: string) {
@@ -153,6 +155,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const customerName = String(input.checkout.customerName ?? "").trim();
   const country = String(input.checkout.country ?? "").trim();
+  const department = String(input.checkout.department ?? "").trim();
+  const city = String(input.checkout.city ?? "").trim();
   const phoneResult = validateHondurasPhone(input.checkout.phone);
   const customerRtn = String(input.checkout.rtn ?? "").trim() || null;
   const deliveryAddress = String(input.checkout.address ?? "").trim();
@@ -162,7 +166,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const rawItems = Array.isArray(input.items) ? input.items : [];
 
   if (country !== "Honduras") {
-    return { ok: false, message: "Actualmente solo realizamos ventas dentro de Honduras." };
+    return { ok: false, message: hondurasOnlyMessage };
   }
 
   if (!phoneResult.ok) {
@@ -171,7 +175,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const phone = phoneResult.value;
 
-  if (!customerName || !deliveryAddress || rawItems.length === 0) {
+  if (!customerName || !department || !city || !deliveryAddress || rawItems.length === 0) {
     return { ok: false, message: "Completa tus datos y agrega productos para crear el pedido." };
   }
 
@@ -323,6 +327,10 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       customer_phone: phone,
       customer_rtn: customerRtn,
       delivery_address: deliveryAddress,
+      delivery_country: "Honduras",
+      country_code: "HN",
+      delivery_department: department,
+      delivery_city: city,
       requested_price_mode: input.priceMode,
       requested_payment_method: paymentMethod,
       bank_reference_number: paymentMethod === "bank_transfer" ? bankReference : null,
@@ -334,7 +342,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       wholesale_code_id: input.wholesaleCodeId || null,
       transfer_receipt_url: transferReceiptUrl,
     })
-    .returns<Array<{ order_id: string; order_number: string }>>();
+    .returns<Array<{ order_id: string; order_number: string; tracking_code: string }>>();
 
   if (error) {
     await writeErrorLog({
@@ -354,7 +362,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: safeCheckoutErrorMessage(error.message) };
   }
 
-  const rows = (Array.isArray(data) ? data : []) as Array<{ order_id: string; order_number: string }>;
+  const rows = (Array.isArray(data) ? data : []) as Array<{ order_id: string; order_number: string; tracking_code: string }>;
   const createdOrder = rows[0];
 
   if (!createdOrder) {
@@ -370,6 +378,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     ok: true,
     message: "Pedido creado correctamente. El admin o la contadora podran revisarlo para facturacion.",
     orderNumber: createdOrder.order_number,
+    trackingCode: createdOrder.tracking_code,
     transferReceiptUrl,
   };
 }

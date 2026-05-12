@@ -31,6 +31,24 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function humanWholesaleError(error: { message?: string; code?: string; details?: string | null }) {
+  const message = error.message?.toLowerCase() ?? "";
+
+  if (error.code === "23505" || message.includes("duplicate key") || message.includes("unique constraint")) {
+    return "Este codigo ya esta registrado. Usa otro.";
+  }
+
+  if (error.code === "42501" || message.includes("permission denied") || message.includes("row-level security")) {
+    return "No tienes permisos para administrar codigos mayoristas.";
+  }
+
+  if (message.includes("fetch failed") || message.includes("failed to fetch")) {
+    return "No pudimos conectar con la base de datos.";
+  }
+
+  return "No pudimos guardar el codigo mayorista. Intenta nuevamente.";
+}
+
 export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Promise<WholesaleCodeMutationResult> {
   await requirePermission("customers:manage");
 
@@ -60,7 +78,7 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
   const { data, error } = await query;
 
   if (error) {
-    return { ok: false, message: error.message };
+    return { ok: false, message: humanWholesaleError(error) };
   }
 
   await writeAuditLog({
@@ -102,7 +120,7 @@ export async function createWholesaleCustomerAction(
     .maybeSingle<{ id: string; email: string | null; active: boolean }>();
 
   if (userError) {
-    return { ok: false, message: userError.message };
+    return { ok: false, message: humanWholesaleError(userError) };
   }
 
   const hasAccount = Boolean(userProfile?.id);
@@ -125,7 +143,7 @@ export async function createWholesaleCustomerAction(
   const { data, error } = await admin.from("customers").insert(payload).select("id").single<{ id: string }>();
 
   if (error) {
-    return { ok: false, message: error.message };
+    return { ok: false, message: humanWholesaleError(error) };
   }
 
   await writeAuditLog({
@@ -155,7 +173,7 @@ export async function setWholesaleCodeActiveAction(id: string, active: boolean):
     .eq("id", id);
 
   if (error) {
-    return { ok: false, message: error.message };
+    return { ok: false, message: humanWholesaleError(error) };
   }
 
   await writeAuditLog({

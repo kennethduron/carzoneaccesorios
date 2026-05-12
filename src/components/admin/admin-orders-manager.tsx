@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import { logInvoiceReprintAction } from "@/app/admin/facturas/actions";
-import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "@/app/admin/pedidos/actions";
+import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction, updateOrderStatusAction } from "@/app/admin/pedidos/actions";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
@@ -59,6 +59,18 @@ const paymentLabels: Record<string, string> = {
   cash: "Efectivo",
 };
 
+const editableOrderStatuses = [
+  ["recibido", "Pedido recibido"],
+  ["confirmed", "Pago confirmado"],
+  ["paid", "Pagado"],
+  ["preparacion", "En preparación"],
+  ["empacado", "Empacado"],
+  ["enviado", "Enviado"],
+  ["en_ruta", "En ruta"],
+  ["entregado", "Entregado"],
+  ["cancelado", "Cancelado"],
+] as const;
+
 export function AdminOrdersManager({
   orders,
   total,
@@ -93,7 +105,7 @@ export function AdminOrdersManager({
         return true;
       }
 
-      return `${order.order_number} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${order.bank_reference_number ?? ""} ${order.invoice_number ?? ""}`
+      return `${order.order_number} ${order.tracking_code ?? ""} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${order.bank_reference_number ?? ""} ${order.invoice_number ?? ""}`
         .toLowerCase()
         .includes(normalizedQuery);
     });
@@ -119,6 +131,17 @@ export function AdminOrdersManager({
   function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected") {
     startTransition(async () => {
       const result = await updateOrderPaymentStatusAction(order.id, status);
+      showAdminMessage(result.message, result.ok);
+
+      if (result.ok) {
+        router.refresh();
+      }
+    });
+  }
+
+  function updateOrderStatus(order: AdminOrderRow, status: AdminOrderRow["status"]) {
+    startTransition(async () => {
+      const result = await updateOrderStatusAction(order.id, status);
       showAdminMessage(result.message, result.ok);
 
       if (result.ok) {
@@ -185,6 +208,7 @@ export function AdminOrdersManager({
                 }`}
               >
                 <p className="font-semibold">{order.order_number}</p>
+                {order.tracking_code ? <p className="mt-1 text-xs text-[#1e5960]">{order.tracking_code}</p> : null}
                 <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
                 <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p>
                 {order.invoice_number ? (
@@ -205,6 +229,7 @@ export function AdminOrdersManager({
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
             onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
             onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
+            onUpdateOrderStatus={(status) => updateOrderStatus(selectedOrder, status)}
             onReprintInvoice={() => reprintInvoice(selectedOrder)}
           />
         ) : null}
@@ -222,6 +247,7 @@ function OrderDetail({
   onGenerateInvoice,
   onApprovePayment,
   onRejectPayment,
+  onUpdateOrderStatus,
   onReprintInvoice,
 }: {
   order: AdminOrderRow;
@@ -232,6 +258,7 @@ function OrderDetail({
   onGenerateInvoice: () => void;
   onApprovePayment: () => void;
   onRejectPayment: () => void;
+  onUpdateOrderStatus: (status: AdminOrderRow["status"]) => void;
   onReprintInvoice: () => void;
 }) {
   const isBankTransfer = order.payment_method === "bank_transfer";
@@ -258,6 +285,40 @@ function OrderDetail({
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+          <p className="text-sm text-black/50">Código de seguimiento</p>
+          <div className="mt-2 flex items-center gap-2">
+            <p className="font-semibold">{order.tracking_code ?? "Sin código"}</p>
+            {order.tracking_code ? (
+              <button
+                type="button"
+                onClick={async () => navigator.clipboard.writeText(order.tracking_code ?? "")}
+                className="grid size-8 place-items-center rounded-md border border-black/10 bg-white"
+                title="Copiar código"
+                aria-label="Copiar código de seguimiento"
+              >
+                <Copy size={15} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+          <label>
+            <span className="text-sm text-black/50">Estado del pedido</span>
+            <select
+              value={order.status}
+              onChange={(event) => onUpdateOrderStatus(event.target.value as AdminOrderRow["status"])}
+              disabled={isPending}
+              className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+            >
+              {editableOrderStatuses.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <InfoBlock label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
         <InfoBlock label="Estado del pago" value={paymentStatusLabels[order.payment_status ?? "pending"] ?? "Pendiente"} />
         <InfoBlock label="Precio usado" value={order.price_mode === "wholesale" ? "Precio mayorista" : "Precio al detalle"} />

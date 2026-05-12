@@ -33,6 +33,7 @@ export type OrderItemSnapshot = {
 export type StoreOrder = {
   id: string;
   orderNumber: string;
+  trackingCode: string | null;
   customer: CheckoutData;
   items: OrderItemSnapshot[];
   priceMode: PriceMode;
@@ -51,8 +52,9 @@ export type StoreOrder = {
   createdAt: string;
 };
 
-export type CreateOrderInput = Omit<StoreOrder, "id" | "orderNumber" | "status" | "createdAt" | "paymentStatus"> & {
+export type CreateOrderInput = Omit<StoreOrder, "id" | "orderNumber" | "trackingCode" | "status" | "createdAt" | "paymentStatus"> & {
   orderNumber?: string;
+  trackingCode?: string | null;
   paymentStatus?: PaymentReviewStatus;
 };
 
@@ -72,12 +74,19 @@ export type AdminOrderItem = {
 export type AdminOrderRow = {
   id: string;
   order_number: string;
+  tracking_code: string | null;
+  tracking_status: string | null;
+  public_tracking_enabled: boolean;
   customer_id: string | null;
   customer_name: string;
   customer_rtn: string | null;
   email: string | null;
   phone: string;
   delivery_address: string;
+  delivery_country: string;
+  delivery_country_code: string;
+  delivery_department: string | null;
+  delivery_city: string | null;
   payment_method: "bank_transfer" | "card" | "cash";
   price_mode: PriceMode;
   subtotal: number;

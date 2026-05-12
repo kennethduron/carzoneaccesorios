@@ -6,6 +6,48 @@ import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type PaymentStatus = "approved" | "rejected";
+type OrderStatus =
+  | "recibido"
+  | "confirmado"
+  | "preparacion"
+  | "empacado"
+  | "enviado"
+  | "en_ruta"
+  | "entregado"
+  | "cancelado"
+  | "pending"
+  | "confirmed"
+  | "paid"
+  | "preparing"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
+
+const allowedOrderStatuses = new Set<OrderStatus>([
+  "recibido",
+  "confirmado",
+  "preparacion",
+  "empacado",
+  "enviado",
+  "en_ruta",
+  "entregado",
+  "cancelado",
+  "pending",
+  "confirmed",
+  "paid",
+  "preparing",
+  "shipped",
+  "delivered",
+  "cancelled",
+]);
+
+function safeAdminOrderMessage(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("row-level security") || normalized.includes("permission denied")) {
+    return "No tienes permiso para realizar esta acción.";
+  }
+  return message || "No se pudo actualizar el pedido.";
+}
 
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus) {
   await requirePermission("payments:manage");
@@ -103,11 +145,66 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
 
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin/reportes");
+  revalidatePath("/rastreo");
 
   return {
     ok: true,
     message: status === "approved" ? "Pago confirmado. El pedido queda pagado." : "Pago rechazado. El pedido queda pendiente.",
   };
+}
+
+export async function updateOrderStatusAction(orderId: string, status: OrderStatus) {
+  await requirePermission("orders:manage");
+
+  if (!allowedOrderStatuses.has(status)) {
+    return { ok: false, message: "Estado de pedido inválido." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data: previousOrder, error: previousError } = await supabase
+    .from("orders")
+    .select("id, order_number, status, tracking_status")
+    .eq("id", orderId)
+    .single<{ id: string; order_number: string; status: string; tracking_status: string | null }>();
+
+  if (previousError) {
+    return { ok: false, message: safeAdminOrderMessage(previousError.message) };
+  }
+
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      status,
+      tracking_status: status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    return { ok: false, message: safeAdminOrderMessage(error.message) };
+  }
+
+  await writeAuditLog({
+    tableName: "orders",
+    recordId: orderId,
+    action: "order.status_updated",
+    oldData: {
+      order_number: previousOrder.order_number,
+      status: previousOrder.status,
+      tracking_status: previousOrder.tracking_status,
+    },
+    newData: {
+      order_number: previousOrder.order_number,
+      status,
+      tracking_status: status,
+    },
+  });
+
+  revalidatePath("/admin/pedidos");
+  revalidatePath("/admin/reportes");
+  revalidatePath("/rastreo");
+
+  return { ok: true, message: "Estado del pedido actualizado." };
 }
 
 export async function generateInvoiceFromOrderAction(orderId: string) {

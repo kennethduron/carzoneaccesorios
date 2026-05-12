@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
@@ -78,6 +78,9 @@ function revalidateProductCatalog(slug?: string | null) {
   if (slug) {
     revalidatePath(`/producto/${slug}`);
   }
+  updateTag("products");
+  updateTag("featured-products");
+  updateTag("vehicle-filters");
   revalidateTag("products", "max");
   revalidateTag("featured-products", "max");
   revalidateTag("vehicle-filters", "max");
