@@ -5,12 +5,23 @@ import { requireSession } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function CuentaPage() {
+export default async function CuentaPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const profile = await requireSession();
+  const params = (await searchParams) ?? {};
+  const confirmed = params.confirmed === "1";
 
   return (
     <PublicStoreShell>
       <section className="mx-auto max-w-4xl px-5 py-8">
+        {confirmed ? (
+          <div className="mb-4 rounded-lg border border-[#246a73]/20 bg-[#e8f3f2] p-4 text-sm text-[#1e5960]">
+            Correo confirmado correctamente. Tu cuenta ya está activa.
+          </div>
+        ) : null}
         <div className="rounded-lg border border-black/10 bg-white p-5">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>

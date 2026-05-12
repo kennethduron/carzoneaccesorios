@@ -47,7 +47,7 @@ export async function proxy(request: NextRequest) {
   if (!user) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", pathname);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -57,11 +57,11 @@ export async function proxy(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("roles(name)")
+    .select("active, roles(name)")
     .eq("id", user.id)
-    .maybeSingle<{ roles: { name: AppRole } | null }>();
+    .maybeSingle<{ active: boolean; roles: { name: AppRole } | null }>();
 
-  if (!profile?.roles || !adminAccessRoles.includes(profile.roles.name)) {
+  if (!profile?.active || !profile.roles || !adminAccessRoles.includes(profile.roles.name)) {
     const deniedUrl = request.nextUrl.clone();
     deniedUrl.pathname = "/sin-permiso";
     deniedUrl.search = "";

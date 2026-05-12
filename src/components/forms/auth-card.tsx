@@ -3,8 +3,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CarFront, Loader2, LogIn, UserPlus } from "lucide-react";
-import { loginWithEmailAction, registerWithEmailAction } from "@/app/auth/actions";
+import { CarFront, Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
+import { loginWithEmailAction, registerWithEmailAction, resendConfirmationEmailAction } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SystemLoadingScreen } from "@/components/system-loading-screen";
@@ -14,44 +14,104 @@ type AuthCardProps = {
   mode: "login" | "registro";
 };
 
+type MessageTone = "info" | "success" | "error";
+
+function safeNextPath(value: string | null) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/cuenta";
+}
+
+function getConfirmationErrorMessage(reason: string | null) {
+  if (reason === "expired") {
+    return "El enlace de confirmación venció. Solicita uno nuevo.";
+  }
+
+  if (reason === "already_confirmed") {
+    return "Tu correo ya fue confirmado. Puedes iniciar sesión.";
+  }
+
+  if (reason === "missing") {
+    return "El enlace de confirmación está incompleto. Solicita uno nuevo.";
+  }
+
+  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmación.";
+}
+
 export function AuthCard({ mode }: AuthCardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawNextPath = searchParams.get("next") ?? "/cuenta";
-  const nextPath = rawNextPath.startsWith("/") && !rawNextPath.startsWith("//") ? rawNextPath : "/cuenta";
+  const nextPath = safeNextPath(searchParams.get("next"));
   const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<MessageTone>("info");
+  const [showConfirmationHelp, setShowConfirmationHelp] = useState(false);
   const toast = useToast();
 
   const isLogin = mode === "login";
-  const queryMessage =
-    isLogin && searchParams.get("check_email")
-      ? "Revisa tu correo y confirma tu cuenta antes de iniciar sesión."
-      : isLogin && searchParams.get("registered")
-        ? "Cuenta confirmada. Ahora puedes iniciar sesión."
-        : "";
-  const visibleMessage = message || queryMessage;
+  const queryMessage = (() => {
+    if (!isLogin) {
+      return null;
+    }
+
+    if (searchParams.get("confirmed")) {
+      return {
+        text: "Correo confirmado correctamente. Ya puedes iniciar sesión.",
+        tone: "success" as const,
+        canResend: false,
+      };
+    }
+
+    if (searchParams.get("check_email")) {
+      return {
+        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
+        tone: "info" as const,
+        canResend: true,
+      };
+    }
+
+    if (searchParams.get("confirmation_error")) {
+      return {
+        text: getConfirmationErrorMessage(searchParams.get("confirmation_error")),
+        tone: "error" as const,
+        canResend: true,
+      };
+    }
+
+    return null;
+  })();
+  const visibleMessage = message || queryMessage?.text || "";
+  const visibleTone = message ? messageTone : queryMessage?.tone ?? "info";
+  const shouldShowConfirmationHelp = showConfirmationHelp || Boolean(queryMessage?.canResend);
+  const messageClassName =
+    visibleTone === "success"
+      ? "bg-[#e8f3f2] text-[#1e5960]"
+      : visibleTone === "error"
+        ? "bg-[#fff2ed] text-[#9b341b]"
+        : "bg-[#f7f7f2] text-black/65";
 
   useEffect(() => {
     if (!isLogin) {
       return;
     }
 
-    if (searchParams.get("check_email")) {
-      toast.info("Revisa tu correo y confirma tu cuenta antes de iniciar sesión.");
-    } else if (searchParams.get("registered")) {
-      toast.success("Cuenta confirmada. Ahora puedes iniciar sesión.");
+    if (queryMessage?.tone === "success") {
+      toast.success(queryMessage.text);
+    } else if (queryMessage?.tone === "error") {
+      toast.error(queryMessage.text);
+    } else if (queryMessage?.text) {
+      toast.info(queryMessage.text);
     }
-  }, [isLogin, searchParams, toast]);
+  }, [isLogin, queryMessage?.text, queryMessage?.tone, searchParams, toast]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setMessage("");
+    setShowConfirmationHelp(false);
 
     const result = isLogin
       ? await loginWithEmailAction(email, password, nextPath)
@@ -61,19 +121,42 @@ export function AuthCard({ mode }: AuthCardProps) {
     setMessage(result.message);
 
     if (!result.ok) {
+      setMessageTone("error");
+      setShowConfirmationHelp(result.message.toLowerCase().includes("confirm"));
       toast.error(result.message);
       return;
     }
 
     if (result.needsEmailConfirmation) {
+      setMessageTone("info");
+      setShowConfirmationHelp(true);
       toast.info(result.message);
-      router.push(result.redirectTo ?? "/login?check_email=1");
+      router.push(result.redirectTo ?? `/login?check_email=1&email=${encodeURIComponent(email)}`);
       return;
     }
 
+    setMessageTone("success");
     toast.success(result.message);
     router.push(result.redirectTo ?? nextPath);
     router.refresh();
+  }
+
+  async function handleResendConfirmation() {
+    setResending(true);
+    setMessage("");
+
+    const result = await resendConfirmationEmailAction(email);
+
+    setResending(false);
+    setMessage(result.message);
+    setMessageTone(result.ok ? "success" : "error");
+    setShowConfirmationHelp(true);
+
+    if (result.ok) {
+      toast.success(result.message);
+    } else {
+      toast.error(result.message);
+    }
   }
 
   return (
@@ -104,7 +187,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <p className="mt-1 text-sm text-black/55">
               {isLogin
                 ? "Usa tu correo y contraseña."
-                : "Tu cuenta se crea como cliente retail. El mayoreo se aprueba desde admin."}
+                : "Te enviaremos un correo para confirmar tu cuenta antes de iniciar sesión."}
             </p>
           </div>
 
@@ -148,8 +231,38 @@ export function AuthCard({ mode }: AuthCardProps) {
             />
           </div>
 
-          {visibleMessage ? (
-            <p className="mt-4 rounded-md bg-[#fff2ed] px-3 py-2 text-sm text-[#9b341b]">{visibleMessage}</p>
+          {visibleMessage ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{visibleMessage}</p> : null}
+
+          {isLogin && shouldShowConfirmationHelp ? (
+            <div className="mt-4 rounded-md border border-black/10 bg-[#f7f7f2] p-3">
+              <p className="text-sm text-black/65">
+                Revisa tu bandeja de entrada o spam. Si el enlace venció o no llegó, puedes solicitar uno nuevo.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={resending || !email.trim()}
+                  onClick={handleResendConfirmation}
+                >
+                  {resending ? <Loader2 className="animate-spin" size={17} /> : <MailCheck size={17} />}
+                  {resending ? "Enviando..." : "Reenviar confirmación"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() => {
+                    setEmail("");
+                    setMessage("");
+                  }}
+                >
+                  <RotateCcw size={17} />
+                  Cambiar correo
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           <Button type="submit" variant="dark" className="mt-5 w-full py-3" disabled={loading}>

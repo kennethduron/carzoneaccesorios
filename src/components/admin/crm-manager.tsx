@@ -1,22 +1,30 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import {
+  Ban,
   CheckCircle2,
   Clock,
+  ExternalLink,
   MessageSquarePlus,
+  PackageSearch,
   PhoneCall,
   Save,
   Search,
+  ShieldAlert,
+  Trash2,
   UserPlus,
   X,
 } from "lucide-react";
 import {
   approveWholesaleRequestAction,
+  deleteTestAccountAction,
   saveCrmFollowupAction,
   saveCrmLeadAction,
   saveCrmNoteAction,
   setCrmFollowupStatusAction,
+  suspendCustomerAccountAction,
 } from "@/app/admin/crm/actions";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -242,6 +250,50 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }
 
+  function suspendCustomer(customer: CrmCustomerOption) {
+    if (!window.confirm(`Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`)) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await suspendCustomerAccountAction(customer.id);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Cuenta suspendida correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo suspender la cuenta.");
+      }
+    });
+  }
+
+  function deleteTestCustomer(customer: CrmCustomerOption) {
+    const email = customer.account_email ?? customer.email ?? "";
+    if (!email) {
+      toast.error("El cliente no tiene correo asociado.");
+      return;
+    }
+
+    const confirmation = window.prompt(
+      "Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales.\n\n" +
+        `Correo: ${email}\n\n` +
+        "Para continuar escribe: ELIMINAR TEST",
+    );
+
+    if (confirmation === null) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await deleteTestAccountAction({ email, confirmation });
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Cuenta TEST eliminada correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo eliminar la cuenta TEST.");
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       <PaginationControls
@@ -436,6 +488,17 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         </div>
       </section>
 
+      {focus === "customers" ? (
+        <CustomerAccountsTable
+          customers={filteredCustomers}
+          pending={isPending}
+          onSelect={(customerId) => setSelectedCustomerId(customerId)}
+          onApproveWholesale={approveWholesaleCustomer}
+          onSuspend={suspendCustomer}
+          onDeleteTest={deleteTestCustomer}
+        />
+      ) : null}
+
       <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
         <div className="overflow-hidden rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-5">
@@ -507,7 +570,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         </div>
 
         <div className="space-y-5">
-          <CustomerDetailCard customer={selectedCustomer} pending={isPending} onApproveWholesale={approveWholesaleCustomer} />
+          <CustomerDetailCard
+            customer={selectedCustomer}
+            pending={isPending}
+            onApproveWholesale={approveWholesaleCustomer}
+            onSuspend={suspendCustomer}
+            onDeleteTest={deleteTestCustomer}
+          />
           <FollowupDetailCard followup={selectedFollowup} />
 
           <div className="rounded-lg border border-black/10 bg-white p-5">
@@ -598,10 +667,14 @@ function CustomerDetailCard({
   customer,
   pending,
   onApproveWholesale,
+  onSuspend,
+  onDeleteTest,
 }: {
   customer: CrmCustomerOption | null;
   pending: boolean;
   onApproveWholesale: (customerId: string) => void;
+  onSuspend: (customer: CrmCustomerOption) => void;
+  onDeleteTest: (customer: CrmCustomerOption) => void;
 }) {
   const isWholesaleRequest = Boolean(customer?.notes?.includes("[SOLICITUD_MAYOREO]"));
 
@@ -615,7 +688,12 @@ function CustomerDetailCard({
             <p className="text-xs text-black/45">{customer.email ?? "Sin correo registrado"}</p>
           </div>
           <InfoLine label="Teléfono" value={customer.phone || "Sin teléfono"} />
-          <InfoLine label="Estado" value={leadStatusLabels[customer.lead_status]} />
+          <InfoLine label="Estado CRM" value={leadStatusLabels[customer.lead_status]} />
+          <InfoLine label="Estado de cuenta" value={customer.account_state} />
+          <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Si" : customer.user_id ? "No" : "Sin cuenta"} />
+          <InfoLine label="Pedidos" value={customer.order_count.toLocaleString("es-HN")} />
+          <InfoLine label="Registro" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
+          <InfoLine label="Ultima actividad" value={formatDateTime(customer.last_activity_at)} />
           <InfoLine label="Mayorista" value={customer.is_wholesale ? `Si, estado ${customer.status}` : isWholesaleRequest ? "Solicitud pendiente" : "No"} />
           <InfoLine label="Ciudad" value={customer.city ?? "Sin ciudad"} />
           <InfoLine label="RTN" value={customer.tax_id ?? "Sin RTN"} />
@@ -633,11 +711,138 @@ function CustomerDetailCard({
               </Button>
             </div>
           ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => onSuspend(customer)} disabled={pending || customer.account_state === "Cuenta suspendida"} variant="ghost">
+              <Ban size={16} />
+              Suspender cuenta
+            </Button>
+            {customer.is_test_account ? (
+              <Button onClick={() => onDeleteTest(customer)} disabled={pending} variant="secondary">
+                <Trash2 size={16} />
+                Eliminar cuenta TEST
+              </Button>
+            ) : (
+              <p className="rounded-md bg-[#f7f7f2] px-3 py-2 text-xs text-black/55">
+                Eliminacion directa bloqueada para clientes reales.
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         <p className="mt-3 text-sm text-black/55">No hay cliente seleccionado.</p>
       )}
     </div>
+  );
+}
+
+function CustomerAccountsTable({
+  customers,
+  pending,
+  onSelect,
+  onApproveWholesale,
+  onSuspend,
+  onDeleteTest,
+}: {
+  customers: CrmCustomerOption[];
+  pending: boolean;
+  onSelect: (customerId: string) => void;
+  onApproveWholesale: (customerId: string) => void;
+  onSuspend: (customer: CrmCustomerOption) => void;
+  onDeleteTest: (customer: CrmCustomerOption) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
+      <div className="border-b border-black/10 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Cuentas de clientes</h2>
+            <p className="mt-1 text-sm text-black/55">
+              Clientes registrados, confirmacion de correo, actividad y acciones seguras.
+            </p>
+          </div>
+          <div className="flex max-w-xl gap-2 rounded-md border border-[#d55d3b]/25 bg-[#fff7ed] p-3 text-xs text-[#7c2d12]">
+            <ShieldAlert size={18} className="shrink-0" />
+            <p>Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales.</p>
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1180px] text-left text-sm">
+          <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <tr>
+              <th className="px-4 py-3">Cliente</th>
+              <th className="px-4 py-3">Correo</th>
+              <th className="px-4 py-3">Telefono</th>
+              <th className="px-4 py-3">Tipo</th>
+              <th className="px-4 py-3">Estado de cuenta</th>
+              <th className="px-4 py-3">Correo confirmado</th>
+              <th className="px-4 py-3">Pedidos</th>
+              <th className="px-4 py-3">Ultima actividad</th>
+              <th className="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/10">
+            {customers.length === 0 ? (
+              <tr>
+                <td className="px-4 py-5 text-sm text-black/55" colSpan={9}>
+                  No hay clientes para mostrar.
+                </td>
+              </tr>
+            ) : (
+              customers.map((customer) => {
+                const email = customer.account_email ?? customer.email ?? "";
+                const isWholesaleRequest = customer.has_wholesale_request && !customer.is_wholesale;
+
+                return (
+                  <tr key={customer.id}>
+                    <td className="px-4 py-3">
+                      <p className="font-semibold">{customerDisplayName(customer)}</p>
+                      <p className="text-xs text-black/45">Registro: {formatDateTime(customer.account_created_at ?? customer.created_at)}</p>
+                    </td>
+                    <td className="px-4 py-3">{email || "Sin correo"}</td>
+                    <td className="px-4 py-3">{customer.account_phone ?? customer.phone ?? "Sin telefono"}</td>
+                    <td className="px-4 py-3">{customer.customer_type}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs font-medium">{customer.account_state}</span>
+                    </td>
+                    <td className="px-4 py-3">{customer.email_confirmed_at ? "Si" : customer.user_id ? "No" : "Sin cuenta"}</td>
+                    <td className="px-4 py-3">{customer.order_count.toLocaleString("es-HN")}</td>
+                    <td className="px-4 py-3">{formatDateTime(customer.last_activity_at)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <IconButton label="Ver cliente" onClick={() => onSelect(customer.id)}>
+                          <Search size={16} />
+                        </IconButton>
+                        <LinkIconButton label="Ver pedidos" href="/admin/pedidos">
+                          <PackageSearch size={16} />
+                        </LinkIconButton>
+                        <LinkIconButton label="Ver CRM" href="/admin/crm">
+                          <ExternalLink size={16} />
+                        </LinkIconButton>
+                        {isWholesaleRequest ? (
+                          <IconButton label="Aprobar mayorista" onClick={() => onApproveWholesale(customer.id)}>
+                            <CheckCircle2 size={16} />
+                          </IconButton>
+                        ) : null}
+                        <IconButton label="Suspender cuenta" onClick={() => onSuspend(customer)}>
+                          <Ban size={16} />
+                        </IconButton>
+                        {customer.is_test_account ? (
+                          <IconButton label="Eliminar cuenta TEST" onClick={() => onDeleteTest(customer)}>
+                            <Trash2 size={16} />
+                          </IconButton>
+                        ) : null}
+                      </div>
+                      {pending ? <p className="mt-2 text-right text-xs text-black/45">Procesando...</p> : null}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -737,5 +942,18 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
     >
       {children}
     </button>
+  );
+}
+
+function LinkIconButton({ label, href, children }: { label: string; href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      title={label}
+      aria-label={label}
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f7f7f2]"
+    >
+      {children}
+    </Link>
   );
 }

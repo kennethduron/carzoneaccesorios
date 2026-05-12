@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
+import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { validateHondurasPhone } from "@/utils/validation";
@@ -373,6 +374,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   revalidatePath("/admin/inventario");
   revalidatePath("/admin/reportes");
   revalidatePath("/catalogo");
+
+  try {
+    await notifyAdminsOfNewOrder({
+      orderId: createdOrder.order_id,
+      orderNumber: createdOrder.order_number,
+      trackingCode: createdOrder.tracking_code,
+    });
+  } catch (notificationError) {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "notifications.order_created_unhandled",
+      errorMessage: notificationError instanceof Error ? notificationError.message : "Unhandled order notification error.",
+      errorStack: notificationError instanceof Error ? notificationError.stack : null,
+      metadata: {
+        order_id: createdOrder.order_id,
+        order_number: createdOrder.order_number,
+      },
+    });
+  }
 
   return {
     ok: true,

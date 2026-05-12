@@ -6,6 +6,7 @@ type UserRoleRow = {
   id: string;
   email: string | null;
   full_name: string | null;
+  active: boolean;
   roles: {
     name: AppRole;
     permissions: Permission[];
@@ -33,9 +34,14 @@ export async function getSessionProfile(): Promise<AuthProfile | null> {
 
   const { data } = await supabase
     .from("users")
-    .select("id, email, full_name, roles(name, permissions)")
+    .select("id, email, full_name, active, roles(name, permissions)")
     .eq("id", user.id)
     .maybeSingle<UserRoleRow>();
+
+  if (data?.active === false) {
+    await supabase.auth.signOut();
+    return null;
+  }
 
   if (!data?.roles) {
     return {

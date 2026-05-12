@@ -7,6 +7,7 @@ export type CrmCustomerOption = {
   id: string;
   user_id: string | null;
   business_name: string | null;
+  company_name: string | null;
   contact_name: string;
   email: string | null;
   phone: string;
@@ -19,6 +20,28 @@ export type CrmCustomerOption = {
   lead_status: CrmLeadStatus;
   estimated_value: number;
   monthly_amount: number;
+  created_at: string;
+  updated_at: string;
+  account_email: string | null;
+  account_full_name: string | null;
+  account_phone: string | null;
+  account_active: boolean | null;
+  account_created_at: string | null;
+  email_confirmed_at: string | null;
+  confirmed_at: string | null;
+  order_count: number;
+  last_activity_at: string | null;
+  account_state:
+    | "Cuenta creada"
+    | "Correo pendiente de confirmar"
+    | "Correo confirmado"
+    | "Cliente activo"
+    | "Mayorista pendiente"
+    | "Mayorista aprobado"
+    | "Cuenta suspendida";
+  customer_type: "Retail" | "Mayorista";
+  has_wholesale_request: boolean;
+  is_test_account: boolean;
 };
 
 export type CrmFollowupRow = {

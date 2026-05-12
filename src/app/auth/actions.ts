@@ -1,8 +1,14 @@
 "use server";
 
 import { headers } from "next/headers";
-import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import {
+  emailExistsInProfile,
+  ensureRetailProfile,
+  normalizeAuthEmail,
+  normalizeAuthPhone,
+  normalizeAuthText,
+} from "@/lib/auth/profile-sync";
 
 export type AuthActionResult = {
   ok: boolean;
@@ -12,15 +18,15 @@ export type AuthActionResult = {
 };
 
 function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
+  return normalizeAuthEmail(email);
 }
 
 function normalizeText(value: string) {
-  return value.trim().replace(/\s+/g, " ");
+  return normalizeAuthText(value);
 }
 
 function normalizePhone(phone: string) {
-  return phone.replace(/[^\d]/g, "");
+  return normalizeAuthPhone(phone);
 }
 
 function validateEmail(email: string) {
@@ -37,118 +43,29 @@ function safeNextPath(nextPath: string | null | undefined) {
 }
 
 async function getSiteUrl() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+
   const requestHeaders = await headers();
   const host = requestHeaders.get("host");
   const proto = requestHeaders.get("x-forwarded-proto") ?? "https";
   return host ? `${proto}://${host}` : "https://carzoneaccesorios.vercel.app";
 }
 
-async function emailExistsInProfile(email: string) {
-  const admin = getSupabaseAdminClient();
-  const { data } = await admin.from("users").select("id").ilike("email", email).maybeSingle<{ id: string }>();
-  return Boolean(data?.id);
-}
-
-async function ensureRetailProfile(input: { userId: string; email: string; fullName?: string | null; phone?: string | null }) {
-  const admin = getSupabaseAdminClient();
-  const fullName = normalizeText(input.fullName ?? "") || input.email;
-  const phone = normalizePhone(input.phone ?? "") || "00000000";
-
-  const { data: role } = await admin
-    .from("roles")
-    .select("id")
-    .eq("name", "cliente")
-    .maybeSingle<{ id: string }>();
-
-  const { data: existingUser } = await admin
-    .from("users")
-    .select("id, roles(name)")
-    .eq("id", input.userId)
-    .maybeSingle<{ id: string; roles: { name: string } | null }>();
-
-  if (existingUser?.id) {
-    await admin
-      .from("users")
-      .update({
-        full_name: fullName,
-        email: input.email,
-        phone,
-      })
-      .eq("id", input.userId);
-  } else {
-    await admin.from("users").insert({
-      id: input.userId,
-      role_id: role?.id ?? null,
-      full_name: fullName,
-      email: input.email,
-      phone,
-      active: true,
-    });
-  }
-
-  if (existingUser?.roles?.name && existingUser.roles.name !== "cliente") {
-    return;
-  }
-
-  const { data: pendingCustomer } = await admin
-    .from("customers")
-    .select("id, is_wholesale")
-    .is("user_id", null)
-    .ilike("email", input.email)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string; is_wholesale: boolean }>();
-
-  if (pendingCustomer?.id) {
-    await admin
-      .from("customers")
-      .update({
-        user_id: input.userId,
-        contact_name: fullName,
-        email: input.email,
-        phone,
-        status: "active",
-        active: true,
-      })
-      .eq("id", pendingCustomer.id);
-    return;
-  }
-
-  const { data: existingCustomer } = await admin
-    .from("customers")
-    .select("id")
-    .eq("user_id", input.userId)
-    .maybeSingle<{ id: string }>();
-
-  if (existingCustomer?.id) {
-    await admin
-      .from("customers")
-      .update({
-        contact_name: fullName,
-        email: input.email,
-        phone,
-      })
-      .eq("id", existingCustomer.id);
-    return;
-  }
-
-  await admin.from("customers").insert({
-    user_id: input.userId,
-    contact_name: fullName,
-    email: input.email,
-    phone,
-    is_wholesale: false,
-    status: "active",
-    active: true,
-    notes: "Cliente retail registrado desde la tienda publica.",
-  });
+function buildAuthCallbackUrl(siteUrl: string, nextPath = "/cuenta") {
+  const callbackUrl = new URL("/auth/callback", siteUrl);
+  callbackUrl.searchParams.set("next", safeNextPath(nextPath));
+  return callbackUrl.toString();
 }
 
 function getLoginErrorMessage(rawMessage: string, userExists: boolean) {
   const message = rawMessage.toLowerCase();
 
   if (message.includes("email not confirmed") || message.includes("not confirmed")) {
-    return "Revisa tu correo y confirma tu cuenta antes de iniciar sesión.";
+    return userExists
+      ? "Tu cuenta fue creada, pero aún debes confirmar tu correo. Revisa tu bandeja de entrada o spam."
+      : "Revisa tu correo y confirma tu cuenta antes de iniciar sesión.";
   }
 
   if (message.includes("invalid login credentials")) {
@@ -209,6 +126,17 @@ export async function loginWithEmailAction(emailInput: string, password: string,
       fullName: data.user.user_metadata?.full_name,
       phone: data.user.user_metadata?.phone,
     });
+
+    const { data: profile } = await supabase
+      .from("users")
+      .select("active")
+      .eq("id", data.user.id)
+      .maybeSingle<{ active: boolean }>();
+
+    if (profile?.active === false) {
+      await supabase.auth.signOut();
+      return { ok: false, message: "Esta cuenta esta suspendida. Contacta a administracion para revisarla." };
+    }
   }
 
   return { ok: true, message: "Sesión iniciada correctamente.", redirectTo: nextPath };
@@ -252,7 +180,7 @@ export async function registerWithEmailAction(input: {
     email,
     password: input.password,
     options: {
-      emailRedirectTo: `${siteUrl}/login?registered=1`,
+      emailRedirectTo: buildAuthCallbackUrl(siteUrl, nextPath),
       data: {
         full_name: fullName,
         phone,
@@ -280,8 +208,8 @@ export async function registerWithEmailAction(input: {
   if (!data.session) {
     return {
       ok: true,
-      message: "Cuenta creada correctamente. Revisa tu correo y confirma tu cuenta antes de iniciar sesión.",
-      redirectTo: "/login?check_email=1",
+      message: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
+      redirectTo: `/login?check_email=1&email=${encodeURIComponent(email)}`,
       needsEmailConfirmation: true,
     };
   }
@@ -291,4 +219,31 @@ export async function registerWithEmailAction(input: {
     message: "Cuenta creada correctamente. Ahora puedes iniciar sesión.",
     redirectTo: nextPath,
   };
+}
+
+export async function resendConfirmationEmailAction(emailInput: string): Promise<AuthActionResult> {
+  const email = normalizeEmail(emailInput);
+
+  if (!validateEmail(email)) {
+    return { ok: false, message: "Ingresa un correo electrónico válido para reenviar la confirmación." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const siteUrl = await getSiteUrl();
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email,
+    options: {
+      emailRedirectTo: buildAuthCallbackUrl(siteUrl),
+    },
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      message: "No pudimos reenviar el correo. Verifica el correo e intenta nuevamente.",
+    };
+  }
+
+  return { ok: true, message: "Te enviamos un nuevo correo de confirmación." };
 }

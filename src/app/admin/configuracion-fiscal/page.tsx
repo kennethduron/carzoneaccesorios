@@ -2,8 +2,10 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalSettingsForm } from "@/components/admin/fiscal-settings-form";
+import { NotificationSettingsForm } from "@/components/admin/notification-settings-form";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
+import { getNotificationSettings } from "@/services/supabase/admin-notification-settings.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminFiscalSettingsPage() {
   const profile = await requirePermission("fiscal:read");
   const canEdit = profile.role === "admin" || profile.permissions.includes("settings:manage");
-  const settings = await getFiscalSettings();
+  const [settings, notificationSettings] = await Promise.all([getFiscalSettings(), getNotificationSettings()]);
   const alerts = getFiscalAlerts(settings);
 
   return (
@@ -25,7 +27,10 @@ export default async function AdminFiscalSettingsPage() {
           Panel administrativo
         </Link>
       </div>
-      <FiscalSettingsForm settings={settings} alerts={alerts} canEdit={canEdit} />
+      <div className="space-y-5">
+        <FiscalSettingsForm settings={settings} alerts={alerts} canEdit={canEdit} />
+        <NotificationSettingsForm settings={notificationSettings} canEdit={canEdit} />
+      </div>
     </AdminShell>
   );
 }

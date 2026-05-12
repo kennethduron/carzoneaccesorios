@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
+import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
   nonNegativeNumber,
   optionalDateTime,
@@ -19,6 +20,42 @@ type CrmMutationResult = {
   ok: boolean;
   message: string;
 };
+
+type TestAccountDeletionInput = {
+  email: string;
+  confirmation: string;
+};
+
+function validateEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function findAuthUsersByEmail(email: string) {
+  const admin = getSupabaseAdminClient();
+  const matches: Array<{ id: string; email: string | undefined }> = [];
+  const maxPages = 20;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const users = data.users ?? [];
+    matches.push(
+      ...users
+        .filter((user) => normalizeAccountEmail(user.email ?? "") === email)
+        .map((user) => ({ id: user.id, email: user.email })),
+    );
+
+    if (users.length < 100) {
+      break;
+    }
+  }
+
+  return matches;
+}
 
 export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutationResult> {
   await requirePermission("crm:manage");
@@ -273,4 +310,196 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       ? "Mayorista aprobado y vinculado a su cuenta. Ahora puedes generar su código."
       : "Mayorista aprobado. Cuenta mayorista pendiente de crear; cuando se registre con ese correo quedará listo para vincular.",
   };
+}
+
+export async function suspendCustomerAccountAction(customerId: string): Promise<CrmMutationResult> {
+  await requirePermission("customers:manage");
+
+  const customer = uuidLike(customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select("id, user_id, email, contact_name, active, status, notes")
+    .eq("id", customer.value)
+    .maybeSingle<{
+      id: string;
+      user_id: string | null;
+      email: string | null;
+      contact_name: string;
+      active: boolean;
+      status: string;
+      notes: string | null;
+    }>();
+
+  if (customerError || !customerRow) {
+    return { ok: false, message: "No pudimos encontrar la cuenta del cliente." };
+  }
+
+  const { error: updateCustomerError } = await admin
+    .from("customers")
+    .update({
+      active: false,
+      status: "disabled",
+      notes: [customerRow.notes, customerRow.contact_name ? `Cuenta suspendida desde admin para ${customerRow.contact_name}.` : null]
+        .filter(Boolean)
+        .join("\n"),
+    })
+    .eq("id", customer.value);
+
+  if (updateCustomerError) {
+    return { ok: false, message: "No pudimos suspender la cuenta del cliente." };
+  }
+
+  if (customerRow.user_id) {
+    await admin.from("users").update({ active: false }).eq("id", customerRow.user_id);
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.value,
+    action: "customer_account.suspended",
+    oldData: {
+      active: customerRow.active,
+      status: customerRow.status,
+    },
+    newData: {
+      active: false,
+      status: "disabled",
+      email: customerRow.email,
+      user_id: customerRow.user_id,
+    },
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+
+  return { ok: true, message: "Cuenta suspendida correctamente." };
+}
+
+export async function deleteTestAccountAction(input: TestAccountDeletionInput): Promise<CrmMutationResult> {
+  const profile = await requirePermission("settings:manage");
+
+  if (profile.role !== "admin") {
+    return { ok: false, message: "Solo un administrador principal puede eliminar cuentas TEST." };
+  }
+
+  const email = normalizeAccountEmail(input.email);
+  if (!validateEmail(email)) {
+    return { ok: false, message: "Ingresa un correo valido para eliminar la cuenta TEST." };
+  }
+
+  if (!isSafeTestAccountEmail(email)) {
+    return {
+      ok: false,
+      message: "Por seguridad, este correo no parece de prueba. Para clientes reales usa suspender cuenta.",
+    };
+  }
+
+  if (input.confirmation.trim() !== "ELIMINAR TEST") {
+    return { ok: false, message: "Escribe ELIMINAR TEST para confirmar esta accion." };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: userRows, error: usersError } = await admin
+    .from("users")
+    .select("id, email")
+    .ilike("email", email)
+    .returns<Array<{ id: string; email: string | null }>>();
+
+  if (usersError) {
+    return { ok: false, message: "No pudimos revisar la cuenta TEST." };
+  }
+
+  let authUsers: Array<{ id: string; email: string | undefined }>;
+  try {
+    authUsers = await findAuthUsersByEmail(email);
+  } catch {
+    return { ok: false, message: "No pudimos revisar Supabase Auth para esta cuenta TEST." };
+  }
+
+  const userIds = Array.from(new Set([...(userRows ?? []).map((user) => user.id), ...authUsers.map((user) => user.id)]));
+
+  if (userIds.includes(profile.id)) {
+    return { ok: false, message: "No puedes eliminar la cuenta con la que estas administrando el sistema." };
+  }
+
+  const customerQuery = admin
+    .from("customers")
+    .select("id, user_id, email, contact_name")
+    .ilike("email", email)
+    .returns<Array<{ id: string; user_id: string | null; email: string | null; contact_name: string }>>();
+
+  const customerByUserQuery =
+    userIds.length > 0
+      ? admin
+          .from("customers")
+          .select("id, user_id, email, contact_name")
+          .in("user_id", userIds)
+          .returns<Array<{ id: string; user_id: string | null; email: string | null; contact_name: string }>>()
+      : Promise.resolve({ data: [], error: null });
+
+  const [{ data: emailCustomers, error: emailCustomersError }, { data: userCustomers, error: userCustomersError }] =
+    await Promise.all([customerQuery, customerByUserQuery]);
+
+  if (emailCustomersError || userCustomersError) {
+    return { ok: false, message: "No pudimos revisar los datos relacionados de la cuenta TEST." };
+  }
+
+  const customersById = new Map<string, { id: string; user_id: string | null; email: string | null; contact_name: string }>();
+  for (const customer of [...(emailCustomers ?? []), ...(userCustomers ?? [])]) {
+    customersById.set(customer.id, customer);
+  }
+
+  const customerIds = Array.from(customersById.keys());
+
+  if (userIds.length === 0 && customerIds.length === 0) {
+    return { ok: false, message: "No encontramos una cuenta TEST con ese correo." };
+  }
+
+  if (customerIds.length > 0) {
+    await admin.from("wholesale_codes").delete().in("customer_id", customerIds);
+    await admin.from("crm_notes").delete().in("customer_id", customerIds);
+    await admin.from("crm_followups").delete().in("customer_id", customerIds);
+  }
+
+  for (const authUser of authUsers) {
+    const { error } = await admin.auth.admin.deleteUser(authUser.id);
+    if (error) {
+      return { ok: false, message: "No pudimos eliminar la cuenta TEST de Supabase Auth." };
+    }
+  }
+
+  if (userIds.length > 0) {
+    await admin.from("users").delete().in("id", userIds);
+  }
+
+  if (customerIds.length > 0) {
+    await admin.from("customers").delete().in("id", customerIds);
+  }
+
+  await writeAuditLog({
+    tableName: "users",
+    recordId: userIds[0] ?? null,
+    action: "test_account.deleted",
+    oldData: {
+      email,
+      user_ids: userIds,
+      customer_ids: customerIds,
+      deleted_by: profile.id,
+    },
+    newData: {
+      auth_users_deleted: authUsers.length,
+      customers_deleted: customerIds.length,
+    },
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/codigos-mayoristas");
+
+  return { ok: true, message: "Cuenta TEST eliminada correctamente." };
 }

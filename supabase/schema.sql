@@ -36,3 +36,10 @@
 \i ./migrations/202605110005_wholesale_pending_accounts.sql
 \i ./migrations/202605110006_wholesale_message_contract.sql
 \i ./migrations/202605110007_public_gen_random_bytes_wrapper.sql
+\i ./migrations/202605110008_product_image_public_id.sql
+\i ./migrations/202605110009_order_tracking_honduras.sql
+\i ./migrations/202605110010_service_role_catalog_wholesale_grants.sql
+\i ./migrations/202605110011_auth_registration_profiles.sql
+\i ./migrations/202605110012_link_pending_wholesale_customer_on_signup.sql
+\i ./migrations/202605120001_order_notification_settings.sql
+\i ./migrations/202605120002_customer_account_visibility_and_test_cleanup.sql
