@@ -1,8 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { products as fallbackProducts } from "@/lib/commerce";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
-import { productImageUrl } from "@/utils/image-optimization";
 
 export type ProductCatalogFilters = {
   page?: number;
@@ -113,7 +111,6 @@ function normalizeAngle(value: string): ProductAngle {
 function normalizeImages(
   product: CatalogProductRow,
   images = product.product_images ?? [],
-  size: "catalog" | "detail" | "thumbnail" = "catalog",
 ): ProductAngleImage[] {
   return images
     .filter((image) => image.public_url)
@@ -122,13 +119,13 @@ function normalizeImages(
       id: image.id,
       angle: normalizeAngle(image.angle),
       label: image.angle || "Principal",
-      url: productImageUrl(image.public_url ?? "", size),
+      url: image.public_url ?? "",
       alt: image.alt_text ?? product.name,
     }));
 }
 
-function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[], imageSize: "catalog" | "detail" = "catalog"): Product {
-  const normalizedImages = normalizeImages(row, images, imageSize);
+function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): Product {
+  const normalizedImages = normalizeImages(row, images);
 
   return {
     id: row.id,
@@ -284,7 +281,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         stock,
         retail_price,
         wholesale_price,
-        categories!inner(name, slug)
+        categories(name, slug)
       `,
         { count: "exact" },
       )
@@ -348,45 +345,16 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       },
     };
   } catch {
-    const filtered = fallbackProducts.filter((product) => {
-      const matchesQuery = query
-        ? `${product.name} ${product.sku} ${product.brand} ${product.vehicle_brand ?? ""} ${product.vehicle_model ?? ""}`
-            .toLowerCase()
-            .includes(query.toLowerCase())
-        : true;
-      const matchesCategory = category ? product.category.toLowerCase().replaceAll(" ", "-") === category : true;
-      const matchesMinPrice = minPrice === null || product.retail_price >= minPrice;
-      const matchesMaxPrice = maxPrice === null || product.retail_price <= maxPrice;
-      const matchesVehicleBrand = vehicleBrand ? product.vehicle_brand?.toLowerCase() === vehicleBrand.toLowerCase() : true;
-      const matchesVehicleModel = vehicleModel ? product.vehicle_model?.toLowerCase() === vehicleModel.toLowerCase() : true;
-      const matchesVehicleYear =
-        vehicleYear === null ||
-        ((!product.vehicle_year_start || product.vehicle_year_start <= vehicleYear) &&
-          (!product.vehicle_year_end || product.vehicle_year_end >= vehicleYear));
-      return (
-        matchesQuery &&
-        matchesCategory &&
-        matchesMinPrice &&
-        matchesMaxPrice &&
-        matchesVehicleBrand &&
-        matchesVehicleModel &&
-        matchesVehicleYear
-      );
-    });
-
     return {
-      products: filtered.slice(from, to + 1),
-      total: filtered.length,
+      products: [],
+      total: 0,
       page,
       pageSize,
-      categories: Array.from(new Set(fallbackProducts.map((product) => product.category))).map((name) => ({
-        name,
-        slug: name.toLowerCase().replaceAll(" ", "-"),
-      })),
+      categories: [],
       filterOptions: {
-        vehicleBrands: uniqueSorted(fallbackProducts.map((product) => product.vehicle_brand)),
-        vehicleModels: uniqueSorted(fallbackProducts.map((product) => product.vehicle_model)),
-        vehicleYears: buildVehicleYears(fallbackProducts),
+        vehicleBrands: [],
+        vehicleModels: [],
+        vehicleYears: [],
       },
     };
   }
@@ -427,7 +395,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
     const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
     return (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id)));
   } catch {
-    return fallbackProducts.slice(0, limit);
+    return [];
   }
 }, ["featured-products"], { revalidate: 900, tags: ["products", "featured-products"] });
 
@@ -470,9 +438,9 @@ export async function getProductBySlug(slug: string) {
       throw new Error(error.message);
     }
 
-    return data ? normalizeProduct(data, undefined, "detail") : null;
+    return data ? normalizeProduct(data) : null;
   } catch {
-    return fallbackProducts.find((product) => product.slug === slug) ?? null;
+    return null;
   }
 }
 
@@ -480,9 +448,6 @@ export async function getCategorySummaries() {
   try {
     return await getCachedActiveCategories();
   } catch {
-    return Array.from(new Set(fallbackProducts.map((product) => product.category))).map((name) => ({
-      name,
-      slug: name.toLowerCase().replaceAll(" ", "-"),
-    }));
+    return [];
   }
 }

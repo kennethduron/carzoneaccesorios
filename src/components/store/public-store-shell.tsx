@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CarFront, Menu, ShoppingCart, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 
@@ -17,8 +17,22 @@ const links = [
 
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [cartPulse, setCartPulse] = useState(false);
+  const previousCartCount = useRef(0);
   const { priceMode } = usePriceMode();
   const { cartCount } = useShoppingCart();
+
+  useEffect(() => {
+    if (cartCount > previousCartCount.current) {
+      setCartPulse(true);
+      const timeout = window.setTimeout(() => setCartPulse(false), 650);
+      previousCartCount.current = cartCount;
+      return () => window.clearTimeout(timeout);
+    }
+
+    previousCartCount.current = cartCount;
+    return undefined;
+  }, [cartCount]);
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-[#1c1d1b]">
@@ -48,10 +62,12 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             </span>
             <Link
               href="/carrito"
-              className="grid size-10 shrink-0 place-items-center rounded-md bg-[#1c1d1b] text-sm text-white sm:inline-flex sm:w-auto sm:gap-2 sm:px-3 sm:py-2"
+              className={`inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-md bg-[#1c1d1b] px-3 text-sm text-white transition-transform sm:gap-2 ${
+                cartPulse ? "scale-110 ring-4 ring-[#246a73]/20" : ""
+              }`}
             >
               <ShoppingCart size={16} />
-              <span className="hidden sm:inline">{cartCount}</span>
+              <span>{cartCount}</span>
             </Link>
             <button
               onClick={() => setOpen((current) => !current)}

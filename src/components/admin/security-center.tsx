@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { DatabaseBackup, FileClock, LockKeyhole, ShieldCheck } from "lucide-react";
 import { requestBackupAction } from "@/app/admin/seguridad/actions";
 import { Button } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import type { AdminSecurityData, BackupType } from "@/types/security";
 import { formatHnDateTime } from "@/utils/format";
 
@@ -34,6 +35,7 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
 
   const permissionCount = new Set(data.roles.flatMap((role) => role.permissions)).size;
   const latestBackup = data.backupLogs[0];
@@ -44,7 +46,10 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
       const result = await requestBackupAction(backupType, notes);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Backup solicitado correctamente.");
         setNotes("");
+      } else {
+        toast.error(result.message || "No se pudo solicitar el backup.");
       }
     });
   }

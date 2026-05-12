@@ -20,6 +20,7 @@ import {
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type {
   AdminCrmData,
@@ -122,6 +123,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredFollowups = useMemo(() => {
@@ -181,7 +183,10 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       const result = await saveCrmLeadAction(lead);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Cliente creado correctamente.");
         setLead(emptyLead);
+      } else {
+        toast.error(result.message || "No se pudo guardar el cliente.");
       }
     });
   }
@@ -191,7 +196,10 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       const result = await saveCrmFollowupAction(followup);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Seguimiento creado correctamente.");
         setFollowup(emptyFollowup);
+      } else {
+        toast.error(result.message || "No se pudo guardar el seguimiento.");
       }
     });
   }
@@ -201,7 +209,10 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       const result = await saveCrmNoteAction(note);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Nota agregada al cliente.");
         setNote(emptyNote);
+      } else {
+        toast.error(result.message || "No se pudo guardar la nota.");
       }
     });
   }
@@ -210,6 +221,11 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     startTransition(async () => {
       const result = await setCrmFollowupStatusAction(id, status);
       setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Seguimiento actualizado correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo actualizar el seguimiento.");
+      }
     });
   }
 

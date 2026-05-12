@@ -7,12 +7,14 @@ import { useState } from "react";
 import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
+import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { formatCurrency, getProductPrice } from "@/utils/pricing";
 
 export function CatalogProductCard({ product }: { product: Product }) {
   const { priceMode } = usePriceMode();
   const { addToCart, cartMessage } = useShoppingCart();
   const primaryImage = product.images.find((image) => image.angle === "frontal") ?? product.images[0];
+  const imageUrl = getProductThumbnailUrl(primaryImage?.url ?? product.image);
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
@@ -27,13 +29,14 @@ export function CatalogProductCard({ product }: { product: Product }) {
           </div>
         ) : (
           <Image
-            src={primaryImage?.url ?? product.image}
+            src={imageUrl}
             alt={primaryImage?.alt ?? product.name}
-            width={520}
-            height={360}
+            width={400}
+            height={276}
             sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
             loading="lazy"
-            quality={72}
+            quality={70}
+            unoptimized={isCloudinaryImageUrl(imageUrl)}
             className="h-44 w-full object-cover"
             onError={() => setImageFailed(true)}
           />

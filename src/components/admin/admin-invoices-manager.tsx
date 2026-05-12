@@ -7,6 +7,7 @@ import { cancelInvoiceAction, logInvoiceReprintAction, updateInvoiceCustomerData
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
@@ -73,7 +74,17 @@ export function AdminInvoicesManager({
   const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoiceRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
+
+  function showInvoiceMessage(nextMessage: string, ok: boolean) {
+    setMessage(nextMessage);
+    if (ok) {
+      toast.success(nextMessage);
+    } else {
+      toast.error(nextMessage);
+    }
+  }
 
   const filteredInvoices = useMemo(() => {
     const normalizedQuery = debouncedQuery.trim().toLowerCase();
@@ -176,25 +187,32 @@ export function AdminInvoicesManager({
     startTransition(async () => {
       const result = await logInvoiceReprintAction(invoice.id);
       if (!result.ok) {
-        setMessage(result.message);
+        showInvoiceMessage(result.message, false);
         return;
       }
 
       await exportInvoicePdf(invoice);
-      setMessage(result.message);
+      showInvoiceMessage(result.message || "Factura reimpresa correctamente.", true);
       router.refresh();
     });
   }
 
-  function cancelInvoice(invoice: AdminInvoiceRow) {
-    const confirmed = window.confirm(`¿Anular la factura ${invoice.invoice_number}? Esta acción quedará registrada.`);
+  async function cancelInvoice(invoice: AdminInvoiceRow) {
+    const confirmed = await toast.confirm({
+      title: "Confirmar anulacion",
+      message: `Anular la factura ${invoice.invoice_number}? Esta accion quedara registrada.`,
+      confirmLabel: "Anular factura",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+
     if (!confirmed) {
       return;
     }
 
     startTransition(async () => {
       const result = await cancelInvoiceAction(invoice.id);
-      setMessage(result.message);
+      showInvoiceMessage(result.message, result.ok);
     });
   }
 
@@ -207,7 +225,7 @@ export function AdminInvoicesManager({
   }) {
     startTransition(async () => {
       const result = await updateInvoiceCustomerDataAction(input);
-      setMessage(result.message);
+      showInvoiceMessage(result.message, result.ok);
       if (result.ok) {
         router.refresh();
       }

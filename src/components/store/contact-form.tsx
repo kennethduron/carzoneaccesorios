@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "@/contexts/toast-context";
 import { validateHondurasPhone } from "@/utils/validation";
 
 export function ContactForm() {
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
+  const toast = useToast();
 
   function submitContact(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -13,10 +15,12 @@ export function ContactForm() {
     const phoneResult = validateHondurasPhone(phone);
     if (!phoneResult.ok) {
       setMessage(phoneResult.message);
+      toast.error(phoneResult.message);
       return;
     }
 
     setMessage("Solicitud lista para enviar. Nuestro equipo te contactara por WhatsApp.");
+    toast.success("Solicitud lista para enviar. Nuestro equipo te contactara por WhatsApp.");
   }
 
   return (

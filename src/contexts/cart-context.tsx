@@ -5,6 +5,7 @@ import type { CartItem, Product } from "@/types/commerce";
 import { getProductPrice } from "@/utils/pricing";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
+import { useToast } from "@/contexts/toast-context";
 
 type CartRow = {
   product: Product;
@@ -16,6 +17,7 @@ type CartRow = {
 type CartContextValue = {
   cart: CartItem[];
   rows: CartRow[];
+  invalidItemCount: number;
   cartMessage: string;
   subtotal: number;
   tax: number;
@@ -24,12 +26,18 @@ type CartContextValue = {
   addToCart: (productId: string) => boolean;
   updateQuantity: (productId: string, delta: number) => boolean;
   removeFromCart: (productId: string) => void;
+  clearInvalidCartItems: () => void;
   clearCartMessage: () => void;
   clearCart: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
 const storageKey = "car-zone-cart";
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return uuidPattern.test(value);
+}
 
 function readStoredCart() {
   if (typeof window === "undefined") {
@@ -43,7 +51,15 @@ function readStoredCart() {
     }
 
     const parsed = JSON.parse(stored) as CartItem[];
-    return parsed.filter((item) => typeof item.productId === "string" && Number.isFinite(item.quantity));
+    const validCart = parsed.filter(
+      (item) => typeof item.productId === "string" && isUuid(item.productId) && Number.isFinite(item.quantity),
+    );
+
+    if (validCart.length !== parsed.length) {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(validCart));
+    }
+
+    return validCart;
   } catch {
     window.sessionStorage.removeItem(storageKey);
     return [];
@@ -63,10 +79,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartMessage, setCartMessage] = useState("");
   const { priceMode } = usePriceMode();
   const { findProduct } = useProductRegistry();
+  const toast = useToast();
 
   const rows = useMemo(() => {
     return cart
       .map((item) => {
+        if (!isUuid(item.productId)) {
+          return null;
+        }
+
         const product = findProduct(item.productId) ?? item.productSnapshot ?? null;
         if (!product) {
           return null;
@@ -87,20 +108,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const tax = subtotal * 0.15;
   const total = subtotal + tax;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const invalidItemCount = Math.max(0, cart.length - rows.length);
 
   const value = useMemo<CartContextValue>(
     () => ({
       cart,
       rows,
+      invalidItemCount,
       cartMessage,
       subtotal,
       tax,
       total,
       cartCount,
       addToCart(productId) {
+        if (!isUuid(productId)) {
+          const message = "Este producto no esta disponible para compra.";
+          setCartMessage(message);
+          toast.error(message);
+          return false;
+        }
+
         const product = findProduct(productId);
         if (!product || product.stock <= 0) {
-          setCartMessage("Producto sin stock disponible.");
+          const message = "Este producto no tiene stock disponible.";
+          setCartMessage(message);
+          toast.warning(message);
           return false;
         }
 
@@ -110,7 +142,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const currentQuantity = existing?.quantity ?? 0;
 
           if (currentQuantity + 1 > product.stock) {
-            setCartMessage(`Solo hay ${product.stock} unidades disponibles.`);
+            const message = `Solo hay ${product.stock} unidades disponibles.`;
+            setCartMessage(message);
+            toast.warning(message);
             return current;
           }
 
@@ -119,13 +153,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               item.productId === productId ? { ...item, quantity: item.quantity + 1, productSnapshot: product } : item,
             );
             writeStoredCart(nextCart);
-            setCartMessage("");
+            const message = "Cantidad actualizada en el carrito.";
+            setCartMessage(message);
+            toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
             added = true;
             return nextCart;
           }
           const nextCart = [...current, { productId, quantity: 1, productSnapshot: product }];
           writeStoredCart(nextCart);
-          setCartMessage("");
+          const message = "Producto agregado al carrito.";
+          setCartMessage(message);
+          toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
           added = true;
           return nextCart;
         });
@@ -138,7 +176,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           const product = findProduct(productId) ?? existing?.productSnapshot ?? null;
 
           if (!product) {
-            setCartMessage("Producto no encontrado.");
+            const message = "Producto no encontrado.";
+            setCartMessage(message);
+            toast.error(message);
             return current;
           }
 
@@ -150,11 +190,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
               const nextQuantity = Math.max(0, item.quantity + delta);
               if (nextQuantity > product.stock) {
-                setCartMessage(`Solo hay ${product.stock} unidades disponibles.`);
+                const message = `Solo hay ${product.stock} unidades disponibles.`;
+                setCartMessage(message);
+                toast.warning(message);
                 return item;
               }
 
-              setCartMessage("");
+              setCartMessage("Cantidad actualizada en el carrito.");
               updated = true;
               return { ...item, quantity: nextQuantity, productSnapshot: product };
             })
@@ -168,6 +210,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCart((current) => {
           const nextCart = current.filter((item) => item.productId !== productId);
           writeStoredCart(nextCart);
+          toast.info("Producto eliminado del carrito.");
+          return nextCart;
+        });
+      },
+      clearInvalidCartItems() {
+        setCart((current) => {
+          const nextCart = current.filter((item) => isUuid(item.productId) && (findProduct(item.productId) || item.productSnapshot));
+          writeStoredCart(nextCart);
+          setCartMessage("");
+          toast.info("Productos invalidos eliminados del carrito.");
           return nextCart;
         });
       },
@@ -180,7 +232,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCartMessage("");
       },
     }),
-    [cart, cartCount, cartMessage, findProduct, rows, subtotal, tax, total],
+    [cart, cartCount, cartMessage, findProduct, invalidItemCount, rows, subtotal, tax, toast, total],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

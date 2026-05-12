@@ -8,6 +8,7 @@ import {
   setWholesaleCodeActiveAction,
 } from "@/app/admin/codigos-mayoristas/actions";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatHnDate } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
@@ -129,6 +130,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
   const [creatingCustomer, setCreatingCustomer] = useState<WholesaleCustomerFormInput | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
 
   const filteredCodes = useMemo(() => {
@@ -170,6 +172,11 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       const result = await saveWholesaleCodeAction(editing);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Codigo mayorista actualizado.");
+      } else {
+        toast.error(result.message || "No se pudo guardar el codigo mayorista.");
+      }
+      if (result.ok) {
         setEditing(null);
       }
     });
@@ -184,6 +191,11 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       const result = await createWholesaleCustomerAction(creatingCustomer);
       setMessage(result.message);
       if (result.ok) {
+        toast.success(result.message || "Cliente mayorista creado correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo crear el cliente mayorista.");
+      }
+      if (result.ok) {
         setCreatingCustomer(null);
       }
     });
@@ -193,6 +205,11 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
     startTransition(async () => {
       const result = await setWholesaleCodeActiveAction(code.id, !code.active);
       setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Codigo mayorista actualizado.");
+      } else {
+        toast.error(result.message || "No se pudo actualizar el codigo mayorista.");
+      }
     });
   }
 

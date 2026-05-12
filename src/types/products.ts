@@ -4,6 +4,7 @@ export type ProductImageInput = {
   id?: string;
   public_url: string;
   storage_path?: string;
+  public_id?: string;
   angle: string;
   alt_text?: string;
   sort_order: number;

@@ -2,11 +2,13 @@
 
 import { Ban, Download, FileText, Printer } from "lucide-react";
 import { useInvoices } from "@/contexts/invoices-context";
+import { useToast } from "@/contexts/toast-context";
 import type { StoreOrder } from "@/types/orders";
 import { downloadInvoicePdf } from "@/utils/invoice-pdf";
 
 export function InvoiceActions({ order }: { order: StoreOrder }) {
   const { createInvoice, findInvoiceByOrder, cancelInvoice } = useInvoices();
+  const toast = useToast();
   const invoice = findInvoiceByOrder(order.orderNumber);
 
   function ensureInvoice() {
@@ -15,15 +17,24 @@ export function InvoiceActions({ order }: { order: StoreOrder }) {
 
   function downloadInvoice() {
     downloadInvoicePdf(ensureInvoice());
+    toast.success("Factura reimpresa correctamente.");
   }
 
-  function cancelCurrentInvoice() {
+  async function cancelCurrentInvoice() {
     const currentInvoice = ensureInvoice();
-    const confirmed = window.confirm(`Anular factura ${currentInvoice.invoiceNumber}?`);
+    const confirmed = await toast.confirm({
+      title: "Confirmar anulacion",
+      message: `Anular factura ${currentInvoice.invoiceNumber}? Esta accion quedara registrada.`,
+      confirmLabel: "Anular factura",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+
     if (!confirmed) {
       return;
     }
     cancelInvoice(currentInvoice.invoiceNumber);
+    toast.success("Factura anulada correctamente.");
   }
 
   return (

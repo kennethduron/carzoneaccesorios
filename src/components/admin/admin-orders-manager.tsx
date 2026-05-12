@@ -8,6 +8,7 @@ import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction } from "
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminOrderRow } from "@/types/orders";
@@ -72,7 +73,17 @@ export function AdminOrdersManager({
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
+
+  function showAdminMessage(nextMessage: string, ok: boolean) {
+    setMessage(nextMessage);
+    if (ok) {
+      toast.success(nextMessage);
+    } else {
+      toast.error(nextMessage);
+    }
+  }
 
   const filteredOrders = useMemo(() => {
     const normalizedQuery = debouncedQuery.trim().toLowerCase();
@@ -96,7 +107,7 @@ export function AdminOrdersManager({
   function generateInvoice(order: AdminOrderRow) {
     startTransition(async () => {
       const result = await generateInvoiceFromOrderAction(order.id);
-      setMessage(result.message);
+      showAdminMessage(result.message, result.ok);
 
       if (result.ok && result.invoiceNumber) {
         await exportGeneratedInvoicePdf(order, fiscalSettings, result.invoiceNumber, result.bankReference ?? order.bank_reference_number);
@@ -108,7 +119,7 @@ export function AdminOrdersManager({
   function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected") {
     startTransition(async () => {
       const result = await updateOrderPaymentStatusAction(order.id, status);
-      setMessage(result.message);
+      showAdminMessage(result.message, result.ok);
 
       if (result.ok) {
         router.refresh();
@@ -123,7 +134,7 @@ export function AdminOrdersManager({
 
     startTransition(async () => {
       const result = await logInvoiceReprintAction(order.invoice_id ?? "");
-      setMessage(result.message);
+      showAdminMessage(result.message, result.ok);
 
       if (result.ok) {
         await exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number);

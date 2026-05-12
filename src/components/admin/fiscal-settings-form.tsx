@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Save } from "lucide-react";
 import { saveFiscalSettingsAction } from "@/app/admin/configuracion-fiscal/actions";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
 
 type FiscalSettingsFormProps = {
@@ -18,6 +19,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
   const [form, setForm] = useState(settings);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
 
   function updateField<K extends keyof FiscalSettings>(field: K, value: FiscalSettings[K]) {
     if (!canEdit) {
@@ -33,6 +35,11 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
     startTransition(async () => {
       const result = await saveFiscalSettingsAction(form);
       setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Configuracion fiscal guardada correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo guardar la configuracion fiscal.");
+      }
     });
   }
 
@@ -127,7 +134,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button onClick={submit} disabled={isPending} variant="dark">
               <Save size={17} />
-              {isPending ? "Guardando" : "Guardar configuración"}
+              {isPending ? "Guardando..." : "Guardar configuracion"}
             </Button>
             {message ? <p className="text-sm text-black/60">{message}</p> : null}
           </div>

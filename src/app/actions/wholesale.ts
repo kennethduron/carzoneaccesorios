@@ -1,5 +1,6 @@
 "use server";
 
+import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { WholesaleValidationResult } from "@/types/wholesale";
 
@@ -72,6 +73,15 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
       .returns<WholesaleCodePublicRpcRow[]>();
 
     if (error) {
+      await writeErrorLog({
+        route: "/",
+        action: "wholesale.public_validation_failed",
+        errorMessage: error.message,
+        metadata: {
+          code_suffix: normalizedCode.slice(-4),
+          code: error.code ?? null,
+        },
+      });
       return {
         ok: false,
         message: wholesaleMessages.invalidCode,
@@ -109,6 +119,15 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
       .returns<WholesaleAccountRpcRow[]>();
 
     if (activationError) {
+      await writeErrorLog({
+        route: "/",
+        action: "wholesale.activation_failed",
+        errorMessage: activationError.message,
+        metadata: {
+          code_suffix: normalizedCode.slice(-4),
+          code: activationError.code ?? null,
+        },
+      });
       return {
         ok: false,
         message: wholesaleMessages.accountNotAuthorized,
@@ -142,7 +161,16 @@ export async function validateWholesaleCodeAction(code: string): Promise<Wholesa
       message: wholesaleMessages.success,
       account: toWholesaleAccount(activatedAccount),
     };
-  } catch {
+  } catch (error) {
+    await writeErrorLog({
+      route: "/",
+      action: "wholesale.validation_unhandled_error",
+      errorMessage: error instanceof Error ? error.message : "Unknown wholesale validation error",
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: {
+        code_suffix: normalizedCode.slice(-4),
+      },
+    });
     return {
       ok: false,
       message: wholesaleMessages.invalidCode,

@@ -1,10 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, Maximize2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Product } from "@/types/commerce";
-import { productImageUrl } from "@/utils/image-optimization";
+import {
+  getProductGalleryThumbnailUrl,
+  getProductImageUrl,
+  getProductZoomUrl,
+  isCloudinaryImageUrl,
+} from "@/utils/image-optimization";
 
 export function ProductImageGallery({ product }: { product: Product }) {
   const images = useMemo(
@@ -24,7 +29,11 @@ export function ProductImageGallery({ product }: { product: Product }) {
   );
   const [activeIndex, setActiveIndex] = useState(0);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const activeImage = images[activeIndex];
+  const activeImageFailed = Boolean(failedImages[activeImage.id]);
+  const activeImageUrl = getProductImageUrl(activeImage.url);
+  const zoomImageUrl = getProductZoomUrl(activeImage.url);
 
   function previousImage() {
     setActiveIndex((current) => (current === 0 ? images.length - 1 : current - 1));
@@ -37,16 +46,27 @@ export function ProductImageGallery({ product }: { product: Product }) {
   return (
     <div className="space-y-3">
       <div className="relative overflow-hidden rounded-lg border border-black/10 bg-white">
-        <Image
-          src={productImageUrl(activeImage.url, "detail")}
-          alt={activeImage.alt}
-          width={1400}
-          height={1000}
-          priority
-          sizes="(min-width: 1024px) 58vw, 100vw"
-          quality={82}
-          className="h-[360px] w-full object-cover md:h-[560px]"
-        />
+        {activeImageFailed ? (
+          <div className="grid h-[360px] w-full place-items-center bg-[#f0ede2] text-[#6b675d] md:h-[560px]">
+            <div className="flex flex-col items-center gap-2 text-sm">
+              <ImageOff size={30} />
+              Imagen no disponible
+            </div>
+          </div>
+        ) : (
+          <Image
+            src={activeImageUrl}
+            alt={activeImage.alt}
+            width={900}
+            height={675}
+            priority
+            sizes="(min-width: 1024px) 58vw, 100vw"
+            quality={78}
+            unoptimized={isCloudinaryImageUrl(activeImageUrl)}
+            className="h-[360px] w-full object-cover md:h-[560px]"
+            onError={() => setFailedImages((current) => ({ ...current, [activeImage.id]: true }))}
+          />
+        )}
         <div className="absolute left-3 top-3 rounded-md bg-white/90 px-3 py-2 text-sm font-medium">
           {activeImage.label}
         </div>
@@ -85,16 +105,24 @@ export function ProductImageGallery({ product }: { product: Product }) {
             }`}
             aria-label={`Ver imagen ${image.label}`}
           >
-            <Image
-              src={productImageUrl(image.url, "thumbnail")}
-              alt={image.alt}
-              width={220}
-              height={150}
-              sizes="20vw"
-              loading="lazy"
-              quality={60}
-              className="h-16 w-full object-cover"
-            />
+            {failedImages[image.id] ? (
+              <div className="grid h-16 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+                <ImageOff size={16} />
+              </div>
+            ) : (
+              <Image
+                src={getProductGalleryThumbnailUrl(image.url)}
+                alt={image.alt}
+                width={180}
+                height={128}
+                sizes="20vw"
+                loading="lazy"
+                quality={55}
+                unoptimized={isCloudinaryImageUrl(image.url)}
+                className="h-16 w-full object-cover"
+                onError={() => setFailedImages((current) => ({ ...current, [image.id]: true }))}
+              />
+            )}
             <span className="block truncate px-2 py-1 text-xs text-black/60">{image.label}</span>
           </button>
         ))}
@@ -110,15 +138,27 @@ export function ProductImageGallery({ product }: { product: Product }) {
             >
               <X size={18} />
             </button>
-            <Image
-              src={productImageUrl(activeImage.url, "zoom")}
-              alt={activeImage.alt}
-              width={1800}
-              height={1400}
-              sizes="100vw"
-              quality={86}
-              className="max-h-[86vh] w-full rounded-lg object-contain"
-            />
+            {failedImages[`${activeImage.id}-zoom`] ? (
+              <div className="grid min-h-[60vh] w-full place-items-center rounded-lg bg-[#f0ede2] text-[#6b675d]">
+                <div className="flex flex-col items-center gap-2 text-sm">
+                  <ImageOff size={30} />
+                  Imagen no disponible
+                </div>
+              </div>
+            ) : (
+              <Image
+                src={zoomImageUrl}
+                alt={activeImage.alt}
+                width={1400}
+                height={1050}
+                sizes="100vw"
+                loading="lazy"
+                quality={86}
+                unoptimized={isCloudinaryImageUrl(zoomImageUrl)}
+                className="max-h-[86vh] w-full rounded-lg object-contain"
+                onError={() => setFailedImages((current) => ({ ...current, [`${activeImage.id}-zoom`]: true }))}
+              />
+            )}
           </div>
         </div>
       ) : null}

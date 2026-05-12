@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { products as fallbackProducts } from "@/lib/commerce";
 import type { Product } from "@/types/commerce";
 
 type ProductRegistryValue = {
@@ -12,9 +11,7 @@ type ProductRegistryValue = {
 const ProductRegistryContext = createContext<ProductRegistryValue | null>(null);
 
 export function ProductRegistryProvider({ children }: { children: React.ReactNode }) {
-  const [registeredProducts, setRegisteredProducts] = useState<Record<string, Product>>(() =>
-    Object.fromEntries(fallbackProducts.map((product) => [product.id, product])),
-  );
+  const [registeredProducts, setRegisteredProducts] = useState<Record<string, Product>>({});
 
   const registerProducts = useCallback((products: Product[]) => {
     if (products.length === 0) {

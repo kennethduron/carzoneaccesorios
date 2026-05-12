@@ -106,6 +106,7 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
         id,
         public_url,
         storage_path,
+        public_id,
         angle,
         alt_text,
         sort_order,

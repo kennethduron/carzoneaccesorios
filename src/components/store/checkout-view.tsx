@@ -7,6 +7,7 @@ import type { CheckoutData } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { useOrders } from "@/contexts/orders-context";
+import { useToast } from "@/contexts/toast-context";
 import { Totals } from "@/components/store/cart-view";
 import { formatCurrency } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
@@ -26,36 +27,79 @@ export function CheckoutView() {
   const [checkout, setCheckout] = useState<CheckoutData>(emptyCheckout);
   const [proofFileName, setProofFileName] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofMessage, setProofMessage] = useState("");
   const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [orderNumber, setOrderNumber] = useState("");
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
-  const { rows, subtotal, tax, total, clearCart } = useShoppingCart();
+  const { rows, invalidItemCount, subtotal, tax, total, clearCart, clearInvalidCartItems } = useShoppingCart();
   const { createOrder } = useOrders();
+  const toast = useToast();
   const sellsInHonduras = checkout.country === "Honduras";
+
+  function showCheckoutError(field: string, message: string) {
+    setFieldErrors((current) => ({ ...current, [field]: message }));
+    setCheckoutMessage(message);
+    toast.error(message);
+  }
+
+  function updateCheckoutField<K extends keyof CheckoutData>(field: K, value: CheckoutData[K]) {
+    setCheckout((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
 
   function submitOrder() {
     if (!sellsInHonduras) {
-      setCheckoutMessage("Actualmente solo realizamos ventas dentro de Honduras.");
+      showCheckoutError("country", "Actualmente solo realizamos ventas dentro de Honduras.");
+      return;
+    }
+
+    if (!checkout.customerName.trim()) {
+      showCheckoutError("customerName", "Ingresa tu nombre para continuar.");
       return;
     }
 
     const phone = validateHondurasPhone(checkout.phone);
     if (!phone.ok) {
-      setCheckoutMessage(phone.message);
+      showCheckoutError("phone", "Ingresa un número de teléfono válido.");
       return;
     }
 
-    if (!checkout.customerName || !checkout.address || rows.length === 0) {
-      setCheckoutMessage("Completa tus datos y agrega productos para crear el pedido.");
+    if (!checkout.address.trim()) {
+      showCheckoutError("address", "Ingresa la dirección de entrega.");
+      return;
+    }
+
+    if (rows.length === 0) {
+      const message =
+        invalidItemCount > 0
+          ? "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar."
+          : "Agrega productos al carrito para crear el pedido.";
+      setCheckoutMessage(message);
+      toast.warning(message);
+      return;
+    }
+
+    if (invalidItemCount > 0) {
+      const message = "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.";
+      setCheckoutMessage(message);
+      toast.error(message);
       return;
     }
 
     const stockIssue = rows.find((item) => item.quantity > item.product.stock);
     if (stockIssue) {
-      setCheckoutMessage(
-        `No puedes comprar ${stockIssue.quantity} unidades de ${stockIssue.product.name}; solo hay ${stockIssue.product.stock} disponibles.`,
-      );
+      const message = `No puedes comprar ${stockIssue.quantity} unidades de ${stockIssue.product.name}; solo hay ${stockIssue.product.stock} disponibles.`;
+      setCheckoutMessage(message);
+      toast.warning(message);
       return;
     }
 
@@ -63,11 +107,18 @@ export function CheckoutView() {
     const bankTransferReference = checkout.bankTransferReference.trim();
 
     if (isBankTransfer && !bankTransferReference) {
-      setCheckoutMessage("Debes ingresar el número de referencia de la transferencia.");
+      showCheckoutError("bankTransferReference", "Ingresa el numero de referencia de la transferencia.");
+      return;
+    }
+
+    if (isBankTransfer && proofMessage && !proofFile) {
+      setCheckoutMessage(proofMessage);
+      toast.error(proofMessage);
       return;
     }
 
     startTransition(async () => {
+      toast.loading("Creando pedido...");
       const items = rows.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
@@ -88,6 +139,7 @@ export function CheckoutView() {
 
       if (!result.ok || !result.orderNumber) {
         setCheckoutMessage(result.message);
+        toast.error(result.message || "No se pudo crear el pedido. Revisa la informacion e intenta nuevamente.");
         return;
       }
 
@@ -120,8 +172,11 @@ export function CheckoutView() {
 
       setOrderNumber(result.orderNumber);
       setCheckoutMessage(result.message);
+      setFieldErrors({});
+      toast.success("Pedido creado correctamente. Te contactaremos para confirmar el pago.");
       setProofFile(null);
       setProofFileName("");
+      setProofMessage("");
       clearCart();
     });
   }
@@ -131,7 +186,7 @@ export function CheckoutView() {
       <div className="rounded-lg border border-black/10 bg-white p-5">
         <div className="flex flex-col justify-between gap-3 border-b border-black/10 pb-5 sm:flex-row sm:items-start">
           <div>
-            <h1 className="text-2xl font-semibold">Checkout</h1>
+            <h1 className="text-2xl font-semibold">Finalizar compra</h1>
             <p className="mt-2 text-sm text-black/55">
               Precio aplicado: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
             </p>
@@ -153,10 +208,13 @@ export function CheckoutView() {
               <span className="text-xs font-medium uppercase text-black/50">{label}</span>
               <input
                 value={checkout[field]}
-                onChange={(event) => setCheckout((current) => ({ ...current, [field]: event.target.value }))}
+                onChange={(event) => updateCheckoutField(field, event.target.value)}
                 placeholder={placeholder}
-                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  fieldErrors[field] ? "border-[#d55d3b]" : "border-black/10"
+                }`}
               />
+              {fieldErrors[field] ? <span className="text-xs text-[#9b341b]">{fieldErrors[field]}</span> : null}
             </label>
           ))}
           <label className="block">
@@ -165,7 +223,7 @@ export function CheckoutView() {
               value={checkout.country}
               onChange={(event) => {
                 const country = event.target.value;
-                setCheckout((current) => ({ ...current, country }));
+                updateCheckoutField("country", country);
                 setCheckoutMessage(
                   country === "Honduras"
                     ? ""
@@ -190,10 +248,13 @@ export function CheckoutView() {
           ) : null}
           <input
             value={checkout.address}
-            onChange={(event) => setCheckout((current) => ({ ...current, address: event.target.value }))}
+            onChange={(event) => updateCheckoutField("address", event.target.value)}
             placeholder="Dirección de entrega"
-            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+            className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+              fieldErrors.address ? "border-[#d55d3b]" : "border-black/10"
+            }`}
           />
+          {fieldErrors.address ? <span className="text-xs text-[#9b341b]">{fieldErrors.address}</span> : null}
           <div className="mt-2">
             <p className="mb-2 text-sm font-semibold">Método de pago</p>
             <div className="grid gap-2 sm:grid-cols-3">
@@ -209,6 +270,7 @@ export function CheckoutView() {
                   if (method !== "Transferencia bancaria") {
                     setProofFileName("");
                     setProofFile(null);
+                    setProofMessage("");
                   }
                   setCheckoutMessage("");
                 }}
@@ -241,11 +303,16 @@ export function CheckoutView() {
                 <input
                   value={checkout.bankTransferReference}
                   onChange={(event) =>
-                    setCheckout((current) => ({ ...current, bankTransferReference: event.target.value }))
+                    updateCheckoutField("bankTransferReference", event.target.value)
                   }
                   placeholder="Ej. 839201746"
-                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+                  className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
+                    fieldErrors.bankTransferReference ? "border-[#d55d3b]" : "border-black/10"
+                  }`}
                 />
+                {fieldErrors.bankTransferReference ? (
+                  <span className="mt-1 block text-xs text-[#9b341b]">{fieldErrors.bankTransferReference}</span>
+                ) : null}
                 <span className="mt-1 block text-xs text-black/50">
                   Ingresa el número de referencia que aparece en tu comprobante bancario.
                 </span>
@@ -259,11 +326,48 @@ export function CheckoutView() {
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0] ?? null;
+                    if (!file) {
+                      setProofFile(null);
+                      setProofFileName("");
+                      setProofMessage("");
+                      return;
+                    }
+
+                    const isAllowedType = file.type.startsWith("image/") || file.type === "application/pdf";
+                    if (!isAllowedType) {
+                      const message = "El comprobante debe ser imagen o PDF.";
+                      setProofFile(null);
+                      setProofFileName("");
+                      setProofMessage(message);
+                      toast.error(message);
+                      return;
+                    }
+
+                    if (file.size > 8 * 1024 * 1024) {
+                      const message = "El comprobante no debe superar 8 MB.";
+                      setProofFile(null);
+                      setProofFileName("");
+                      setProofMessage(message);
+                      toast.error(message);
+                      return;
+                    }
+
                     setProofFile(file);
-                    setProofFileName(file?.name ?? "");
+                    setProofFileName(file.name);
+                    setProofMessage("Comprobante listo para subir al crear el pedido.");
+                    toast.success("Comprobante listo para subir al crear el pedido.");
                   }}
                 />
               </label>
+              {proofMessage ? (
+                <p
+                  className={`mt-2 rounded-md px-3 py-2 text-xs ${
+                    proofFile ? "bg-[#e8f3f2] text-[#1e5960]" : "bg-[#fff0ea] text-[#9b341b]"
+                  }`}
+                >
+                  {proofMessage}
+                </p>
+              ) : null}
             </section>
           ) : null}
 
@@ -315,7 +419,7 @@ export function CheckoutView() {
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
-            {isPending ? "Creando pedido" : "Crear pedido"}
+            {isPending ? "Creando pedido..." : "Crear pedido"}
           </button>
         </div>
       </div>
@@ -323,6 +427,18 @@ export function CheckoutView() {
       <aside className="h-fit rounded-lg border border-black/10 bg-white p-5">
         <h2 className="font-semibold">Pedido</h2>
         <div className="mt-4 space-y-3">
+          {invalidItemCount > 0 ? (
+            <div className="rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">
+              <p className="font-medium">Uno de los productos de tu carrito ya no esta disponible.</p>
+              <button
+                type="button"
+                onClick={clearInvalidCartItems}
+                className="mt-2 rounded-md bg-[#9b341b] px-3 py-2 text-xs font-semibold text-white"
+              >
+                Limpiar carrito
+              </button>
+            </div>
+          ) : null}
           {rows.length === 0 ? (
             <p className="rounded-md bg-[#f7f7f2] p-4 text-sm text-black/55">Agrega productos para continuar.</p>
           ) : (

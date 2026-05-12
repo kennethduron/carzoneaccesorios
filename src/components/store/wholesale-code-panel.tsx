@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 import { LogIn, Tag, X } from "lucide-react";
 import { validateWholesaleCodeAction } from "@/app/actions/wholesale";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { useToast } from "@/contexts/toast-context";
 
 export function WholesaleCodePanel() {
   const [code, setCode] = useState("");
@@ -18,6 +19,7 @@ export function WholesaleCodePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { wholesaleAccount, activateWholesaleMode, clearWholesaleMode } = usePriceMode();
+  const toast = useToast();
 
   const buildReturnPath = useCallback((nextCode: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -35,13 +37,24 @@ export function WholesaleCodePanel() {
 
   const validateCode = useCallback(async (rawCode: string, clearUrlCode = false) => {
     const normalizedCode = rawCode.trim().toUpperCase();
+    if (!normalizedCode) {
+      clearWholesaleMode();
+      setLoginHref("");
+      setMessage("Codigo mayorista invalido.");
+      setMessageType("error");
+      toast.error("Codigo mayorista invalido.");
+      return;
+    }
+
     const result = await validateWholesaleCodeAction(normalizedCode);
 
     if (result.requiresLogin) {
       clearWholesaleMode();
+      setCode(result.code ?? normalizedCode);
       setLoginHref(`/login?next=${encodeURIComponent(buildReturnPath(result.code ?? normalizedCode))}`);
       setMessage(result.message);
       setMessageType("neutral");
+      toast.info("Codigo mayorista valido. Inicia sesion para activar precios de mayoreo.");
       return;
     }
 
@@ -50,6 +63,10 @@ export function WholesaleCodePanel() {
       setLoginHref("");
       setMessage(result.message);
       setMessageType("error");
+      toast.error(result.message || "Codigo mayorista invalido.");
+      if (clearUrlCode) {
+        clearPendingCodeFromUrl();
+      }
       return;
     }
 
@@ -58,13 +75,15 @@ export function WholesaleCodePanel() {
     setLoginHref("");
     setMessage(result.message);
     setMessageType("success");
+    toast.success("Cuenta mayorista verificada. Precios de mayoreo activados.");
 
     if (clearUrlCode) {
       clearPendingCodeFromUrl();
     }
-  }, [activateWholesaleMode, buildReturnPath, clearPendingCodeFromUrl, clearWholesaleMode]);
+  }, [activateWholesaleMode, buildReturnPath, clearPendingCodeFromUrl, clearWholesaleMode, toast]);
 
-  function applyCode() {
+  function applyCode(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     startTransition(async () => {
       await validateCode(code);
     });
@@ -76,6 +95,7 @@ export function WholesaleCodePanel() {
     setLoginHref("");
     setMessage("Modo mayorista desactivado. La tienda vuelve a precio al detalle.");
     setMessageType("neutral");
+    toast.info("Modo mayorista desactivado. La tienda vuelve a precio al detalle.");
   }
 
   function cancelLoginPrompt() {
@@ -83,6 +103,7 @@ export function WholesaleCodePanel() {
     setLoginHref("");
     setMessage("Activacion mayorista cancelada. La tienda mantiene precio al detalle.");
     setMessageType("neutral");
+    toast.info("Activacion mayorista cancelada. La tienda mantiene precio al detalle.");
   }
 
   useEffect(() => {
@@ -104,21 +125,28 @@ export function WholesaleCodePanel() {
           <Tag size={18} />
           <h2 className="font-semibold">Eres mayorista? Ingresa tu codigo</h2>
         </div>
-        <div className="flex gap-2">
+        <form onSubmit={applyCode} className="flex gap-2">
           <input
             value={code}
-            onChange={(event) => setCode(event.target.value)}
+            onChange={(event) => {
+              setCode(event.target.value);
+              if (messageType === "error") {
+                setMessage("La tienda muestra precio al detalle por defecto.");
+                setMessageType("neutral");
+              }
+            }}
             placeholder="Ej: MAYOREO-LOPEZ2026"
             className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+            aria-label="Codigo mayorista"
           />
           <button
-            onClick={applyCode}
-            disabled={isPending}
+            type="submit"
+            disabled={isPending || !code.trim()}
             className="rounded-md bg-[#d55d3b] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
             {isPending ? "Validando" : "Aplicar codigo"}
           </button>
-        </div>
+        </form>
         <p
           className={`mt-3 rounded-md px-3 py-2 text-sm ${
             messageType === "success"
@@ -127,6 +155,7 @@ export function WholesaleCodePanel() {
                 ? "bg-[#fff0ea] text-[#9b341b]"
                 : "bg-[#f7f7f2] text-black/60"
           }`}
+          aria-live="polite"
         >
           {message}
         </p>

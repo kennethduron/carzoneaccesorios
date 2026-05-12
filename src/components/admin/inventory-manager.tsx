@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { AlertTriangle, History, PackagePlus, Save } from "lucide-react";
 import { createInventoryMovementAction } from "@/app/admin/inventario/actions";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import type {
   InventoryMovementInput,
   InventoryMovementRow,
@@ -35,6 +36,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
   const [movement, setMovement] = useState<InventoryMovementInput>(emptyMovement);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const toast = useToast();
 
   const lowStockProducts = useMemo(
     () => products.filter((product) => product.stock <= product.min_stock),
@@ -46,6 +48,11 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
     startTransition(async () => {
       const result = await createInventoryMovementAction(movement);
       setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Movimiento de inventario registrado correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo registrar el movimiento de inventario.");
+      }
       if (result.ok) {
         setMovement(emptyMovement);
       }

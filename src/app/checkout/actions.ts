@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
+import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { validateHondurasPhone } from "@/utils/validation";
@@ -48,6 +49,33 @@ const wholesaleMessages = {
   codeNotOwned: "Este código mayorista no pertenece a tu cuenta.",
   accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
 };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return uuidPattern.test(value);
+}
+
+function safeCheckoutErrorMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid input syntax for type uuid")) {
+    return "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.";
+  }
+
+  if (normalized.includes("row-level security") || normalized.includes("permission denied") || normalized.includes("rls")) {
+    return "No tienes permiso para realizar esta accion.";
+  }
+
+  if (normalized.includes("duplicate key") || normalized.includes("unique constraint")) {
+    return "Ya existe un registro con esos datos. Revisa la informacion e intenta nuevamente.";
+  }
+
+  if (normalized.includes("checkout") || normalized.includes("products") || normalized.includes("uuid") || normalized.includes("rpc")) {
+    return "No pudimos procesar tu pedido. Revisa los productos del carrito e intenta nuevamente.";
+  }
+
+  return message || "No pudimos procesar tu pedido. Revisa los productos del carrito e intenta nuevamente.";
+}
 
 function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   if (method === "Tarjeta") {
@@ -166,7 +194,53 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "Agrega productos validos para crear el pedido." };
   }
 
+  if (normalizedItems.some((item) => !isUuid(item.productId))) {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.invalid_product_id",
+      errorMessage: "Checkout received a non-UUID product id.",
+      metadata: {
+        product_ids: normalizedItems.map((item) => item.productId),
+      },
+    });
+
+    return {
+      ok: false,
+      message: "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.",
+    };
+  }
+
   const supabase = await getSupabaseServerClient();
+
+  const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
+  const { data: availableProducts, error: productsError } = await supabase
+    .from("products")
+    .select("id")
+    .in("id", productIds)
+    .eq("active", true)
+    .eq("status", "active")
+    .returns<Array<{ id: string }>>();
+
+  if (productsError) {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.product_validation_failed",
+      errorMessage: productsError.message,
+      metadata: {
+        product_ids: productIds,
+      },
+    });
+
+    return { ok: false, message: "No pudimos procesar tu pedido. Revisa los productos del carrito e intenta nuevamente." };
+  }
+
+  const availableProductIds = new Set((availableProducts ?? []).map((product) => product.id));
+  if (productIds.some((productId) => !availableProductIds.has(productId))) {
+    return {
+      ok: false,
+      message: "Uno de los productos de tu carrito ya no esta disponible. Eliminalo y vuelve a intentar.",
+    };
+  }
 
   if (input.priceMode === "wholesale") {
     const {
@@ -222,9 +296,23 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         ? await uploadTransferReceipt(receiptFile, bankReference)
         : null;
   } catch (error) {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.transfer_receipt_upload_failed",
+      errorMessage: error instanceof Error ? error.message : "Transfer receipt upload failed.",
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: {
+        payment_method: paymentMethod,
+        bank_reference: bankReference,
+      },
+    });
+
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "No se pudo subir el comprobante de transferencia.",
+      message:
+        error instanceof Error && (error.message.includes("imagen") || error.message.includes("8 MB"))
+          ? error.message
+          : "No se pudo subir el comprobante de transferencia. Revisa el archivo e intenta nuevamente.",
     };
   }
 
@@ -249,7 +337,21 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     .returns<Array<{ order_id: string; order_number: string }>>();
 
   if (error) {
-    return { ok: false, message: error.message || "No se pudo crear el pedido." };
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.create_order_failed",
+      errorMessage: error.message,
+      metadata: {
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        product_ids: productIds,
+        price_mode: input.priceMode,
+        payment_method: paymentMethod,
+      },
+    });
+
+    return { ok: false, message: safeCheckoutErrorMessage(error.message) };
   }
 
   const rows = (Array.isArray(data) ? data : []) as Array<{ order_id: string; order_number: string }>;

@@ -1,6 +1,10 @@
+"use client";
+
 import Image from "next/image";
-import { Plus } from "lucide-react";
+import { ImageOff, Plus } from "lucide-react";
+import { useState } from "react";
 import type { PriceMode, Product } from "@/types/commerce";
+import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { formatCurrency, getProductPrice } from "@/utils/pricing";
 import { Button } from "@/components/ui/button";
 
@@ -12,19 +16,33 @@ type ProductCardProps = {
 };
 
 export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardProps) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = getProductThumbnailUrl(product.image);
+
   return (
     <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
       <button onClick={() => onOpen(product)} className="block w-full text-left">
-        <Image
-          src={product.image}
-          alt={product.name}
-          width={520}
-          height={360}
-          sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
-          loading="lazy"
-          quality={72}
-          className="h-44 w-full object-cover"
-        />
+        {imageFailed ? (
+          <div className="grid h-44 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+            <div className="flex flex-col items-center gap-2 text-sm">
+              <ImageOff size={24} />
+              Imagen no disponible
+            </div>
+          </div>
+        ) : (
+          <Image
+            src={imageUrl}
+            alt={product.name}
+            width={400}
+            height={276}
+            sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
+            loading="lazy"
+            quality={70}
+            unoptimized={isCloudinaryImageUrl(imageUrl)}
+            className="h-44 w-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
+        )}
         <div className="space-y-3 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>

@@ -7,6 +7,7 @@ import { CarFront, Loader2, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SystemLoadingScreen } from "@/components/system-loading-screen";
+import { useToast } from "@/contexts/toast-context";
 import { signInWithEmail, signUpWithEmail } from "@/services/supabase";
 
 type AuthCardProps = {
@@ -23,6 +24,7 @@ export function AuthCard({ mode }: AuthCardProps) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const toast = useToast();
 
   const isLogin = mode === "login";
 
@@ -39,9 +41,11 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (result.error) {
       setMessage(result.error.message);
+      toast.error(result.error.message);
       return;
     }
 
+    toast.success(isLogin ? "Sesion iniciada correctamente." : "Cuenta creada correctamente.");
     router.push(isLogin ? nextPath : "/cuenta");
     router.refresh();
   }
@@ -70,7 +74,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
         <form onSubmit={handleSubmit} className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-xl font-semibold">{isLogin ? "Login" : "Registro"}</h2>
+            <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesion" : "Registro"}</h2>
             <p className="mt-1 text-sm text-black/55">
               {isLogin ? "Usa tu correo y contraseña." : "Tu cuenta se crea con rol Cliente."}
             </p>
@@ -108,7 +112,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
           <Button type="submit" variant="dark" className="mt-5 w-full py-3" disabled={loading}>
             {loading ? <Loader2 className="animate-spin" size={18} /> : isLogin ? <LogIn size={18} /> : <UserPlus size={18} />}
-            {isLogin ? "Ingresar" : "Crear cuenta"}
+            {loading ? "Procesando..." : isLogin ? "Ingresar" : "Crear cuenta"}
           </Button>
 
           <p className="mt-4 text-center text-sm text-black/55">

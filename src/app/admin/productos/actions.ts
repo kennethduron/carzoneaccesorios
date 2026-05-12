@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
+import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 
@@ -15,6 +16,7 @@ type ProductMutationResult = {
 type ProductImageUploadResult = ProductMutationResult & {
   publicUrl?: string;
   storagePath?: string;
+  publicId?: string;
 };
 
 type ProductDbPayload = {
@@ -40,6 +42,8 @@ type ProductDbPayload = {
   active: boolean;
 };
 
+const allowedProductImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -64,13 +68,39 @@ function positiveInteger(value: unknown, fallback = 0) {
   return Math.floor(positiveNumber(value, fallback));
 }
 
-function revalidateProductCatalog() {
+function revalidateProductCatalog(slug?: string | null) {
   revalidatePath("/admin/productos");
+  revalidatePath("/admin/inventario");
+  revalidatePath("/admin/reportes");
   revalidatePath("/");
   revalidatePath("/catalogo");
+  revalidatePath("/categorias");
+  if (slug) {
+    revalidatePath(`/producto/${slug}`);
+  }
   revalidateTag("products", "max");
   revalidateTag("featured-products", "max");
   revalidateTag("vehicle-filters", "max");
+}
+
+function friendlyProductError(message: string) {
+  if (message.includes("products_internal_code_key")) {
+    return "El codigo proveedor/OEM ya esta usado por otro producto. Usa otro codigo o dejalo vacio.";
+  }
+
+  if (message.includes("products_sku_key")) {
+    return "El SKU ya esta usado por otro producto. Usa un SKU diferente.";
+  }
+
+  if (message.includes("products_slug_key")) {
+    return "La URL amigable ya esta usada por otro producto. Edita el slug en opciones avanzadas.";
+  }
+
+  if (message.toLowerCase().includes("duplicate key")) {
+    return "Ya existe un registro con un dato unico repetido. Revisa SKU, codigo proveedor/OEM o URL amigable.";
+  }
+
+  return message;
 }
 
 function productPayload(input: ProductFormInput): ProductDbPayload {
@@ -117,7 +147,8 @@ function imagePayload(productId: string, images: ProductImageInput[]) {
     .map((image, index) => ({
       product_id: productId,
       storage_bucket: "product-images",
-      storage_path: cleanText(image.storage_path) ?? `${productId}/${index}-${Date.now()}`,
+      storage_path: cleanText(image.storage_path) ?? cleanText(image.public_id) ?? `${productId}/${index}-${Date.now()}`,
+      public_id: cleanText(image.public_id) ?? cleanText(image.storage_path),
       public_url: image.public_url.trim(),
       angle: cleanText(image.angle) ?? "principal",
       alt_text: cleanText(image.alt_text),
@@ -171,7 +202,7 @@ async function logInventoryAdjustment(productId: string, previousStock: number, 
 }
 
 export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
-  await requirePermission("products:manage");
+  const profile = await requirePermission("products:manage");
 
   try {
     const cloudinary = configureCloudinary();
@@ -181,11 +212,11 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
     const angle = String(formData.get("angle") ?? "principal").trim() || "principal";
 
     if (!(file instanceof File) || file.size === 0) {
-      return { ok: false, message: "Selecciona una imagen valida." };
+      return { ok: false, message: "Selecciona una imagen valida antes de subir." };
     }
 
-    if (!file.type.startsWith("image/")) {
-      return { ok: false, message: "Solo se permiten archivos de imagen." };
+    if (!allowedProductImageTypes.has(file.type)) {
+      return { ok: false, message: "Solo se permiten imagenes JPG, PNG, WebP o AVIF." };
     }
 
     if (file.size > 8 * 1024 * 1024) {
@@ -203,10 +234,6 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
           public_id: publicId,
           resource_type: "image",
           overwrite: true,
-          transformation: [
-            { width: 1600, height: 1200, crop: "limit" },
-            { quality: "auto", fetch_format: "auto" },
-          ],
         },
         (error, uploadResult) => {
           if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
@@ -226,15 +253,33 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
 
     return {
       ok: true,
-      message: "Imagen subida a Cloudinary.",
+      message: "Imagen subida correctamente.",
       publicUrl: result.secure_url,
       storagePath: result.public_id,
+      publicId: result.public_id,
     };
   } catch (error) {
-    return {
+    const result = {
       ok: false,
-      message: error instanceof Error ? error.message : "No se pudo subir la imagen.",
+      message:
+        error instanceof Error
+          ? `No se pudo subir la imagen: ${error.message}`
+          : "No se pudo subir la imagen. Revisa la conexion e intenta de nuevo.",
     };
+
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.image_upload_failed",
+      errorMessage: result.message,
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: {
+        user_id: profile.id,
+        product_slug: String(formData.get("productSlug") ?? ""),
+        file_name: formData.get("file") instanceof File ? (formData.get("file") as File).name : null,
+      },
+    });
+
+    return result;
   }
 }
 
@@ -273,8 +318,8 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
         oldData: { stock: Number(previous.stock) },
         newData: payload,
       });
-      revalidateProductCatalog();
-      return { ok: true, message: "Producto actualizado." };
+      revalidateProductCatalog(payload.slug);
+      return { ok: true, message: "Producto actualizado correctamente." };
     }
 
     const { data, error } = await supabase.from("products").insert(payload).select("id").single<{ id: string }>();
@@ -294,10 +339,21 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
       newData: payload,
     });
 
-    revalidateProductCatalog();
-    return { ok: true, message: "Producto creado." };
+    revalidateProductCatalog(payload.slug);
+    return { ok: true, message: "Producto creado correctamente. Puede tardar unos segundos en aparecer en la tienda." };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el producto." };
+    const message = friendlyProductError(error instanceof Error ? error.message : "No se pudo guardar el producto.");
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.save_failed",
+      errorMessage: message,
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: {
+        product_id: input.id ?? null,
+        sku: input.sku,
+      },
+    });
+    return { ok: false, message };
   }
 }
 
@@ -314,7 +370,7 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
     .eq("id", id);
 
   if (error) {
-    return { ok: false, message: error.message };
+    return { ok: false, message: friendlyProductError(error.message) };
   }
 
   await writeAuditLog({
@@ -325,7 +381,7 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
   });
 
   revalidateProductCatalog();
-  return { ok: true, message: active ? "Producto activado." : "Producto desactivado." };
+  return { ok: true, message: active ? "Producto activado correctamente." : "Producto desactivado correctamente." };
 }
 
 export async function deleteProductAction(id: string): Promise<ProductMutationResult> {
@@ -335,7 +391,7 @@ export async function deleteProductAction(id: string): Promise<ProductMutationRe
   const { error } = await supabase.from("products").delete().eq("id", id);
 
   if (error) {
-    return { ok: false, message: error.message };
+    return { ok: false, message: friendlyProductError(error.message) };
   }
 
   await writeAuditLog({
@@ -345,12 +401,16 @@ export async function deleteProductAction(id: string): Promise<ProductMutationRe
   });
 
   revalidateProductCatalog();
-  return { ok: true, message: "Producto eliminado." };
+  return { ok: true, message: "Producto eliminado correctamente." };
 }
 
 export async function importProductsAction(products: ProductFormInput[]): Promise<ProductMutationResult> {
   await requirePermission("products:manage");
   const supabase = await getSupabaseServerClient();
+
+  if (products.length === 0) {
+    return { ok: false, message: "El archivo no contiene productos para importar." };
+  }
 
   let saved = 0;
   for (const product of products) {
@@ -365,7 +425,7 @@ export async function importProductsAction(products: ProductFormInput[]): Promis
         .maybeSingle<{ id: string }>();
 
       if (error) {
-        return { ok: false, message: `Importacion detenida en ${product.sku}: ${error.message}` };
+        return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(error.message)}` };
       }
 
       if (data?.id) {
@@ -375,10 +435,10 @@ export async function importProductsAction(products: ProductFormInput[]): Promis
 
     const result = await saveProductAction(productWithId);
     if (!result.ok) {
-      return { ok: false, message: `Importacion detenida en ${product.sku}: ${result.message}` };
+      return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
     }
     saved += 1;
   }
 
-  return { ok: true, message: `${saved} productos importados.` };
+  return { ok: true, message: `CSV importado correctamente. ${saved} productos guardados.` };
 }

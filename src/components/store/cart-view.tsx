@@ -7,7 +7,8 @@ import { usePriceMode } from "@/contexts/price-mode-context";
 import { formatCurrency } from "@/utils/pricing";
 
 export function CartView() {
-  const { rows, cartMessage, subtotal, tax, total, updateQuantity, removeFromCart } = useShoppingCart();
+  const { rows, invalidItemCount, cartMessage, subtotal, tax, total, updateQuantity, removeFromCart, clearInvalidCartItems } =
+    useShoppingCart();
   const { priceMode, wholesaleAccount } = usePriceMode();
 
   return (
@@ -28,6 +29,20 @@ export function CartView() {
           {cartMessage ? (
             <div className="border-b border-black/10 bg-[#fff0ea] p-4 text-sm font-medium text-[#9b341b]">
               {cartMessage}
+            </div>
+          ) : null}
+          {invalidItemCount > 0 ? (
+            <div className="flex flex-col gap-3 border-b border-black/10 bg-[#fff0ea] p-4 text-sm text-[#9b341b] sm:flex-row sm:items-center sm:justify-between">
+              <p className="font-medium">
+                Uno de los productos de tu carrito ya no esta disponible. Eliminalo y vuelve a intentar.
+              </p>
+              <button
+                type="button"
+                onClick={clearInvalidCartItems}
+                className="w-fit rounded-md bg-[#9b341b] px-3 py-2 text-sm font-semibold text-white"
+              >
+                Limpiar carrito
+              </button>
             </div>
           ) : null}
           {rows.length === 0 ? (
