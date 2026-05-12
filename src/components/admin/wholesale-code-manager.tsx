@@ -172,9 +172,9 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       const result = await saveWholesaleCodeAction(editing);
       setMessage(result.message);
       if (result.ok) {
-        toast.success(result.message || "Codigo mayorista actualizado.");
+        toast.success(result.message || "Código mayorista actualizado.");
       } else {
-        toast.error(result.message || "No se pudo guardar el codigo mayorista.");
+        toast.error(result.message || "No se pudo guardar el código mayorista.");
       }
       if (result.ok) {
         setEditing(null);
@@ -206,9 +206,9 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       const result = await setWholesaleCodeActiveAction(code.id, !code.active);
       setMessage(result.message);
       if (result.ok) {
-        toast.success(result.message || "Codigo mayorista actualizado.");
+        toast.success(result.message || "Código mayorista actualizado.");
       } else {
-        toast.error(result.message || "No se pudo actualizar el codigo mayorista.");
+        toast.error(result.message || "No se pudo actualizar el código mayorista.");
       }
     });
   }
@@ -244,6 +244,16 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
 
   return (
     <div className="space-y-5">
+      <section className="rounded-lg border border-[#246a73]/20 bg-[#e8f3f2] p-4 text-sm text-[#1e5960]">
+        <h2 className="font-semibold text-[#1c1d1b]">Flujo seguro para mayoristas</h2>
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
+          <p>1. Crea o aprueba el cliente mayorista.</p>
+          <p>2. Vincula el correo de acceso del cliente.</p>
+          <p>3. Genera un código único para ese cliente.</p>
+          <p>4. El cliente usa código + login para activar mayoreo.</p>
+        </div>
+      </section>
+
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Codigos activos" value={activeCount.toLocaleString("es-HN")} />
         <Metric label="Usos registrados" value={totalUses.toLocaleString("es-HN")} />
@@ -258,17 +268,17 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por codigo, cliente, correo o cuenta"
+              placeholder="Buscar por código, cliente, correo o cuenta"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
           <Button onClick={() => setEditing(emptyCode)} variant="dark">
             <KeyRound size={17} />
-            Nuevo codigo
+            Nuevo código
           </Button>
           <Button onClick={() => setCreatingCustomer(emptyCustomer)} variant="primary">
             <UserPlus size={17} />
-            Cliente mayorista
+            Crear/vincular mayorista
           </Button>
           <Button onClick={exportCsv} variant="ghost">
             <Download size={17} />
@@ -283,7 +293,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
           <table className="w-full min-w-[1160px] text-left text-sm">
             <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
               <tr>
-                <th className="px-4 py-3">Codigo</th>
+                <th className="px-4 py-3">Código</th>
                 <th className="px-4 py-3">Cliente</th>
                 <th className="px-4 py-3">Cuenta</th>
                 <th className="px-4 py-3">Estado</th>
@@ -401,10 +411,12 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
 function WholesaleCustomerList({ customers }: { customers: WholesaleCustomerOption[] }) {
   return (
     <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
-      <div className="border-b border-black/10 p-4">
-        <h2 className="font-semibold">Clientes mayoristas</h2>
-        <p className="mt-1 text-sm text-black/55">Estado de cuenta y vinculacion de usuarios.</p>
-      </div>
+        <div className="border-b border-black/10 p-4">
+          <h2 className="font-semibold">Clientes mayoristas</h2>
+        <p className="mt-1 text-sm text-black/55">
+          Estado de cuenta y vinculación de usuarios. Un cliente pendiente no puede activar precios hasta tener cuenta vinculada y estado activo.
+        </p>
+        </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
@@ -457,7 +469,7 @@ function CodeEditor({
     const nextCode = generatedCodeForCustomer(selectedCustomer);
     onField("code", nextCode);
     if (!code.label.trim()) {
-      onField("label", `Codigo mayorista ${selectedCustomer ? customerDisplayName(selectedCustomer) : nextCode}`);
+      onField("label", `Código mayorista ${selectedCustomer ? customerDisplayName(selectedCustomer) : nextCode}`);
     }
   }
 
@@ -466,8 +478,8 @@ function CodeEditor({
       <section className="mx-auto my-8 w-full max-w-3xl rounded-lg bg-white text-[#1c1d1b]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
-            <p className="text-sm text-black/50">{code.id ? "Editar codigo" : "Crear codigo"}</p>
-            <h2 className="text-xl font-semibold">{code.code || "Nuevo codigo mayorista"}</h2>
+            <p className="text-sm text-black/50">{code.id ? "Editar código" : "Crear código"}</p>
+            <h2 className="text-xl font-semibold">{code.code || "Nuevo código mayorista"}</h2>
           </div>
           <button onClick={onClose} className="grid size-10 place-items-center rounded-md border border-black/10" aria-label="Cerrar">
             <X size={18} />
@@ -489,7 +501,7 @@ function CodeEditor({
               ))}
             </select>
           </Field>
-          <Field label="Codigo unico">
+          <Field label="Código único">
             <div className="flex gap-2">
               <Input
                 value={code.code}
@@ -548,7 +560,7 @@ function CodeEditor({
               onChange={(event) => onField("active", event.target.checked)}
               className="size-4"
             />
-            Codigo activo
+            Código activo
           </label>
         </div>
 
@@ -558,7 +570,7 @@ function CodeEditor({
           </Button>
           <Button onClick={onSubmit} disabled={pending} variant="dark">
             <Save size={17} />
-            {pending ? "Guardando..." : "Guardar codigo"}
+            {pending ? "Guardando..." : "Guardar código"}
           </Button>
         </div>
       </section>
@@ -586,6 +598,9 @@ function WholesaleCustomerEditor({
           <div>
             <p className="text-sm text-black/50">Crear cliente mayorista</p>
             <h2 className="text-xl font-semibold">{customer.business_name || "Nuevo cliente mayorista"}</h2>
+            <p className="mt-1 max-w-xl text-sm text-black/55">
+              Escribe el correo que usará para iniciar sesión. Si la cuenta ya existe se vincula y queda activo; si no existe queda como cuenta pendiente.
+            </p>
           </div>
           <button onClick={onClose} className="grid size-10 place-items-center rounded-md border border-black/10" aria-label="Cerrar">
             <X size={18} />

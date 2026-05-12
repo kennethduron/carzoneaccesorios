@@ -200,7 +200,7 @@ export function AdminInvoicesManager({
   async function cancelInvoice(invoice: AdminInvoiceRow) {
     const confirmed = await toast.confirm({
       title: "Confirmar anulacion",
-      message: `Anular la factura ${invoice.invoice_number}? Esta accion quedara registrada.`,
+      message: `¿Anular la factura ${invoice.invoice_number}? Esta acción quedará registrada.`,
       confirmLabel: "Anular factura",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -295,7 +295,7 @@ export function AdminInvoicesManager({
             <FileText size={18} />
             Lista de facturas fiscales
           </h2>
-          <p className="mt-1 text-sm text-black/55">{filteredInvoices.length.toLocaleString("es-HN")} facturas en esta pagina</p>
+          <p className="mt-1 text-sm text-black/55">{filteredInvoices.length.toLocaleString("es-HN")} facturas en esta página</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left text-sm">

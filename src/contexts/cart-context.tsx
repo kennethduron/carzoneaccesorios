@@ -122,7 +122,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       cartCount,
       addToCart(productId) {
         if (!isUuid(productId)) {
-          const message = "Este producto no esta disponible para compra.";
+          const message = "Este producto no está disponible para compra.";
           setCartMessage(message);
           toast.error(message);
           return false;

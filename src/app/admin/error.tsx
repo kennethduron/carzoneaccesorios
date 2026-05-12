@@ -50,8 +50,8 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
             <h1 className="text-xl font-semibold">Error en el panel administrativo</h1>
             <p className="mt-2 text-sm text-black/60">
               {isDevelopment
-                ? "La accion se detuvo. Abajo tienes el detalle tecnico para depurar en desarrollo."
-                : "La accion se detuvo de forma segura. Reintenta o revisa la configuracion de Supabase si el problema continua."}
+                ? "La acción se detuvo. Abajo tienes el detalle técnico para depurar en desarrollo."
+                : "La acción se detuvo de forma segura. Reintenta o revisa la configuración de Supabase si el problema continúa."}
             </p>
           </div>
         </div>

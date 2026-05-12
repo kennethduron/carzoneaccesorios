@@ -61,15 +61,15 @@ function safeCheckoutErrorMessage(message: string) {
   const normalized = message.toLowerCase();
 
   if (normalized.includes("invalid input syntax for type uuid")) {
-    return "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.";
+    return "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.";
   }
 
   if (normalized.includes("row-level security") || normalized.includes("permission denied") || normalized.includes("rls")) {
-    return "No tienes permiso para realizar esta accion.";
+    return "No tienes permiso para realizar esta acción.";
   }
 
   if (normalized.includes("duplicate key") || normalized.includes("unique constraint")) {
-    return "Ya existe un registro con esos datos. Revisa la informacion e intenta nuevamente.";
+    return "Ya existe un registro con esos datos. Revisa la información e intenta nuevamente.";
   }
 
   if (normalized.includes("checkout") || normalized.includes("products") || normalized.includes("uuid") || normalized.includes("rpc")) {
@@ -150,7 +150,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   try {
     input = parseCheckoutOrderInput(formData);
   } catch {
-    return { ok: false, message: "No se pudo leer la informacion del checkout." };
+    return { ok: false, message: "No se pudo leer la información del checkout." };
   }
 
   const customerName = String(input.checkout.customerName ?? "").trim();
@@ -180,7 +180,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   if (paymentMethod === "bank_transfer" && !bankReference) {
-    return { ok: false, message: "Debes ingresar el numero de referencia de la transferencia." };
+    return { ok: false, message: "Debes ingresar el número de referencia de la transferencia." };
   }
 
   if (input.priceMode === "wholesale" && (!input.wholesaleCode?.trim() || !input.wholesaleCodeId?.trim())) {
@@ -210,7 +210,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
     return {
       ok: false,
-      message: "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.",
+      message: "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.",
     };
   }
 
@@ -242,7 +242,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   if (productIds.some((productId) => !availableProductIds.has(productId))) {
     return {
       ok: false,
-      message: "Uno de los productos de tu carrito ya no esta disponible. Eliminalo y vuelve a intentar.",
+      message: "Uno de los productos de tu carrito ya no está disponible. Elimínalo y vuelve a intentar.",
     };
   }
 
@@ -376,7 +376,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   return {
     ok: true,
-    message: "Pedido creado correctamente. El admin o la contadora podran revisarlo para facturacion.",
+    message: "Pedido creado correctamente. El admin o la contadora podrán revisarlo para facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,
     transferReceiptUrl,

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { CarFront, Menu, ShoppingCart, X } from "lucide-react";
@@ -11,6 +11,7 @@ const links = [
   ["Catálogo", "/catalogo"],
   ["Categorías", "/categorias"],
   ["Contacto", "/contacto"],
+  ["Solicitar mayoreo", "/contacto#mayoreo"],
   ["Rastrear pedido", "/rastreo"],
   ["Mi cuenta", "/cuenta"],
   ["Facturas", "/facturas"],
@@ -123,3 +124,5 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
     </main>
   );
 }
+
+

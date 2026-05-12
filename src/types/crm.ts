@@ -5,10 +5,17 @@ export type CrmLeadStatus = "prospecto" | "contactado" | "calificado" | "cliente
 
 export type CrmCustomerOption = {
   id: string;
+  user_id: string | null;
   business_name: string | null;
   contact_name: string;
   email: string | null;
   phone: string;
+  tax_id: string | null;
+  city: string | null;
+  notes: string | null;
+  is_wholesale: boolean;
+  status: "active" | "inactive" | "disabled" | "pending_account";
+  active: boolean;
   lead_status: CrmLeadStatus;
   estimated_value: number;
   monthly_amount: number;

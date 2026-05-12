@@ -35,7 +35,7 @@ function humanWholesaleError(error: { message?: string; code?: string; details?:
   const message = error.message?.toLowerCase() ?? "";
 
   if (error.code === "23505" || message.includes("duplicate key") || message.includes("unique constraint")) {
-    return "Este codigo ya esta registrado. Usa otro.";
+    return "Este código ya está registrado. Usa otro.";
   }
 
   if (error.code === "42501" || message.includes("permission denied") || message.includes("row-level security")) {
@@ -46,7 +46,7 @@ function humanWholesaleError(error: { message?: string; code?: string; details?:
     return "No pudimos conectar con la base de datos.";
   }
 
-  return "No pudimos guardar el codigo mayorista. Intenta nuevamente.";
+  return "No pudimos guardar el código mayorista. Intenta nuevamente.";
 }
 
 export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Promise<WholesaleCodeMutationResult> {
@@ -54,7 +54,7 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
 
   const code = normalizeCode(input.code);
   if (!code || !input.label.trim() || !input.customer_id) {
-    return { ok: false, message: "Codigo, etiqueta y cliente mayorista son obligatorios." };
+    return { ok: false, message: "Código, etiqueta y cliente mayorista son obligatorios." };
   }
 
   const payload = {
@@ -89,7 +89,7 @@ export async function saveWholesaleCodeAction(input: WholesaleCodeFormInput): Pr
   });
 
   revalidatePath("/admin/codigos-mayoristas");
-  return { ok: true, message: input.id ? "Codigo mayorista actualizado." : "Codigo mayorista creado." };
+  return { ok: true, message: input.id ? "Código mayorista actualizado." : "Código mayorista creado." };
 }
 
 export async function createWholesaleCustomerAction(
@@ -109,7 +109,7 @@ export async function createWholesaleCustomerAction(
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, message: "Ingresa un correo valido para asociar la cuenta mayorista." };
+    return { ok: false, message: "Ingresa un correo válido para asociar la cuenta mayorista." };
   }
 
   const admin = getSupabaseAdminClient();
@@ -184,5 +184,5 @@ export async function setWholesaleCodeActiveAction(id: string, active: boolean):
   });
 
   revalidatePath("/admin/codigos-mayoristas");
-  return { ok: true, message: active ? "Codigo activado." : "Codigo desactivado." };
+  return { ok: true, message: active ? "Código activado." : "Código desactivado." };
 }

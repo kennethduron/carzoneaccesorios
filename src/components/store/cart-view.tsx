@@ -34,7 +34,7 @@ export function CartView() {
           {invalidItemCount > 0 ? (
             <div className="flex flex-col gap-3 border-b border-black/10 bg-[#fff0ea] p-4 text-sm text-[#9b341b] sm:flex-row sm:items-center sm:justify-between">
               <p className="font-medium">
-                Uno de los productos de tu carrito ya no esta disponible. Eliminalo y vuelve a intentar.
+                Uno de los productos de tu carrito ya no está disponible. Elimínalo y vuelve a intentar.
               </p>
               <button
                 type="button"
@@ -46,7 +46,7 @@ export function CartView() {
             </div>
           ) : null}
           {rows.length === 0 ? (
-            <div className="p-5 text-sm text-black/55">Tu carrito esta vacio.</div>
+            <div className="p-5 text-sm text-black/55">Tu carrito está vacío.</div>
           ) : (
             rows.map((item) => (
               <div key={item.product.id} className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">

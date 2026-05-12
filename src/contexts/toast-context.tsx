@@ -85,15 +85,15 @@ function humanizeMessage(message: string) {
   const normalized = message.toLowerCase();
 
   if (normalized.includes("invalid input syntax for type uuid")) {
-    return "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.";
+    return "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.";
   }
 
   if (normalized.includes("duplicate key") || normalized.includes("unique constraint")) {
-    return "Este dato ya esta registrado. Usa otro.";
+    return "Este dato ya está registrado. Usa otro.";
   }
 
   if (normalized.includes("row-level security") || normalized.includes("rls") || normalized.includes("permission denied")) {
-    return "No tienes permiso para realizar esta accion.";
+    return "No tienes permiso para realizar esta acción.";
   }
 
   if (
@@ -103,7 +103,7 @@ function humanizeMessage(message: string) {
     normalized.includes("constraint") ||
     normalized.includes("uuid")
   ) {
-    return "No se pudo completar la accion. Revisa la informacion e intenta nuevamente.";
+    return "No se pudo completar la acción. Revisa la información e intenta nuevamente.";
   }
 
   return message;

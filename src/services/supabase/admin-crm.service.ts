@@ -98,7 +98,10 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   ] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, business_name, contact_name, email, phone, lead_status, estimated_value, monthly_amount", { count: "exact" })
+      .select(
+        "id, user_id, business_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, status, active, lead_status, estimated_value, monthly_amount",
+        { count: "exact" },
+      )
       .order("created_at", { ascending: false })
       .range(customerFrom, customerFrom + pageSize - 1)
       .returns<CustomerQueryRow[]>(),

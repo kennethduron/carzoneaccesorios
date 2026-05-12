@@ -1,12 +1,13 @@
 import { Mail, MapPin, Phone } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ContactForm } from "@/components/store/contact-form";
+import { WholesaleRequestForm } from "@/components/store/wholesale-request-form";
 
 export default function ContactoPage() {
   return (
     <PublicStoreShell>
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1fr_420px]">
-        <div>
+        <div className="space-y-5">
           <p className="text-sm text-black/50">Contacto</p>
           <h1 className="mt-2 text-4xl font-semibold">Hablemos de tus accesorios</h1>
           <p className="mt-4 max-w-2xl text-black/60">
@@ -24,6 +25,7 @@ export default function ContactoPage() {
               </div>
             ))}
           </div>
+          <WholesaleRequestForm />
         </div>
         <ContactForm />
       </section>

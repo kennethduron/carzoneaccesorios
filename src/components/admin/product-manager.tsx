@@ -549,7 +549,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
   async function deleteProduct(product: ProductAdminRow) {
     const confirmed = await toast.confirm({
       title: "Confirmar eliminacion",
-      message: `Eliminar ${product.name}? Esta accion no se puede deshacer.`,
+      message: `¿Eliminar ${product.name}? Esta acción no se puede deshacer.`,
       confirmLabel: "Eliminar",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -650,7 +650,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       const [headerLine, ...lines] = content.split(/\r?\n/).filter(Boolean);
 
       if (!headerLine || lines.length === 0) {
-        showMessage("El CSV esta vacio o no tiene filas de productos.", "error");
+        showMessage("El CSV está vacío o no tiene filas de productos.", "error");
         return;
       }
 
@@ -718,7 +718,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
               name="q"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por SKU, codigo proveedor/OEM, producto o marca"
+              placeholder="Buscar por SKU, código proveedor/OEM, producto o marca"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -1042,8 +1042,8 @@ function ProductEditor({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   label="SKU"
-                  help="Codigo unico para inventario y busquedas internas."
-                  tooltip="Usa el codigo principal que bodega, ventas e inventario reconocen."
+                  help="Código único para inventario y búsquedas internas."
+                  tooltip="Usa el código principal que bodega, ventas e inventario reconocen."
                 >
                   <Input
                     value={product.sku}
@@ -1053,9 +1053,9 @@ function ProductEditor({
                   />
                 </Field>
                 <Field
-                  label="Codigo proveedor/OEM"
-                  help="Opcional. Codigo del proveedor, fabricante u OEM."
-                  tooltip="Util cuando el empaque, proveedor o fabricante maneja otro codigo distinto al SKU."
+                  label="Código proveedor/OEM"
+                  help="Opcional. Código del proveedor, fabricante u OEM."
+                  tooltip="Útil cuando el empaque, proveedor o fabricante maneja otro código distinto al SKU."
                 >
                   <Input
                     value={product.internal_code ?? ""}

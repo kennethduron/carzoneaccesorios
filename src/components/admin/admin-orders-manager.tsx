@@ -192,7 +192,7 @@ export function AdminOrdersManager({
         <div className="rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-4">
             <h2 className="font-semibold">Pedidos</h2>
-            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta pagina</p>
+            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta página</p>
           </div>
           <div className="divide-y divide-black/10">
             {filteredOrders.length === 0 ? (

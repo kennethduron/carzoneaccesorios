@@ -24,7 +24,7 @@ export function InvoiceActions({ order }: { order: StoreOrder }) {
     const currentInvoice = ensureInvoice();
     const confirmed = await toast.confirm({
       title: "Confirmar anulacion",
-      message: `Anular factura ${currentInvoice.invoiceNumber}? Esta accion quedara registrada.`,
+      message: `¿Anular factura ${currentInvoice.invoiceNumber}? Esta acción quedará registrada.`,
       confirmLabel: "Anular factura",
       cancelLabel: "Cancelar",
       tone: "danger",

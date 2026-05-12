@@ -40,9 +40,9 @@ export function WholesaleCodePanel() {
     if (!normalizedCode) {
       clearWholesaleMode();
       setLoginHref("");
-      setMessage("Codigo mayorista invalido.");
+      setMessage("Código mayorista inválido.");
       setMessageType("error");
-      toast.error("Codigo mayorista invalido.");
+      toast.error("Código mayorista inválido.");
       return;
     }
 
@@ -54,7 +54,7 @@ export function WholesaleCodePanel() {
       setLoginHref(`/login?next=${encodeURIComponent(buildReturnPath(result.code ?? normalizedCode))}`);
       setMessage(result.message);
       setMessageType("neutral");
-      toast.info("Codigo mayorista valido. Inicia sesion para activar precios de mayoreo.");
+      toast.info("Código mayorista válido. Inicia sesión para activar precios de mayoreo.");
       return;
     }
 
@@ -63,7 +63,7 @@ export function WholesaleCodePanel() {
       setLoginHref("");
       setMessage(result.message);
       setMessageType("error");
-      toast.error(result.message || "Codigo mayorista invalido.");
+      toast.error(result.message || "Código mayorista inválido.");
       if (clearUrlCode) {
         clearPendingCodeFromUrl();
       }
@@ -101,9 +101,9 @@ export function WholesaleCodePanel() {
   function cancelLoginPrompt() {
     clearWholesaleMode();
     setLoginHref("");
-    setMessage("Activacion mayorista cancelada. La tienda mantiene precio al detalle.");
+    setMessage("Activación mayorista cancelada. La tienda mantiene precio al detalle.");
     setMessageType("neutral");
-    toast.info("Activacion mayorista cancelada. La tienda mantiene precio al detalle.");
+    toast.info("Activación mayorista cancelada. La tienda mantiene precio al detalle.");
   }
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export function WholesaleCodePanel() {
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="mb-3 flex items-center gap-2">
           <Tag size={18} />
-          <h2 className="font-semibold">Eres mayorista? Ingresa tu codigo</h2>
+          <h2 className="font-semibold">¿Eres mayorista? Ingresa tu código</h2>
         </div>
         <form onSubmit={applyCode} className="flex gap-2">
           <input
@@ -137,14 +137,14 @@ export function WholesaleCodePanel() {
             }}
             placeholder="Ej: MAYOREO-LOPEZ2026"
             className="min-w-0 flex-1 rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
-            aria-label="Codigo mayorista"
+            aria-label="Código mayorista"
           />
           <button
             type="submit"
             disabled={isPending || !code.trim()}
             className="rounded-md bg-[#d55d3b] px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
           >
-            {isPending ? "Validando" : "Aplicar codigo"}
+            {isPending ? "Validando" : "Aplicar código"}
           </button>
         </form>
         <p
@@ -162,7 +162,7 @@ export function WholesaleCodePanel() {
         {wholesaleAccount ? (
           <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
             <p className="font-medium text-[#1c1d1b]">{wholesaleAccount.businessName}</p>
-            <p>Codigo: {wholesaleAccount.code}</p>
+            <p>Código: {wholesaleAccount.code}</p>
             <button onClick={clearCode} className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#9b341b]">
               <X size={16} />
               Quitar mayorista
@@ -198,7 +198,7 @@ export function WholesaleCodePanel() {
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white"
               >
                 <LogIn size={16} />
-                Iniciar sesion
+                Iniciar sesión
               </Link>
               <button
                 onClick={cancelLoginPrompt}

@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  approveWholesaleRequestAction,
   saveCrmFollowupAction,
   saveCrmLeadAction,
   saveCrmNoteAction,
@@ -155,8 +156,8 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const pendingFollowups = data.followups.filter((item) => item.status === "pending");
   const overdueCount = data.followups.filter(isOverdue).length;
   const prospects = data.customers.filter((customer) => customer.lead_status !== "cliente");
+  const wholesaleRequests = data.customers.filter((customer) => customer.notes?.includes("[SOLICITUD_MAYOREO]") && !customer.is_wholesale);
   const estimatedPipeline = prospects.reduce((sum, customer) => sum + customer.estimated_value, 0);
-  const monthlyPipeline = prospects.reduce((sum, customer) => sum + customer.monthly_amount, 0);
   const selectedCustomer = filteredCustomers.find((customer) => customer.id === selectedCustomerId) ?? filteredCustomers[0] ?? data.customers[0] ?? null;
   const selectedFollowup =
     data.followups.find((item) => item.id === selectedFollowupId) ?? filteredFollowups[0] ?? data.followups[0] ?? null;
@@ -229,6 +230,18 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }
 
+  function approveWholesaleCustomer(customerId: string) {
+    startTransition(async () => {
+      const result = await approveWholesaleRequestAction(customerId);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Mayorista aprobado correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo aprobar el mayorista.");
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       <PaginationControls
@@ -243,7 +256,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         <Metric label="Prospectos" value={prospects.length.toLocaleString("es-HN")} />
         <Metric label="Pendientes" value={pendingFollowups.length.toLocaleString("es-HN")} />
         <Metric label="Atrasados" value={overdueCount.toLocaleString("es-HN")} />
-        <Metric label="Pipeline mensual" value={formatCurrency(monthlyPipeline)} />
+        <Metric label="Solicitudes mayoreo" value={wholesaleRequests.length.toLocaleString("es-HN")} />
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
@@ -428,7 +441,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           <div className="border-b border-black/10 p-5">
             <h2 className="font-semibold">Historial CRM</h2>
             <p className="mt-1 text-sm text-black/55">
-              {filteredFollowups.length.toLocaleString("es-HN")} seguimientos en esta pagina.
+              {filteredFollowups.length.toLocaleString("es-HN")} seguimientos en esta página.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -494,12 +507,12 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         </div>
 
         <div className="space-y-5">
-          <CustomerDetailCard customer={selectedCustomer} />
+          <CustomerDetailCard customer={selectedCustomer} pending={isPending} onApproveWholesale={approveWholesaleCustomer} />
           <FollowupDetailCard followup={selectedFollowup} />
 
           <div className="rounded-lg border border-black/10 bg-white p-5">
             <h2 className="font-semibold">Clientes CRM</h2>
-            <p className="mt-1 text-sm text-black/55">{filteredCustomers.length.toLocaleString("es-HN")} clientes en esta pagina.</p>
+            <p className="mt-1 text-sm text-black/55">{filteredCustomers.length.toLocaleString("es-HN")} clientes en esta página.</p>
             <div className="mt-4 space-y-3">
               {filteredCustomers.length === 0 ? (
                 <p className="text-sm text-black/55">No hay clientes registrados.</p>
@@ -581,7 +594,17 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   );
 }
 
-function CustomerDetailCard({ customer }: { customer: CrmCustomerOption | null }) {
+function CustomerDetailCard({
+  customer,
+  pending,
+  onApproveWholesale,
+}: {
+  customer: CrmCustomerOption | null;
+  pending: boolean;
+  onApproveWholesale: (customerId: string) => void;
+}) {
+  const isWholesaleRequest = Boolean(customer?.notes?.includes("[SOLICITUD_MAYOREO]"));
+
   return (
     <div className="rounded-lg border border-black/10 bg-white p-5">
       <h2 className="font-semibold">Detalle del cliente</h2>
@@ -593,9 +616,23 @@ function CustomerDetailCard({ customer }: { customer: CrmCustomerOption | null }
           </div>
           <InfoLine label="Teléfono" value={customer.phone || "Sin teléfono"} />
           <InfoLine label="Estado" value={leadStatusLabels[customer.lead_status]} />
+          <InfoLine label="Mayorista" value={customer.is_wholesale ? `Si, estado ${customer.status}` : isWholesaleRequest ? "Solicitud pendiente" : "No"} />
+          <InfoLine label="Ciudad" value={customer.city ?? "Sin ciudad"} />
+          <InfoLine label="RTN" value={customer.tax_id ?? "Sin RTN"} />
           <InfoLine label="Valor estimado" value={formatCurrency(customer.estimated_value)} />
           <InfoLine label="Mensualidad" value={formatCurrency(customer.monthly_amount)} />
           <ContactActions phone={customer.phone} customerName={customerDisplayName(customer)} />
+          {isWholesaleRequest && !customer.is_wholesale ? (
+            <div className="rounded-md border border-[#d55d3b]/25 bg-[#fff7ed] p-3">
+              <p className="font-medium text-[#7c2d12]">Solicitud de cuenta mayorista pendiente</p>
+              <p className="mt-1 text-xs text-[#7c2d12]/80">
+                Aprobar no activa precios por sí solo: también debe existir cuenta vinculada y código único.
+              </p>
+              <Button onClick={() => onApproveWholesale(customer.id)} disabled={pending} variant="dark" className="mt-3">
+                Aprobar como mayorista
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="mt-3 text-sm text-black/55">No hay cliente seleccionado.</p>

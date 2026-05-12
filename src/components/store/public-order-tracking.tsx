@@ -118,7 +118,7 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
       return () => window.clearTimeout(timeout);
     }
     return undefined;
-    // Solo debe buscar automaticamente al cargar con codigo en URL.
+    // Solo debe buscar automáticamente al cargar con código en URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCode]);
 

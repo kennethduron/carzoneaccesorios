@@ -45,7 +45,7 @@ export function OrderTracking() {
       </button>
 
       {searched && !order ? (
-        <p className="mt-4 rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">No encontramos ese pedido en esta sesion.</p>
+        <p className="mt-4 rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">No encontramos ese pedido en esta sesión.</p>
       ) : null}
 
       {order ? (

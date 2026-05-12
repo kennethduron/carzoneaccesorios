@@ -124,7 +124,7 @@ export function CheckoutView() {
     if (rows.length === 0) {
       const message =
         invalidItemCount > 0
-          ? "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar."
+          ? "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar."
           : "Agrega productos al carrito para crear el pedido.";
       setCheckoutMessage(message);
       toast.warning(message);
@@ -132,7 +132,7 @@ export function CheckoutView() {
     }
 
     if (invalidItemCount > 0) {
-      const message = "Hay un producto invalido en el carrito. Eliminalo y vuelve a intentar.";
+      const message = "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.";
       setCheckoutMessage(message);
       toast.error(message);
       return;
@@ -182,7 +182,7 @@ export function CheckoutView() {
 
       if (!result.ok || !result.orderNumber || !result.trackingCode) {
         setCheckoutMessage(result.message);
-        toast.error(result.message || "No se pudo crear el pedido. Revisa la informacion e intenta nuevamente.");
+        toast.error(result.message || "No se pudo crear el pedido. Revisa la información e intenta nuevamente.");
         return;
       }
 
@@ -505,7 +505,7 @@ export function CheckoutView() {
         <div className="mt-4 space-y-3">
           {invalidItemCount > 0 ? (
             <div className="rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">
-              <p className="font-medium">Uno de los productos de tu carrito ya no esta disponible.</p>
+              <p className="font-medium">Uno de los productos de tu carrito ya no está disponible.</p>
               <button
                 type="button"
                 onClick={clearInvalidCartItems}

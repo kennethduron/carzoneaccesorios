@@ -6,7 +6,7 @@ export function LogoutButton() {
     <form action="/auth/logout" method="post">
       <Button type="submit" variant="ghost" className="w-full sm:w-auto">
         <LogOut size={17} />
-        Cerrar sesion
+        Cerrar sesión
       </Button>
     </form>
   );

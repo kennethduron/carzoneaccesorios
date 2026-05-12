@@ -133,7 +133,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     sku: row.sku,
     name: row.name,
     slug: row.slug,
-    category: row.categories?.name ?? "Sin categoria",
+    category: row.categories?.name ?? "Sin categoría",
     brand: row.brand,
     vehicle_brand: row.vehicle_brand,
     vehicle_model: row.vehicle_model,

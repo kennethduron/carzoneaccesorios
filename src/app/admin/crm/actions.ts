@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
 import {
@@ -181,4 +182,95 @@ export async function setCrmFollowupStatusAction(
 
   revalidatePath("/admin/crm");
   return { ok: true, message: status === "completed" ? "Actividad completada." : "Actividad actualizada." };
+}
+
+export async function approveWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
+  await requirePermission("customers:manage");
+
+  const customer = uuidLike(customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select("id, email, business_name, company_name, contact_name, phone, notes")
+    .eq("id", customer.value)
+    .maybeSingle<{
+      id: string;
+      email: string | null;
+      business_name: string | null;
+      company_name: string | null;
+      contact_name: string;
+      phone: string;
+      notes: string | null;
+    }>();
+
+  if (customerError || !customerRow) {
+    return { ok: false, message: "No pudimos encontrar la solicitud mayorista." };
+  }
+
+  const email = customerRow.email?.trim().toLowerCase() ?? "";
+  if (!email) {
+    return { ok: false, message: "La solicitud no tiene correo para vincular cuenta." };
+  }
+
+  const { data: userProfile } = await admin
+    .from("users")
+    .select("id, email, active")
+    .ilike("email", email)
+    .maybeSingle<{ id: string; email: string | null; active: boolean }>();
+
+  const hasAccount = Boolean(userProfile?.id);
+  const nextStatus = hasAccount && userProfile?.active !== false ? "active" : "pending_account";
+  const nextNotes = [
+    customerRow.notes,
+    hasAccount
+      ? `Mayorista aprobado y vinculado a la cuenta ${userProfile?.email ?? email}.`
+      : "Mayorista aprobado. Cuenta mayorista pendiente de crear o vincular.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const { error: updateError } = await admin
+    .from("customers")
+    .update({
+      user_id: userProfile?.id ?? null,
+      business_name: customerRow.business_name ?? customerRow.company_name ?? customerRow.contact_name,
+      company_name: customerRow.company_name ?? customerRow.business_name ?? customerRow.contact_name,
+      is_wholesale: true,
+      status: nextStatus,
+      active: nextStatus === "active",
+      lead_status: "cliente",
+      notes: nextNotes,
+    })
+    .eq("id", customer.value);
+
+  if (updateError) {
+    return { ok: false, message: "No pudimos aprobar la solicitud mayorista." };
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.value,
+    action: "wholesale_request.approved",
+    newData: {
+      user_id: userProfile?.id ?? null,
+      is_wholesale: true,
+      status: nextStatus,
+      active: nextStatus === "active",
+    },
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/codigos-mayoristas");
+
+  return {
+    ok: true,
+    message: hasAccount
+      ? "Mayorista aprobado y vinculado a su cuenta. Ahora puedes generar su código."
+      : "Mayorista aprobado. Cuenta mayorista pendiente de crear; cuando se registre con ese correo quedará listo para vincular.",
+  };
 }
