@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import {
+  getAdminCompanySettings,
+  saveAdminCompanySettings,
+  type AdminCompanySettings,
+} from "@/services/supabase/admin-commerce-settings.service";
 import { getFiscalSettings, saveFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import {
   getNotificationSettings,
@@ -41,6 +46,34 @@ function fiscalSettingsChanges(previous: FiscalSettings, next: FiscalSettings) {
   }, {});
 }
 
+export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
+  await requirePermission("settings:manage");
+
+  if (input.cash_on_delivery_percentage > 100) {
+    return { ok: false, message: "La comision por pago al recibir no puede ser mayor a 100%." };
+  }
+
+  const previousSettings = await getAdminCompanySettings();
+  await saveAdminCompanySettings(input);
+  const changes = commerceSettingsChanges(previousSettings, input);
+
+  await writeAuditLog({
+    tableName: "company_settings",
+    action: "commerce.settings.updated",
+    oldData: previousSettings,
+    newData: {
+      ...input,
+      changes,
+    },
+  });
+
+  revalidatePath("/admin/configuracion-fiscal");
+  revalidatePath("/checkout");
+  revalidatePath("/");
+
+  return { ok: true, message: "Configuracion comercial guardada correctamente." };
+}
+
 function notificationSettingsChanges(previous: NotificationSettings, next: NotificationSettings) {
   const fields: Array<keyof NotificationSettings> = [
     "notification_emails",
@@ -50,6 +83,21 @@ function notificationSettingsChanges(previous: NotificationSettings, next: Notif
   ];
 
   return fields.reduce<Record<string, { from: string | boolean; to: string | boolean }>>((changes, field) => {
+    if (previous[field] !== next[field]) {
+      changes[field] = {
+        from: previous[field],
+        to: next[field],
+      };
+    }
+
+    return changes;
+  }, {});
+}
+
+function commerceSettingsChanges(previous: AdminCompanySettings, next: AdminCompanySettings) {
+  const fields = Object.keys(next) as Array<keyof AdminCompanySettings>;
+
+  return fields.reduce<Record<string, { from: string | number | boolean; to: string | number | boolean }>>((changes, field) => {
     if (previous[field] !== next[field]) {
       changes[field] = {
         from: previous[field],

@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
-import { createCheckoutOrderAction } from "@/app/checkout/actions";
+import { createCheckoutOrderAction, getWholesalePurchaseStatusAction } from "@/app/checkout/actions";
 import type { CheckoutData } from "@/types/commerce";
+import type { PublicCompanySettings } from "@/types/settings";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { useOrders } from "@/contexts/orders-context";
 import { useToast } from "@/contexts/toast-context";
-import { Totals } from "@/components/store/cart-view";
+import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { formatCurrency } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
 
@@ -55,7 +56,7 @@ type OrderConfirmation = {
   currentStatus: string;
 };
 
-export function CheckoutView() {
+export function CheckoutView({ settings }: { settings: PublicCompanySettings }) {
   const [checkout, setCheckout] = useState<CheckoutData>(emptyCheckout);
   const [proofFileName, setProofFileName] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
@@ -64,12 +65,39 @@ export function CheckoutView() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [orderNumber, setOrderNumber] = useState("");
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
+  const [isFirstWholesalePurchase, setIsFirstWholesalePurchase] = useState(true);
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
-  const { rows, invalidItemCount, subtotal, tax, total, clearCart, clearInvalidCartItems } = useShoppingCart();
+  const { rows, invalidItemCount, subtotal, tax, clearCart, clearInvalidCartItems } = useShoppingCart();
   const { createOrder } = useOrders();
   const toast = useToast();
   const sellsInHonduras = checkout.country === "Honduras";
+  const checkoutFees = useMemo(
+    () => calculateCheckoutFees({ subtotal, paymentMethod: checkout.paymentMethod, settings }),
+    [checkout.paymentMethod, settings, subtotal],
+  );
+  const finalTotal = Math.round((subtotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee) * 100) / 100;
+  const wholesaleMinimumMissing = Math.max(0, settings.first_wholesale_minimum - subtotal);
+  const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
+  const blocksFirstWholesaleOrder = priceMode === "wholesale" && effectiveIsFirstWholesalePurchase && wholesaleMinimumMissing > 0;
+
+  useEffect(() => {
+    let active = true;
+
+    if (!wholesaleAccount?.customerId) {
+      return;
+    }
+
+    getWholesalePurchaseStatusAction(wholesaleAccount.customerId).then((result) => {
+      if (active) {
+        setIsFirstWholesalePurchase(result.isFirstWholesalePurchase);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [wholesaleAccount?.customerId]);
 
   function showCheckoutError(field: string, message: string) {
     setFieldErrors((current) => ({ ...current, [field]: message }));
@@ -160,6 +188,13 @@ export function CheckoutView() {
       return;
     }
 
+    if (blocksFirstWholesaleOrder) {
+      const message = `Para la primera compra mayorista, el monto minimo es de ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)}.`;
+      setCheckoutMessage(message);
+      toast.error(message);
+      return;
+    }
+
     startTransition(async () => {
       toast.loading("Creando pedido...");
       const items = rows.map((item) => ({
@@ -204,7 +239,7 @@ export function CheckoutView() {
         wholesaleCode: wholesaleAccount?.code ?? null,
         subtotal,
         tax,
-        total,
+        total: finalTotal,
         paymentMethod: checkout.paymentMethod,
         paymentReference: isBankTransfer ? bankTransferReference : null,
         paymentProofFileName: isBankTransfer ? proofFileName || null : null,
@@ -220,7 +255,7 @@ export function CheckoutView() {
         orderNumber: result.orderNumber,
         trackingCode: result.trackingCode,
         paymentMethod: checkout.paymentMethod,
-        total,
+        total: finalTotal,
         currentStatus:
           checkout.paymentMethod === "Transferencia bancaria"
             ? "Tu pedido está pendiente de revisión de pago."
@@ -491,7 +526,7 @@ export function CheckoutView() {
 
           <button
             onClick={submitOrder}
-            disabled={!sellsInHonduras || isPending}
+            disabled={!sellsInHonduras || isPending || blocksFirstWholesaleOrder}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
@@ -533,7 +568,25 @@ export function CheckoutView() {
             Código mayorista: {wholesaleAccount.code}
           </p>
         ) : null}
-        <Totals subtotal={subtotal} tax={tax} total={total} />
+        {wholesaleAccount && effectiveIsFirstWholesalePurchase ? (
+          <p
+            className={`mt-3 rounded-md p-3 text-sm ${
+              blocksFirstWholesaleOrder ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#e8f3f2] text-[#1e5960]"
+            }`}
+          >
+            {blocksFirstWholesaleOrder
+              ? `Primera compra mayorista: minimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el minimo mayorista.`
+              : "Cumples con el minimo para primera compra mayorista."}
+          </p>
+        ) : null}
+        <CheckoutTotals
+          subtotal={subtotal}
+          shippingFee={checkoutFees.shippingFee}
+          cashOnDeliveryFee={checkoutFees.cashOnDeliveryFee}
+          total={finalTotal}
+          settings={settings}
+          paymentMethod={checkout.paymentMethod}
+        />
         {orderNumber ? (
           <div className="mt-5 rounded-md bg-[#e8f3f2] p-4 text-sm">
             <p className="font-semibold">Pedido creado: {orderNumber}</p>
@@ -600,6 +653,52 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
     <div className="flex justify-between gap-3">
       <span className="text-black/55">{label}</span>
       <span className={`text-right ${strong ? "font-semibold" : "font-medium"}`}>{value}</span>
+    </div>
+  );
+}
+
+function CheckoutTotals({
+  subtotal,
+  shippingFee,
+  cashOnDeliveryFee,
+  total,
+  settings,
+  paymentMethod,
+}: {
+  subtotal: number;
+  shippingFee: number;
+  cashOnDeliveryFee: number;
+  total: number;
+  settings: PublicCompanySettings;
+  paymentMethod: CheckoutData["paymentMethod"];
+}) {
+  const hasFreeShipping = shippingFee === 0 && subtotal >= settings.free_shipping_threshold;
+
+  return (
+    <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
+      <div className="flex justify-between">
+        <span>Subtotal productos</span>
+        <span>{formatCurrency(subtotal)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>{hasFreeShipping ? "Envio gratis" : "Envio estandar"}</span>
+        <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
+      </div>
+      {paymentMethod === "Efectivo" && settings.enable_cash_on_delivery_fee ? (
+        <div className="flex justify-between">
+          <span>Comision pago al recibir</span>
+          <span>{formatCurrency(cashOnDeliveryFee)}</span>
+        </div>
+      ) : null}
+      <div className="rounded-md bg-[#f7f7f2] p-3 text-xs text-black/60">
+        <p>El envio es gratis en compras mayores o iguales a {formatCurrency(settings.free_shipping_threshold)}.</p>
+        <p>Para compras menores aplica envio estandar de {formatCurrency(settings.standard_shipping_fee)}.</p>
+        <p>El pago al recibir puede incluir una comision adicional definida por la empresa de entrega.</p>
+      </div>
+      <div className="flex justify-between text-lg font-semibold">
+        <span>Total a pagar</span>
+        <span>{formatCurrency(total)}</span>
+      </div>
     </div>
   );
 }

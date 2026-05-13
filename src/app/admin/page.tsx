@@ -71,6 +71,12 @@ const adminModules = [
     description: "RTN, CAI, rango fiscal, fecha límite y datos legales.",
     permissions: ["fiscal:read", "settings:manage"] satisfies Permission[],
   },
+  {
+    title: "Banners festivos",
+    href: "/admin/banners",
+    description: "Flyers, promociones y mensajes por dias festivos de Honduras.",
+    permissions: ["settings:manage"] satisfies Permission[],
+  },
 ];
 
 function canAccessModule(role: string, permissions: Permission[], modulePermissions: Permission[]) {

@@ -91,7 +91,9 @@ export type AdminOrderRow = {
   price_mode: PriceMode;
   subtotal: number;
   tax: number;
+  shipping_fee: number;
   shipping_total: number;
+  cash_on_delivery_fee: number;
   total: number;
   status: OrderStatus;
   created_at: string;

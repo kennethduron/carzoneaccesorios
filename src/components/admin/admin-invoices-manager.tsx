@@ -123,6 +123,8 @@ export function AdminInvoicesManager({
       "Referencia bancaria",
       "Subtotal",
       "ISV",
+      "Envio",
+      "Comision entrega",
       "Total",
       "Estado",
     ];
@@ -135,6 +137,8 @@ export function AdminInvoicesManager({
       invoice.bank_reference_number ?? "-",
       invoice.subtotal,
       invoice.tax,
+      invoice.shipping_fee,
+      invoice.cash_on_delivery_fee,
       invoice.total,
       statusLabels[invoice.status],
     ]);
@@ -182,7 +186,10 @@ export function AdminInvoicesManager({
     const finalY = getLastAutoTableY(doc);
     doc.text(`Subtotal: ${formatCurrency(invoice.subtotal)}`, 140, finalY + 10);
     doc.text(`ISV: ${formatCurrency(invoice.tax)}`, 140, finalY + 16);
-    doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 22);
+    doc.text(`Envio: ${formatCurrency(invoice.shipping_fee)}`, 140, finalY + 22);
+    doc.text(`Comision entrega: ${formatCurrency(invoice.cash_on_delivery_fee)}`, 140, finalY + 28);
+    doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 34);
+    doc.text("Validar tratamiento fiscal de envio y comision con la contadora.", 14, finalY + 34);
     doc.save(`${invoice.invoice_number}.pdf`);
   }
 
@@ -312,6 +319,8 @@ export function AdminInvoicesManager({
                 <th className="px-4 py-3">Referencia bancaria</th>
                 <th className="px-4 py-3">Subtotal</th>
                 <th className="px-4 py-3">ISV</th>
+                <th className="px-4 py-3">Envio</th>
+                <th className="px-4 py-3">Comision</th>
                 <th className="px-4 py-3">Total</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
@@ -320,7 +329,7 @@ export function AdminInvoicesManager({
             <tbody className="divide-y divide-black/10">
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-black/50" colSpan={11}>
+                  <td className="px-4 py-6 text-center text-black/50" colSpan={13}>
                     No hay facturas para mostrar.
                   </td>
                 </tr>
@@ -335,6 +344,8 @@ export function AdminInvoicesManager({
                     <td className="px-4 py-3">{invoice.bank_reference_number ?? "-"}</td>
                     <td className="px-4 py-3">{formatCurrency(invoice.subtotal)}</td>
                     <td className="px-4 py-3">{formatCurrency(invoice.tax)}</td>
+                    <td className="px-4 py-3">{formatCurrency(invoice.shipping_fee)}</td>
+                    <td className="px-4 py-3">{formatCurrency(invoice.cash_on_delivery_fee)}</td>
                     <td className="px-4 py-3 font-semibold">{formatCurrency(invoice.total)}</td>
                     <td className="px-4 py-3">{statusLabels[invoice.status]}</td>
                     <td className="px-4 py-3">
@@ -520,9 +531,15 @@ function InvoiceModal({
           </table>
         </div>
 
-        <div className="mt-5 grid gap-2 text-sm md:grid-cols-3">
+        <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          Validar tratamiento fiscal de envio y comision con la contadora.
+        </p>
+
+        <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
           <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
           <p>ISV: {formatCurrency(invoice.tax)}</p>
+          <p>Envio: {formatCurrency(invoice.shipping_fee)}</p>
+          <p>Comision: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
         </div>
       </section>

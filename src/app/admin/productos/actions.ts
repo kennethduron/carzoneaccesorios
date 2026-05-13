@@ -25,6 +25,13 @@ type ProductHistoryCounts = {
   inventoryMovements: number;
 };
 
+type ProductStockRpcResult = {
+  movement_id: string | null;
+  stock_before: number;
+  stock_after: number;
+  quantity: number;
+};
+
 type ProductDbPayload = {
   category_id: string | null;
   sku: string;
@@ -94,19 +101,19 @@ function revalidateProductCatalog(slug?: string | null) {
 
 function friendlyProductError(message: string) {
   if (message.includes("products_internal_code_key")) {
-    return "El código proveedor/OEM ya está usado por otro producto. Usa otro código o déjalo vacío.";
+    return "El codigo proveedor/OEM ya esta usado por otro producto. Usa otro codigo o dejalo vacio.";
   }
 
   if (message.includes("products_sku_key")) {
-    return "El SKU ya está usado por otro producto. Usa un SKU diferente.";
+    return "El SKU ya esta usado por otro producto. Usa un SKU diferente.";
   }
 
   if (message.includes("products_slug_key")) {
-    return "La URL amigable ya está usada por otro producto. Edita el slug en opciones avanzadas.";
+    return "La URL amigable ya esta usada por otro producto. Edita el slug en opciones avanzadas.";
   }
 
   if (message.toLowerCase().includes("duplicate key")) {
-    return "Ya existe un registro con un dato único repetido. Revisa SKU, código proveedor/OEM o URL amigable.";
+    return "Ya existe un registro con un dato unico repetido. Revisa SKU, codigo proveedor/OEM o URL amigable.";
   }
 
   return message;
@@ -244,28 +251,19 @@ async function replaceImages(productId: string, images: ProductImageInput[]) {
   await removeCloudinaryImages(removedPublicIds, { product_id: productId, reason: "product_images_replaced" });
 }
 
-async function logInventoryAdjustment(productId: string, previousStock: number, nextStock: number) {
-  if (previousStock === nextStock) {
-    return;
-  }
-
+async function setProductStockLocked(productId: string, nextStock: number): Promise<ProductStockRpcResult | null> {
   const supabase = await getSupabaseServerClient();
-  const profile = await requirePermission("products:manage");
-  const { error } = await supabase.from("inventory_movements").insert({
-    product_id: productId,
-    user_id: profile.id,
-    movement_type: "adjustment",
-    quantity: nextStock - previousStock,
-    stock_before: previousStock,
-    stock_after: nextStock,
-    reference_type: "products",
-    reference_id: productId,
-    notes: "Ajuste desde módulo de productos",
+  const { data, error } = await supabase.rpc("set_product_stock_locked", {
+    target_product_id: productId,
+    target_stock: nextStock,
+    movement_notes: "Ajuste desde modulo de productos",
   });
 
   if (error) {
     throw new Error(error.message);
   }
+
+  return (Array.isArray(data) ? data[0] : data) as ProductStockRpcResult | null;
 }
 
 export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
@@ -279,11 +277,11 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
     const angle = String(formData.get("angle") ?? "principal").trim() || "principal";
 
     if (!(file instanceof File) || file.size === 0) {
-      return { ok: false, message: "Selecciona una imagen válida antes de subir." };
+      return { ok: false, message: "Selecciona una imagen valida antes de subir." };
     }
 
     if (!allowedProductImageTypes.has(file.type)) {
-      return { ok: false, message: "Solo se permiten imágenes JPG, PNG, WebP o AVIF." };
+      return { ok: false, message: "Solo se permiten imagenes JPG, PNG, WebP o AVIF." };
     }
 
     if (file.size > 8 * 1024 * 1024) {
@@ -304,7 +302,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
         },
         (error, uploadResult) => {
           if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
-            reject(error ?? new Error("Cloudinary no devolvió una URL válida."));
+            reject(error ?? new Error("Cloudinary no devolvio una URL valida."));
             return;
           }
 
@@ -331,7 +329,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
       message:
         error instanceof Error
           ? `No se pudo subir la imagen: ${error.message}`
-          : "No se pudo subir la imagen. Revisa la conexión e intenta de nuevo.",
+          : "No se pudo subir la imagen. Revisa la conexion e intenta de nuevo.",
     };
 
     await writeErrorLog({
@@ -358,36 +356,32 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
     const payload = productPayload(input);
 
     if (input.id) {
-      const { data: previous, error: previousError } = await supabase
-        .from("products")
-        .select("stock")
-        .eq("id", input.id)
-        .single<{ stock: number }>();
+      const { stock: targetStock, ...productUpdatePayload } = payload;
 
-      if (previousError) {
-        throw new Error(previousError.message);
-      }
-
-      const { error } = await supabase.from("products").update(payload).eq("id", input.id);
+      const { error } = await supabase.from("products").update(productUpdatePayload).eq("id", input.id);
 
       if (error) {
         throw new Error(error.message);
       }
 
       await replaceImages(input.id, input.images);
-      await logInventoryAdjustment(input.id, Number(previous.stock), payload.stock);
+      const stockMovement = await setProductStockLocked(input.id, targetStock);
       await writeAuditLog({
         tableName: "products",
         recordId: input.id,
         action: "product.updated",
-        oldData: { stock: Number(previous.stock) },
+        oldData: { stock: stockMovement?.stock_before },
         newData: payload,
       });
       revalidateProductCatalog(payload.slug);
       return { ok: true, message: "Producto actualizado correctamente." };
     }
 
-    const { data, error } = await supabase.from("products").insert(payload).select("id").single<{ id: string }>();
+    const { data, error } = await supabase
+      .from("products")
+      .insert({ ...payload, stock: 0 })
+      .select("id")
+      .single<{ id: string }>();
 
     if (error) {
       throw new Error(error.message);
@@ -395,7 +389,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
 
     await replaceImages(data.id, input.images);
     if (payload.stock > 0) {
-      await logInventoryAdjustment(data.id, 0, payload.stock);
+      await setProductStockLocked(data.id, payload.stock);
     }
     await writeAuditLog({
       tableName: "products",
@@ -579,7 +573,7 @@ export async function importProductsAction(products: ProductFormInput[]): Promis
         .maybeSingle<{ id: string }>();
 
       if (error) {
-        return { ok: false, message: `Importación detenida en ${product.sku}: ${friendlyProductError(error.message)}` };
+        return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(error.message)}` };
       }
 
       if (data?.id) {
@@ -589,7 +583,7 @@ export async function importProductsAction(products: ProductFormInput[]): Promis
 
     const result = await saveProductAction(productWithId);
     if (!result.ok) {
-      return { ok: false, message: `Importación detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
+      return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
     }
     saved += 1;
   }

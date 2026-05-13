@@ -16,7 +16,9 @@ type OrderQueryRow = Omit<
   AdminOrderRow,
   | "subtotal"
   | "tax"
+  | "shipping_fee"
   | "shipping_total"
+  | "cash_on_delivery_fee"
   | "total"
   | "order_items"
   | "payment_status"
@@ -29,7 +31,9 @@ type OrderQueryRow = Omit<
 > & {
   subtotal: unknown;
   tax: unknown;
+  shipping_fee: unknown;
   shipping_total: unknown;
+  cash_on_delivery_fee: unknown;
   total: unknown;
   order_items: Array<Omit<AdminOrderItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
     quantity: unknown;
@@ -67,7 +71,9 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     ...row,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
+    shipping_fee: toNumber(row.shipping_fee),
     shipping_total: toNumber(row.shipping_total),
+    cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
     total: toNumber(row.total),
     customer_rtn: row.customers?.tax_id ?? null,
     payment_status: payment?.payment_status ?? payment?.status ?? null,
@@ -129,7 +135,9 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
       price_mode,
       subtotal,
       tax,
+      shipping_fee,
       shipping_total,
+      cash_on_delivery_fee,
       total,
       status,
       created_at,

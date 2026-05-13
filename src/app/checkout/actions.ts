@@ -30,6 +30,12 @@ type CheckoutActionResult = {
   transferReceiptUrl?: string | null;
 };
 
+export type WholesalePurchaseStatusResult = {
+  ok: boolean;
+  isFirstWholesalePurchase: boolean;
+  message?: string;
+};
+
 type WholesaleCodeActivationRow = {
   id: string;
 };
@@ -73,6 +79,10 @@ function safeCheckoutErrorMessage(message: string) {
     return "Ya existe un registro con esos datos. Revisa la información e intenta nuevamente.";
   }
 
+  if (normalized.includes("primera compra mayorista") || normalized.includes("minimo requerido")) {
+    return message;
+  }
+
   if (normalized.includes("checkout") || normalized.includes("products") || normalized.includes("uuid") || normalized.includes("rpc")) {
     return "No pudimos procesar tu pedido. Revisa los productos del carrito e intenta nuevamente.";
   }
@@ -100,6 +110,42 @@ function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
     wholesaleCode: String(formData.get("wholesaleCode") ?? "").trim() || null,
     wholesaleCodeId: String(formData.get("wholesaleCodeId") ?? "").trim() || null,
   };
+}
+
+export async function getWholesalePurchaseStatusAction(customerId: string | null): Promise<WholesalePurchaseStatusResult> {
+  if (!customerId || !isUuid(customerId)) {
+    return { ok: false, isFirstWholesalePurchase: true, message: "Cuenta mayorista no valida." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, isFirstWholesalePurchase: true, message: wholesaleMessages.loginRequired };
+  }
+
+  const { data: customer, error: customerError } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("id", customerId)
+    .eq("user_id", user.id)
+    .eq("is_wholesale", true)
+    .eq("active", true)
+    .maybeSingle<{ id: string }>();
+
+  if (customerError || !customer) {
+    return { ok: false, isFirstWholesalePurchase: true, message: wholesaleMessages.accountNotAuthorized };
+  }
+
+  const { data, error } = await supabase.rpc("has_completed_wholesale_order", { target_customer_id: customerId });
+
+  if (error) {
+    return { ok: false, isFirstWholesalePurchase: true, message: "No se pudo validar historial mayorista." };
+  }
+
+  return { ok: true, isFirstWholesalePurchase: !Boolean(data) };
 }
 
 async function uploadTransferReceipt(file: File | null, bankReference: string) {

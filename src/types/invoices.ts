@@ -57,6 +57,8 @@ export type AdminInvoiceRow = {
   transfer_receipt_url: string | null;
   subtotal: number;
   tax: number;
+  shipping_fee: number;
+  cash_on_delivery_fee: number;
   total: number;
   issued_at: string | null;
   cancelled_at: string | null;

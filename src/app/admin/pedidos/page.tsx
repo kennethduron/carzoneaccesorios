@@ -1,6 +1,7 @@
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
+import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
@@ -19,6 +20,13 @@ export default async function AdminOrdersPage({
   searchParams: Promise<{ page?: string }>;
 }) {
   const profile = await requirePermission("admin:access");
+  const canReadOrders =
+    profile.role === "admin" || profile.permissions.includes("orders:read") || profile.permissions.includes("orders:manage");
+
+  if (!canReadOrders) {
+    redirect("/sin-permiso");
+  }
+
   const params = await searchParams;
   const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
   const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");

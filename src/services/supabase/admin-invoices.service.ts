@@ -12,9 +12,11 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "bank_reference_number" | "transfer_receipt_url" | "items" | "subtotal" | "tax" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "bank_reference_number" | "transfer_receipt_url" | "items" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
   subtotal: unknown;
   tax: unknown;
+  shipping_fee: unknown;
+  cash_on_delivery_fee: unknown;
   total: unknown;
   orders: {
     order_number: string;
@@ -65,6 +67,8 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     transfer_receipt_url: payment?.transfer_receipt_url ?? null,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
+    shipping_fee: toNumber(row.shipping_fee),
+    cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
     total: toNumber(row.total),
     issued_at: row.issued_at,
     cancelled_at: row.cancelled_at,
@@ -119,6 +123,8 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       price_mode,
       subtotal,
       tax,
+      shipping_fee,
+      cash_on_delivery_fee,
       total,
       issued_at,
       cancelled_at,

@@ -393,9 +393,15 @@ function OrderDetail({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-2 text-sm md:grid-cols-3">
+      <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+        Validar tratamiento fiscal de envio y comision con la contadora.
+      </p>
+
+      <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
         <p>Subtotal: {formatCurrency(order.subtotal)}</p>
         <p>ISV: {formatCurrency(order.tax)}</p>
+        <p>Envio: {order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)}</p>
+        <p>Pago al recibir: {formatCurrency(order.cash_on_delivery_fee)}</p>
         <p className="font-semibold">Total: {formatCurrency(order.total)}</p>
       </div>
     </article>
@@ -443,7 +449,10 @@ async function exportGeneratedInvoicePdf(
   const finalY = getLastAutoTableY(doc);
   doc.text(`Subtotal: ${formatCurrency(order.subtotal)}`, 140, finalY + 10);
   doc.text(`ISV: ${formatCurrency(order.tax)}`, 140, finalY + 16);
-  doc.text(`Total: ${formatCurrency(order.total)}`, 140, finalY + 22);
+  doc.text(`Envio: ${formatCurrency(order.shipping_fee)}`, 140, finalY + 22);
+  doc.text(`Comision entrega: ${formatCurrency(order.cash_on_delivery_fee)}`, 140, finalY + 28);
+  doc.text(`Total: ${formatCurrency(order.total)}`, 140, finalY + 34);
+  doc.text("Validar tratamiento fiscal de envio y comision con la contadora.", 14, finalY + 34);
   doc.save(`${invoiceNumber}.pdf`);
 }
 

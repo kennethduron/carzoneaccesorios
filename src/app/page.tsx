@@ -4,15 +4,18 @@ import { ArrowRight, ShieldCheck, Truck } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { WholesaleCodePanel } from "@/components/store/wholesale-code-panel";
+import { HolidayBannerPopup } from "@/components/store/holiday-banner-popup";
+import { getActiveHolidayBanner } from "@/services/supabase/holiday-banners.service";
 import { getFeaturedProducts } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const featuredProducts = await getFeaturedProducts(3);
+  const [featuredProducts, holidayBanner] = await Promise.all([getFeaturedProducts(3), getActiveHolidayBanner()]);
 
   return (
     <PublicStoreShell>
+      <HolidayBannerPopup banner={holidayBanner} />
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
         <div className="flex min-h-[520px] flex-col justify-between rounded-lg bg-[#1c1d1b] p-6 text-white md:p-8">
           <div>

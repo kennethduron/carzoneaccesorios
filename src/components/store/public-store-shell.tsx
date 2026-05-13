@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { CarFront, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
+import { FaFacebookF, FaInstagram, FaTiktok, FaWhatsapp, FaYoutube } from "react-icons/fa";
+import { FiGlobe } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
+import type { SocialSettings } from "@/types/settings";
 
 const primaryLinks = [
   ["Inicio", "/"],
@@ -26,6 +30,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [cartPulse, setCartPulse] = useState(false);
+  const [socialSettings, setSocialSettings] = useState<SocialSettings | null>(null);
   const previousCartCount = useRef(0);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { priceMode } = usePriceMode();
@@ -50,6 +55,20 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
       subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    getPublicCompanySettingsClient().then((settings) => {
+      if (active) {
+        setSocialSettings(settings);
+      }
+    });
+
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -227,7 +246,29 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               Tienda profesional de accesorios automotrices con precios retail y mayoristas reales.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 text-sm">
+          <div>
+            <p className="mb-2 text-sm font-semibold">Siguenos</p>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <SocialLink href={socialSettings?.facebook_url} label="Facebook">
+                <FaFacebookF />
+              </SocialLink>
+              <SocialLink href={socialSettings?.instagram_url} label="Instagram">
+                <FaInstagram />
+              </SocialLink>
+              <SocialLink href={socialSettings?.whatsapp_url} label="WhatsApp">
+                <FaWhatsapp />
+              </SocialLink>
+              <SocialLink href={socialSettings?.tiktok_url} label="TikTok">
+                <FaTiktok />
+              </SocialLink>
+              <SocialLink href={socialSettings?.youtube_url} label="YouTube">
+                <FaYoutube />
+              </SocialLink>
+              <SocialLink href={socialSettings?.website_url} label="Sitio web">
+                <FiGlobe />
+              </SocialLink>
+            </div>
+            <div className="flex flex-wrap gap-2 text-sm">
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Mision
             </Link>
@@ -237,9 +278,29 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
               Historia
             </Link>
+            </div>
           </div>
         </div>
       </footer>
     </main>
+  );
+}
+
+function SocialLink({ href, label, children }: { href?: string | null; label: string; children: React.ReactNode }) {
+  if (!href?.trim()) {
+    return null;
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={label}
+      title={label}
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#1c1d1b] hover:bg-[#f7f7f2]"
+    >
+      {children}
+    </a>
   );
 }

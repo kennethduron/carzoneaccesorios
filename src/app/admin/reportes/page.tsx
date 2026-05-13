@@ -44,6 +44,14 @@ export default async function AdminReportsPage({
           <FiscalAlertsPanel alerts={fiscalAlerts} />
         </div>
       ) : null}
+      <section className="mb-5 rounded-lg border border-[#f2b8a0] bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
+        <p className="font-semibold">Reporte preliminar / paginado</p>
+        <p className="mt-1">
+          Esta vista calcula indicadores sobre la página actual, hasta {reports.pageSize} registros por módulo. No debe
+          usarse como reporte contable final ni como cierre fiscal hasta mover las agregaciones a consultas SQL/RPC por
+          rango completo y validarlas con contabilidad.
+        </p>
+      </section>
       <ReportsDashboard data={reports} fiscalSettings={fiscalSettings} />
     </AdminShell>
   );

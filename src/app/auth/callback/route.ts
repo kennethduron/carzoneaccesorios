@@ -6,7 +6,7 @@ import type { AppRole } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
 
-const adminRoles: AppRole[] = ["admin", "vendedor", "bodega", "contadora"];
+const adminRoles: AppRole[] = ["technical_owner", "admin", "vendedor", "bodega", "contadora"];
 
 function safeNextPath(value: string | null) {
   if (!value?.startsWith("/") || value.startsWith("//")) {
