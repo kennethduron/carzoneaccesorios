@@ -31,6 +31,9 @@ const statusLabels: Record<InvoiceStatus, string> = {
   anulada: "Anulada",
   pendiente: "Pendiente",
   draft: "Pendiente",
+  issued: "Emitida",
+  paid: "Pagada",
+  cancelled: "Anulada",
 };
 
 const paymentLabels: Record<string, string> = {

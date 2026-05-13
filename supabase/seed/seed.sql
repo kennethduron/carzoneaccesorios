@@ -1,6 +1,11 @@
 insert into public.roles (name, description, permissions)
 values
   (
+    'technical_owner',
+    'Proveedor tecnico del sistema. Acceso exclusivo a monitoreo de infraestructura y mantenimiento tecnico.',
+    '["admin:access","system:monitoring"]'::jsonb
+  ),
+  (
     'admin',
     'Acceso completo al panel administrativo.',
     '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","payments:read","payments:manage","invoices:read","invoices:create","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","settings:manage","audit:read"]'::jsonb

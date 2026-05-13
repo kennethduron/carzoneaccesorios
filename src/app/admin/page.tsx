@@ -60,6 +60,12 @@ const adminModules = [
     permissions: ["settings:manage", "audit:read"] satisfies Permission[],
   },
   {
+    title: "Uso y monitoreo",
+    href: "/admin/uso",
+    description: "Volumen de datos, logs antiguos y referencias a archivos externos.",
+    permissions: ["system:monitoring"] satisfies Permission[],
+  },
+  {
     title: "Configuración fiscal",
     href: "/admin/configuracion-fiscal",
     description: "RTN, CAI, rango fiscal, fecha límite y datos legales.",
@@ -68,6 +74,10 @@ const adminModules = [
 ];
 
 function canAccessModule(role: string, permissions: Permission[], modulePermissions: Permission[]) {
+  if (modulePermissions.includes("system:monitoring")) {
+    return permissions.includes("system:monitoring");
+  }
+
   return role === "admin" || modulePermissions.some((permission) => permissions.includes(permission));
 }
 

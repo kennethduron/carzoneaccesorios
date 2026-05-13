@@ -1,4 +1,4 @@
-export type AppRole = "admin" | "vendedor" | "bodega" | "contadora" | "cliente";
+export type AppRole = "technical_owner" | "admin" | "vendedor" | "bodega" | "contadora" | "cliente";
 
 export type Permission =
   | "admin:access"
@@ -21,6 +21,7 @@ export type Permission =
   | "reports:read"
   | "settings:manage"
   | "audit:read"
+  | "system:monitoring"
   | "store:buy"
   | "orders:read_own"
   | "invoices:read_own";
@@ -28,6 +29,7 @@ export type Permission =
 export type AuthProfile = {
   id: string;
   email: string | null;
+  username: string | null;
   full_name: string | null;
   role: AppRole;
   permissions: Permission[];

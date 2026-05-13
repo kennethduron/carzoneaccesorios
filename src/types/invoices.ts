@@ -1,6 +1,6 @@
 import type { StoreOrder } from "@/types/orders";
 
-export type InvoiceStatus = "emitida" | "anulada" | "pendiente" | "draft";
+export type InvoiceStatus = "emitida" | "anulada" | "pendiente" | "draft" | "issued" | "paid" | "cancelled";
 
 export type StoreInvoice = {
   id: string;

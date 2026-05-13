@@ -43,3 +43,6 @@
 \i ./migrations/202605110012_link_pending_wholesale_customer_on_signup.sql
 \i ./migrations/202605120001_order_notification_settings.sql
 \i ./migrations/202605120002_customer_account_visibility_and_test_cleanup.sql
+\i ./migrations/202605120003_usernames_and_public_account_invoices.sql
+\i ./migrations/202605120004_free_tier_database_controls.sql
+\i ./migrations/202605120005_technical_owner_monitoring_access.sql

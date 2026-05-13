@@ -90,9 +90,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-[#1c1d1b]">
-      <header className="sticky top-0 z-40 border-b border-black/10 bg-[#f7f7f2]/95 backdrop-blur">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-black/10 bg-white/95 shadow-sm backdrop-blur">
         <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-2 px-5 py-4 sm:gap-4">
-          <Link href="/" className="flex min-w-0 flex-1 items-center gap-3 pr-32 sm:pr-0">
+          <Link href="/" className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid size-11 shrink-0 place-items-center rounded-md bg-[#171717] text-white">
               <CarFront size={24} />
             </span>
@@ -110,7 +110,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="fixed right-5 top-4 z-50 flex shrink-0 items-center gap-2 sm:static sm:z-auto">
+          <div className="flex shrink-0 items-center gap-2">
             {priceMode === "wholesale" ? (
               <span className="hidden rounded-md border border-[#246a73]/25 bg-white px-3 py-2 text-sm font-medium text-[#246a73] sm:inline-flex">
                 Mayoreo activo
@@ -217,6 +217,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </nav>
         ) : null}
       </header>
+      <div className="h-[73px]" aria-hidden="true" />
       {children}
       <footer className="border-t border-black/10 bg-white">
         <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 md:grid-cols-[1fr_auto]">

@@ -1,6 +1,7 @@
 import type { AppRole, Permission } from "@/types/auth";
 
 export const rolePermissions: Record<AppRole, Permission[]> = {
+  technical_owner: ["admin:access", "system:monitoring"],
   admin: [
     "admin:access",
     "products:manage",

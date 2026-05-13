@@ -22,18 +22,18 @@ function safeNextPath(value: string | null) {
 
 function getConfirmationErrorMessage(reason: string | null) {
   if (reason === "expired") {
-    return "El enlace de confirmación venció. Solicita uno nuevo.";
+    return "El enlace de confirmacion vencio. Solicita uno nuevo.";
   }
 
   if (reason === "already_confirmed") {
-    return "Tu correo ya fue confirmado. Puedes iniciar sesión.";
+    return "Tu correo ya fue confirmado. Puedes iniciar sesion.";
   }
 
   if (reason === "missing") {
-    return "El enlace de confirmación está incompleto. Solicita uno nuevo.";
+    return "El enlace de confirmacion esta incompleto. Solicita uno nuevo.";
   }
 
-  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmación.";
+  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmacion.";
 }
 
 export function AuthCard({ mode }: AuthCardProps) {
@@ -41,6 +41,7 @@ export function AuthCard({ mode }: AuthCardProps) {
   const searchParams = useSearchParams();
   const nextPath = safeNextPath(searchParams.get("next"));
   const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +60,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("confirmed")) {
       return {
-        text: "Correo confirmado correctamente. Ya puedes iniciar sesión.",
+        text: "Correo confirmado correctamente. Ya puedes iniciar sesion.",
         tone: "success" as const,
         canResend: false,
       };
@@ -67,7 +68,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("check_email")) {
       return {
-        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
+        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesion.",
         tone: "info" as const,
         canResend: true,
       };
@@ -115,7 +116,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     const result = isLogin
       ? await loginWithEmailAction(email, password, nextPath)
-      : await registerWithEmailAction({ fullName, email, phone, password, nextPath });
+      : await registerWithEmailAction({ fullName, username, email, phone, password, nextPath });
 
     setLoading(false);
     setMessage(result.message);
@@ -177,17 +178,17 @@ export function AuthCard({ mode }: AuthCardProps) {
             {isLogin ? "Ingresa al sistema comercial." : "Crea tu cuenta de cliente."}
           </h1>
           <p className="max-w-lg text-black/60">
-            Los roles separan permisos para administración, ventas, bodega, contabilidad y clientes.
+            Los roles separan permisos para administracion, ventas, bodega, contabilidad y clientes.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesión" : "Registro"}</h2>
+            <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesion" : "Registro"}</h2>
             <p className="mt-1 text-sm text-black/55">
               {isLogin
-                ? "Usa tu correo y contraseña."
-                : "Te enviaremos un correo para confirmar tu cuenta antes de iniciar sesión."}
+                ? "Usa tu correo o nombre de usuario y contrasena."
+                : "Te enviaremos un correo para confirmar tu cuenta antes de iniciar sesion."}
             </p>
           </div>
 
@@ -201,19 +202,30 @@ export function AuthCard({ mode }: AuthCardProps) {
                 required
               />
             ) : null}
+            {!isLogin ? (
+              <Input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="Nombre de usuario"
+                autoComplete="username"
+                minLength={3}
+                maxLength={30}
+                required
+              />
+            ) : null}
             <Input
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder="Correo electrónico"
-              type="email"
-              autoComplete="email"
+              placeholder={isLogin ? "Correo o usuario" : "Correo electronico"}
+              type={isLogin ? "text" : "email"}
+              autoComplete={isLogin ? "username" : "email"}
               required
             />
             {!isLogin ? (
               <Input
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                placeholder="Teléfono"
+                placeholder="Telefono"
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
@@ -223,7 +235,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <Input
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Contraseña"
+              placeholder="Contrasena"
               type="password"
               minLength={6}
               autoComplete={isLogin ? "current-password" : "new-password"}
@@ -236,7 +248,7 @@ export function AuthCard({ mode }: AuthCardProps) {
           {isLogin && shouldShowConfirmationHelp ? (
             <div className="mt-4 rounded-md border border-black/10 bg-[#f7f7f2] p-3">
               <p className="text-sm text-black/65">
-                Revisa tu bandeja de entrada o spam. Si el enlace venció o no llegó, puedes solicitar uno nuevo.
+                Revisa tu bandeja de entrada o spam. Si el enlace vencio o no llego, puedes solicitar uno nuevo.
               </p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <Button
@@ -247,7 +259,7 @@ export function AuthCard({ mode }: AuthCardProps) {
                   onClick={handleResendConfirmation}
                 >
                   {resending ? <Loader2 className="animate-spin" size={17} /> : <MailCheck size={17} />}
-                  {resending ? "Enviando..." : "Reenviar confirmación"}
+                  {resending ? "Enviando..." : "Reenviar confirmacion"}
                 </Button>
                 <Button
                   type="button"
@@ -271,9 +283,9 @@ export function AuthCard({ mode }: AuthCardProps) {
           </Button>
 
           <p className="mt-4 text-center text-sm text-black/55">
-            {isLogin ? "¿No tienes cuenta?" : "¿Ya tienes cuenta?"}{" "}
+            {isLogin ? "No tienes cuenta?" : "Ya tienes cuenta?"}{" "}
             <Link className="font-medium text-[#246a73]" href={isLogin ? "/registro" : "/login"}>
-              {isLogin ? "Regístrate" : "Inicia sesión"}
+              {isLogin ? "Registrate" : "Inicia sesion"}
             </Link>
           </p>
         </form>

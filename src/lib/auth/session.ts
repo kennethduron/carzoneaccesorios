@@ -5,6 +5,7 @@ import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 type UserRoleRow = {
   id: string;
   email: string | null;
+  username: string | null;
   full_name: string | null;
   active: boolean;
   roles: {
@@ -34,7 +35,7 @@ export async function getSessionProfile(): Promise<AuthProfile | null> {
 
   const { data } = await supabase
     .from("users")
-    .select("id, email, full_name, active, roles(name, permissions)")
+    .select("id, email, username, full_name, active, roles(name, permissions)")
     .eq("id", user.id)
     .maybeSingle<UserRoleRow>();
 
@@ -47,6 +48,7 @@ export async function getSessionProfile(): Promise<AuthProfile | null> {
     return {
       id: user.id,
       email: user.email ?? null,
+      username: null,
       full_name: user.user_metadata?.full_name ?? null,
       role: "cliente",
       permissions: [],
@@ -56,6 +58,7 @@ export async function getSessionProfile(): Promise<AuthProfile | null> {
   return {
     id: data.id,
     email: data.email,
+    username: data.username,
     full_name: data.full_name,
     role: data.roles.name,
     permissions: data.roles.permissions,
@@ -76,6 +79,16 @@ export async function requirePermission(permission: Permission) {
   const profile = await requireSession();
 
   if (!profile.permissions.includes(permission) && profile.role !== "admin") {
+    redirect("/sin-permiso");
+  }
+
+  return profile;
+}
+
+export async function requireStrictPermission(permission: Permission) {
+  const profile = await requireSession();
+
+  if (!profile.permissions.includes(permission)) {
     redirect("/sin-permiso");
   }
 

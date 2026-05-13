@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { AppRole } from "@/types/auth";
+import { normalizeUsername, validateUsername } from "@/utils/usernames";
 
 export function normalizeAuthEmail(email: string) {
   return email.trim().toLowerCase();
@@ -24,16 +25,51 @@ export async function emailExistsInProfile(email: string) {
   return Boolean(data?.id);
 }
 
+export async function usernameExistsInProfile(usernameInput: string) {
+  const validation = validateUsername(usernameInput);
+  if (!validation.ok) {
+    return false;
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("id")
+    .eq("username", validation.username)
+    .maybeSingle<{ id: string }>();
+
+  return Boolean(data?.id);
+}
+
+export async function getEmailForUsername(usernameInput: string) {
+  const username = normalizeUsername(usernameInput);
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("users")
+    .select("email, active")
+    .eq("username", username)
+    .maybeSingle<{ email: string | null; active: boolean }>();
+
+  if (error || !data?.email) {
+    return null;
+  }
+
+  return data.active === false ? "__suspended__" : normalizeAuthEmail(data.email);
+}
+
 export async function ensureRetailProfile(input: {
   userId: string;
   email: string;
   fullName?: string | null;
   phone?: string | null;
+  username?: string | null;
 }) {
   const admin = getSupabaseAdminClient();
   const email = normalizeAuthEmail(input.email);
   const fullName = normalizeAuthText(input.fullName ?? "") || email;
   const phone = normalizeAuthPhone(input.phone ?? "") || "00000000";
+  const usernameValidation = input.username ? validateUsername(input.username) : null;
+  const username = usernameValidation?.ok ? usernameValidation.username : null;
 
   const { data: role } = await admin
     .from("roles")
@@ -54,6 +90,7 @@ export async function ensureRetailProfile(input: {
         full_name: fullName,
         email,
         phone,
+        ...(username ? { username } : {}),
       })
       .eq("id", input.userId);
   } else {
@@ -62,6 +99,7 @@ export async function ensureRetailProfile(input: {
       role_id: role?.id ?? null,
       full_name: fullName,
       email,
+      username,
       phone,
       active: true,
     });

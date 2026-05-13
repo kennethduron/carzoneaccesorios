@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { AppRole } from "@/types/auth";
 
-const protectedRoutes = ["/cuenta", "/mis-pedidos"];
+const protectedRoutes = ["/cuenta", "/mis-pedidos", "/facturas"];
 const adminRoutes = ["/admin"];
 const adminAccessRoles: AppRole[] = ["admin", "vendedor", "bodega", "contadora"];
 
@@ -72,5 +72,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/cuenta/:path*", "/mis-pedidos/:path*"],
+  matcher: ["/admin/:path*", "/cuenta/:path*", "/mis-pedidos/:path*", "/facturas/:path*", "/facturas"],
 };

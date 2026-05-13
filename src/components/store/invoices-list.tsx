@@ -1,17 +1,18 @@
-"use client";
-
-import { Ban, Download, Printer } from "lucide-react";
-import { useInvoices } from "@/contexts/invoices-context";
-import { downloadInvoicePdf } from "@/utils/invoice-pdf";
+import Link from "next/link";
+import { FileText } from "lucide-react";
+import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
+import type { StoreInvoice } from "@/types/invoices";
 import { formatCurrency } from "@/utils/pricing";
 
-export function InvoicesList() {
-  const { invoices, cancelInvoice } = useInvoices();
+function isIssued(invoice: StoreInvoice) {
+  return ["emitida", "issued", "paid"].includes(invoice.status);
+}
 
+export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoice[]; focusInvoice?: string }) {
   if (invoices.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
-        No hay facturas emitidas en esta sesión.
+        No hay facturas fiscales emitidas para tu cuenta. Estaran disponibles cuando el pago sea confirmado y administracion emita la factura.
       </div>
     );
   }
@@ -19,55 +20,56 @@ export function InvoicesList() {
   return (
     <div className="mt-6 grid gap-4">
       {invoices.map((invoice) => (
-        <article key={invoice.id} className="rounded-lg border border-black/10 bg-white p-5">
+        <article
+          key={invoice.id}
+          className={`rounded-lg border bg-white p-5 ${
+            focusInvoice === invoice.invoiceNumber ? "border-[#246a73] shadow-md" : "border-black/10"
+          }`}
+        >
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
               <p className="text-sm text-black/50">{new Date(invoice.issuedAt).toLocaleString("es-HN")}</p>
-              <h2 className="mt-1 text-xl font-semibold">{invoice.invoiceNumber}</h2>
-              <p className="mt-2 text-sm text-black/60">
-                RTN {invoice.rtn} / CAI {invoice.cai}
-              </p>
+              <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
+                <FileText size={20} />
+                {invoice.invoiceNumber}
+              </h2>
+              <p className="mt-2 text-sm text-black/60">Pedido: {invoice.orderNumber}</p>
               <p className="mt-1 text-sm text-black/60">Cliente: {invoice.customerName}</p>
             </div>
             <span className="w-fit rounded-md bg-[#f7f7f2] px-3 py-2 text-sm font-medium capitalize">
-              {invoice.status}
+              {invoice.status === "anulada" || invoice.status === "cancelled" ? "Anulada" : "Emitida"}
             </span>
           </div>
+
           <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
             <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
             <p>ISV: {formatCurrency(invoice.isv)}</p>
             <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
-            <p>{invoice.priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}</p>
+            <p>{invoice.priceMode === "wholesale" ? "Mayorista" : "Retail"}</p>
           </div>
+
           <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
-            <p>Método de pago: {invoice.paymentMethod}</p>
+            <p>Metodo de pago: {invoice.paymentMethod}</p>
             {invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference ? (
               <p>Referencia: {invoice.paymentReference}</p>
             ) : null}
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              onClick={() => downloadInvoicePdf(invoice)}
-              className="inline-flex items-center gap-2 rounded-md bg-[#1c1d1b] px-3 py-2 text-sm font-medium text-white"
-            >
-              <Download size={16} />
-              Descargar PDF
-            </button>
-            <button
-              onClick={() => downloadInvoicePdf(invoice)}
-              className="inline-flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-medium"
-            >
-              <Printer size={16} />
-              Reimprimir
-            </button>
-            <button
-              onClick={() => cancelInvoice(invoice.invoiceNumber)}
-              className="inline-flex items-center gap-2 rounded-md border border-[#d55d3b]/30 px-3 py-2 text-sm font-medium text-[#9b341b]"
-            >
-              <Ban size={16} />
-              Anular factura
-            </button>
-          </div>
+
+          {isIssued(invoice) ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <PublicInvoiceDownloadButton invoice={invoice} />
+              <Link
+                href={`/mis-pedidos`}
+                className="inline-flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-medium"
+              >
+                Ver pedido
+              </Link>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
+              Factura anulada. Contacta a la empresa.
+            </p>
+          )}
         </article>
       ))}
     </div>
