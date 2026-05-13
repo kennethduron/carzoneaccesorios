@@ -19,6 +19,12 @@ type ProductImageUploadResult = ProductMutationResult & {
   publicId?: string;
 };
 
+type ProductHistoryCounts = {
+  orderItems: number;
+  invoiceItems: number;
+  inventoryMovements: number;
+};
+
 type ProductDbPayload = {
   category_id: string | null;
   sku: string;
@@ -145,9 +151,11 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
 }
 
 function imagePayload(productId: string, images: ProductImageInput[]) {
-  return images
-    .filter((image) => cleanText(image.public_url))
-    .map((image, index) => ({
+  const validImages = images.filter((image) => cleanText(image.public_url)).slice(0, 5);
+  const selectedPrimaryIndex = validImages.findIndex((image) => image.is_primary);
+  const primaryIndex = selectedPrimaryIndex >= 0 ? selectedPrimaryIndex : 0;
+
+  return validImages.map((image, index) => ({
       product_id: productId,
       storage_bucket: "product-images",
       storage_path: cleanText(image.storage_path) ?? cleanText(image.public_id) ?? `${productId}/${index}-${Date.now()}`,
@@ -156,28 +164,84 @@ function imagePayload(productId: string, images: ProductImageInput[]) {
       angle: cleanText(image.angle) ?? "principal",
       alt_text: cleanText(image.alt_text),
       sort_order: positiveInteger(image.sort_order, index),
-      is_primary: image.is_primary || index === 0,
+      is_primary: index === primaryIndex,
     }));
+}
+
+async function removeCloudinaryImages(publicIds: string[], context: Record<string, unknown>) {
+  const uniquePublicIds = Array.from(new Set(publicIds.map((value) => value.trim()).filter(Boolean)));
+
+  if (uniquePublicIds.length === 0) {
+    return;
+  }
+
+  let cloudinary: ReturnType<typeof configureCloudinary>;
+  try {
+    cloudinary = configureCloudinary();
+  } catch (error) {
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.cloudinary_config_missing",
+      errorMessage: "No se pudo configurar Cloudinary para eliminar imagenes antiguas.",
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: context,
+    });
+    return;
+  }
+
+  await Promise.all(
+    uniquePublicIds.map(async (publicId) => {
+      try {
+        await cloudinary.uploader.destroy(publicId, { resource_type: "image" });
+      } catch (error) {
+        await writeErrorLog({
+          route: "/admin/productos",
+          action: "products.cloudinary_delete_failed",
+          errorMessage: error instanceof Error ? error.message : "No se pudo eliminar la imagen en Cloudinary.",
+          errorStack: error instanceof Error ? error.stack : null,
+          metadata: { ...context, public_id: publicId },
+        });
+      }
+    }),
+  );
 }
 
 async function replaceImages(productId: string, images: ProductImageInput[]) {
   const supabase = await getSupabaseServerClient();
+  const { data: existingImages, error: existingError } = await supabase
+    .from("product_images")
+    .select("public_id, storage_path")
+    .eq("product_id", productId)
+    .returns<Array<{ public_id: string | null; storage_path: string | null }>>();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  const nextRows = imagePayload(productId, images);
+  const nextPublicIds = new Set(nextRows.map((image) => image.public_id).filter(Boolean));
+  const removedPublicIds = (existingImages ?? [])
+    .map((image) => image.public_id ?? image.storage_path)
+    .filter((publicId): publicId is string => Boolean(publicId && !nextPublicIds.has(publicId)));
+
   const { error: deleteError } = await supabase.from("product_images").delete().eq("product_id", productId);
 
   if (deleteError) {
     throw new Error(deleteError.message);
   }
 
-  const rows = imagePayload(productId, images);
-  if (rows.length === 0) {
+  if (nextRows.length === 0) {
+    await removeCloudinaryImages(removedPublicIds, { product_id: productId, reason: "product_images_removed" });
     return;
   }
 
-  const { error } = await supabase.from("product_images").insert(rows);
+  const { error } = await supabase.from("product_images").insert(nextRows);
 
   if (error) {
     throw new Error(error.message);
   }
+
+  await removeCloudinaryImages(removedPublicIds, { product_id: productId, reason: "product_images_replaced" });
 }
 
 async function logInventoryAdjustment(productId: string, previousStock: number, nextStock: number) {
@@ -310,9 +374,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
         throw new Error(error.message);
       }
 
-      if (input.images.length > 0) {
-        await replaceImages(input.id, input.images);
-      }
+      await replaceImages(input.id, input.images);
       await logInventoryAdjustment(input.id, Number(previous.stock), payload.stock);
       await writeAuditLog({
         tableName: "products",
@@ -387,20 +449,109 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
   return { ok: true, message: active ? "Producto activado correctamente." : "Producto desactivado correctamente." };
 }
 
-export async function deleteProductAction(id: string): Promise<ProductMutationResult> {
+function isTestProduct(product: { sku: string | null; name: string | null; slug: string | null; internal_code: string | null }) {
+  return [product.sku, product.name, product.slug, product.internal_code].some((value) => /\btest\b|^test-|test-|prueba/i.test(value ?? ""));
+}
+
+async function getProductHistoryCounts(productId: string): Promise<ProductHistoryCounts> {
+  const supabase = await getSupabaseServerClient();
+  const [orderItems, invoiceItems, inventoryMovements] = await Promise.all([
+    supabase.from("order_items").select("id", { count: "exact", head: true }).eq("product_id", productId),
+    supabase.from("invoice_items").select("id", { count: "exact", head: true }).eq("product_id", productId),
+    supabase.from("inventory_movements").select("id", { count: "exact", head: true }).eq("product_id", productId),
+  ]);
+
+  const error = orderItems.error ?? invoiceItems.error ?? inventoryMovements.error;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    orderItems: orderItems.count ?? 0,
+    invoiceItems: invoiceItems.count ?? 0,
+    inventoryMovements: inventoryMovements.count ?? 0,
+  };
+}
+
+function hasProductHistory(history: ProductHistoryCounts) {
+  return history.orderItems > 0 || history.invoiceItems > 0 || history.inventoryMovements > 0;
+}
+
+export async function deleteProductAction(id: string, confirmation?: string): Promise<ProductMutationResult> {
   await requirePermission("products:manage");
 
   const supabase = await getSupabaseServerClient();
+  const { data: product, error: productError } = await supabase
+    .from("products")
+    .select("id, sku, internal_code, name, slug")
+    .eq("id", id)
+    .maybeSingle<{ id: string; sku: string | null; internal_code: string | null; name: string | null; slug: string | null }>();
+
+  if (productError) {
+    return { ok: false, message: friendlyProductError(productError.message) };
+  }
+
+  if (!product) {
+    return { ok: false, message: "No encontramos el producto que intentas eliminar." };
+  }
+
+  const history = await getProductHistoryCounts(id);
+  const testProduct = isTestProduct(product);
+  const hasFiscalOrSalesHistory = history.orderItems > 0 || history.invoiceItems > 0;
+
+  if (hasProductHistory(history) && (!testProduct || confirmation !== "ELIMINAR TEST" || hasFiscalOrSalesHistory)) {
+    await writeAuditLog({
+      tableName: "products",
+      recordId: id,
+      action: "product.delete_blocked_history",
+      newData: { history, test_product: testProduct },
+    });
+
+    return {
+      ok: false,
+      message:
+        "Este producto no puede eliminarse porque tiene historial relacionado. Puedes desactivarlo para que no aparezca en la tienda.",
+    };
+  }
+
+  if (testProduct && confirmation === "ELIMINAR TEST" && !hasFiscalOrSalesHistory) {
+    await supabase.from("inventory_movements").delete().eq("product_id", id);
+  }
+
+  const { data: images } = await supabase
+    .from("product_images")
+    .select("public_id, storage_path")
+    .eq("product_id", id)
+    .returns<Array<{ public_id: string | null; storage_path: string | null }>>();
+
   const { error } = await supabase.from("products").delete().eq("id", id);
 
   if (error) {
-    return { ok: false, message: friendlyProductError(error.message) };
+    const message =
+      error.message.includes("foreign key constraint") || error.message.includes("inventory_movements_product_id_fkey")
+        ? "Este producto no puede eliminarse porque tiene historial relacionado. Puedes desactivarlo para que no aparezca en la tienda."
+        : friendlyProductError(error.message);
+
+    await writeAuditLog({
+      tableName: "products",
+      recordId: id,
+      action: "product.delete_failed",
+      newData: { history, error: error.message },
+    });
+
+    return { ok: false, message };
   }
+
+  await removeCloudinaryImages(
+    (images ?? []).map((image) => image.public_id ?? image.storage_path).filter((publicId): publicId is string => Boolean(publicId)),
+    { product_id: id, reason: "product_deleted" },
+  );
 
   await writeAuditLog({
     tableName: "products",
     recordId: id,
-    action: "product.deleted",
+    action: testProduct ? "product.test_deleted" : "product.deleted",
+    oldData: { ...product, history },
   });
 
   revalidateProductCatalog();

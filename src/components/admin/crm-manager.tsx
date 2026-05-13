@@ -130,6 +130,9 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const [note, setNote] = useState<CrmNoteInput>(emptyNote);
   const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
+  const [openLeadForm, setOpenLeadForm] = useState(false);
+  const [openFollowupForm, setOpenFollowupForm] = useState(false);
+  const [openNoteForm, setOpenNoteForm] = useState(false);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -250,8 +253,16 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }
 
-  function suspendCustomer(customer: CrmCustomerOption) {
-    if (!window.confirm(`Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`)) {
+  async function suspendCustomer(customer: CrmCustomerOption) {
+    const confirmed = await toast.confirm({
+      title: "Suspender cliente",
+      message: `Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`,
+      confirmLabel: "Suspender",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -266,25 +277,28 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }
 
-  function deleteTestCustomer(customer: CrmCustomerOption) {
+  async function deleteTestCustomer(customer: CrmCustomerOption) {
     const email = customer.account_email ?? customer.email ?? "";
     if (!email) {
       toast.error("El cliente no tiene correo asociado.");
       return;
     }
 
-    const confirmation = window.prompt(
-      "Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales.\n\n" +
-        `Correo: ${email}\n\n` +
-        "Para continuar escribe: ELIMINAR TEST",
-    );
+    const confirmed = await toast.confirm({
+      title: "Eliminar cuenta TEST",
+      message:
+        "Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales. Confirmacion requerida: ELIMINAR TEST.",
+      confirmLabel: "ELIMINAR TEST",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
 
-    if (confirmation === null) {
+    if (!confirmed) {
       return;
     }
 
     startTransition(async () => {
-      const result = await deleteTestAccountAction({ email, confirmation });
+      const result = await deleteTestAccountAction({ email, confirmation: "ELIMINAR TEST" });
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message || "Cuenta TEST eliminada correctamente.");
@@ -312,6 +326,31 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Acciones CRM</h2>
+            <p className="mt-1 text-sm text-black/55">
+              Abre solo el formulario que vas a usar. El historial y las tareas quedan visibles abajo.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setOpenLeadForm((value) => !value)} variant="ghost">
+              <UserPlus size={16} />
+              + Nuevo cliente potencial
+            </Button>
+            <Button onClick={() => setOpenFollowupForm((value) => !value)} variant="ghost">
+              <Clock size={16} />
+              + Nuevo seguimiento
+            </Button>
+            <Button onClick={() => setOpenNoteForm((value) => !value)} variant="ghost">
+              <MessageSquarePlus size={16} />
+              + Nueva nota
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
@@ -330,10 +369,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <div className="rounded-lg border border-black/10 bg-white p-5">
+        <div className={`rounded-lg border border-black/10 bg-white p-5 ${openLeadForm ? "" : "hidden"}`}>
           <div className="mb-4 flex items-center gap-2">
             <UserPlus size={19} />
-            <h2 className="font-semibold">Cliente potencial</h2>
+            <div>
+              <h2 className="font-semibold">Cliente potencial</h2>
+              <p className="text-sm text-black/55">Registra una persona o empresa interesada antes de que haga una compra.</p>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Empresa">
@@ -401,10 +443,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </Button>
         </div>
 
-        <div className="rounded-lg border border-black/10 bg-white p-5">
+        <div className={`rounded-lg border border-black/10 bg-white p-5 ${openFollowupForm ? "" : "hidden"}`}>
           <div className="mb-4 flex items-center gap-2">
             <PhoneCall size={19} />
-            <h2 className="font-semibold">Seguimiento</h2>
+            <div>
+              <h2 className="font-semibold">Seguimiento</h2>
+              <p className="text-sm text-black/55">Agenda una llamada, visita o tarea para dar seguimiento a un cliente.</p>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Cliente">
@@ -613,10 +658,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
             </div>
           </div>
 
-          <div className="rounded-lg border border-black/10 bg-white p-5">
+          <div className={`rounded-lg border border-black/10 bg-white p-5 ${openNoteForm ? "" : "hidden"}`}>
             <div className="mb-4 flex items-center gap-2">
               <MessageSquarePlus size={19} />
-              <h2 className="font-semibold">Nota rapida</h2>
+              <div>
+                <h2 className="font-semibold">Nueva nota</h2>
+                <p className="text-sm text-black/55">Muestra actividades, pedidos, llamadas y notas relacionadas con clientes.</p>
+              </div>
             </div>
             <div className="grid gap-3">
               <Field label="Cliente">

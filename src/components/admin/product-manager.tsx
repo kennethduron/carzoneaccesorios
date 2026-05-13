@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Star,
   Trash2,
   Upload,
   X,
@@ -363,6 +364,77 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     });
   }
 
+  function setPrimaryImage(index: number) {
+    setEditing((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        images: current.images.map((image, imageIndex) => ({
+          ...image,
+          is_primary: imageIndex === index,
+        })),
+      };
+    });
+    showMessage("Imagen principal actualizada. Guarda el producto para aplicar el cambio.", "neutral");
+  }
+
+  async function removeProductImage(index: number) {
+    if (!editing) {
+      return;
+    }
+
+    const confirmed = await toast.confirm({
+      title: "Eliminar imagen",
+      message: "Esta imagen se quitara del producto. ¿Deseas continuar?",
+      confirmLabel: "Eliminar imagen",
+      cancelLabel: "Cancelar",
+      tone: "danger",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setEditing((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const remaining = current.images.filter((_, imageIndex) => imageIndex !== index);
+      const normalizedImages = remaining.length > 0 ? remaining : [{ ...emptyImage }];
+      const hasPrimary = normalizedImages.some((image) => image.is_primary && image.public_url);
+
+      return {
+        ...current,
+        images: normalizedImages.map((image, imageIndex) => ({
+          ...image,
+          sort_order: imageIndex,
+          is_primary: hasPrimary ? image.is_primary : imageIndex === 0,
+        })),
+      };
+    });
+
+    setImageUploads((current) => {
+      const next: Record<number, ImageUploadState> = {};
+      Object.entries(current).forEach(([key, value]) => {
+        const imageIndex = Number(key);
+        if (imageIndex < index) {
+          next[imageIndex] = value;
+        } else if (imageIndex > index) {
+          next[imageIndex - 1] = value;
+        } else if (value.previewUrl) {
+          URL.revokeObjectURL(value.previewUrl);
+        }
+      });
+      return next;
+    });
+
+    showMessage("Imagen removida del formulario. Guarda el producto para confirmar el cambio.", "neutral");
+  }
+
   function uploadImage(index: number, file: File | null) {
     if (!file || !editing) {
       return;
@@ -547,10 +619,13 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
   }
 
   async function deleteProduct(product: ProductAdminRow) {
+    const isTestProduct = /\btest\b|^test-|test-|prueba/i.test(
+      `${product.sku} ${product.name} ${product.slug} ${product.internal_code ?? ""}`,
+    );
     const confirmed = await toast.confirm({
       title: "Confirmar eliminacion",
       message: `¿Eliminar ${product.name}? Esta acción no se puede deshacer.`,
-      confirmLabel: "Eliminar",
+      confirmLabel: isTestProduct ? "ELIMINAR TEST" : "Eliminar",
       cancelLabel: "Cancelar",
       tone: "danger",
     });
@@ -560,7 +635,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     }
 
     startTransition(async () => {
-      const result = await deleteProductAction(product.id);
+      const result = await deleteProductAction(product.id, isTestProduct ? "ELIMINAR TEST" : undefined);
       showMessage(result.message, result.ok ? "success" : "error");
     });
   }
@@ -882,6 +957,8 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           onUploadImage={uploadImage}
           onRetryImage={retryImageUpload}
           onAddImage={addProductImageSlot}
+          onRemoveImage={removeProductImage}
+          onPrimaryImage={setPrimaryImage}
         />
       ) : null}
     </div>
@@ -923,6 +1000,8 @@ function ProductEditor({
   onUploadImage,
   onRetryImage,
   onAddImage,
+  onRemoveImage,
+  onPrimaryImage,
 }: {
   categories: CategoryOption[];
   product: ProductFormInput;
@@ -935,6 +1014,8 @@ function ProductEditor({
   onUploadImage: (index: number, file: File | null) => void;
   onRetryImage: (index: number) => void;
   onAddImage: () => void;
+  onRemoveImage: (index: number) => void;
+  onPrimaryImage: (index: number) => void;
 }) {
   const [slugEditable, setSlugEditable] = useState(false);
   const vehicleHasData = Boolean(
@@ -1411,6 +1492,36 @@ function ProductEditor({
                     placeholder="URL de imagen"
                     className="hidden"
                   />
+                  <div className="grid grid-cols-3 gap-2">
+                    <a
+                      href={previewUrl || "#"}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-disabled={!previewUrl}
+                      className={`inline-flex items-center justify-center rounded-md border border-black/10 px-3 py-2 text-xs font-semibold ${
+                        previewUrl ? "bg-white text-[#1c1d1b]" : "pointer-events-none bg-[#f7f7f2] text-black/35"
+                      }`}
+                    >
+                      Ver preview
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => onPrimaryImage(index)}
+                      disabled={!image.public_url || image.is_primary}
+                      className="inline-flex items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Star size={13} />
+                      Principal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveImage(index)}
+                      className="inline-flex items-center justify-center gap-1 rounded-md border border-[#d55d3b]/30 bg-[#fff7ed] px-3 py-2 text-xs font-semibold text-[#9b341b]"
+                    >
+                      <Trash2 size={13} />
+                      Eliminar
+                    </button>
+                  </div>
                   <label
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => {
@@ -1420,7 +1531,7 @@ function ProductEditor({
                     className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f7f7f2] px-3 py-4 text-center text-sm font-medium"
                   >
                     {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
-                    <span>{isUploading ? "Subiendo imagen..." : uploadLabel}</span>
+                    <span>{isUploading ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
                     <span className="text-xs font-normal text-black/50">Tambien puedes arrastrar la imagen aqui.</span>
                     <span className="text-xs font-normal text-black/50">JPG, PNG, WebP o AVIF hasta 8 MB</span>
                     <input
