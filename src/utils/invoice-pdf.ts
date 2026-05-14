@@ -61,3 +61,4 @@ export function generateInvoicePdf(invoice: StoreInvoice) {
 export function downloadInvoicePdf(invoice: StoreInvoice) {
   generateInvoicePdf(invoice).save(`${invoice.invoiceNumber}.pdf`);
 }
+

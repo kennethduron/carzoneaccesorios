@@ -534,7 +534,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
   function validateProductBeforeSave(product: ProductFormInput) {
     if (!product.sku.trim()) {
-      return "El SKU es requerido para inventario y busquedas internas.";
+      return "El SKU es requerido para inventario y búsquedas internas.";
     }
 
     if (!product.name.trim()) {
@@ -550,7 +550,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     }
 
     if (product.min_stock < 0) {
-      return "El stock minimo no puede ser negativo.";
+      return "El stock mínimo no puede ser negativo.";
     }
 
     if (product.cost_price < 0) {
@@ -839,7 +839,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
             Plantilla
           </Button>
           <label
-            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-2 text-sm font-medium text-white"
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-2 text-sm font-medium text-white"
             title="Importa productos desde CSV usando la plantilla oficial."
           >
             <Upload size={17} />
@@ -862,10 +862,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           <p
             className={`mt-3 rounded-md px-3 py-2 text-sm ${
               message.type === "success"
-                ? "bg-[#e8f3f2] text-[#1e5960]"
+                ? "bg-[#fff1f2] text-[#b91c25]"
                 : message.type === "error"
                   ? "bg-[#fff0ea] text-[#9b341b]"
-                  : "bg-[#f7f7f2] text-black/60"
+                  : "bg-[#f4f4f5] text-black/60"
             }`}
             aria-live="polite"
           >
@@ -890,7 +890,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1120px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Categoría</th>
@@ -913,7 +913,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                   </td>
                   <td className="px-4 py-3">{product.category_name ?? "Sin categoría"}</td>
                   <td className="px-4 py-3">
-                    <span className={product.stock <= product.min_stock ? "font-semibold text-[#bd4f30]" : ""}>
+                    <span className={product.stock <= product.min_stock ? "font-semibold text-[#b91c25]" : ""}>
                       {product.stock}
                     </span>
                     <span className="text-black/45"> / mínimo {product.min_stock}</span>
@@ -922,7 +922,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.retail_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.wholesale_price)}</td>
                   <td className="px-4 py-3">
-                    <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs">{statusLabels[product.status]}</span>
+                    <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{statusLabels[product.status]}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
@@ -981,7 +981,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#1c1d1b] transition-colors hover:bg-[#f7f7f2]"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#080808] transition-colors hover:bg-[#f4f4f5]"
     >
       {children}
     </button>
@@ -1037,7 +1037,7 @@ function ProductEditor({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-6 w-full max-w-6xl rounded-lg bg-white text-[#1c1d1b]">
+      <section className="mx-auto my-6 w-full max-w-6xl rounded-lg bg-white text-[#080808]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">{product.id ? "Editar producto" : "Crear producto"}</p>
@@ -1050,7 +1050,7 @@ function ProductEditor({
 
         <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
-            <FormSection title="Informacion basica" description="Datos principales que el cliente y el equipo veran al buscar el producto.">
+            <FormSection title="Información básica" description="Datos principales que el cliente y el equipo verán al buscar el producto.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Nombre del producto" help="Nombre comercial que vera el cliente en la tienda.">
                   <Input
@@ -1073,7 +1073,7 @@ function ProductEditor({
                   value={product.description}
                   onChange={(event) => onField("description", event.target.value)}
                   placeholder="Describe el producto de forma clara para ventas y clientes."
-                  className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#246a73]"
+                  className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
                 />
               </Field>
 
@@ -1119,7 +1119,7 @@ function ProductEditor({
               </div>
             </FormSection>
 
-            <FormSection title="Identificacion interna" description="Codigos para inventario, busquedas internas y referencias de proveedor.">
+            <FormSection title="Identificación interna" description="Códigos para inventario, búsquedas internas y referencias de proveedor.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   label="SKU"
@@ -1148,12 +1148,12 @@ function ProductEditor({
               </div>
             </FormSection>
 
-            <FormSection title="Precios e inventario" description="Controla stock, costo y precios para venta retail y mayorista.">
+            <FormSection title="Precios e inventario" description="Controla stock, costo y precios para venta al detalle y mayorista.">
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Stock" help="No puede ser negativo.">
                   <Input type="number" min={0} value={product.stock} onChange={(event) => onField("stock", numberValue(event.target.value))} />
                 </Field>
-                <Field label="Stock minimo" help="Activa alertas cuando el producto llega a este nivel.">
+                <Field label="Stock mínimo" help="Activa alertas cuando el producto llega a este nivel.">
                   <Input type="number" min={0} value={product.min_stock} onChange={(event) => onField("min_stock", numberValue(event.target.value))} />
                 </Field>
                 <Field label="Cantidad minima mayorista" help="Cantidad minima requerida para aplicar precio mayorista.">
@@ -1186,12 +1186,12 @@ function ProductEditor({
 
             <FormSection title="Compatibilidad del vehiculo" description="Indica para que vehiculo es compatible este producto.">
               <div className="flex flex-wrap items-start gap-3">
-                <label className="inline-flex max-w-md items-start gap-3 rounded-md border border-black/10 bg-[#f7f7f2] px-3 py-2 text-sm">
+                <label className="inline-flex max-w-md items-start gap-3 rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm">
                   <input
                     type="checkbox"
                     checked={vehicleUniversal}
                     onChange={(event) => toggleUniversalVehicle(event.target.checked)}
-                    className="mt-1 size-4 shrink-0 accent-[#246a73]"
+                    className="mt-1 size-4 shrink-0 accent-[#e4252c]"
                   />
                   <span>
                     <span className="block font-medium">Producto universal</span>
@@ -1204,7 +1204,7 @@ function ProductEditor({
 
               {!vehicleUniversal ? (
                 <>
-                  <p className="rounded-md bg-[#eef5f4] px-3 py-2 text-xs text-[#1e5960]">
+                  <p className="rounded-md bg-[#fff1f2] px-3 py-2 text-xs text-[#b91c25]">
                     Marca del producto no es lo mismo que marca del vehiculo. Ejemplo: marca del producto Pioneer,
                     marca del vehiculo Toyota, modelo Corolla, anos 2010 - 2014.
                   </p>
@@ -1242,13 +1242,13 @@ function ProductEditor({
             <FormSection title="Opciones avanzadas" description="Normalmente no necesitas tocar estos campos.">
               <Field
                 label="URL amigable"
-                help="URL amigable generada automaticamente desde el nombre del producto."
-                tooltip="Solo cambia esto si necesitas una URL especifica."
+                help="URL amigable generada automáticamente desde el nombre del producto."
+                tooltip="Solo cambia esto si necesitas una URL específica."
                 action={
                   <button
                     type="button"
                     onClick={() => setSlugEditable((current) => !current)}
-                    className="text-xs font-semibold text-[#246a73]"
+                    className="text-xs font-semibold text-[#e4252c]"
                   >
                     {slugEditable ? "Bloquear edicion" : "Editar slug"}
                   </button>
@@ -1259,7 +1259,7 @@ function ProductEditor({
                   onChange={(event) => onField("slug", slugifyProductUrl(event.target.value))}
                   placeholder="Se genera al escribir el nombre"
                   disabled={!slugEditable}
-                  className={!slugEditable ? "bg-[#f7f7f2] text-black/55" : ""}
+                  className={!slugEditable ? "bg-[#f4f4f5] text-black/55" : ""}
                   autoComplete="off"
                 />
                 {product.name ? (
@@ -1306,7 +1306,7 @@ function ProductEditor({
                 <button
                   type="button"
                   onClick={() => setSlugEditable((current) => !current)}
-                  className="text-xs font-semibold text-[#246a73]"
+                  className="text-xs font-semibold text-[#e4252c]"
                 >
                   {slugEditable ? "Bloquear edición" : "Editar slug"}
                 </button>
@@ -1317,7 +1317,7 @@ function ProductEditor({
                 onChange={(event) => onField("slug", slugifyProductUrl(event.target.value))}
                 placeholder="Se genera al escribir el nombre"
                 disabled={!slugEditable}
-                className={!slugEditable ? "bg-[#f7f7f2] text-black/55" : ""}
+                className={!slugEditable ? "bg-[#f4f4f5] text-black/55" : ""}
                 autoComplete="off"
               />
               {product.name ? (
@@ -1369,7 +1369,7 @@ function ProductEditor({
               <textarea
                 value={product.description}
                 onChange={(event) => onField("description", event.target.value)}
-                className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#246a73]"
+                className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
               />
             </Field>
 
@@ -1473,9 +1473,9 @@ function ProductEditor({
                 <div key={`${image.id ?? "new"}-${index}`} className="space-y-2 rounded-md border border-black/10 p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold">{imageTitle}</p>
-                    {index === 0 ? <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs text-[#1e5960]">Principal</span> : null}
+                    {index === 0 ? <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs text-[#b91c25]">Principal</span> : null}
                   </div>
-                  <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-md border border-black/10 bg-[#f7f7f2]">
+                  <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-md border border-black/10 bg-[#f4f4f5]">
                     {previewUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={previewUrl} alt={image.alt_text || "Vista previa del producto"} className="h-full w-full object-cover" />
@@ -1499,7 +1499,7 @@ function ProductEditor({
                       rel="noreferrer"
                       aria-disabled={!previewUrl}
                       className={`inline-flex items-center justify-center rounded-md border border-black/10 px-3 py-2 text-xs font-semibold ${
-                        previewUrl ? "bg-white text-[#1c1d1b]" : "pointer-events-none bg-[#f7f7f2] text-black/35"
+                        previewUrl ? "bg-white text-[#080808]" : "pointer-events-none bg-[#f4f4f5] text-black/35"
                       }`}
                     >
                       Ver preview
@@ -1516,7 +1516,7 @@ function ProductEditor({
                     <button
                       type="button"
                       onClick={() => onRemoveImage(index)}
-                      className="inline-flex items-center justify-center gap-1 rounded-md border border-[#d55d3b]/30 bg-[#fff7ed] px-3 py-2 text-xs font-semibold text-[#9b341b]"
+                      className="inline-flex items-center justify-center gap-1 rounded-md border border-[#e4252c]/30 bg-[#fff7ed] px-3 py-2 text-xs font-semibold text-[#9b341b]"
                     >
                       <Trash2 size={13} />
                       Eliminar
@@ -1528,7 +1528,7 @@ function ProductEditor({
                       event.preventDefault();
                       onUploadImage(index, event.dataTransfer.files?.[0] ?? null);
                     }}
-                    className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f7f7f2] px-3 py-4 text-center text-sm font-medium"
+                    className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f4f4f5] px-3 py-4 text-center text-sm font-medium"
                   >
                     {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
                     <span>{isUploading ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
@@ -1547,7 +1547,7 @@ function ProductEditor({
                         uploadState.status === "error"
                           ? "bg-[#fff0ea] text-[#9b341b]"
                           : uploadState.status === "success"
-                            ? "bg-[#e8f3f2] text-[#1e5960]"
+                            ? "bg-[#fff1f2] text-[#b91c25]"
                             : "bg-white text-black/60"
                       }`}
                     >
@@ -1672,3 +1672,5 @@ function Field({
     </div>
   );
 }
+
+

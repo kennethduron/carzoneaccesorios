@@ -159,7 +159,7 @@ export async function ensureRetailProfile(input: {
     is_wholesale: false,
     status: "active",
     active: true,
-    notes: "Cliente retail registrado desde la tienda publica.",
+    notes: "Cliente al detalle registrado desde la tienda pública.",
   });
 
   return "cliente";

@@ -40,7 +40,7 @@ export function ContactActions({ phone, customerName, className = "" }: ContactA
       <a
         href={`tel:${normalizedPhone}`}
         aria-label={`Llamar a ${contactLabel}`}
-        className="inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1c1d1b] shadow-sm transition-colors hover:bg-[#f7f7f2]"
+        className="inline-flex items-center gap-1 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] shadow-sm transition-colors hover:bg-[#f4f4f5]"
       >
         <Phone aria-hidden="true" size={13} />
         Llamar
@@ -48,3 +48,6 @@ export function ContactActions({ phone, customerName, className = "" }: ContactA
     </div>
   );
 }
+
+
+

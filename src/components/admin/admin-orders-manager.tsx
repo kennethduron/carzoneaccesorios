@@ -204,15 +204,15 @@ export function AdminOrdersManager({
                 type="button"
                 onClick={() => setSelectedOrderId(order.id)}
                 className={`block w-full p-4 text-left transition-colors ${
-                  selectedOrder?.id === order.id ? "bg-[#e8f3f2]" : "bg-white hover:bg-[#f7f7f2]"
+                  selectedOrder?.id === order.id ? "bg-[#fff1f2]" : "bg-white hover:bg-[#f4f4f5]"
                 }`}
               >
                 <p className="font-semibold">{order.order_number}</p>
-                {order.tracking_code ? <p className="mt-1 text-xs text-[#1e5960]">{order.tracking_code}</p> : null}
+                {order.tracking_code ? <p className="mt-1 text-xs text-[#b91c25]">{order.tracking_code}</p> : null}
                 <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
                 <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p>
                 {order.invoice_number ? (
-                  <p className="mt-1 text-xs font-medium text-[#1e5960]">Factura {order.invoice_number}</p>
+                  <p className="mt-1 text-xs font-medium text-[#b91c25]">Factura {order.invoice_number}</p>
                 ) : null}
               </button>
             ))}
@@ -279,13 +279,13 @@ function OrderDetail({
           </p>
           <ContactActions phone={order.phone} customerName={order.customer_name} className="mt-3" />
         </div>
-        <span className="w-fit rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
+        <span className="w-fit rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
           {orderStatusLabels[order.status] ?? order.status}
         </span>
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+        <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
           <p className="text-sm text-black/50">Código de seguimiento</p>
           <div className="mt-2 flex items-center gap-2">
             <p className="font-semibold">{order.tracking_code ?? "Sin código"}</p>
@@ -302,7 +302,7 @@ function OrderDetail({
             ) : null}
           </div>
         </div>
-        <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+        <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
           <label>
             <span className="text-sm text-black/50">Estado del pedido</span>
             <select
@@ -327,7 +327,7 @@ function OrderDetail({
         {isBankTransfer ? (
           <>
             <InfoBlock label="Número de referencia" value={order.bank_reference_number ?? "Sin referencia"} />
-            <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+            <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
               <p className="text-sm text-black/50">Comprobante</p>
               {order.transfer_receipt_url ? (
                 <a
@@ -376,10 +376,10 @@ function OrderDetail({
           </>
         ) : null}
       </div>
-      {message ? <p className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">{message}</p> : null}
+      {message ? <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
 
       <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
-        <div className="bg-[#f0ede2] px-4 py-3 text-sm font-semibold">Productos</div>
+        <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos</div>
         <div className="divide-y divide-black/10">
           {order.order_items.map((item) => (
             <div key={`${order.id}-${item.id}`} className="flex justify-between gap-3 p-4 text-sm">
@@ -394,13 +394,13 @@ function OrderDetail({
       </div>
 
       <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Validar tratamiento fiscal de envio y comision con la contadora.
+        Validar tratamiento fiscal de envío y comisión con la contadora.
       </p>
 
       <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
         <p>Subtotal: {formatCurrency(order.subtotal)}</p>
         <p>ISV: {formatCurrency(order.tax)}</p>
-        <p>Envio: {order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)}</p>
+        <p>Envío: {order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)}</p>
         <p>Pago al recibir: {formatCurrency(order.cash_on_delivery_fee)}</p>
         <p className="font-semibold">Total: {formatCurrency(order.total)}</p>
       </div>
@@ -443,24 +443,26 @@ async function exportGeneratedInvoicePdf(
       formatCurrency(item.line_total),
     ]),
     styles: { fontSize: 8 },
-    headStyles: { fillColor: [36, 106, 115] },
+    headStyles: { fillColor: [228, 37, 44] },
   });
 
   const finalY = getLastAutoTableY(doc);
   doc.text(`Subtotal: ${formatCurrency(order.subtotal)}`, 140, finalY + 10);
   doc.text(`ISV: ${formatCurrency(order.tax)}`, 140, finalY + 16);
-  doc.text(`Envio: ${formatCurrency(order.shipping_fee)}`, 140, finalY + 22);
-  doc.text(`Comision entrega: ${formatCurrency(order.cash_on_delivery_fee)}`, 140, finalY + 28);
+  doc.text(`Envío: ${formatCurrency(order.shipping_fee)}`, 140, finalY + 22);
+  doc.text(`Comisión entrega: ${formatCurrency(order.cash_on_delivery_fee)}`, 140, finalY + 28);
   doc.text(`Total: ${formatCurrency(order.total)}`, 140, finalY + 34);
-  doc.text("Validar tratamiento fiscal de envio y comision con la contadora.", 14, finalY + 34);
+  doc.text("Validar tratamiento fiscal de envío y comisión con la contadora.", 14, finalY + 34);
   doc.save(`${invoiceNumber}.pdf`);
 }
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+    <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
 }
+
+

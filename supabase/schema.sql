@@ -48,3 +48,5 @@
 \i ./migrations/202605120005_technical_owner_monitoring_access.sql
 \i ./migrations/202605130001_production_hardening.sql
 \i ./migrations/202605130002_checkout_shipping_wholesale_social_banners.sql
+\i ./migrations/202605130003_contact_page_crm_types.sql
+\i ./migrations/202605130004_customer_dedupe_checkout_admin.sql

@@ -42,7 +42,7 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
   }, [error, pathname, supabaseError.code, supabaseError.details, supabaseError.hint, supabaseError.status]);
 
   return (
-    <section className="grid min-h-screen place-items-center bg-[#f7f7f2] px-5 text-[#1c1d1b]">
+    <section className="grid min-h-screen place-items-center bg-[#f4f4f5] px-5 text-[#080808]">
       <div className="w-full max-w-xl rounded-lg border border-black/10 bg-white p-6">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-1 text-[#9b341b]" size={24} />
@@ -59,22 +59,22 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
           <div className="mt-5 space-y-3 rounded-md border border-[#9b341b]/20 bg-[#fff7ed] p-4 text-sm">
             <div>
               <p className="font-semibold text-[#7c2d12]">Ruta afectada</p>
-              <p className="mt-1 break-words font-mono text-xs text-[#1c1d1b]">{pathname}</p>
+              <p className="mt-1 break-words font-mono text-xs text-[#080808]">{pathname}</p>
             </div>
             <div>
               <p className="font-semibold text-[#7c2d12]">Mensaje real</p>
-              <p className="mt-1 break-words font-mono text-xs text-[#1c1d1b]">{error.message || "Sin mensaje"}</p>
+              <p className="mt-1 break-words font-mono text-xs text-[#080808]">{error.message || "Sin mensaje"}</p>
             </div>
             {error.digest ? (
               <div>
                 <p className="font-semibold text-[#7c2d12]">Digest</p>
-                <p className="mt-1 break-words font-mono text-xs text-[#1c1d1b]">{error.digest}</p>
+                <p className="mt-1 break-words font-mono text-xs text-[#080808]">{error.digest}</p>
               </div>
             ) : null}
             {error.stack ? (
               <div>
                 <p className="font-semibold text-[#7c2d12]">Stack</p>
-                <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-white/70 p-3 font-mono text-xs text-[#1c1d1b]">
+                <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-white/70 p-3 font-mono text-xs text-[#080808]">
                   {error.stack}
                 </pre>
               </div>
@@ -89,3 +89,6 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
     </section>
   );
 }
+
+
+

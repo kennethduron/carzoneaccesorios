@@ -13,7 +13,7 @@ const WholesaleCodeManager = nextDynamic(
   {
     loading: () => (
       <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
-        Cargando codigos mayoristas...
+        Cargando códigos mayoristas...
       </div>
     ),
   },
@@ -30,14 +30,14 @@ function getWholesaleLoadMessage(error: unknown) {
   const code = (error as SupabaseLikeError | null)?.code;
 
   if (code === "42501" || message.includes("permission denied") || message.includes("row-level security")) {
-    return "No tienes permisos para administrar codigos mayoristas.";
+    return "No tienes permisos para administrar códigos mayoristas.";
   }
 
   if (message.includes("fetch failed") || message.includes("failed to fetch")) {
     return "No pudimos conectar con la base de datos.";
   }
 
-  return "No pudimos cargar los codigos mayoristas. Intenta nuevamente.";
+  return "No pudimos cargar los códigos mayoristas. Intenta nuevamente.";
 }
 
 function BackToAdminLink() {
@@ -77,17 +77,17 @@ export default async function AdminWholesaleCodesPage() {
         },
       });
     } catch (logError) {
-      console.error("No se pudo registrar el error de codigos mayoristas", logError);
+      console.error("No se pudo registrar el error de códigos mayoristas", logError);
     }
 
     return (
-      <AdminShell title="Codigos mayoristas">
+      <AdminShell title="Códigos mayoristas">
         <BackToAdminLink />
         <section className="rounded-lg border border-[#f2b8a0] bg-[#fff7ed] p-5 text-[#7c2d12]">
-          <h2 className="font-semibold">No se pudo abrir el modulo mayorista</h2>
+          <h2 className="font-semibold">No se pudo abrir el módulo mayorista</h2>
           <p className="mt-2 text-sm">{getWholesaleLoadMessage(error)}</p>
           <p className="mt-2 text-xs text-[#7c2d12]/75">
-            El detalle tecnico fue registrado para revision.
+            El detalle técnico fue registrado para revisión.
           </p>
         </section>
       </AdminShell>
@@ -97,7 +97,7 @@ export default async function AdminWholesaleCodesPage() {
   const { codes, customers } = payload;
 
   return (
-    <AdminShell title="Codigos mayoristas">
+    <AdminShell title="Códigos mayoristas">
       <BackToAdminLink />
       <WholesaleCodeManager codes={codes} customers={customers} />
     </AdminShell>

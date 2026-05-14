@@ -19,7 +19,7 @@ export default async function AdminCustomersPage({
 }) {
   await requirePermission("crm:manage");
   const params = await searchParams;
-  const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 50 });
+  const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20 });
 
   return (
     <AdminShell title="Clientes">

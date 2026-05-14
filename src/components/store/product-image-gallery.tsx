@@ -47,7 +47,7 @@ export function ProductImageGallery({ product }: { product: Product }) {
     <div className="space-y-3">
       <div className="relative overflow-hidden rounded-lg border border-black/10 bg-white">
         {activeImageFailed ? (
-          <div className="grid h-[360px] w-full place-items-center bg-[#f0ede2] text-[#6b675d] md:h-[560px]">
+          <div className="grid h-[360px] w-full place-items-center bg-[#e7e5e4] text-[#78716c] md:h-[560px]">
             <div className="flex flex-col items-center gap-2 text-sm">
               <ImageOff size={30} />
               Imagen no disponible
@@ -73,21 +73,21 @@ export function ProductImageGallery({ product }: { product: Product }) {
         <div className="absolute bottom-3 right-3 flex gap-2">
           <button
             onClick={previousImage}
-            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#1c1d1b]"
+            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#080808]"
             aria-label="Imagen anterior"
           >
             <ChevronLeft size={18} />
           </button>
           <button
             onClick={nextImage}
-            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#1c1d1b]"
+            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#080808]"
             aria-label="Imagen siguiente"
           >
             <ChevronRight size={18} />
           </button>
           <button
             onClick={() => setZoomOpen(true)}
-            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#1c1d1b]"
+            className="grid size-10 place-items-center rounded-md bg-white/90 text-[#080808]"
             aria-label="Abrir zoom"
           >
             <Maximize2 size={18} />
@@ -101,12 +101,12 @@ export function ProductImageGallery({ product }: { product: Product }) {
             key={image.id}
             onClick={() => setActiveIndex(index)}
             className={`overflow-hidden rounded-md border bg-white text-left ${
-              activeIndex === index ? "border-[#246a73]" : "border-black/10"
+              activeIndex === index ? "border-[#e4252c]" : "border-black/10"
             }`}
             aria-label={`Ver imagen ${image.label}`}
           >
             {failedImages[image.id] ? (
-              <div className="grid h-16 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+              <div className="grid h-16 w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
                 <ImageOff size={16} />
               </div>
             ) : (
@@ -133,13 +133,13 @@ export function ProductImageGallery({ product }: { product: Product }) {
           <div className="relative w-full max-w-6xl">
             <button
               onClick={() => setZoomOpen(false)}
-              className="absolute right-3 top-3 z-10 grid size-10 place-items-center rounded-md bg-white text-[#1c1d1b]"
+              className="absolute right-3 top-3 z-10 grid size-10 place-items-center rounded-md bg-white text-[#080808]"
               aria-label="Cerrar zoom"
             >
               <X size={18} />
             </button>
             {failedImages[`${activeImage.id}-zoom`] ? (
-              <div className="grid min-h-[60vh] w-full place-items-center rounded-lg bg-[#f0ede2] text-[#6b675d]">
+              <div className="grid min-h-[60vh] w-full place-items-center rounded-lg bg-[#e7e5e4] text-[#78716c]">
                 <div className="flex flex-col items-center gap-2 text-sm">
                   <ImageOff size={30} />
                   Imagen no disponible
@@ -165,3 +165,5 @@ export function ProductImageGallery({ product }: { product: Product }) {
     </div>
   );
 }
+
+

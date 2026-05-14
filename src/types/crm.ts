@@ -1,4 +1,11 @@
-export type CrmInteractionType = "seguimiento" | "llamada" | "nota" | "reunion" | "prospecto";
+export type CrmInteractionType =
+  | "seguimiento"
+  | "llamada"
+  | "nota"
+  | "reunion"
+  | "prospecto"
+  | "contacto_general"
+  | "solicitud_mayorista";
 export type CrmPriority = "baja" | "media" | "alta" | "urgente";
 export type CrmFollowupStatus = "pending" | "completed" | "cancelled";
 export type CrmLeadStatus = "prospecto" | "contactado" | "calificado" | "cliente" | "perdido";
@@ -30,6 +37,9 @@ export type CrmCustomerOption = {
   email_confirmed_at: string | null;
   confirmed_at: string | null;
   order_count: number;
+  invoice_count: number;
+  wholesale_code_count: number;
+  total_spent: number;
   last_activity_at: string | null;
   account_state:
     | "Cuenta creada"
@@ -75,6 +85,25 @@ export type CrmNoteRow = {
   created_at: string;
 };
 
+export type CrmDuplicateCandidate = {
+  id: string;
+  display_name: string;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+  order_count: number;
+  invoice_count: number;
+  is_test_account: boolean;
+  can_merge: boolean;
+};
+
+export type CrmDuplicateGroup = {
+  key: string;
+  match_type: "email" | "phone";
+  label: string;
+  customers: CrmDuplicateCandidate[];
+};
+
 export type CrmLeadInput = {
   id?: string;
   business_name: string;
@@ -112,6 +141,7 @@ export type AdminCrmData = {
   customers: CrmCustomerOption[];
   followups: CrmFollowupRow[];
   notes: CrmNoteRow[];
+  duplicateGroups: CrmDuplicateGroup[];
   customersTotal: number;
   followupsTotal: number;
   customerPage: number;

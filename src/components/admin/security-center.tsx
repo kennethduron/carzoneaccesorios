@@ -98,8 +98,8 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
               {isPending ? "Registrando..." : "Solicitar backup"}
             </Button>
             {message ? <p className="text-sm text-black/60">{message}</p> : null}
-            <div className="rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
-              <p className="font-medium text-[#1c1d1b]">Ultimo respaldo</p>
+            <div className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
+              <p className="font-medium text-[#080808]">Último respaldo</p>
               <p>{latestBackup ? `${backupTypeLabels[latestBackup.backup_type]} / ${latestBackup.status}` : "Sin registros"}</p>
               <p>{latestBackup ? formatDateTime(latestBackup.created_at) : "-"}</p>
             </div>
@@ -112,12 +112,12 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
             <h2 className="font-semibold">Controles activos</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <ControlItem title="Rutas protegidas" description="/admin y /cuenta pasan por proxy y validacion server-side." />
-            <ControlItem title="Permisos por rol" description="Cada pagina admin revalida permisos con requirePermission." />
-            <ControlItem title="Validación de formularios" description="Acciónes server-side limpian texto, números, fechas e IDs." />
+            <ControlItem title="Rutas protegidas" description="/admin y /cuenta pasan por proxy y validación del servidor." />
+            <ControlItem title="Permisos por rol" description="Cada página administrativa revalida permisos con requirePermission." />
+            <ControlItem title="Validación de formularios" description="Las acciones del servidor limpian texto, números, fechas e IDs." />
             <ControlItem title="Auditoría" description="Cambios críticos registran usuario, tabla, acción y datos relevantes." />
-            <ControlItem title="RLS Supabase" description="Policies limitan lectura y escritura por rol y propietario." />
-            <ControlItem title="Control de errores" description="Error boundaries evitan pantallas rotas y permiten reintentar." />
+            <ControlItem title="RLS Supabase" description="Las políticas limitan lectura y escritura por rol y propietario." />
+            <ControlItem title="Control de errores" description="Las pantallas de error evitan vistas rotas y permiten reintentar." />
           </div>
         </div>
       </section>
@@ -129,7 +129,7 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Rol</th>
                 <th className="px-4 py-3">Permisos</th>
@@ -142,7 +142,7 @@ export function SecurityCenter({ data }: SecurityCenterProps) {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
                       {role.permissions.map((permission) => (
-                        <span key={permission} className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs">
+                        <span key={permission} className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">
                           {permission}
                         </span>
                       ))}
@@ -197,7 +197,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ControlItem({ title, description }: { title: string; description: string }) {
   return (
-    <article className="rounded-md bg-[#f7f7f2] p-3">
+    <article className="rounded-md bg-[#f4f4f5] p-3">
       <p className="font-semibold">{title}</p>
       <p className="mt-1 text-sm text-black/60">{description}</p>
     </article>
@@ -223,7 +223,7 @@ function DataTable({
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+          <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>
               {columns.map((column) => (
                 <th key={column} className="px-4 py-3">
@@ -256,3 +256,6 @@ function DataTable({
     </section>
   );
 }
+
+
+

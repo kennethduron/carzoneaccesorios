@@ -40,7 +40,7 @@ export function HolidayBannerPopup({ banner }: { banner: HolidayBanner | null })
         <button
           type="button"
           onClick={close}
-          className="absolute right-3 top-3 z-10 grid size-9 place-items-center rounded-md bg-white/90 text-[#1c1d1b] shadow"
+          className="absolute right-3 top-3 z-10 grid size-9 place-items-center rounded-md bg-white/90 text-[#080808] shadow"
           aria-label="Cerrar banner"
         >
           <X size={18} />
@@ -55,7 +55,7 @@ export function HolidayBannerPopup({ banner }: { banner: HolidayBanner | null })
             <Link
               href={banner.button_url}
               onClick={close}
-              className="mt-4 inline-flex rounded-md bg-[#246a73] px-4 py-2 text-sm font-semibold text-white"
+              className="mt-4 inline-flex rounded-md bg-[#e4252c] px-4 py-2 text-sm font-semibold text-white"
             >
               {banner.button_text}
             </Link>
@@ -65,3 +65,5 @@ export function HolidayBannerPopup({ banner }: { banner: HolidayBanner | null })
     </div>
   );
 }
+
+

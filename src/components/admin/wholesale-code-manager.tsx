@@ -244,18 +244,18 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
 
   return (
     <div className="space-y-5">
-      <section className="rounded-lg border border-[#246a73]/20 bg-[#e8f3f2] p-4 text-sm text-[#1e5960]">
-        <h2 className="font-semibold text-[#1c1d1b]">Flujo seguro para mayoristas</h2>
+      <section className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-4 text-sm text-[#b91c25]">
+        <h2 className="font-semibold text-[#080808]">Flujo seguro para mayoristas</h2>
         <div className="mt-2 grid gap-2 md:grid-cols-4">
           <p>1. Crea o aprueba el cliente mayorista.</p>
           <p>2. Vincula el correo de acceso del cliente.</p>
           <p>3. Genera un código único para ese cliente.</p>
-          <p>4. El cliente usa código + login para activar mayoreo.</p>
+          <p>4. El cliente usa código e inicia sesión para activar mayoreo.</p>
         </div>
       </section>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Codigos activos" value={activeCount.toLocaleString("es-HN")} />
+        <Metric label="Códigos activos" value={activeCount.toLocaleString("es-HN")} />
         <Metric label="Usos registrados" value={totalUses.toLocaleString("es-HN")} />
         <Metric label="Vencidos por fecha" value={expiredCount.toLocaleString("es-HN")} />
         <Metric label="Cuentas pendientes" value={pendingAccountCount.toLocaleString("es-HN")} />
@@ -291,7 +291,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1160px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Código</th>
                 <th className="px-4 py-3">Cliente</th>
@@ -299,7 +299,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3">Expira</th>
                 <th className="px-4 py-3">Usos</th>
-                <th className="px-4 py-3">Minimo</th>
+                <th className="px-4 py-3">Mínimo</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
             </thead>
@@ -327,14 +327,14 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
                     <td className="px-4 py-3">
                       <span
                         className={`rounded-md px-2 py-1 text-xs ${
-                          accountOk ? "bg-[#e8f3f2] text-[#1e5960]" : "bg-[#fff0ea] text-[#9b341b]"
+                          accountOk ? "bg-[#fff1f2] text-[#b91c25]" : "bg-[#fff0ea] text-[#9b341b]"
                         }`}
                       >
                         {accountText}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs">{statusLabels[code.status]}</span>
+                      <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{statusLabels[code.status]}</span>
                     </td>
                     <td className="px-4 py-3">{code.expires_at ? formatHnDate(code.expires_at) : "Sin fecha"}</td>
                     <td className="px-4 py-3">
@@ -401,7 +401,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f7f7f2]"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5]"
     >
       {children}
     </button>
@@ -419,13 +419,13 @@ function WholesaleCustomerList({ customers }: { customers: WholesaleCustomerOpti
         </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+          <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Correo</th>
               <th className="px-4 py-3">Cuenta</th>
               <th className="px-4 py-3">Estado mayorista</th>
-              <th className="px-4 py-3">Telefono</th>
+              <th className="px-4 py-3">Teléfono</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-black/10">
@@ -475,7 +475,7 @@ function CodeEditor({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-8 w-full max-w-3xl rounded-lg bg-white text-[#1c1d1b]">
+      <section className="mx-auto my-8 w-full max-w-3xl rounded-lg bg-white text-[#080808]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">{code.id ? "Editar código" : "Crear código"}</p>
@@ -536,13 +536,13 @@ function CodeEditor({
           <Field label="Fecha de inicio">
             <Input type="date" value={code.starts_at ?? ""} onChange={(event) => onField("starts_at", event.target.value || null)} />
           </Field>
-          <Field label="Fecha de expiracion">
+          <Field label="Fecha de expiración">
             <Input type="date" value={code.expires_at ?? ""} onChange={(event) => onField("expires_at", event.target.value || null)} />
           </Field>
-          <Field label="Pedido minimo">
+          <Field label="Pedido mínimo">
             <Input type="number" min={0} value={code.minimum_order} onChange={(event) => onField("minimum_order", numberValue(event.target.value))} />
           </Field>
-          <Field label="Maximo de usos">
+          <Field label="Máximo de usos">
             <Input
               type="number"
               min={0}
@@ -593,7 +593,7 @@ function WholesaleCustomerEditor({
 }) {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-8 w-full max-w-2xl rounded-lg bg-white text-[#1c1d1b]">
+      <section className="mx-auto my-8 w-full max-w-2xl rounded-lg bg-white text-[#080808]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">Crear cliente mayorista</p>
@@ -617,7 +617,7 @@ function WholesaleCustomerEditor({
           <Field label="Correo de cuenta">
             <Input type="email" value={customer.email} onChange={(event) => onField("email", event.target.value)} />
           </Field>
-          <Field label="Telefono">
+          <Field label="Teléfono">
             <Input value={customer.phone} onChange={(event) => onField("phone", event.target.value)} placeholder="Ej. 31986284" />
           </Field>
           <Field label="Estado si la cuenta existe">
@@ -633,8 +633,8 @@ function WholesaleCustomerEditor({
               ))}
             </select>
           </Field>
-          <p className="self-end rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
-            Si no existe una cuenta con ese correo, se guardara como: Cuenta mayorista pendiente de crear.
+          <p className="self-end rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+            Si no existe una cuenta con ese correo, se guardará como: Cuenta mayorista pendiente de crear.
           </p>
         </div>
 
@@ -660,3 +660,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+
+

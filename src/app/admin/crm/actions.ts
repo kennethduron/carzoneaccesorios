@@ -26,8 +26,17 @@ type TestAccountDeletionInput = {
   confirmation: string;
 };
 
+type MergeDuplicateCustomerInput = {
+  sourceCustomerId: string;
+  targetCustomerId: string;
+};
+
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function localPhoneCandidate(normalizedPhone: string) {
+  return normalizedPhone.startsWith("+504") ? normalizedPhone.slice(4) : normalizedPhone;
 }
 
 async function findAuthUsersByEmail(email: string) {
@@ -71,11 +80,12 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
     }
   }
 
+  const normalizedPhone = phone.ok ? phone.value : "";
   const payload = {
     business_name: optionalText(input.business_name),
     contact_name: contactName.value,
     email: optionalText(input.email),
-    phone: phone.value,
+    phone: normalizedPhone,
     tax_id: optionalText(input.tax_id),
     address: optionalText(input.address),
     city: optionalText(input.city),
@@ -87,8 +97,36 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
   };
 
   const supabase = await getSupabaseServerClient();
-  const query = input.id
-    ? supabase.from("customers").update(payload).eq("id", input.id).select("id").single<{ id: string }>()
+  let existingCustomerId: string | null = null;
+  const normalizedEmail = optionalText(input.email)?.toLowerCase() ?? null;
+
+  if (!input.id) {
+    if (normalizedEmail) {
+      const { data: emailMatch } = await supabase
+        .from("customers")
+        .select("id")
+        .ilike("email", normalizedEmail)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+      existingCustomerId = emailMatch?.id ?? null;
+    }
+
+    if (!existingCustomerId) {
+      const localPhone = localPhoneCandidate(normalizedPhone);
+      const { data: phoneMatch } = await supabase
+        .from("customers")
+        .select("id")
+        .in("phone", Array.from(new Set([normalizedPhone, localPhone, `504${localPhone}`])))
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle<{ id: string }>();
+      existingCustomerId = phoneMatch?.id ?? null;
+    }
+  }
+
+  const query = input.id || existingCustomerId
+    ? supabase.from("customers").update(payload).eq("id", input.id ?? existingCustomerId).select("id").single<{ id: string }>()
     : supabase.from("customers").insert(payload).select("id").single<{ id: string }>();
   const { data, error } = await query;
 
@@ -104,7 +142,7 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
   });
 
   revalidatePath("/admin/crm");
-  return { ok: true, message: input.id ? "Cliente actualizado." : "Cliente potencial creado." };
+  return { ok: true, message: input.id || existingCustomerId ? "Cliente actualizado." : "Cliente potencial creado." };
 }
 
 export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<CrmMutationResult> {
@@ -380,6 +418,129 @@ export async function suspendCustomerAccountAction(customerId: string): Promise<
   return { ok: true, message: "Cuenta suspendida correctamente." };
 }
 
+export async function mergeDuplicateCustomerAction(input: MergeDuplicateCustomerInput): Promise<CrmMutationResult> {
+  await requirePermission("customers:manage");
+
+  const source = uuidLike(input.sourceCustomerId, "Cliente duplicado");
+  const target = uuidLike(input.targetCustomerId, "Cliente principal");
+
+  for (const result of [source, target]) {
+    if (!result.ok) {
+      return { ok: false, message: result.message };
+    }
+  }
+
+  if (source.value === target.value) {
+    return { ok: false, message: "Selecciona dos clientes diferentes para unificar." };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const [{ data: sourceCustomer, error: sourceError }, { data: targetCustomer, error: targetError }] = await Promise.all([
+    admin
+      .from("customers")
+      .select("id, contact_name, business_name, email, phone, notes")
+      .eq("id", source.value)
+      .single<{ id: string; contact_name: string; business_name: string | null; email: string | null; phone: string | null; notes: string | null }>(),
+    admin
+      .from("customers")
+      .select("id, contact_name, business_name, email, phone, notes")
+      .eq("id", target.value)
+      .single<{ id: string; contact_name: string; business_name: string | null; email: string | null; phone: string | null; notes: string | null }>(),
+  ]);
+
+  if (sourceError || !sourceCustomer) {
+    return { ok: false, message: "No pudimos encontrar el cliente duplicado." };
+  }
+
+  if (targetError || !targetCustomer) {
+    return { ok: false, message: "No pudimos encontrar el cliente principal." };
+  }
+
+  const { count: sourceInvoices, error: invoiceError } = await admin
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", source.value);
+
+  if (invoiceError) {
+    return { ok: false, message: invoiceError.message };
+  }
+
+  if ((sourceInvoices ?? 0) > 0) {
+    return {
+      ok: false,
+      message: "Este cliente tiene facturas. No se unifica automáticamente; revísalo manualmente para no romper historial fiscal.",
+    };
+  }
+
+  const updates = [
+    admin.from("orders").update({ customer_id: target.value }).eq("customer_id", source.value),
+    admin.from("payments").update({ customer_id: target.value }).eq("customer_id", source.value),
+    admin.from("crm_notes").update({ customer_id: target.value }).eq("customer_id", source.value),
+    admin.from("crm_followups").update({ customer_id: target.value }).eq("customer_id", source.value),
+    admin.from("wholesale_codes").update({ customer_id: target.value }).eq("customer_id", source.value),
+  ];
+
+  const updateResults = await Promise.all(updates);
+  const updateError = updateResults.find((result) => result.error)?.error;
+  if (updateError) {
+    return { ok: false, message: updateError.message };
+  }
+
+  const mergedNote = [
+    targetCustomer.notes,
+    `[UNIFICACION_DUPLICADO] Se unificó el cliente ${sourceCustomer.business_name ?? sourceCustomer.contact_name} (${source.value}) en este registro.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const { error: targetUpdateError } = await admin
+    .from("customers")
+    .update({
+      email: targetCustomer.email ?? sourceCustomer.email,
+      phone: targetCustomer.phone ?? sourceCustomer.phone,
+      notes: mergedNote,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", target.value);
+
+  if (targetUpdateError) {
+    return { ok: false, message: targetUpdateError.message };
+  }
+
+  const { error: sourceUpdateError } = await admin
+    .from("customers")
+    .update({
+      active: false,
+      status: "inactive",
+      notes: `[DUPLICADO_UNIFICADO] Unificado en cliente ${target.value}.`,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", source.value);
+
+  if (sourceUpdateError) {
+    return { ok: false, message: sourceUpdateError.message };
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: target.value,
+    action: "customer.duplicate_merged",
+    oldData: {
+      sourceCustomer,
+      targetCustomer,
+    },
+    newData: {
+      source_customer_id: source.value,
+      target_customer_id: target.value,
+    },
+  });
+
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/crm");
+
+  return { ok: true, message: "Cliente duplicado unificado correctamente. El historial fue movido al perfil principal." };
+}
+
 export async function deleteTestAccountAction(input: TestAccountDeletionInput): Promise<CrmMutationResult> {
   const profile = await requirePermission("settings:manage");
 
@@ -400,7 +561,7 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
   }
 
   if (input.confirmation.trim() !== "ELIMINAR TEST") {
-    return { ok: false, message: "Escribe ELIMINAR TEST para confirmar esta accion." };
+    return { ok: false, message: "Escribe ELIMINAR TEST para confirmar esta acción." };
   }
 
   const admin = getSupabaseAdminClient();
@@ -424,7 +585,7 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
   const userIds = Array.from(new Set([...(userRows ?? []).map((user) => user.id), ...authUsers.map((user) => user.id)]));
 
   if (userIds.includes(profile.id)) {
-    return { ok: false, message: "No puedes eliminar la cuenta con la que estas administrando el sistema." };
+    return { ok: false, message: "No puedes eliminar la cuenta con la que estás administrando el sistema." };
   }
 
   const customerQuery = admin
@@ -503,3 +664,4 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
 
   return { ok: true, message: "Cuenta TEST eliminada correctamente." };
 }
+

@@ -39,12 +39,12 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
       <div className="mb-4">
-        <h2 className="font-semibold">Configuracion comercial</h2>
-        <p className="mt-1 text-sm text-black/55">Envio, pago al recibir, minimo mayorista y redes sociales.</p>
+        <h2 className="font-semibold">Configuración comercial</h2>
+        <p className="mt-1 text-sm text-black/55">Envío, pago al recibir, mínimo mayorista y redes sociales.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Envio gratis desde">
+        <Field label="Envío gratis desde">
           <Input
             type="number"
             min={0}
@@ -54,7 +54,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
             onChange={(event) => update("free_shipping_threshold", numberValue(event.target.value))}
           />
         </Field>
-        <Field label="Envio estandar">
+        <Field label="Envío estándar">
           <Input
             type="number"
             min={0}
@@ -64,7 +64,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
             onChange={(event) => update("standard_shipping_fee", numberValue(event.target.value))}
           />
         </Field>
-        <Field label="Comision pago al recibir (%)">
+        <Field label="Comisión pago al recibir (%)">
           <Input
             type="number"
             min={0}
@@ -74,7 +74,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
             onChange={(event) => update("cash_on_delivery_percentage", numberValue(event.target.value))}
           />
         </Field>
-        <Field label="Minimo primera compra mayorista">
+        <Field label="Mínimo primera compra mayorista">
           <Input
             type="number"
             min={0}
@@ -93,7 +93,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
           disabled={!canEdit}
           onChange={(event) => update("enable_cash_on_delivery_fee", event.target.checked)}
         />
-        Activar comision por pago al recibir
+        Activar comisión por pago al recibir
       </label>
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -117,12 +117,12 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
       </div>
 
       <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Validar tratamiento fiscal de envio y comision con la contadora.
+        Validar tratamiento fiscal de envío y comisión con la contadora.
       </p>
 
       {canEdit ? (
         <Button onClick={save} disabled={isPending} variant="primary" className="mt-4">
-          {isPending ? "Guardando..." : "Guardar configuracion comercial"}
+          {isPending ? "Guardando..." : "Guardar configuración comercial"}
         </Button>
       ) : null}
     </section>

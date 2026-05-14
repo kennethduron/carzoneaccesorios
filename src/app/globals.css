@@ -1,31 +1,109 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f4f5;
+  --foreground: #080808;
+  --brand-black: #080808;
+  --brand-graphite: #171717;
+  --brand-surface: #ffffff;
+  --brand-surface-soft: #f4f4f5;
+  --brand-border: rgba(8, 8, 8, 0.12);
+  --brand-red: #e4252c;
+  --brand-red-dark: #b91c25;
+  --brand-red-soft: #fff1f2;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-brand), var(--font-copy), Arial, Helvetica, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Courier New", ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-color: var(--brand-red) #e7e5e4;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at top left, rgba(228, 37, 44, 0.08), transparent 34rem),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-brand), var(--font-copy), Arial, Helvetica, sans-serif;
+  letter-spacing: 0;
+}
+
+h1,
+h2,
+h3,
+.brand-heading {
+  font-family: var(--font-brand), var(--font-copy), Arial, Helvetica, sans-serif;
+  letter-spacing: 0;
 }
 
 button,
 select {
   cursor: pointer;
+}
+
+::selection {
+  background: var(--brand-red);
+  color: #ffffff;
+}
+
+.brand-card {
+  border: 1px solid var(--brand-border);
+  background: linear-gradient(180deg, #ffffff 0%, #f8f8f8 100%);
+  box-shadow: 0 18px 50px rgba(8, 8, 8, 0.06);
+}
+
+.brand-red-line {
+  position: relative;
+}
+
+.brand-red-line::after {
+  background: var(--brand-red);
+  content: "";
+  height: 3px;
+  inset: auto 0 -8px 0;
+  position: absolute;
+}
+
+.cz-loader-logo {
+  animation: cz-loader-float 2.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.cz-loader-bar {
+  animation: cz-loader-bar 1.45s ease-in-out infinite;
+}
+
+@keyframes cz-loader-float {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    opacity: 0.94;
+    transform: translateY(-3px) scale(1.01);
+  }
+}
+
+@keyframes cz-loader-bar {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-loader-logo,
+  .cz-loader-bar {
+    animation: none;
+  }
 }

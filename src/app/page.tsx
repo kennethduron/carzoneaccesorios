@@ -17,11 +17,13 @@ export default async function HomePage() {
     <PublicStoreShell>
       <HolidayBannerPopup banner={holidayBanner} />
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch">
-        <div className="flex min-h-[520px] flex-col justify-between rounded-lg bg-[#1c1d1b] p-6 text-white md:p-8">
+        <div className="relative flex min-h-[520px] flex-col justify-between overflow-hidden rounded-lg bg-[#080808] p-6 text-white shadow-xl shadow-black/20 md:p-8">
+          <div className="absolute inset-x-0 bottom-0 h-28 bg-[#e4252c]" aria-hidden="true" />
+          <div className="absolute -right-20 top-16 h-64 w-64 rounded-full border border-white/10" aria-hidden="true" />
           <div>
             <p className="mb-4 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1 text-sm">
               <ShieldCheck size={16} />
-              Precios retail y mayoristas reales
+              Precios al detalle y mayoristas reales
             </p>
             <h1 className="max-w-3xl text-4xl font-semibold leading-tight md:text-6xl">
               Accesorios automotrices listos para vender, instalar y despachar.
@@ -30,8 +32,8 @@ export default async function HomePage() {
               Compra al detalle o activa tu código mayorista para trabajar con precio mayorista en todo el flujo.
             </p>
           </div>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/catalogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#1c1d1b]">
+          <div className="relative mt-8 flex flex-wrap gap-3">
+            <Link href="/catalogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#080808]">
               Ver catálogo
               <ArrowRight size={17} />
             </Link>
@@ -52,12 +54,12 @@ export default async function HomePage() {
 
       <section className="mx-auto grid max-w-7xl gap-4 px-5 pb-8 md:grid-cols-3">
         {[
-          ["Catálogo completo", "Iluminacion, seguridad, interior, exterior, tecnologia y herramientas."],
+          ["Catálogo completo", "Iluminación, seguridad, interior, exterior, tecnología y herramientas."],
           ["Despacho organizado", "Pedidos preparados con seguimiento y control de inventario."],
           ["Mayoreo profesional", "Un código válido cambia todo el sistema a precio mayorista."],
         ].map(([title, text]) => (
           <article key={title} className="rounded-lg border border-black/10 bg-white p-5">
-            <Truck size={20} className="mb-4 text-[#246a73]" />
+            <Truck size={20} className="mb-4 text-[#e4252c]" />
             <h2 className="font-semibold">{title}</h2>
             <p className="mt-2 text-sm text-black/55">{text}</p>
           </article>
@@ -68,7 +70,7 @@ export default async function HomePage() {
         <div>
           <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-semibold">Productos destacados</h2>
-            <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
+            <Link href="/catalogo" className="text-sm font-medium text-[#e4252c]">
               Ver todos
             </Link>
           </div>
@@ -83,3 +85,4 @@ export default async function HomePage() {
     </PublicStoreShell>
   );
 }
+

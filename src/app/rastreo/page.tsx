@@ -19,7 +19,7 @@ export default async function RastreoPage({
           <p className="mt-4 max-w-2xl text-black/60">
             Ingresa tu código de seguimiento para ver el estado del pedido, pago y despacho sin iniciar sesión.
           </p>
-          <p className="mt-4 max-w-2xl rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
+          <p className="mt-4 max-w-2xl rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
             Por seguridad no mostramos RTN completo, dirección completa, comprobantes ni notas internas.
           </p>
         </div>
@@ -28,3 +28,5 @@ export default async function RastreoPage({
     </PublicStoreShell>
   );
 }
+
+

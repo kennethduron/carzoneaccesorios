@@ -131,7 +131,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
               {isPending ? "Guardando..." : "Guardar movimiento"}
             </Button>
             {message ? (
-              <p className={`rounded-md p-3 text-sm ${message.startsWith("Solo hay") ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#e8f3f2] text-[#1e5960]"}`}>
+              <p className={`rounded-md p-3 text-sm ${message.startsWith("Solo hay") ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff1f2] text-[#b91c25]"}`}>
                 {message}
               </p>
             ) : null}
@@ -167,7 +167,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Fecha</th>
                 <th className="px-4 py-3">Producto</th>
@@ -209,3 +209,5 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+

@@ -23,7 +23,7 @@ export function ProductDetail({ product }: { product: Product }) {
     <section className="mx-auto grid max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[0.95fr_1.05fr]">
       <ProductImageGallery product={product} />
       <div className="space-y-5">
-        <Link href="/catalogo" className="text-sm font-medium text-[#246a73]">
+        <Link href="/catalogo" className="text-sm font-medium text-[#e4252c]">
           Volver al catálogo
         </Link>
         <div>
@@ -48,7 +48,7 @@ export function ProductDetail({ product }: { product: Product }) {
         <button
           onClick={() => addToCart(product.id)}
           disabled={product.stock <= 0}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#1c1d1b] px-4 py-3 text-sm font-medium text-white sm:w-auto"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-medium text-white sm:w-auto"
         >
           <ShoppingCart size={18} />
           {product.stock <= 0 ? "Sin stock" : "Agregar al carrito"}
@@ -58,3 +58,6 @@ export function ProductDetail({ product }: { product: Product }) {
     </section>
   );
 }
+
+
+

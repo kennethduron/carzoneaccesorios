@@ -78,7 +78,7 @@ export default async function AdminUsagePage() {
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {usage.metrics.map((metric) => (
           <section key={metric.key} className="rounded-lg border border-black/10 bg-white p-4">
-            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-[#eef7f4] text-[#246a73]">
+            <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-[#fff1f2] text-[#e4252c]">
               <Database size={18} />
             </div>
             <p className="text-sm text-black/55">{metric.label}</p>
@@ -134,7 +134,7 @@ export default async function AdminUsagePage() {
             <button
               type="submit"
               disabled={oldLogTotal === 0}
-              className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
+              className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
             >
               <Trash2 size={16} />
               Limpiar logs antiguos
@@ -156,7 +156,7 @@ export default async function AdminUsagePage() {
               </div>
             ))}
           </div>
-          <p className="mt-4 rounded-md bg-[#eef7f4] p-3 text-sm leading-6 text-[#246a73]">
+          <p className="mt-4 rounded-md bg-[#fff1f2] p-3 text-sm leading-6 text-[#e4252c]">
             Regla operativa: imagenes y comprobantes viven en Cloudinary o Storage; Supabase solo guarda URLs y metadatos.
           </p>
         </section>
@@ -195,3 +195,6 @@ export default async function AdminUsagePage() {
     </AdminShell>
   );
 }
+
+
+

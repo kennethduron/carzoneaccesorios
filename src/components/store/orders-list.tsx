@@ -100,7 +100,7 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5">
         <p className="text-sm text-black/60">Tus pedidos apareceran aqui cuando completes compras en la tienda.</p>
-        <Link href="/catalogo" className="mt-4 inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
+        <Link href="/catalogo" className="mt-4 inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-medium text-white">
           Ver catalogo
         </Link>
       </div>
@@ -123,9 +123,9 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
                   <PackageCheck size={20} />
                   Pedido: {order.order_number}
                 </h2>
-                <p className="mt-2 text-sm text-black/60">Codigo de rastreo: {order.tracking_code ?? "Pendiente"}</p>
+                <p className="mt-2 text-sm text-black/60">Código de rastreo: {order.tracking_code ?? "Pendiente"}</p>
               </div>
-              <span className="w-fit rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
+              <span className="w-fit rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
                 {orderStatusLabels[order.status] ?? order.status}
               </span>
             </div>
@@ -171,7 +171,7 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
             </div>
 
             {pendingInvoiceMessage ? (
-              <p className="mt-4 rounded-md bg-[#f7f7f2] px-3 py-2 text-sm text-black/60">{pendingInvoiceMessage}</p>
+              <p className="mt-4 rounded-md bg-[#f4f4f5] px-3 py-2 text-sm text-black/60">{pendingInvoiceMessage}</p>
             ) : null}
           </article>
         );
@@ -182,9 +182,11 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
 
 function Info({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className="rounded-md bg-[#f7f7f2] px-3 py-2">
+    <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
       <p className="text-xs uppercase text-black/45">{label}</p>
       <p className={`mt-1 ${strong ? "font-semibold" : ""}`}>{value}</p>
     </div>
   );
 }
+
+

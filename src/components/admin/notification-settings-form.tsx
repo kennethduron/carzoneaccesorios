@@ -48,7 +48,7 @@ export function NotificationSettingsForm({ settings, canEdit }: NotificationSett
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
       <div className="mb-4 flex items-start gap-3">
-        <div className="grid size-10 shrink-0 place-items-center rounded-md bg-[#e8f3f2] text-[#1e5960]">
+        <div className="grid size-10 shrink-0 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
           <Bell size={18} />
         </div>
         <div>
@@ -60,7 +60,7 @@ export function NotificationSettingsForm({ settings, canEdit }: NotificationSett
       </div>
 
       {!canEdit ? (
-        <p className="mb-4 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
+        <p className="mb-4 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
           Tu rol puede revisar esta configuración, pero no modificarla.
         </p>
       ) : null}
@@ -124,15 +124,17 @@ function Toggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-3 rounded-md border border-black/10 bg-[#f7f7f2] px-3 py-3 text-sm">
+    <label className="flex items-center gap-3 rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-3 text-sm">
       <input
         type="checkbox"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 accent-[#246a73]"
+        className="size-4 accent-[#e4252c]"
       />
       <span>{label}</span>
     </label>
   );
 }
+
+

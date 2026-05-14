@@ -47,7 +47,7 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 function toastIcon(type: ToastType) {
   if (type === "success") {
-    return <CheckCircle2 size={18} className="text-[#1e5960]" />;
+    return <CheckCircle2 size={18} className="text-[#b91c25]" />;
   }
 
   if (type === "error") {
@@ -59,10 +59,10 @@ function toastIcon(type: ToastType) {
   }
 
   if (type === "loading") {
-    return <Loader2 size={18} className="animate-spin text-[#246a73]" />;
+    return <Loader2 size={18} className="animate-spin text-[#e4252c]" />;
   }
 
-  return <Info size={18} className="text-[#246a73]" />;
+  return <Info size={18} className="text-[#e4252c]" />;
 }
 
 function toastTone(type: ToastType) {
@@ -167,10 +167,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div className="flex items-start gap-3">
               <span className="mt-0.5 shrink-0">{toastIcon(toast.type)}</span>
               <div className="min-w-0 flex-1">
-                {toast.title ? <p className="font-semibold text-[#1c1d1b]">{toast.title}</p> : null}
+                {toast.title ? <p className="font-semibold text-[#080808]">{toast.title}</p> : null}
                 <p className="text-[#3f423d]">{toast.message}</p>
                 {toast.action ? (
-                  <a href={toast.action.href} className="mt-2 inline-flex font-semibold text-[#246a73]">
+                  <a href={toast.action.href} className="mt-2 inline-flex font-semibold text-[#e4252c]">
                     {toast.action.label}
                   </a>
                 ) : null}
@@ -179,7 +179,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => dismiss(toast.id)}
                 className="grid size-7 shrink-0 place-items-center rounded-md text-black/45 hover:bg-black/5"
-                aria-label="Cerrar notificacion"
+                aria-label="Cerrar notificación"
               >
                 <X size={15} />
               </button>
@@ -189,7 +189,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       </div>
       {confirmState ? (
         <div className="fixed inset-0 z-[90] grid place-items-center bg-black/45 px-4">
-          <section className="w-full max-w-md rounded-lg bg-white p-5 text-[#1c1d1b] shadow-xl">
+          <section className="w-full max-w-md rounded-lg bg-white p-5 text-[#080808] shadow-xl">
             <h2 className="text-lg font-semibold">{confirmState.title}</h2>
             <p className="mt-2 text-sm text-black/65">{confirmState.message}</p>
             <div className="mt-5 flex justify-end gap-2">
@@ -204,7 +204,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => closeConfirm(true)}
                 className={`rounded-md px-4 py-2 text-sm font-semibold text-white ${
-                  confirmState.tone === "danger" ? "bg-[#9b341b]" : "bg-[#1c1d1b]"
+                  confirmState.tone === "danger" ? "bg-[#9b341b]" : "bg-[#080808]"
                 }`}
               >
                 {confirmState.confirmLabel ?? "Confirmar"}
@@ -226,3 +226,5 @@ export function useToast() {
 
   return context;
 }
+
+

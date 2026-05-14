@@ -23,7 +23,7 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
         <article
           key={invoice.id}
           className={`rounded-lg border bg-white p-5 ${
-            focusInvoice === invoice.invoiceNumber ? "border-[#246a73] shadow-md" : "border-black/10"
+            focusInvoice === invoice.invoiceNumber ? "border-[#e4252c] shadow-md" : "border-black/10"
           }`}
         >
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
@@ -36,7 +36,7 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
               <p className="mt-2 text-sm text-black/60">Pedido: {invoice.orderNumber}</p>
               <p className="mt-1 text-sm text-black/60">Cliente: {invoice.customerName}</p>
             </div>
-            <span className="w-fit rounded-md bg-[#f7f7f2] px-3 py-2 text-sm font-medium capitalize">
+            <span className="w-fit rounded-md bg-[#f4f4f5] px-3 py-2 text-sm font-medium capitalize">
               {invoice.status === "anulada" || invoice.status === "cancelled" ? "Anulada" : "Emitida"}
             </span>
           </div>
@@ -48,7 +48,7 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
             <p>{invoice.priceMode === "wholesale" ? "Mayorista" : "Retail"}</p>
           </div>
 
-          <div className="mt-3 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/65">
+          <div className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
             <p>Metodo de pago: {invoice.paymentMethod}</p>
             {invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference ? (
               <p>Referencia: {invoice.paymentReference}</p>
@@ -75,3 +75,4 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
     </div>
   );
 }
+

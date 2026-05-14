@@ -17,7 +17,7 @@ export default async function CategoríasPage() {
             <Link
               key={category.name}
               href={`/catalogo?categoria=${encodeURIComponent(category.slug)}`}
-              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
+              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#e4252c]"
             >
               <p className="text-xl font-semibold">{category.name}</p>
               <p className="mt-2 text-sm text-black/55">Ver productos disponibles</p>
@@ -28,3 +28,5 @@ export default async function CategoríasPage() {
     </PublicStoreShell>
   );
 }
+
+

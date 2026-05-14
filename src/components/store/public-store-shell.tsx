@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { CarFront, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
+import { ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
 import { FaFacebookF, FaInstagram, FaTiktok, FaWhatsapp, FaYoutube } from "react-icons/fa";
 import { FiGlobe } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
@@ -108,16 +109,27 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-[#1c1d1b]">
+    <main className="min-h-screen overflow-x-hidden bg-[#f4f4f5] text-[#080808]">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-black/10 bg-white/95 shadow-sm backdrop-blur">
-        <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-2 px-5 py-4 sm:gap-4">
-          <Link href="/" className="flex min-w-0 flex-1 items-center gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-md bg-[#171717] text-white">
-              <CarFront size={24} />
+        <div className="relative mx-auto flex h-16 max-w-7xl items-center justify-between gap-1.5 px-4 sm:h-[70px] sm:gap-4 sm:px-5">
+          <Link
+            href="/"
+            className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3"
+            aria-label="Ir al inicio de Car Zone Accesorios"
+          >
+            <span className="relative h-12 w-[118px] shrink-0 sm:h-[50px] sm:w-[150px]">
+              <Image
+                src="/brand/car-zone-logo-nav.png"
+                alt="Car Zone Accesorios"
+                fill
+                preload
+                sizes="(max-width: 640px) 118px, 150px"
+                className="object-contain object-left"
+              />
             </span>
-            <span className="min-w-0">
-              <span className="block truncate text-lg font-semibold">Car Zone Accesorios</span>
-              <span className="block text-xs text-black/55">Accesorios automotrices</span>
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-base font-semibold sm:text-lg">Car Zone Accesorios</span>
+              <span className="block truncate text-[11px] text-black/55 sm:text-xs">Accesorios automotrices</span>
             </span>
           </Link>
 
@@ -129,9 +141,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {priceMode === "wholesale" ? (
-              <span className="hidden rounded-md border border-[#246a73]/25 bg-white px-3 py-2 text-sm font-medium text-[#246a73] sm:inline-flex">
+              <span className="hidden rounded-md border border-[#e4252c]/25 bg-[#fff1f2] px-3 py-2 text-sm font-semibold text-[#b91c25] sm:inline-flex">
                 Mayoreo activo
               </span>
             ) : null}
@@ -140,8 +152,8 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setUserMenuOpen((current) => !current)}
-                className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-3 text-sm hover:bg-white/80"
-                aria-label="Abrir menu de usuario"
+                className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-2.5 text-sm hover:bg-white/80 sm:px-3"
+                aria-label="Abrir menú de usuario"
                 aria-expanded={userMenuOpen}
               >
                 <UserRound size={17} />
@@ -154,7 +166,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={href}
                       href={href}
-                      className="block px-4 py-2 text-sm hover:bg-[#f7f7f2]"
+                      className="block px-4 py-2 text-sm hover:bg-[#f4f4f5]"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       {label}
@@ -164,7 +176,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                   <div className="mt-2 border-t border-black/10 pt-2">
                     {isAuthenticated ? (
                       <form action="/auth/logout" method="post">
-                        <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f7f7f2]">
+                        <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f4f4f5]">
                           <LogOut size={16} />
                           Cerrar sesión
                         </button>
@@ -172,7 +184,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                     ) : (
                       <Link
                         href="/login"
-                        className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-[#f7f7f2]"
+                        className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-[#f4f4f5]"
                         onClick={() => setUserMenuOpen(false)}
                       >
                         <LogIn size={16} />
@@ -186,8 +198,8 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/carrito"
-              className={`inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-md bg-[#1c1d1b] px-3 text-sm text-white transition-transform sm:gap-2 ${
-                cartPulse ? "scale-110 ring-4 ring-[#246a73]/20" : ""
+              className={`inline-flex h-10 shrink-0 items-center justify-center gap-1 rounded-md bg-[#080808] px-3 text-sm font-semibold text-white transition-transform hover:bg-[#e4252c] sm:gap-2 ${
+                cartPulse ? "scale-110 ring-4 ring-[#e4252c]/20" : ""
               }`}
             >
               <ShoppingCart size={16} />
@@ -196,7 +208,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => setOpen((current) => !current)}
               className="grid size-10 place-items-center rounded-md border border-black/10 bg-white lg:hidden"
-              aria-label="Abrir menu"
+              aria-label="Abrir menú"
             >
               {open ? <X size={18} /> : <Menu size={18} />}
             </button>
@@ -217,7 +229,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               {priceMode === "wholesale" ? (
-                <span className="rounded-md px-3 py-2 text-sm font-medium text-[#246a73]">Mayoreo activo</span>
+                <span className="rounded-md px-3 py-2 text-sm font-medium text-[#e4252c]">Mayoreo activo</span>
               ) : null}
               {isAuthenticated ? (
                 <form action="/auth/logout" method="post">
@@ -236,18 +248,18 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </nav>
         ) : null}
       </header>
-      <div className="h-[73px]" aria-hidden="true" />
+      <div className="h-16 sm:h-[70px]" aria-hidden="true" />
       {children}
       <footer className="border-t border-black/10 bg-white">
         <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 md:grid-cols-[1fr_auto]">
           <div>
             <p className="font-semibold">Car Zone Accesorios</p>
             <p className="mt-2 max-w-xl text-sm text-black/55">
-              Tienda profesional de accesorios automotrices con precios retail y mayoristas reales.
+              Tienda profesional de accesorios automotrices con precios al detalle y mayoristas reales.
             </p>
           </div>
           <div>
-            <p className="mb-2 text-sm font-semibold">Siguenos</p>
+            <p className="mb-2 text-sm font-semibold">Síguenos</p>
             <div className="mb-3 flex flex-wrap gap-2">
               <SocialLink href={socialSettings?.facebook_url} label="Facebook">
                 <FaFacebookF />
@@ -269,13 +281,13 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               </SocialLink>
             </div>
             <div className="flex flex-wrap gap-2 text-sm">
-            <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
-              Mision
+            <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
+              Misión
             </Link>
-            <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
-              Vision
+            <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
+              Visión
             </Link>
-            <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f7f7f2]">
+            <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
               Historia
             </Link>
             </div>
@@ -298,9 +310,11 @@ function SocialLink({ href, label, children }: { href?: string | null; label: st
       rel="noreferrer"
       aria-label={label}
       title={label}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#1c1d1b] hover:bg-[#f7f7f2]"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#080808] hover:bg-[#f4f4f5]"
     >
       {children}
     </a>
   );
 }
+
+

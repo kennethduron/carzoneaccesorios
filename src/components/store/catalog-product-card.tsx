@@ -21,7 +21,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
     <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
       <Link href={`/producto/${product.slug}`} className="block">
         {imageFailed ? (
-          <div className="grid h-44 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+          <div className="grid h-44 w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
             <div className="flex flex-col items-center gap-2 text-sm">
               <ImageOff size={24} />
               Imagen no disponible
@@ -47,7 +47,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
               <p className="text-xs uppercase text-black/45">{product.sku}</p>
               <h2 className="mt-1 text-lg font-semibold">{product.name}</h2>
             </div>
-            <span className="rounded-md bg-[#f0ede2] px-2 py-1 text-xs">{product.category}</span>
+            <span className="rounded-md bg-[#e7e5e4] px-2 py-1 text-xs">{product.category}</span>
           </div>
           <p className="line-clamp-2 text-sm text-black/60">{product.description}</p>
           <div className="flex items-end justify-between">
@@ -65,7 +65,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
         <button
           onClick={() => addToCart(product.id)}
           disabled={product.stock <= 0}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#1c1d1b] px-4 py-3 text-sm font-medium text-white"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-medium text-white"
         >
           <Plus size={18} />
           {product.stock <= 0 ? "Sin stock" : "Agregar"}
@@ -75,3 +75,5 @@ export function CatalogProductCard({ product }: { product: Product }) {
     </article>
   );
 }
+
+

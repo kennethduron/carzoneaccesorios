@@ -36,9 +36,9 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
       const result = await saveFiscalSettingsAction(form);
       setMessage(result.message);
       if (result.ok) {
-        toast.success(result.message || "Configuracion fiscal guardada correctamente.");
+        toast.success(result.message || "Configuración fiscal guardada correctamente.");
       } else {
-        toast.error(result.message || "No se pudo guardar la configuracion fiscal.");
+        toast.error(result.message || "No se pudo guardar la configuración fiscal.");
       }
     });
   }
@@ -62,7 +62,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
 
       <section className="rounded-lg border border-black/10 bg-white p-5">
         {!canEdit ? (
-          <p className="mb-4 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
+          <p className="mb-4 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
             Tu rol puede revisar CAI, RTN, rangos fiscales y alertas, pero no modificar esta configuración.
           </p>
         ) : null}
@@ -125,7 +125,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
               value={form.fiscal_address}
               disabled={!canEdit}
               onChange={(event) => updateField("fiscal_address", event.target.value)}
-              className="min-h-28 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#246a73]"
+              className="min-h-28 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
             />
           </label>
         </div>
@@ -134,7 +134,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button onClick={submit} disabled={isPending} variant="dark">
               <Save size={17} />
-              {isPending ? "Guardando..." : "Guardar configuracion"}
+              {isPending ? "Guardando..." : "Guardar configuración"}
             </Button>
             {message ? <p className="text-sm text-black/60">{message}</p> : null}
           </div>
@@ -152,3 +152,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+
+

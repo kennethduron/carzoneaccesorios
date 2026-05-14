@@ -247,3 +247,4 @@ export function useShoppingCart() {
 
   return context;
 }
+

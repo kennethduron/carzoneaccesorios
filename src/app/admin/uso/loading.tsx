@@ -1,6 +1,6 @@
 export default function AdminUsageLoading() {
   return (
-    <section className="min-h-screen bg-[#f7f7f2] px-5 py-6 text-[#1c1d1b]">
+    <section className="min-h-screen bg-[#f4f4f5] px-5 py-6 text-[#080808]">
       <div className="mx-auto max-w-7xl">
         <div className="h-8 w-56 animate-pulse rounded bg-black/10" />
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -16,3 +16,5 @@ export default function AdminUsageLoading() {
     </section>
   );
 }
+
+

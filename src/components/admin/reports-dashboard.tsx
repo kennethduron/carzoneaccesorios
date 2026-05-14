@@ -322,7 +322,7 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
       {
         key: "fiscalCorrelatives",
         label: "Correlativos usados",
-        description: "Numeros fiscales utilizados, con estado, CAI, ISV y total para revision fiscal.",
+        description: "Números fiscales utilizados, con estado, CAI, ISV y total para revisión fiscal.",
         columns: ["Correlativo", "Factura", "Fecha", "CAI", "Estado", "ISV", "Total"],
         rows: filteredInvoices
           .map((invoice) => ({
@@ -341,8 +341,8 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
         label: "Correlativos faltantes",
         description:
           rangeStart !== null && rangeEnd !== null && rangeEnd - rangeStart > 5000
-            ? "El rango autorizado es demasiado amplio para listar faltantes en pantalla. Exporta por periodos mas pequenos."
-            : "Numeros dentro del rango autorizado que todavia no tienen factura emitida o anulada en el sistema.",
+            ? "El rango autorizado es demasiado amplio para listar faltantes en pantalla. Exporta por períodos más pequeños."
+            : "Números dentro del rango autorizado que todavía no tienen factura emitida o anulada en el sistema.",
         columns: ["Correlativo faltante", "Rango autorizado", "CAI"],
         rows: missingCorrelatives.map((value) => ({
           "Correlativo faltante": value,
@@ -561,8 +561,8 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
             onClick={() => setActiveReport(report.key)}
             className={`shrink-0 rounded-md border px-3 py-2 text-sm font-medium ${
               activeReport === report.key
-                ? "border-[#246a73] bg-[#246a73] text-white"
-                : "border-black/10 bg-white text-[#1c1d1b]"
+                ? "border-[#e4252c] bg-[#e4252c] text-white"
+                : "border-black/10 bg-white text-[#080808]"
             }`}
           >
             {report.label}
@@ -583,7 +583,7 @@ export function ReportsDashboard({ data, fiscalSettings }: ReportsDashboardProps
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 {currentReport.columns.map((column) => (
                   <th key={column} className="px-4 py-3">
@@ -626,3 +626,6 @@ function Metric({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+
+

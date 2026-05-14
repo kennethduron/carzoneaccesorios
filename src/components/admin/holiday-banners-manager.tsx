@@ -176,7 +176,7 @@ export function HolidayBannersManager({ banners }: HolidayBannersManagerProps) {
           {banners.length === 0 ? <p className="p-4 text-sm text-black/55">No hay banners.</p> : null}
           {banners.map((banner) => (
             <article key={banner.id} className="grid gap-4 p-4 md:grid-cols-[160px_1fr_auto]">
-              <div className="overflow-hidden rounded-md bg-[#f7f7f2]">
+              <div className="overflow-hidden rounded-md bg-[#f4f4f5]">
                 {banner.image_url ? (
                   <Image src={banner.image_url} alt={banner.title} width={320} height={180} className="h-28 w-full object-cover" />
                 ) : (
@@ -189,7 +189,7 @@ export function HolidayBannersManager({ banners }: HolidayBannersManagerProps) {
                 <p className="mt-2 text-xs text-black/45">
                   {banner.start_date} a {banner.end_date} / prioridad {banner.priority}
                 </p>
-                <p className={`mt-2 w-fit rounded-md px-2 py-1 text-xs ${banner.is_active ? "bg-[#e8f3f2] text-[#1e5960]" : "bg-[#f7f7f2] text-black/55"}`}>
+                <p className={`mt-2 w-fit rounded-md px-2 py-1 text-xs ${banner.is_active ? "bg-[#fff1f2] text-[#b91c25]" : "bg-[#f4f4f5] text-black/55"}`}>
                   {banner.is_active ? "Activo" : "Inactivo"}
                 </p>
               </div>
@@ -222,3 +222,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+

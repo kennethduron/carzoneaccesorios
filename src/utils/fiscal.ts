@@ -168,3 +168,4 @@ export function getFiscalAlerts(settings: FiscalSettings, invoices: FiscalInvoic
 
   return alerts;
 }
+

@@ -1,12 +1,11 @@
 import { Mail, MapPin, Phone } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
-import { ContactForm } from "@/components/store/contact-form";
-import { WholesaleRequestForm } from "@/components/store/wholesale-request-form";
+import { ContactRequestSwitcher } from "@/components/store/contact-request-switcher";
 
 export default function ContactoPage() {
   return (
     <PublicStoreShell>
-      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1fr_420px]">
+      <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[0.85fr_1.15fr]">
         <div className="space-y-5">
           <p className="text-sm text-black/50">Contacto</p>
           <h1 className="mt-2 text-4xl font-semibold">Hablemos de tus accesorios</h1>
@@ -20,15 +19,15 @@ export default function ContactoPage() {
               [MapPin, "Honduras"],
             ].map(([Icon, text]) => (
               <div key={text as string} className="flex items-center gap-3 rounded-lg border border-black/10 bg-white p-4">
-                <Icon size={18} className="text-[#246a73]" />
+                <Icon size={18} className="text-[#e4252c]" />
                 <span className="text-sm">{text as string}</span>
               </div>
             ))}
           </div>
-          <WholesaleRequestForm />
         </div>
-        <ContactForm />
+        <ContactRequestSwitcher />
       </section>
     </PublicStoreShell>
   );
 }
+

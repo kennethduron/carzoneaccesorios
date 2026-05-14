@@ -39,7 +39,7 @@ function humanWholesaleError(error: { message?: string; code?: string; details?:
   }
 
   if (error.code === "42501" || message.includes("permission denied") || message.includes("row-level security")) {
-    return "No tienes permisos para administrar codigos mayoristas.";
+    return "No tienes permisos para administrar códigos mayoristas.";
   }
 
   if (message.includes("fetch failed") || message.includes("failed to fetch")) {
@@ -186,3 +186,4 @@ export async function setWholesaleCodeActiveAction(id: string, active: boolean):
   revalidatePath("/admin/codigos-mayoristas");
   return { ok: true, message: active ? "Código activado." : "Código desactivado." };
 }
+

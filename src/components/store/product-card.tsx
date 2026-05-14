@@ -23,7 +23,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
     <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
       <button onClick={() => onOpen(product)} className="block w-full text-left">
         {imageFailed ? (
-          <div className="grid h-44 w-full place-items-center bg-[#f0ede2] text-[#6b675d]">
+          <div className="grid h-44 w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
             <div className="flex flex-col items-center gap-2 text-sm">
               <ImageOff size={24} />
               Imagen no disponible
@@ -49,7 +49,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
               <p className="text-xs uppercase text-black/45">{product.sku}</p>
               <h2 className="mt-1 text-lg font-semibold">{product.name}</h2>
             </div>
-            <span className="rounded-md bg-[#f0ede2] px-2 py-1 text-xs">{product.category}</span>
+            <span className="rounded-md bg-[#e7e5e4] px-2 py-1 text-xs">{product.category}</span>
           </div>
           <p className="line-clamp-2 text-sm text-black/60">{product.description}</p>
           <div className="flex items-end justify-between">
@@ -74,3 +74,4 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
     </article>
   );
 }
+

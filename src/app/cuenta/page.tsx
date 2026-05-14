@@ -18,7 +18,7 @@ export default async function CuentaPage({
     <PublicStoreShell>
       <section className="mx-auto max-w-4xl px-5 py-8">
         {confirmed ? (
-          <div className="mb-4 rounded-lg border border-[#246a73]/20 bg-[#e8f3f2] p-4 text-sm text-[#1e5960]">
+          <div className="mb-4 rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-4 text-sm text-[#b91c25]">
             Correo confirmado correctamente. Tu cuenta ya está activa.
           </div>
         ) : null}
@@ -33,21 +33,21 @@ export default async function CuentaPage({
         </div>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md bg-[#f7f7f2] p-4">
+          <div className="rounded-md bg-[#f4f4f5] p-4">
             <p className="text-sm text-black/50">Correo</p>
             <p className="font-medium">{profile.email}</p>
           </div>
-          <div className="rounded-md bg-[#f7f7f2] p-4">
+          <div className="rounded-md bg-[#f4f4f5] p-4">
             <p className="text-sm text-black/50">Permisos</p>
             <p className="font-medium">{profile.permissions.length}</p>
           </div>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
-          <Link className="inline-flex rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white" href="/mis-pedidos">
+          <Link className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-medium text-white" href="/mis-pedidos">
             Mis pedidos
           </Link>
-          <Link className="inline-flex rounded-md border border-black/10 px-4 py-2 text-sm font-medium text-[#246a73]" href="/">
+          <Link className="inline-flex rounded-md border border-black/10 px-4 py-2 text-sm font-medium text-[#e4252c]" href="/">
             Volver a la tienda
           </Link>
         </div>
@@ -56,3 +56,6 @@ export default async function CuentaPage({
     </PublicStoreShell>
   );
 }
+
+
+

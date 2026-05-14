@@ -72,37 +72,37 @@ function getLoginErrorMessage(rawMessage: string, userExists: boolean) {
 
   if (message.includes("email not confirmed") || message.includes("not confirmed")) {
     return userExists
-      ? "Tu cuenta fue creada, pero aun debes confirmar tu correo. Revisa tu bandeja de entrada o spam."
-      : "Revisa tu correo y confirma tu cuenta antes de iniciar sesion.";
+      ? "Tu cuenta fue creada, pero aún debes confirmar tu correo. Revisa tu bandeja de entrada o spam."
+      : "Revisa tu correo y confirma tu cuenta antes de iniciar sesión.";
   }
 
   if (message.includes("invalid login credentials")) {
-    return userExists ? "Correo/usuario o contrasena incorrectos." : "No encontramos una cuenta con este correo.";
+    return userExists ? "Correo/usuario o contraseña incorrectos." : "No encontramos una cuenta con este correo.";
   }
 
   if (message.includes("too many")) {
     return "Demasiados intentos. Espera unos minutos e intenta nuevamente.";
   }
 
-  return "No pudimos iniciar sesion. Revisa tus datos e intenta nuevamente.";
+  return "No pudimos iniciar sesión. Revisa tus datos e intenta nuevamente.";
 }
 
 function getRegisterErrorMessage(rawMessage: string) {
   const message = rawMessage.toLowerCase();
 
   if (message.includes("already registered") || message.includes("already exists") || message.includes("user already")) {
-    return "Ya existe una cuenta con este correo. Intenta iniciar sesion.";
+    return "Ya existe una cuenta con este correo. Intenta iniciar sesión.";
   }
 
   if (message.includes("password") && message.includes("weak")) {
-    return "La contrasena es muy debil. Usa al menos 6 caracteres.";
+    return "La contraseña es muy débil. Usa al menos 6 caracteres.";
   }
 
   if (message.includes("rate limit") || message.includes("too many")) {
     return "Demasiados intentos. Espera unos minutos e intenta nuevamente.";
   }
 
-  return "No pudimos crear la cuenta. Revisa la informacion e intenta nuevamente.";
+  return "No pudimos crear la cuenta. Revisa la información e intenta nuevamente.";
 }
 
 async function resolveLoginEmail(identifierInput: string) {
@@ -111,7 +111,7 @@ async function resolveLoginEmail(identifierInput: string) {
   if (looksLikeEmail(identifier)) {
     const email = normalizeEmail(identifier);
     if (!validateEmail(email)) {
-      return { ok: false as const, message: "Ingresa un correo electronico valido." };
+      return { ok: false as const, message: "Ingresa un correo electrónico válido." };
     }
 
     return { ok: true as const, email, kind: "email" as const, exists: await emailExistsInProfile(email) };
@@ -128,7 +128,7 @@ async function resolveLoginEmail(identifierInput: string) {
   }
 
   if (email === "__suspended__") {
-    return { ok: false as const, message: "Esta cuenta esta suspendida. Contacta a administracion para revisarla." };
+    return { ok: false as const, message: "Esta cuenta está suspendida. Contacta a administración para revisarla." };
   }
 
   return { ok: true as const, email, kind: "username" as const, exists: true };
@@ -143,7 +143,7 @@ export async function loginWithEmailAction(identifierInput: string, password: st
   }
 
   if (!password.trim()) {
-    return { ok: false, message: "Ingresa tu contrasena para continuar." };
+    return { ok: false, message: "Ingresa tu contraseña para continuar." };
   }
 
   const supabase = await getSupabaseServerClient();
@@ -163,7 +163,7 @@ export async function loginWithEmailAction(identifierInput: string, password: st
       ok: false,
       message:
         resolved.kind === "username" && !error.message.toLowerCase().includes("not confirmed")
-          ? "Correo/usuario o contrasena incorrectos."
+          ? "Correo/usuario o contraseña incorrectos."
           : getLoginErrorMessage(error.message, resolved.exists),
     };
   }
@@ -185,11 +185,11 @@ export async function loginWithEmailAction(identifierInput: string, password: st
 
     if (profile?.active === false) {
       await supabase.auth.signOut();
-      return { ok: false, message: "Esta cuenta esta suspendida. Contacta a administracion para revisarla." };
+      return { ok: false, message: "Esta cuenta está suspendida. Contacta a administración para revisarla." };
     }
   }
 
-  return { ok: true, message: "Sesion iniciada correctamente.", redirectTo: nextPath };
+  return { ok: true, message: "Sesión iniciada correctamente.", redirectTo: nextPath };
 }
 
 export async function registerWithEmailAction(input: {
@@ -215,19 +215,19 @@ export async function registerWithEmailAction(input: {
   }
 
   if (!validateEmail(email)) {
-    return { ok: false, message: "Ingresa un correo electronico valido." };
+    return { ok: false, message: "Ingresa un correo electrónico válido." };
   }
 
   if (phone.length < 8) {
-    return { ok: false, message: "Ingresa un numero de telefono valido." };
+    return { ok: false, message: "Ingresa un número de teléfono válido." };
   }
 
   if (input.password.length < 6) {
-    return { ok: false, message: "La contrasena debe tener al menos 6 caracteres." };
+    return { ok: false, message: "La contraseña debe tener al menos 6 caracteres." };
   }
 
   if (await emailExistsInProfile(email)) {
-    return { ok: false, message: "Ya existe una cuenta con este correo. Intenta iniciar sesion." };
+    return { ok: false, message: "Ya existe una cuenta con este correo. Intenta iniciar sesión." };
   }
 
   if (await usernameExistsInProfile(username.username)) {
@@ -262,7 +262,7 @@ export async function registerWithEmailAction(input: {
   }
 
   if (data.user?.identities && data.user.identities.length === 0) {
-    return { ok: false, message: "Ya existe una cuenta con este correo. Intenta iniciar sesion." };
+    return { ok: false, message: "Ya existe una cuenta con este correo. Intenta iniciar sesión." };
   }
 
   if (data.user) {
@@ -278,7 +278,7 @@ export async function registerWithEmailAction(input: {
   if (!data.session) {
     return {
       ok: true,
-      message: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesion.",
+      message: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
       redirectTo: `/login?check_email=1&email=${encodeURIComponent(email)}`,
       needsEmailConfirmation: true,
     };
@@ -286,7 +286,7 @@ export async function registerWithEmailAction(input: {
 
   return {
     ok: true,
-    message: "Cuenta creada correctamente. Ahora puedes iniciar sesion.",
+    message: "Cuenta creada correctamente. Ahora puedes iniciar sesión.",
     redirectTo: nextPath,
   };
 }
@@ -295,7 +295,7 @@ export async function resendConfirmationEmailAction(identifierInput: string): Pr
   const resolved = await resolveLoginEmail(identifierInput);
 
   if (!resolved.ok) {
-    return { ok: false, message: "Ingresa un correo o usuario valido para reenviar la confirmacion." };
+    return { ok: false, message: "Ingresa un correo o usuario válido para reenviar la confirmación." };
   }
 
   const supabase = await getSupabaseServerClient();
@@ -324,5 +324,5 @@ export async function resendConfirmationEmailAction(identifierInput: string): Pr
     };
   }
 
-  return { ok: true, message: "Te enviamos un nuevo correo de confirmacion." };
+  return { ok: true, message: "Te enviamos un nuevo correo de confirmación." };
 }

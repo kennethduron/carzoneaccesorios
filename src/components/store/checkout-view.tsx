@@ -178,7 +178,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     const bankTransferReference = checkout.bankTransferReference.trim();
 
     if (isBankTransfer && !bankTransferReference) {
-      showCheckoutError("bankTransferReference", "Ingresa el numero de referencia de la transferencia.");
+      showCheckoutError("bankTransferReference", "Ingresa el número de referencia de la transferencia.");
       return;
     }
 
@@ -189,7 +189,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     }
 
     if (blocksFirstWholesaleOrder) {
-      const message = `Para la primera compra mayorista, el monto minimo es de ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)}.`;
+      const message = `Para la primera compra mayorista, el monto mínimo es de ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)}.`;
       setCheckoutMessage(message);
       toast.error(message);
       return;
@@ -283,7 +283,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
               Precio aplicado: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
             </p>
           </div>
-          <p className="inline-flex w-fit items-center gap-2 rounded-md bg-[#e8f3f2] px-3 py-2 text-sm font-medium text-[#1e5960]">
+          <p className="inline-flex w-fit items-center gap-2 rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
             <ShieldCheck size={17} />
             Pago seguro. Tu información está protegida.
           </p>
@@ -303,7 +303,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 onChange={(event) => updateCheckoutField(field, event.target.value)}
                 placeholder={placeholder}
                 className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
-                  fieldErrors[field] ? "border-[#d55d3b]" : "border-black/10"
+                  fieldErrors[field] ? "border-[#e4252c]" : "border-black/10"
                 }`}
               />
               {fieldErrors[field] ? <span className="text-xs text-[#9b341b]">{fieldErrors[field]}</span> : null}
@@ -314,7 +314,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
             <input
               value={checkout.country}
               readOnly
-              className="w-full rounded-md border border-black/10 bg-[#f7f7f2] px-3 py-2 text-sm outline-none"
+              className="w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm outline-none"
             />
             <span className="mt-1 block text-xs text-black/50">
               Por ahora solo realizamos entregas dentro de Honduras.
@@ -332,7 +332,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 value={checkout.department}
                 onChange={(event) => updateCheckoutField("department", event.target.value)}
                 className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
-                  fieldErrors.department ? "border-[#d55d3b]" : "border-black/10"
+                  fieldErrors.department ? "border-[#e4252c]" : "border-black/10"
                 }`}
               >
                 <option value="">Seleccionar departamento</option>
@@ -351,7 +351,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 onChange={(event) => updateCheckoutField("city", event.target.value)}
                 placeholder="Ej. San Pedro Sula"
                 className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
-                  fieldErrors.city ? "border-[#d55d3b]" : "border-black/10"
+                  fieldErrors.city ? "border-[#e4252c]" : "border-black/10"
                 }`}
               />
               {fieldErrors.city ? <span className="text-xs text-[#9b341b]">{fieldErrors.city}</span> : null}
@@ -362,7 +362,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
             onChange={(event) => updateCheckoutField("address", event.target.value)}
             placeholder="Dirección de entrega"
             className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
-              fieldErrors.address ? "border-[#d55d3b]" : "border-black/10"
+              fieldErrors.address ? "border-[#e4252c]" : "border-black/10"
             }`}
           />
           {fieldErrors.address ? <span className="text-xs text-[#9b341b]">{fieldErrors.address}</span> : null}
@@ -386,7 +386,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                   setCheckoutMessage("");
                 }}
                 className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-md border px-2 text-xs ${
-                  checkout.paymentMethod === method ? "border-[#246a73] bg-[#e8f3f2]" : "border-black/10"
+                  checkout.paymentMethod === method ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10"
                 }`}
               >
                 <Icon size={17} />
@@ -397,9 +397,9 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           </div>
 
           {checkout.paymentMethod === "Transferencia bancaria" ? (
-            <section className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+            <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
               <div className="flex items-start gap-3">
-                <Banknote size={19} className="mt-0.5 text-[#246a73]" />
+                <Banknote size={19} className="mt-0.5 text-[#e4252c]" />
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
@@ -418,7 +418,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                   }
                   placeholder="Ej. 839201746"
                   className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
-                    fieldErrors.bankTransferReference ? "border-[#d55d3b]" : "border-black/10"
+                    fieldErrors.bankTransferReference ? "border-[#e4252c]" : "border-black/10"
                   }`}
                 />
                 {fieldErrors.bankTransferReference ? (
@@ -473,7 +473,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
               {proofMessage ? (
                 <p
                   className={`mt-2 rounded-md px-3 py-2 text-xs ${
-                    proofFile ? "bg-[#e8f3f2] text-[#1e5960]" : "bg-[#fff0ea] text-[#9b341b]"
+                    proofFile ? "bg-[#fff1f2] text-[#b91c25]" : "bg-[#fff0ea] text-[#9b341b]"
                   }`}
                 >
                   {proofMessage}
@@ -483,9 +483,9 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           ) : null}
 
           {checkout.paymentMethod === "Tarjeta" ? (
-            <section className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+            <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
               <div className="flex items-start gap-3">
-                <CreditCard size={19} className="mt-0.5 text-[#246a73]" />
+                <CreditCard size={19} className="mt-0.5 text-[#e4252c]" />
                 <div>
                   <h2 className="font-semibold">Tarjeta de crédito/débito</h2>
                   <p className="mt-1 text-sm text-black/60">
@@ -501,9 +501,9 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           ) : null}
 
           {checkout.paymentMethod === "Efectivo" ? (
-            <section className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+            <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
               <div className="flex items-start gap-3">
-                <Store size={19} className="mt-0.5 text-[#246a73]" />
+                <Store size={19} className="mt-0.5 text-[#e4252c]" />
                 <div>
                   <h2 className="font-semibold">Pago contra entrega</h2>
                   <p className="mt-1 text-sm text-black/60">
@@ -517,7 +517,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           {checkoutMessage ? (
             <p
               className={`rounded-md p-3 text-sm ${
-                orderNumber ? "bg-[#e8f3f2] text-[#1e5960]" : "bg-[#fff0ea] text-[#9b341b]"
+                orderNumber ? "bg-[#fff1f2] text-[#b91c25]" : "bg-[#fff0ea] text-[#9b341b]"
               }`}
             >
               {checkoutMessage}
@@ -527,7 +527,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           <button
             onClick={submitOrder}
             disabled={!sellsInHonduras || isPending || blocksFirstWholesaleOrder}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
             {isPending ? "Creando pedido..." : "Crear pedido"}
@@ -551,7 +551,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
             </div>
           ) : null}
           {rows.length === 0 ? (
-            <p className="rounded-md bg-[#f7f7f2] p-4 text-sm text-black/55">Agrega productos para continuar.</p>
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-sm text-black/55">Agrega productos para continuar.</p>
           ) : (
             rows.map((item) => (
               <div key={item.product.id} className="flex justify-between gap-3 text-sm">
@@ -564,19 +564,19 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           )}
         </div>
         {wholesaleAccount ? (
-          <p className="mt-4 rounded-md bg-[#f7f7f2] p-3 text-sm text-black/60">
+          <p className="mt-4 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
             Código mayorista: {wholesaleAccount.code}
           </p>
         ) : null}
         {wholesaleAccount && effectiveIsFirstWholesalePurchase ? (
           <p
             className={`mt-3 rounded-md p-3 text-sm ${
-              blocksFirstWholesaleOrder ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#e8f3f2] text-[#1e5960]"
+              blocksFirstWholesaleOrder ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff1f2] text-[#b91c25]"
             }`}
           >
             {blocksFirstWholesaleOrder
-              ? `Primera compra mayorista: minimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el minimo mayorista.`
-              : "Cumples con el minimo para primera compra mayorista."}
+              ? `Primera compra mayorista: mínimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`
+              : "Cumples con el mínimo para primera compra mayorista."}
           </p>
         ) : null}
         <CheckoutTotals
@@ -588,7 +588,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           paymentMethod={checkout.paymentMethod}
         />
         {orderNumber ? (
-          <div className="mt-5 rounded-md bg-[#e8f3f2] p-4 text-sm">
+          <div className="mt-5 rounded-md bg-[#fff1f2] p-4 text-sm">
             <p className="font-semibold">Pedido creado: {orderNumber}</p>
             <p className="mt-1 text-black/60">La factura usará {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}.</p>
           </div>
@@ -597,8 +597,8 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     </section>
     {confirmation ? (
       <div className="fixed inset-0 z-[70] grid place-items-center bg-black/45 px-4 py-6">
-        <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#1c1d1b] shadow-xl">
-          <div className="grid size-12 place-items-center rounded-md bg-[#e8f3f2] text-[#1e5960]">
+        <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
+          <div className="grid size-12 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
             <BadgeCheck size={24} />
           </div>
           <h2 className="mt-4 text-2xl font-semibold">Pedido creado correctamente</h2>
@@ -606,7 +606,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
             Gracias por tu compra. Guarda este código para consultar el estado de tu pedido.
           </p>
 
-          <div className="mt-5 space-y-2 rounded-lg border border-black/10 bg-[#f7f7f2] p-4 text-sm">
+          <div className="mt-5 space-y-2 rounded-lg border border-black/10 bg-[#f4f4f5] p-4 text-sm">
             <InfoRow label="Número de pedido" value={confirmation.orderNumber} />
             <InfoRow label="Código de seguimiento" value={confirmation.trackingCode} strong />
             <InfoRow label="Método de pago" value={confirmation.paymentMethod} />
@@ -628,7 +628,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
             </button>
             <Link
               href={`/rastreo?codigo=${encodeURIComponent(confirmation.trackingCode)}`}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#246a73] px-3 py-2 text-sm font-semibold text-white"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#e4252c] px-3 py-2 text-sm font-semibold text-white"
             >
               <SearchCheck size={16} />
               Ver estado
@@ -681,19 +681,19 @@ function CheckoutTotals({
         <span>{formatCurrency(subtotal)}</span>
       </div>
       <div className="flex justify-between">
-        <span>{hasFreeShipping ? "Envio gratis" : "Envio estandar"}</span>
+        <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>
         <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
       </div>
       {paymentMethod === "Efectivo" && settings.enable_cash_on_delivery_fee ? (
         <div className="flex justify-between">
-          <span>Comision pago al recibir</span>
+          <span>Comisión pago al recibir</span>
           <span>{formatCurrency(cashOnDeliveryFee)}</span>
         </div>
       ) : null}
-      <div className="rounded-md bg-[#f7f7f2] p-3 text-xs text-black/60">
-        <p>El envio es gratis en compras mayores o iguales a {formatCurrency(settings.free_shipping_threshold)}.</p>
-        <p>Para compras menores aplica envio estandar de {formatCurrency(settings.standard_shipping_fee)}.</p>
-        <p>El pago al recibir puede incluir una comision adicional definida por la empresa de entrega.</p>
+      <div className="rounded-md bg-[#f4f4f5] p-3 text-xs text-black/60">
+        <p>El envío es gratis en compras mayores o iguales a {formatCurrency(settings.free_shipping_threshold)}.</p>
+        <p>Para compras menores aplica envío estándar de {formatCurrency(settings.standard_shipping_fee)}.</p>
+        <p>El pago al recibir puede incluir una comisión adicional definida por la empresa de entrega.</p>
       </div>
       <div className="flex justify-between text-lg font-semibold">
         <span>Total a pagar</span>
@@ -702,3 +702,5 @@ function CheckoutTotals({
     </div>
   );
 }
+
+

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CarFront, Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
+import { Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
 import { loginWithEmailAction, registerWithEmailAction, resendConfirmationEmailAction } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,18 +23,18 @@ function safeNextPath(value: string | null) {
 
 function getConfirmationErrorMessage(reason: string | null) {
   if (reason === "expired") {
-    return "El enlace de confirmacion vencio. Solicita uno nuevo.";
+    return "El enlace de confirmación venció. Solicita uno nuevo.";
   }
 
   if (reason === "already_confirmed") {
-    return "Tu correo ya fue confirmado. Puedes iniciar sesion.";
+    return "Tu correo ya fue confirmado. Puedes iniciar sesión.";
   }
 
   if (reason === "missing") {
-    return "El enlace de confirmacion esta incompleto. Solicita uno nuevo.";
+    return "El enlace de confirmación está incompleto. Solicita uno nuevo.";
   }
 
-  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmacion.";
+  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmación.";
 }
 
 export function AuthCard({ mode }: AuthCardProps) {
@@ -60,7 +61,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("confirmed")) {
       return {
-        text: "Correo confirmado correctamente. Ya puedes iniciar sesion.",
+        text: "Correo confirmado correctamente. Ya puedes iniciar sesión.",
         tone: "success" as const,
         canResend: false,
       };
@@ -68,7 +69,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("check_email")) {
       return {
-        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesion.",
+        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
         tone: "info" as const,
         canResend: true,
       };
@@ -89,10 +90,10 @@ export function AuthCard({ mode }: AuthCardProps) {
   const shouldShowConfirmationHelp = showConfirmationHelp || Boolean(queryMessage?.canResend);
   const messageClassName =
     visibleTone === "success"
-      ? "bg-[#e8f3f2] text-[#1e5960]"
+      ? "bg-[#fff1f2] text-[#b91c25]"
       : visibleTone === "error"
         ? "bg-[#fff2ed] text-[#9b341b]"
-        : "bg-[#f7f7f2] text-black/65";
+        : "bg-[#f4f4f5] text-black/65";
 
   useEffect(() => {
     if (!isLogin) {
@@ -161,13 +162,13 @@ export function AuthCard({ mode }: AuthCardProps) {
   }
 
   return (
-    <section className="min-h-screen bg-[#f7f7f2] px-5 py-10 text-[#1c1d1b]">
+    <section className="min-h-screen bg-[#f4f4f5] px-5 py-10 text-[#080808]">
       {loading ? <SystemLoadingScreen fullScreen /> : null}
       <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="space-y-6">
           <div className="flex items-center gap-3">
-            <div className="grid size-12 place-items-center rounded-md bg-[#1c1d1b] text-white">
-              <CarFront size={26} />
+            <div className="grid size-14 place-items-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10">
+              <Image src="/brand/car-zone-logo.jpeg" alt="Car Zone Accesorios" width={96} height={56} className="h-auto w-full object-contain" priority />
             </div>
             <div>
               <p className="text-2xl font-semibold">Car Zone Accesorios</p>
@@ -178,17 +179,17 @@ export function AuthCard({ mode }: AuthCardProps) {
             {isLogin ? "Ingresa al sistema comercial." : "Crea tu cuenta de cliente."}
           </h1>
           <p className="max-w-lg text-black/60">
-            Los roles separan permisos para administracion, ventas, bodega, contabilidad y clientes.
+            Los roles separan permisos para administración, ventas, bodega, contabilidad y clientes.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesion" : "Registro"}</h2>
+            <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesión" : "Registro"}</h2>
             <p className="mt-1 text-sm text-black/55">
               {isLogin
-                ? "Usa tu correo o nombre de usuario y contrasena."
-                : "Te enviaremos un correo para confirmar tu cuenta antes de iniciar sesion."}
+                ? "Usa tu correo o nombre de usuario y contraseña."
+                : "Te enviaremos un correo para confirmar tu cuenta antes de iniciar sesión."}
             </p>
           </div>
 
@@ -216,7 +217,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <Input
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={isLogin ? "Correo o usuario" : "Correo electronico"}
+              placeholder={isLogin ? "Correo o usuario" : "Correo electrónico"}
               type={isLogin ? "text" : "email"}
               autoComplete={isLogin ? "username" : "email"}
               required
@@ -225,7 +226,7 @@ export function AuthCard({ mode }: AuthCardProps) {
               <Input
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                placeholder="Telefono"
+                placeholder="Teléfono"
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
@@ -235,7 +236,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <Input
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Contrasena"
+              placeholder="Contraseña"
               type="password"
               minLength={6}
               autoComplete={isLogin ? "current-password" : "new-password"}
@@ -246,9 +247,9 @@ export function AuthCard({ mode }: AuthCardProps) {
           {visibleMessage ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{visibleMessage}</p> : null}
 
           {isLogin && shouldShowConfirmationHelp ? (
-            <div className="mt-4 rounded-md border border-black/10 bg-[#f7f7f2] p-3">
+            <div className="mt-4 rounded-md border border-black/10 bg-[#f4f4f5] p-3">
               <p className="text-sm text-black/65">
-                Revisa tu bandeja de entrada o spam. Si el enlace vencio o no llego, puedes solicitar uno nuevo.
+                Revisa tu bandeja de entrada o spam. Si el enlace venció o no llegó, puedes solicitar uno nuevo.
               </p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <Button
@@ -259,7 +260,7 @@ export function AuthCard({ mode }: AuthCardProps) {
                   onClick={handleResendConfirmation}
                 >
                   {resending ? <Loader2 className="animate-spin" size={17} /> : <MailCheck size={17} />}
-                  {resending ? "Enviando..." : "Reenviar confirmacion"}
+                  {resending ? "Enviando..." : "Reenviar confirmación"}
                 </Button>
                 <Button
                   type="button"
@@ -283,9 +284,9 @@ export function AuthCard({ mode }: AuthCardProps) {
           </Button>
 
           <p className="mt-4 text-center text-sm text-black/55">
-            {isLogin ? "No tienes cuenta?" : "Ya tienes cuenta?"}{" "}
-            <Link className="font-medium text-[#246a73]" href={isLogin ? "/registro" : "/login"}>
-              {isLogin ? "Registrate" : "Inicia sesion"}
+            {isLogin ? "¿No tienes cuenta?" : "¿Ya tienes cuenta?"}{" "}
+            <Link className="font-medium text-[#e4252c]" href={isLogin ? "/registro" : "/login"}>
+              {isLogin ? "Regístrate" : "Inicia sesión"}
             </Link>
           </p>
         </form>
@@ -293,3 +294,4 @@ export function AuthCard({ mode }: AuthCardProps) {
     </section>
   );
 }
+

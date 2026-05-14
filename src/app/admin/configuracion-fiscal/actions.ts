@@ -50,7 +50,7 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
   await requirePermission("settings:manage");
 
   if (input.cash_on_delivery_percentage > 100) {
-    return { ok: false, message: "La comision por pago al recibir no puede ser mayor a 100%." };
+    return { ok: false, message: "La comisión por pago al recibir no puede ser mayor a 100%." };
   }
 
   const previousSettings = await getAdminCompanySettings();
@@ -71,7 +71,7 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
   revalidatePath("/checkout");
   revalidatePath("/");
 
-  return { ok: true, message: "Configuracion comercial guardada correctamente." };
+  return { ok: true, message: "Configuración comercial guardada correctamente." };
 }
 
 function notificationSettingsChanges(previous: NotificationSettings, next: NotificationSettings) {
@@ -158,3 +158,4 @@ export async function saveNotificationSettingsAction(input: NotificationSettings
 
   return { ok: true, message: "Configuración de notificaciones guardada correctamente." };
 }
+

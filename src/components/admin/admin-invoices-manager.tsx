@@ -123,8 +123,8 @@ export function AdminInvoicesManager({
       "Referencia bancaria",
       "Subtotal",
       "ISV",
-      "Envio",
-      "Comision entrega",
+      "Envío",
+      "Comisión entrega",
       "Total",
       "Estado",
     ];
@@ -181,15 +181,15 @@ export function AdminInvoicesManager({
         formatCurrency(item.line_total),
       ]),
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [36, 106, 115] },
+      headStyles: { fillColor: [228, 37, 44] },
     });
     const finalY = getLastAutoTableY(doc);
     doc.text(`Subtotal: ${formatCurrency(invoice.subtotal)}`, 140, finalY + 10);
     doc.text(`ISV: ${formatCurrency(invoice.tax)}`, 140, finalY + 16);
-    doc.text(`Envio: ${formatCurrency(invoice.shipping_fee)}`, 140, finalY + 22);
-    doc.text(`Comision entrega: ${formatCurrency(invoice.cash_on_delivery_fee)}`, 140, finalY + 28);
+    doc.text(`Envío: ${formatCurrency(invoice.shipping_fee)}`, 140, finalY + 22);
+    doc.text(`Comisión entrega: ${formatCurrency(invoice.cash_on_delivery_fee)}`, 140, finalY + 28);
     doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 34);
-    doc.text("Validar tratamiento fiscal de envio y comision con la contadora.", 14, finalY + 34);
+    doc.text("Validar tratamiento fiscal de envío y comisión con la contadora.", 14, finalY + 34);
     doc.save(`${invoice.invoice_number}.pdf`);
   }
 
@@ -209,7 +209,7 @@ export function AdminInvoicesManager({
 
   async function cancelInvoice(invoice: AdminInvoiceRow) {
     const confirmed = await toast.confirm({
-      title: "Confirmar anulacion",
+      title: "Confirmar anulación",
       message: `¿Anular la factura ${invoice.invoice_number}? Esta acción quedará registrada.`,
       confirmLabel: "Anular factura",
       cancelLabel: "Cancelar",
@@ -309,7 +309,7 @@ export function AdminInvoicesManager({
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1180px] text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">Factura</th>
                 <th className="px-4 py-3">Cliente</th>
@@ -319,8 +319,8 @@ export function AdminInvoicesManager({
                 <th className="px-4 py-3">Referencia bancaria</th>
                 <th className="px-4 py-3">Subtotal</th>
                 <th className="px-4 py-3">ISV</th>
-                <th className="px-4 py-3">Envio</th>
-                <th className="px-4 py-3">Comision</th>
+                <th className="px-4 py-3">Envío</th>
+                <th className="px-4 py-3">Comisión</th>
                 <th className="px-4 py-3">Total</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
@@ -420,7 +420,7 @@ function InvoiceModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-8 max-w-4xl rounded-lg bg-white p-5 text-[#1c1d1b]">
+      <section className="mx-auto my-8 max-w-4xl rounded-lg bg-white p-5 text-[#080808]">
         <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="text-sm text-black/50">{fiscalSettings.legal_name || "Car Zone Accesorios"}</p>
@@ -443,7 +443,7 @@ function InvoiceModal({
           <Info label="Dirección" value={invoice.customer_address ?? "-"} />
           <Info label="Método de pago" value={paymentLabels[invoice.payment_method] ?? invoice.payment_method} />
           <Info label="Referencia bancaria" value={invoice.bank_reference_number ?? "-"} />
-          <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+          <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
             <p className="text-sm text-black/50">Comprobante interno</p>
             {invoice.transfer_receipt_url ? (
               <a
@@ -464,7 +464,7 @@ function InvoiceModal({
         </div>
 
         {canCorrectInvoices ? (
-          <section className="mt-5 rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+          <section className="mt-5 rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
             <h3 className="font-semibold">Corregir datos del cliente</h3>
             <p className="mt-1 text-sm text-black/55">
               No cambia número fiscal, CAI, rango, fecha original, productos ni totales.
@@ -508,7 +508,7 @@ function InvoiceModal({
 
         <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
           <table className="w-full text-left text-sm">
-            <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">SKU</th>
                 <th className="px-4 py-3">Producto</th>
@@ -532,14 +532,14 @@ function InvoiceModal({
         </div>
 
         <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-          Validar tratamiento fiscal de envio y comision con la contadora.
+          Validar tratamiento fiscal de envío y comisión con la contadora.
         </p>
 
         <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
           <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
           <p>ISV: {formatCurrency(invoice.tax)}</p>
-          <p>Envio: {formatCurrency(invoice.shipping_fee)}</p>
-          <p>Comision: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
+          <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
+          <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
         </div>
       </section>
@@ -549,7 +549,7 @@ function InvoiceModal({
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+    <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
@@ -583,9 +583,11 @@ function IconButton({
       title={label}
       aria-label={label}
       disabled={disabled}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f7f7f2] disabled:cursor-not-allowed disabled:opacity-40"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
   );
 }
+
+

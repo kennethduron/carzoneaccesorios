@@ -22,7 +22,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   }, [error, pathname]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#f7f7f2] px-5 text-[#1c1d1b]">
+    <main className="grid min-h-screen place-items-center bg-[#f4f4f5] px-5 text-[#080808]">
       <section className="w-full max-w-lg rounded-lg border border-black/10 bg-white p-6 text-center">
         <AlertTriangle className="mx-auto text-[#9b341b]" size={36} />
         <h1 className="mt-4 text-2xl font-semibold">No pudimos cargar esta vista</h1>
@@ -37,3 +37,6 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
     </main>
   );
 }
+
+
+

@@ -122,7 +122,7 @@ export default async function AdminPage() {
             <Link
               key={module.title}
               href={module.href}
-              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#246a73]"
+              className="rounded-lg border border-black/10 bg-white p-5 transition-colors hover:border-[#e4252c]"
             >
               <h2 className="font-semibold">{module.title}</h2>
               <p className="mt-2 text-sm text-black/55">{module.description}</p>
@@ -132,3 +132,5 @@ export default async function AdminPage() {
     </AdminShell>
   );
 }
+
+

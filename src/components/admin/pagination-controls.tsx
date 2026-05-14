@@ -36,16 +36,16 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-black/10 bg-white p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
       <p className="text-black/60">
-        Mostrando <span className="font-semibold text-[#1c1d1b]">{firstItem.toLocaleString("es-HN")}</span>-
-        <span className="font-semibold text-[#1c1d1b]">{lastItem.toLocaleString("es-HN")}</span> de{" "}
-        <span className="font-semibold text-[#1c1d1b]">{total.toLocaleString("es-HN")}</span> {label}.
+        Mostrando <span className="font-semibold text-[#080808]">{firstItem.toLocaleString("es-HN")}</span>-
+        <span className="font-semibold text-[#080808]">{lastItem.toLocaleString("es-HN")}</span> de{" "}
+        <span className="font-semibold text-[#080808]">{total.toLocaleString("es-HN")}</span> {label}.
       </p>
       <div className="flex items-center gap-2">
         <Link
           href={buildHref(page - 1)}
           aria-disabled={page <= 1}
           className={`rounded-md border border-black/10 px-4 py-2 font-medium ${
-            page <= 1 ? "pointer-events-none bg-[#f7f7f2] text-black/35" : "bg-white text-[#1c1d1b] hover:bg-[#f7f7f2]"
+            page <= 1 ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >
           Anterior
@@ -57,7 +57,7 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
           href={buildHref(page + 1)}
           aria-disabled={page >= totalPages}
           className={`rounded-md border border-black/10 px-4 py-2 font-medium ${
-            page >= totalPages ? "pointer-events-none bg-[#f7f7f2] text-black/35" : "bg-white text-[#1c1d1b] hover:bg-[#f7f7f2]"
+            page >= totalPages ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >
           Siguiente
@@ -66,3 +66,5 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
     </div>
   );
 }
+
+

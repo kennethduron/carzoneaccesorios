@@ -1,4 +1,4 @@
-import { CarFront } from "lucide-react";
+import Image from "next/image";
 
 type AdminRouteLoadingProps = {
   title: string;
@@ -8,8 +8,14 @@ type AdminRouteLoadingProps = {
 function BrandMark() {
   return (
     <div className="flex items-center gap-3">
-      <div className="grid size-11 place-items-center rounded-md bg-[#1c1d1b] text-white">
-        <CarFront size={23} strokeWidth={1.8} />
+      <div className="relative h-11 w-[136px] shrink-0">
+        <Image
+          src="/brand/car-zone-logo-nav.png"
+          alt="Car Zone Accesorios"
+          fill
+          sizes="136px"
+          className="object-contain object-left"
+        />
       </div>
       <div>
         <p className="font-semibold">Car Zone Accesorios</p>
@@ -121,7 +127,7 @@ function AdminCrmSkeleton() {
 
 export function AdminRouteLoading({ title, variant = "table" }: AdminRouteLoadingProps) {
   return (
-    <section className="min-h-screen bg-[#f7f7f2] px-5 py-6 text-[#1c1d1b]">
+    <section className="min-h-screen bg-[#f4f4f5] px-5 py-6 text-[#080808]">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
@@ -171,7 +177,7 @@ export function AdminRouteLoading({ title, variant = "table" }: AdminRouteLoadin
 
 export function CatalogRouteLoading() {
   return (
-    <section className="min-h-screen bg-[#f7f7f2] px-5 py-8 text-[#1c1d1b]">
+    <section className="min-h-screen bg-[#f4f4f5] px-5 py-8 text-[#080808]">
       <div className="mx-auto max-w-7xl">
         <BrandMark />
         <div className="mt-8 grid gap-5 lg:grid-cols-[260px_1fr]">
@@ -200,7 +206,7 @@ export function CatalogRouteLoading() {
 
 export function CheckoutRouteLoading({ mode }: { mode: "cart" | "checkout" }) {
   return (
-    <section className="min-h-screen bg-[#f7f7f2] px-5 py-8 text-[#1c1d1b]">
+    <section className="min-h-screen bg-[#f4f4f5] px-5 py-8 text-[#080808]">
       <div className="mx-auto max-w-7xl">
         <BrandMark />
         <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
@@ -230,3 +236,5 @@ export function CheckoutRouteLoading({ mode }: { mode: "cart" | "checkout" }) {
     </section>
   );
 }
+
+

@@ -240,3 +240,4 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     bankReference: null,
   };
 }
+

@@ -101,19 +101,19 @@ function revalidateProductCatalog(slug?: string | null) {
 
 function friendlyProductError(message: string) {
   if (message.includes("products_internal_code_key")) {
-    return "El codigo proveedor/OEM ya esta usado por otro producto. Usa otro codigo o dejalo vacio.";
+    return "El código proveedor/OEM ya está usado por otro producto. Usa otro código o déjalo vacío.";
   }
 
   if (message.includes("products_sku_key")) {
-    return "El SKU ya esta usado por otro producto. Usa un SKU diferente.";
+    return "El SKU ya está usado por otro producto. Usa un SKU diferente.";
   }
 
   if (message.includes("products_slug_key")) {
-    return "La URL amigable ya esta usada por otro producto. Edita el slug en opciones avanzadas.";
+    return "La URL amigable ya está usada por otro producto. Edita el slug en opciones avanzadas.";
   }
 
   if (message.toLowerCase().includes("duplicate key")) {
-    return "Ya existe un registro con un dato unico repetido. Revisa SKU, codigo proveedor/OEM o URL amigable.";
+    return "Ya existe un registro con un dato único repetido. Revisa SKU, código proveedor/OEM o URL amigable.";
   }
 
   return message;

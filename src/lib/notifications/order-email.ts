@@ -109,9 +109,9 @@ function buildEmailHtml(order: OrderNotificationRow) {
   const products = (order.order_items ?? []).slice(0, 5);
 
   return `
-    <div style="margin:0;background:#f7f7f2;padding:32px;font-family:Arial,sans-serif;color:#1c1d1b;">
+    <div style="margin:0;background:#f4f4f5;padding:32px;font-family:Arial,sans-serif;color:#080808;">
       <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e4e1d8;border-radius:8px;padding:28px;">
-        <p style="margin:0 0 8px;color:#246a73;font-size:13px;font-weight:700;text-transform:uppercase;">Car Zone Accesorios</p>
+        <p style="margin:0 0 8px;color:#e4252c;font-size:13px;font-weight:700;text-transform:uppercase;">Car Zone Accesorios</p>
         <h1 style="margin:0 0 18px;font-size:26px;line-height:1.2;">Nuevo pedido recibido</h1>
         <p style="margin:0 0 22px;color:#555;">Ingresa al panel administrativo para revisar el pedido, contactar al cliente y continuar con la preparación.</p>
 
@@ -126,7 +126,7 @@ function buildEmailHtml(order: OrderNotificationRow) {
           ${row("Fecha y hora", formatDate(order.created_at))}
         </table>
 
-        <div style="margin-top:22px;padding:16px;border-radius:8px;background:#f7f7f2;">
+        <div style="margin-top:22px;padding:16px;border-radius:8px;background:#f4f4f5;">
           <p style="margin:0 0 10px;font-weight:700;">Productos principales</p>
           <ul style="margin:0;padding-left:18px;color:#444;">
             ${
@@ -145,8 +145,8 @@ function buildEmailHtml(order: OrderNotificationRow) {
         </div>
 
         <div style="margin-top:24px;">
-          <a href="${crmUrl}" style="display:inline-block;margin:0 8px 10px 0;background:#246a73;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Ver pedido en CRM</a>
-          <a href="${adminUrl}" style="display:inline-block;margin:0 0 10px 0;background:#1c1d1b;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Ver pedido en admin</a>
+          <a href="${crmUrl}" style="display:inline-block;margin:0 8px 10px 0;background:#e4252c;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Ver pedido en CRM</a>
+          <a href="${adminUrl}" style="display:inline-block;margin:0 0 10px 0;background:#080808;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Ver pedido en admin</a>
         </div>
       </div>
     </div>
@@ -347,3 +347,6 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
     }),
   );
 }
+
+
+

@@ -137,12 +137,12 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             value={code}
             onChange={(event) => setCode(event.target.value)}
             placeholder="Ej. TRK-CZ-8392-ABCD"
-            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#246a73]"
+            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
           />
         </label>
         <button
           disabled={isPending}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
         >
           <Search size={17} />
           {isPending ? "Consultando..." : "Consultar pedido"}
@@ -174,14 +174,14 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
           <div className="mt-5 space-y-3">
             {progressSteps.map((step, index) => (
               <div key={step.key} className="flex items-center gap-3">
-                <span className={`size-3 rounded-full ${index <= progressIndex ? "bg-[#246a73]" : "bg-black/15"}`} />
+                <span className={`size-3 rounded-full ${index <= progressIndex ? "bg-[#e4252c]" : "bg-black/15"}`} />
                 <span className={index <= progressIndex ? "font-medium" : "text-black/45"}>{step.label}</span>
               </div>
             ))}
           </div>
 
           <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
-            <div className="bg-[#f0ede2] px-4 py-3 text-sm font-semibold">Productos comprados</div>
+            <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos comprados</div>
             <div className="divide-y divide-black/10">
               {order.items.map((item) => (
                 <div key={`${item.sku}-${item.product_name}`} className="flex justify-between gap-3 p-4 text-sm">
@@ -201,9 +201,11 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-4">
+    <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
 }
+
+

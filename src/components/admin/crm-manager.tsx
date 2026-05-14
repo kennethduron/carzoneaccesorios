@@ -20,6 +20,7 @@ import {
 import {
   approveWholesaleRequestAction,
   deleteTestAccountAction,
+  mergeDuplicateCustomerAction,
   saveCrmFollowupAction,
   saveCrmLeadAction,
   saveCrmNoteAction,
@@ -34,12 +35,15 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type {
   AdminCrmData,
   CrmCustomerOption,
+  CrmDuplicateCandidate,
+  CrmDuplicateGroup,
   CrmFollowupInput,
   CrmFollowupRow,
   CrmInteractionType,
   CrmLeadInput,
   CrmLeadStatus,
   CrmNoteInput,
+  CrmNoteRow,
   CrmPriority,
 } from "@/types/crm";
 import { formatHnDateTime } from "@/utils/format";
@@ -51,12 +55,21 @@ type CrmManagerProps = {
   focus?: "customers" | "followups";
 };
 
+type CustomerFilter = "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
+
+type DuplicateMergeRequest = {
+  source: CrmDuplicateCandidate;
+  target: CrmDuplicateCandidate;
+};
+
 const interactionLabels: Record<CrmInteractionType, string> = {
   seguimiento: "Seguimiento",
   llamada: "Llamada",
   nota: "Nota",
-  reunion: "Reunion",
+  reunion: "Reunión",
   prospecto: "Prospecto",
+  contacto_general: "Contacto general",
+  solicitud_mayorista: "Solicitud mayorista",
 };
 
 const priorityLabels: Record<CrmPriority, string> = {
@@ -72,6 +85,15 @@ const leadStatusLabels: Record<CrmLeadStatus, string> = {
   calificado: "Calificado",
   cliente: "Cliente",
   perdido: "Perdido",
+};
+
+const customerFilterLabels: Record<CustomerFilter, string> = {
+  all: "Todos",
+  active: "Clientes activos",
+  prospects: "Prospectos",
+  wholesale: "Mayoristas",
+  wholesale_requests: "Solicitudes mayoristas",
+  suspended: "Suspendidos",
 };
 
 const emptyLead: CrmLeadInput = {
@@ -130,9 +152,11 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const [note, setNote] = useState<CrmNoteInput>(emptyNote);
   const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
+  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>("all");
   const [openLeadForm, setOpenLeadForm] = useState(false);
   const [openFollowupForm, setOpenFollowupForm] = useState(false);
   const [openNoteForm, setOpenNoteForm] = useState(false);
+  const [mergeRequest, setMergeRequest] = useState<DuplicateMergeRequest | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -151,7 +175,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }, [data.followups, debouncedQuery]);
 
-  const filteredCustomers = useMemo(() => {
+  const searchedCustomers = useMemo(() => {
     const normalized = debouncedQuery.trim().toLowerCase();
     return data.customers.filter((customer) => {
       if (!normalized) {
@@ -164,6 +188,30 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     });
   }, [data.customers, debouncedQuery]);
 
+  const filteredCustomers = useMemo(
+    () =>
+      searchedCustomers.filter((customer) => {
+        if (customerFilter === "active") {
+          return customer.account_state === "Cliente activo" || (customer.active && customer.status === "active");
+        }
+        if (customerFilter === "prospects") {
+          return customer.lead_status !== "cliente" && !customer.has_wholesale_request;
+        }
+        if (customerFilter === "wholesale") {
+          return customer.is_wholesale;
+        }
+        if (customerFilter === "wholesale_requests") {
+          return customer.has_wholesale_request && !customer.is_wholesale;
+        }
+        if (customerFilter === "suspended") {
+          return customer.account_state === "Cuenta suspendida" || !customer.active || customer.status === "disabled";
+        }
+
+        return true;
+      }),
+    [customerFilter, searchedCustomers],
+  );
+
   const pendingFollowups = data.followups.filter((item) => item.status === "pending");
   const overdueCount = data.followups.filter(isOverdue).length;
   const prospects = data.customers.filter((customer) => customer.lead_status !== "cliente");
@@ -172,6 +220,10 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const selectedCustomer = filteredCustomers.find((customer) => customer.id === selectedCustomerId) ?? filteredCustomers[0] ?? data.customers[0] ?? null;
   const selectedFollowup =
     data.followups.find((item) => item.id === selectedFollowupId) ?? filteredFollowups[0] ?? data.followups[0] ?? null;
+  const selectedCustomerNotes = selectedCustomer ? data.notes.filter((item) => item.customer_id === selectedCustomer.id).slice(0, 5) : [];
+  const selectedCustomerFollowups = selectedCustomer
+    ? data.followups.filter((item) => item.customer_id === selectedCustomer.id).slice(0, 5)
+    : [];
 
   function updateLead<K extends keyof CrmLeadInput>(field: K, value: CrmLeadInput[K]) {
     setLead((current) => ({ ...current, [field]: value }));
@@ -256,7 +308,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   async function suspendCustomer(customer: CrmCustomerOption) {
     const confirmed = await toast.confirm({
       title: "Suspender cliente",
-      message: `Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`,
+      message: `¿Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`,
       confirmLabel: "Suspender",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -287,7 +339,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     const confirmed = await toast.confirm({
       title: "Eliminar cuenta TEST",
       message:
-        "Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales. Confirmacion requerida: ELIMINAR TEST.",
+        "Esta acción eliminará la cuenta TEST y sus datos relacionados. No usar con clientes reales. Confirmación requerida: ELIMINAR TEST.",
       confirmLabel: "ELIMINAR TEST",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -304,6 +356,28 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         toast.success(result.message || "Cuenta TEST eliminada correctamente.");
       } else {
         toast.error(result.message || "No se pudo eliminar la cuenta TEST.");
+      }
+    });
+  }
+
+  function requestDuplicateMerge(source: CrmDuplicateCandidate, target: CrmDuplicateCandidate) {
+    setMergeRequest({ source, target });
+  }
+
+  function confirmDuplicateMerge() {
+    if (!mergeRequest) {
+      return;
+    }
+
+    const { source, target } = mergeRequest;
+    startTransition(async () => {
+      const result = await mergeDuplicateCustomerAction({ sourceCustomerId: source.id, targetCustomerId: target.id });
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Cliente duplicado unificado correctamente. El historial fue movido al perfil principal.");
+        setMergeRequest(null);
+      } else {
+        toast.error(result.message || "No se pudo unificar el cliente duplicado.");
       }
     });
   }
@@ -325,6 +399,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         <Metric label="Solicitudes mayoreo" value={wholesaleRequests.length.toLocaleString("es-HN")} />
       </div>
 
+      {focus !== "customers" ? (
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -349,6 +424,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </div>
         </div>
       </section>
+      ) : null}
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
@@ -362,12 +438,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
             />
           </label>
           <p className="text-sm text-black/55">
-            Pipeline estimado: <span className="font-semibold text-[#1c1d1b]">{formatCurrency(estimatedPipeline)}</span>
+            Pipeline estimado: <span className="font-semibold text-[#080808]">{formatCurrency(estimatedPipeline)}</span>
           </p>
         </div>
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
 
+      {focus !== "customers" ? (
       <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <div className={`rounded-lg border border-black/10 bg-white p-5 ${openLeadForm ? "" : "hidden"}`}>
           <div className="mb-4 flex items-center gap-2">
@@ -532,18 +609,38 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </Button>
         </div>
       </section>
-
-      {focus === "customers" ? (
-        <CustomerAccountsTable
-          customers={filteredCustomers}
-          pending={isPending}
-          onSelect={(customerId) => setSelectedCustomerId(customerId)}
-          onApproveWholesale={approveWholesaleCustomer}
-          onSuspend={suspendCustomer}
-          onDeleteTest={deleteTestCustomer}
-        />
       ) : null}
 
+      {focus === "customers" ? (
+        <div className="space-y-5">
+          <CustomerFilterTabs value={customerFilter} onChange={setCustomerFilter} />
+          <CustomerAccountsTable
+            customers={filteredCustomers}
+            pending={isPending}
+            onSelect={(customerId) => setSelectedCustomerId(customerId)}
+            onApproveWholesale={approveWholesaleCustomer}
+            onSuspend={suspendCustomer}
+            onDeleteTest={deleteTestCustomer}
+          />
+          <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+            <CustomerDetailCard
+              customer={selectedCustomer}
+              pending={isPending}
+              notes={selectedCustomerNotes}
+              followups={selectedCustomerFollowups}
+              onApproveWholesale={approveWholesaleCustomer}
+              onSuspend={suspendCustomer}
+              onDeleteTest={deleteTestCustomer}
+            />
+            <div className="space-y-5">
+              <DuplicateGroupsPanel groups={data.duplicateGroups} pending={isPending} onMerge={requestDuplicateMerge} />
+              <RecentNotesCard notes={data.notes} />
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {focus !== "customers" ? (
       <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
         <div className="overflow-hidden rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-5">
@@ -554,7 +651,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-sm">
-              <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+              <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                 <tr>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Actividad</th>
@@ -563,7 +660,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                   <th className="px-4 py-3">Prioridad</th>
                   <th className="px-4 py-3">Valor</th>
                   <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3 text-right">Acciónes</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/10">
@@ -587,7 +684,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                       {formatDateTime(item.due_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs">{priorityLabels[item.priority]}</span>
+                      <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{priorityLabels[item.priority]}</span>
                     </td>
                     <td className="px-4 py-3">
                       <p>{formatCurrency(item.estimated_value)}</p>
@@ -618,6 +715,8 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           <CustomerDetailCard
             customer={selectedCustomer}
             pending={isPending}
+            notes={selectedCustomerNotes}
+            followups={selectedCustomerFollowups}
             onApproveWholesale={approveWholesaleCustomer}
             onSuspend={suspendCustomer}
             onDeleteTest={deleteTestCustomer}
@@ -635,13 +734,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                   <article
                     key={customer.id}
                     className={`rounded-md p-3 text-sm transition-colors ${
-                      selectedCustomer?.id === customer.id ? "bg-[#e8f3f2]" : "bg-[#f7f7f2]"
+                      selectedCustomer?.id === customer.id ? "bg-[#fff1f2]" : "bg-[#f4f4f5]"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold">{customerDisplayName(customer)}</p>
-                        <p className="mt-1 text-xs text-black/45">{customer.phone || "Sin telefono"}</p>
+                        <p className="mt-1 text-xs text-black/45">{customer.phone || "Sin teléfono"}</p>
                       </div>
                       <button
                         type="button"
@@ -696,7 +795,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                 <p className="text-sm text-black/55">No hay notas registradas.</p>
               ) : (
                 data.notes.slice(0, 8).map((item) => (
-                  <article key={item.id} className="rounded-md bg-[#f7f7f2] p-3 text-sm">
+                  <article key={item.id} className="rounded-md bg-[#f4f4f5] p-3 text-sm">
                     <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
                     <p className="mt-1 text-black/60">{item.note}</p>
                     <p className="mt-2 text-xs text-black/45">{formatDateTime(item.created_at)}</p>
@@ -707,6 +806,222 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </div>
         </div>
       </section>
+      ) : null}
+      {mergeRequest ? (
+        <DuplicateMergeConfirmModal
+          request={mergeRequest}
+          pending={isPending}
+          onCancel={() => setMergeRequest(null)}
+          onConfirm={confirmDuplicateMerge}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function CustomerFilterTabs({ value, onChange }: { value: CustomerFilter; onChange: (value: CustomerFilter) => void }) {
+  return (
+    <section className="rounded-lg border border-black/10 bg-white p-4">
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(customerFilterLabels).map(([filter, label]) => {
+          const active = value === filter;
+          return (
+            <button
+              key={filter}
+              type="button"
+              onClick={() => onChange(filter as CustomerFilter)}
+              className={`rounded-md border px-3 py-2 text-sm font-medium ${
+                active ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white text-black/60"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DuplicateGroupsPanel({
+  groups,
+  pending,
+  onMerge,
+}: {
+  groups: CrmDuplicateGroup[];
+  pending: boolean;
+  onMerge: (source: CrmDuplicateCandidate, target: CrmDuplicateCandidate) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visibleGroups = showAll ? groups : groups.slice(0, 5);
+
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Posibles clientes duplicados</h2>
+          <p className="mt-1 text-sm text-black/55">
+            El sistema encontró clientes que podrían ser la misma persona por correo o teléfono.
+          </p>
+        </div>
+        {groups.length > 5 ? (
+          <button
+            type="button"
+            onClick={() => setShowAll((value) => !value)}
+            className="rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5]"
+          >
+            {showAll ? "Ver menos" : "Ver todos los duplicados"}
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-1 text-sm text-black/55">
+        Detectamos posibles registros duplicados del mismo cliente. Puedes unirlos para mantener un solo historial de pedidos, notas y seguimientos.
+      </p>
+      <details className="mt-3 rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm text-black/65">
+        <summary className="cursor-pointer font-semibold text-[#080808]">¿Qué significa unificar?</summary>
+        <p className="mt-2">
+          Unificar mueve el historial de un registro duplicado hacia el cliente principal para que el equipo vea toda la información en un solo perfil.
+        </p>
+      </details>
+      <div className="mt-4 space-y-3">
+        {groups.length === 0 ? (
+          <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/55">No se encontraron posibles duplicados.</p>
+        ) : (
+          visibleGroups.map((group) => {
+            const target = group.customers[0];
+            const duplicates = group.customers.slice(1);
+
+            return (
+              <article key={group.key} className="rounded-lg border border-black/10 bg-[#f4f4f5] p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">
+                      Coincidencia por {group.match_type === "email" ? "correo" : "teléfono"}: {group.label}
+                    </p>
+                    <p className="mt-1 text-xs text-black/50">Revisa cuál registro debe quedar como principal antes de unificar.</p>
+                  </div>
+                  <span className="rounded-md bg-white px-2 py-1 text-xs">{group.customers.length} registros</span>
+                </div>
+
+                <div className="mt-3 rounded-md bg-white p-3">
+                  <p className="text-xs font-semibold uppercase text-black/50">Cliente principal</p>
+                  <DuplicateCustomerSummary customer={target} />
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase text-black/50">Duplicados sugeridos</p>
+                  {duplicates.map((customer) => (
+                    <div key={customer.id} className="rounded-md bg-white p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <DuplicateCustomerSummary customer={customer} />
+                        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={pending || !customer.can_merge}
+                            onClick={() => onMerge(customer, target)}
+                          >
+                            Unir con principal
+                          </Button>
+                          {!customer.can_merge ? (
+                            <p className="max-w-48 text-xs text-[#7c2d12]">Tiene historial fiscal; requiere revisión manual.</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {duplicates.length === 0 ? <p className="text-xs text-black/50">No hay registros sugeridos para unir.</p> : null}
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DuplicateCustomerSummary({ customer }: { customer: CrmDuplicateCandidate }) {
+  return (
+    <div>
+      <p className="font-semibold">{customer.display_name}</p>
+      <p className="mt-1 text-xs text-black/45">{customer.email ?? "Sin correo"}</p>
+      <p className="text-xs text-black/45">{customer.phone ?? "Sin teléfono"}</p>
+      <p className="mt-2 text-xs text-black/50">
+        Pedidos: {customer.order_count.toLocaleString("es-HN")} · Facturas: {customer.invoice_count.toLocaleString("es-HN")}
+      </p>
+    </div>
+  );
+}
+
+function DuplicateMergeConfirmModal({
+  request,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  request: DuplicateMergeRequest;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/45 px-4 py-6">
+      <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
+        <h2 className="text-xl font-semibold">Unificar cliente duplicado</h2>
+        <p className="mt-2 text-sm leading-6 text-black/65">
+          Este registro se unirá al cliente principal. Sus pedidos, notas, seguimientos y códigos mayoristas se moverán al perfil principal.
+          No se eliminarán facturas ni historial fiscal.
+        </p>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-[#e4252c]/25 bg-[#fff1f2] p-4">
+            <p className="text-xs font-semibold uppercase text-[#b91c25]">Cliente principal</p>
+            <DuplicateCustomerSummary customer={request.target} />
+            <p className="mt-3 text-xs text-black/55">Este será el perfil que conservará el historial unificado.</p>
+          </div>
+          <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
+            <p className="text-xs font-semibold uppercase text-black/50">Registro duplicado</p>
+            <DuplicateCustomerSummary customer={request.source} />
+            <p className="mt-3 text-xs text-black/55">Este registro quedará inactivo después de mover su historial.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-md border border-[#f59e0b]/30 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          Si el registro duplicado tiene facturas, el backend bloquea la unificación automática para proteger el historial fiscal.
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button type="button" variant="dark" disabled={pending} onClick={onConfirm}>
+            {pending ? "Unificando..." : "Unificar cliente"}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RecentNotesCard({ notes }: { notes: CrmNoteRow[] }) {
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-5">
+      <h2 className="font-semibold">Notas recientes</h2>
+      <p className="mt-1 text-sm text-black/55">Vista compacta. El detalle del cliente muestra su historial relacionado.</p>
+      <div className="mt-4 space-y-3">
+        {notes.length === 0 ? (
+          <p className="text-sm text-black/55">No hay notas registradas.</p>
+        ) : (
+          notes.slice(0, 5).map((item) => (
+            <article key={item.id} className="rounded-md bg-[#f4f4f5] p-3 text-sm">
+              <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
+              <p className="mt-1 line-clamp-2 text-black/60">{item.note}</p>
+              <p className="mt-2 text-xs text-black/45">{formatDateTime(item.created_at)}</p>
+            </article>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -714,12 +1029,16 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
 function CustomerDetailCard({
   customer,
   pending,
+  notes,
+  followups,
   onApproveWholesale,
   onSuspend,
   onDeleteTest,
 }: {
   customer: CrmCustomerOption | null;
   pending: boolean;
+  notes: CrmNoteRow[];
+  followups: CrmFollowupRow[];
   onApproveWholesale: (customerId: string) => void;
   onSuspend: (customer: CrmCustomerOption) => void;
   onDeleteTest: (customer: CrmCustomerOption) => void;
@@ -728,7 +1047,10 @@ function CustomerDetailCard({
 
   return (
     <div className="rounded-lg border border-black/10 bg-white p-5">
-      <h2 className="font-semibold">Detalle del cliente</h2>
+      <div>
+        <p className="text-xs font-semibold uppercase text-[#e4252c]">Detalle completo</p>
+        <h2 className="mt-1 font-semibold">Perfil completo del cliente</h2>
+      </div>
       {customer ? (
         <div className="mt-4 space-y-3 text-sm">
           <div>
@@ -736,23 +1058,68 @@ function CustomerDetailCard({
             <p className="text-xs text-black/45">{customer.email ?? "Sin correo registrado"}</p>
           </div>
           <InfoLine label="Teléfono" value={customer.phone || "Sin teléfono"} />
+          <InfoLine label="Tipo de cliente" value={customer.customer_type === "Retail" ? "Cliente al detalle" : "Mayorista"} />
           <InfoLine label="Estado CRM" value={leadStatusLabels[customer.lead_status]} />
           <InfoLine label="Estado de cuenta" value={customer.account_state} />
-          <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Si" : customer.user_id ? "No" : "Sin cuenta"} />
+          <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} />
           <InfoLine label="Pedidos" value={customer.order_count.toLocaleString("es-HN")} />
+          <InfoLine label="Facturas" value={customer.invoice_count.toLocaleString("es-HN")} />
+          <InfoLine label="Códigos mayoristas" value={customer.wholesale_code_count.toLocaleString("es-HN")} />
+          <InfoLine label="Total comprado" value={formatCurrency(customer.total_spent)} />
           <InfoLine label="Registro" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
-          <InfoLine label="Ultima actividad" value={formatDateTime(customer.last_activity_at)} />
-          <InfoLine label="Mayorista" value={customer.is_wholesale ? `Si, estado ${customer.status}` : isWholesaleRequest ? "Solicitud pendiente" : "No"} />
+          <InfoLine label="Última actividad" value={formatDateTime(customer.last_activity_at)} />
+          <InfoLine label="Mayorista" value={customer.is_wholesale ? `Sí, estado ${customer.status}` : isWholesaleRequest ? "Solicitud pendiente" : "No"} />
           <InfoLine label="Ciudad" value={customer.city ?? "Sin ciudad"} />
           <InfoLine label="RTN" value={customer.tax_id ?? "Sin RTN"} />
           <InfoLine label="Valor estimado" value={formatCurrency(customer.estimated_value)} />
           <InfoLine label="Mensualidad" value={formatCurrency(customer.monthly_amount)} />
           <ContactActions phone={customer.phone} customerName={customerDisplayName(customer)} />
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Link href="/admin/pedidos" className="rounded-md border border-black/10 bg-white px-3 py-2 text-center text-xs font-semibold hover:bg-[#f4f4f5]">
+              Ver pedidos
+            </Link>
+            <Link href="/admin/facturas" className="rounded-md border border-black/10 bg-white px-3 py-2 text-center text-xs font-semibold hover:bg-[#f4f4f5]">
+              Ver facturas
+            </Link>
+            <Link href="/admin/codigos-mayoristas" className="rounded-md border border-black/10 bg-white px-3 py-2 text-center text-xs font-semibold hover:bg-[#f4f4f5]">
+              Ver códigos
+            </Link>
+          </div>
+          <div className="rounded-md bg-[#f4f4f5] p-3">
+            <p className="text-xs font-medium uppercase text-black/50">Seguimientos recientes</p>
+            <div className="mt-2 space-y-2">
+              {followups.length === 0 ? (
+                <p className="text-xs text-black/50">Sin seguimientos recientes.</p>
+              ) : (
+                followups.map((item) => (
+                  <div key={item.id} className="rounded-md bg-white p-2">
+                    <p className="font-medium">{item.title}</p>
+                    <p className="text-xs text-black/50">{interactionLabels[item.interaction_type]} - {formatDateTime(item.due_at)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className="rounded-md bg-[#f4f4f5] p-3">
+            <p className="text-xs font-medium uppercase text-black/50">Notas del cliente</p>
+            <div className="mt-2 space-y-2">
+              {notes.length === 0 ? (
+                <p className="text-xs text-black/50">Sin notas recientes.</p>
+              ) : (
+                notes.map((item) => (
+                  <div key={item.id} className="rounded-md bg-white p-2">
+                    <p className="line-clamp-2 text-black/70">{item.note}</p>
+                    <p className="mt-1 text-xs text-black/45">{formatDateTime(item.created_at)}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
           {isWholesaleRequest && !customer.is_wholesale ? (
-            <div className="rounded-md border border-[#d55d3b]/25 bg-[#fff7ed] p-3">
+            <div className="rounded-md border border-[#e4252c]/25 bg-[#fff7ed] p-3">
               <p className="font-medium text-[#7c2d12]">Solicitud de cuenta mayorista pendiente</p>
               <p className="mt-1 text-xs text-[#7c2d12]/80">
-                Aprobar no activa precios por sí solo: también debe existir cuenta vinculada y código único.
+                Aprobar no activa precios por sí solo: también debe existir una cuenta vinculada y un código único.
               </p>
               <Button onClick={() => onApproveWholesale(customer.id)} disabled={pending} variant="dark" className="mt-3">
                 Aprobar como mayorista
@@ -770,8 +1137,8 @@ function CustomerDetailCard({
                 Eliminar cuenta TEST
               </Button>
             ) : (
-              <p className="rounded-md bg-[#f7f7f2] px-3 py-2 text-xs text-black/55">
-                Eliminacion directa bloqueada para clientes reales.
+              <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-xs text-black/55">
+                Eliminación directa bloqueada para clientes reales.
               </p>
             )}
           </div>
@@ -805,27 +1172,27 @@ function CustomerAccountsTable({
           <div>
             <h2 className="font-semibold">Cuentas de clientes</h2>
             <p className="mt-1 text-sm text-black/55">
-              Clientes registrados, confirmacion de correo, actividad y acciones seguras.
+              Clientes registrados, confirmación de correo, actividad y acciones seguras.
             </p>
           </div>
-          <div className="flex max-w-xl gap-2 rounded-md border border-[#d55d3b]/25 bg-[#fff7ed] p-3 text-xs text-[#7c2d12]">
+          <div className="flex max-w-xl gap-2 rounded-md border border-[#e4252c]/25 bg-[#fff7ed] p-3 text-xs text-[#7c2d12]">
             <ShieldAlert size={18} className="shrink-0" />
-            <p>Esta accion eliminara la cuenta TEST y sus datos relacionados. No usar con clientes reales.</p>
+            <p>Esta acción eliminará la cuenta TEST y sus datos relacionados. No usar con clientes reales.</p>
           </div>
         </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="bg-[#f0ede2] text-xs uppercase text-black/55">
+          <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Correo</th>
-              <th className="px-4 py-3">Telefono</th>
+              <th className="px-4 py-3">Teléfono</th>
               <th className="px-4 py-3">Tipo</th>
               <th className="px-4 py-3">Estado de cuenta</th>
               <th className="px-4 py-3">Correo confirmado</th>
               <th className="px-4 py-3">Pedidos</th>
-              <th className="px-4 py-3">Ultima actividad</th>
+              <th className="px-4 py-3">Última actividad</th>
               <th className="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
@@ -848,19 +1215,24 @@ function CustomerAccountsTable({
                       <p className="text-xs text-black/45">Registro: {formatDateTime(customer.account_created_at ?? customer.created_at)}</p>
                     </td>
                     <td className="px-4 py-3">{email || "Sin correo"}</td>
-                    <td className="px-4 py-3">{customer.account_phone ?? customer.phone ?? "Sin telefono"}</td>
+                    <td className="px-4 py-3">{customer.account_phone ?? customer.phone ?? "Sin teléfono"}</td>
                     <td className="px-4 py-3">{customer.customer_type}</td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md bg-[#e8f3f2] px-2 py-1 text-xs font-medium">{customer.account_state}</span>
+                      <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-medium">{customer.account_state}</span>
                     </td>
-                    <td className="px-4 py-3">{customer.email_confirmed_at ? "Si" : customer.user_id ? "No" : "Sin cuenta"}</td>
+                    <td className="px-4 py-3">{customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"}</td>
                     <td className="px-4 py-3">{customer.order_count.toLocaleString("es-HN")}</td>
                     <td className="px-4 py-3">{formatDateTime(customer.last_activity_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <IconButton label="Ver cliente" onClick={() => onSelect(customer.id)}>
-                          <Search size={16} />
-                        </IconButton>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(customer.id)}
+                          className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5]"
+                        >
+                          <Search size={15} />
+                          Detalle completo
+                        </button>
                         <LinkIconButton label="Ver pedidos" href="/admin/pedidos">
                           <PackageSearch size={16} />
                         </LinkIconButton>
@@ -909,7 +1281,7 @@ function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
           <InfoLine label="Fecha" value={formatDateTime(followup.due_at)} />
           <InfoLine label="Prioridad" value={priorityLabels[followup.priority]} />
           <InfoLine label="Teléfono" value={followup.phone ?? "Sin teléfono"} />
-          {followup.notes ? <p className="whitespace-pre-line rounded-md bg-[#f7f7f2] p-3">{followup.notes}</p> : null}
+          {followup.notes ? <p className="whitespace-pre-line rounded-md bg-[#f4f4f5] p-3">{followup.notes}</p> : null}
           <ContactActions phone={followup.phone} customerName={followup.business_name ?? followup.customer_name} />
           {followup.order_id ? (
             <a
@@ -929,7 +1301,7 @@ function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
 
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md bg-[#f7f7f2] px-3 py-2">
+    <div className="flex items-start justify-between gap-3 rounded-md bg-[#f4f4f5] px-3 py-2">
       <span className="text-xs font-medium uppercase text-black/50">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
@@ -986,7 +1358,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f7f7f2]"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5]"
     >
       {children}
     </button>
@@ -999,9 +1371,12 @@ function LinkIconButton({ label, href, children }: { label: string; href: string
       href={href}
       title={label}
       aria-label={label}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f7f7f2]"
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5]"
     >
       {children}
     </Link>
   );
 }
+
+
+

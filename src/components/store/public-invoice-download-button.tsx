@@ -9,10 +9,11 @@ export function PublicInvoiceDownloadButton({ invoice }: { invoice: StoreInvoice
     <button
       type="button"
       onClick={() => downloadInvoicePdf(invoice)}
-      className="inline-flex items-center justify-center gap-2 rounded-md bg-[#1c1d1b] px-3 py-2 text-sm font-medium text-white"
+      className="inline-flex items-center justify-center gap-2 rounded-md bg-[#080808] px-3 py-2 text-sm font-medium text-white"
     >
       <Download size={16} />
       Descargar PDF
     </button>
   );
 }
+

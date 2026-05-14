@@ -116,7 +116,7 @@ export function CatalogBrowser({
                 </option>
               ))}
             </select>
-            <button className="rounded-md bg-[#1c1d1b] px-4 py-2 text-sm font-medium text-white">
+            <button className="rounded-md bg-[#080808] px-4 py-2 text-sm font-medium text-white">
               Buscar
             </button>
           </div>
@@ -239,3 +239,5 @@ function FilterField({ label, children }: { label: string; children: React.React
     </label>
   );
 }
+
+

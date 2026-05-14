@@ -21,8 +21,8 @@ export function CartView() {
               Precios calculados con {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}.
             </p>
           </div>
-          <span className="w-fit rounded-md bg-[#f7f7f2] px-3 py-2 text-sm">
-            {priceMode === "wholesale" ? "Modo mayorista" : "Modo retail"}
+          <span className="w-fit rounded-md bg-[#f4f4f5] px-3 py-2 text-sm">
+            {priceMode === "wholesale" ? "Modo mayorista" : "Modo al detalle"}
           </span>
         </div>
         <div className="divide-y divide-black/10">
@@ -81,14 +81,14 @@ export function CartView() {
       <aside className="h-fit rounded-lg border border-black/10 bg-white p-5">
         <h2 className="font-semibold">Resumen</h2>
         {wholesaleAccount ? (
-          <p className="mt-3 rounded-md bg-[#e8f3f2] p-3 text-sm text-[#1e5960]">
+          <p className="mt-3 rounded-md bg-[#fff1f2] p-3 text-sm text-[#b91c25]">
             Código aplicado: {wholesaleAccount.code}
           </p>
         ) : null}
         <Totals subtotal={subtotal} tax={tax} total={total} />
         <Link
           href="/checkout"
-          className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-[#246a73] px-4 py-3 text-sm font-semibold text-white"
+          className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
         >
           Ir a checkout
         </Link>
@@ -115,3 +115,5 @@ export function Totals({ subtotal, tax, total }: { subtotal: number; tax: number
     </div>
   );
 }
+
+
