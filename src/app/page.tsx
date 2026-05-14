@@ -5,13 +5,19 @@ import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { WholesaleCodePanel } from "@/components/store/wholesale-code-panel";
 import { HolidayBannerPopup } from "@/components/store/holiday-banner-popup";
+import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getActiveHolidayBanner } from "@/services/supabase/holiday-banners.service";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getFeaturedProducts } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const [featuredProducts, holidayBanner] = await Promise.all([getFeaturedProducts(3), getActiveHolidayBanner()]);
+  const [featuredProducts, holidayBanner, companySettings] = await Promise.all([
+    getFeaturedProducts(3),
+    getActiveHolidayBanner(),
+    getPublicCompanySettings(),
+  ]);
 
   return (
     <PublicStoreShell>
@@ -33,11 +39,17 @@ export default async function HomePage() {
             </p>
           </div>
           <div className="relative mt-8 flex flex-wrap gap-3">
-            <Link href="/catalogo" className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#080808]">
+            <Link
+              href="/catalogo"
+              className="inline-flex items-center gap-2 rounded-md bg-white px-4 py-3 text-sm font-semibold text-[#080808] transition-all hover:-translate-y-0.5 hover:bg-[#fff1f2]"
+            >
               Ver catálogo
               <ArrowRight size={17} />
             </Link>
-            <Link href="/contacto" className="inline-flex items-center gap-2 rounded-md border border-white/20 px-4 py-3 text-sm font-semibold text-white">
+            <Link
+              href="/contacto"
+              className="inline-flex items-center gap-2 rounded-md border border-white/20 px-4 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/10"
+            >
               Solicitar mayoreo
             </Link>
           </div>
@@ -48,7 +60,7 @@ export default async function HomePage() {
           width={1200}
           height={900}
           priority
-          className="min-h-[360px] rounded-lg object-cover lg:h-full"
+          className="min-h-[360px] rounded-lg object-cover shadow-sm transition-transform duration-300 hover:scale-[1.01] lg:h-full"
         />
       </section>
 
@@ -58,7 +70,7 @@ export default async function HomePage() {
           ["Despacho organizado", "Pedidos preparados con seguimiento y control de inventario."],
           ["Mayoreo profesional", "Un código válido cambia todo el sistema a precio mayorista."],
         ].map(([title, text]) => (
-          <article key={title} className="rounded-lg border border-black/10 bg-white p-5">
+          <article key={title} className="rounded-lg border border-black/10 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
             <Truck size={20} className="mb-4 text-[#e4252c]" />
             <h2 className="font-semibold">{title}</h2>
             <p className="mt-2 text-sm text-black/55">{text}</p>
@@ -70,7 +82,7 @@ export default async function HomePage() {
         <div>
           <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-semibold">Productos destacados</h2>
-            <Link href="/catalogo" className="text-sm font-medium text-[#e4252c]">
+            <Link href="/catalogo" className="text-sm font-medium text-[#e4252c] transition-colors hover:text-[#b91c25]">
               Ver todos
             </Link>
           </div>
@@ -82,7 +94,20 @@ export default async function HomePage() {
         </div>
         <WholesaleCodePanel />
       </section>
+
+      {hasSocialLinks(companySettings) ? (
+        <section className="mx-auto max-w-7xl px-5 pb-10">
+          <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md sm:flex sm:items-center sm:justify-between sm:gap-6">
+            <div>
+              <h2 className="text-xl font-semibold">Conecta con nosotros</h2>
+              <p className="mt-1 text-sm text-black/55">Síguenos y escríbenos por nuestros canales oficiales.</p>
+            </div>
+            <div className="mt-4 sm:mt-0">
+              <SocialLinks settings={companySettings} variant="home" />
+            </div>
+          </div>
+        </section>
+      ) : null}
     </PublicStoreShell>
   );
 }
-

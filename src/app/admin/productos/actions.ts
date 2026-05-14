@@ -189,7 +189,7 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
     await writeErrorLog({
       route: "/admin/productos",
       action: "products.cloudinary_config_missing",
-      errorMessage: "No se pudo configurar Cloudinary para eliminar imagenes antiguas.",
+      errorMessage: "No se pudo configurar Cloudinary para eliminar imágenes antiguas.",
       errorStack: error instanceof Error ? error.stack : null,
       metadata: context,
     });
@@ -281,7 +281,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
     }
 
     if (!allowedProductImageTypes.has(file.type)) {
-      return { ok: false, message: "Solo se permiten imagenes JPG, PNG, WebP o AVIF." };
+      return { ok: false, message: "Solo se permiten imágenes JPG, PNG, WebP o AVIF." };
     }
 
     if (file.size > 8 * 1024 * 1024) {

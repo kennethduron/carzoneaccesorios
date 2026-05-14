@@ -18,7 +18,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
+    <article className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#e4252c]/25 hover:shadow-lg">
       <Link href={`/producto/${product.slug}`} className="block">
         {imageFailed ? (
           <div className="grid h-44 w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
@@ -37,7 +37,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
             loading="lazy"
             quality={70}
             unoptimized={isCloudinaryImageUrl(imageUrl)}
-            className="h-44 w-full object-cover"
+            className="h-44 w-full object-cover transition-transform duration-300 hover:scale-[1.02]"
             onError={() => setImageFailed(true)}
           />
         )}
@@ -65,7 +65,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
         <button
           onClick={() => addToCart(product.id)}
           disabled={product.stock <= 0}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-medium text-white"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#e4252c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/45 disabled:hover:translate-y-0"
         >
           <Plus size={18} />
           {product.stock <= 0 ? "Sin stock" : "Agregar"}

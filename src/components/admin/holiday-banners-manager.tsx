@@ -24,7 +24,7 @@ const emptyBanner: HolidayBannerInput = {
   end_date: new Date().toISOString().slice(0, 10),
   is_active: true,
   priority: 0,
-  button_text: "Ver catalogo",
+  button_text: "Ver catálogo",
   button_url: "/catalogo",
 };
 

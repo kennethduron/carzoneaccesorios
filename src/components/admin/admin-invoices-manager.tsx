@@ -255,7 +255,7 @@ export function AdminInvoicesManager({
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto] lg:items-end">
+        <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto] lg:items-end">
           <label>
             <span className="mb-1 block text-xs font-medium uppercase text-black/50">Buscar</span>
             <Input
@@ -295,6 +295,16 @@ export function AdminInvoicesManager({
             <Download size={16} />
             CSV
           </Button>
+          <Button
+            onClick={() => {
+              setQuery("");
+              setStatus("all");
+              setPaymentMethod("all");
+            }}
+            variant="ghost"
+          >
+            Limpiar filtros
+          </Button>
         </div>
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
@@ -330,7 +340,7 @@ export function AdminInvoicesManager({
               {filteredInvoices.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-black/50" colSpan={13}>
-                    No hay facturas para mostrar.
+                    No se encontraron resultados con estos filtros.
                   </td>
                 </tr>
               ) : (

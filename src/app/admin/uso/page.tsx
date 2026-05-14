@@ -157,7 +157,7 @@ export default async function AdminUsagePage() {
             ))}
           </div>
           <p className="mt-4 rounded-md bg-[#fff1f2] p-3 text-sm leading-6 text-[#e4252c]">
-            Regla operativa: imagenes y comprobantes viven en Cloudinary o Storage; Supabase solo guarda URLs y metadatos.
+            Regla operativa: imágenes y comprobantes viven en Cloudinary o Storage; Supabase solo guarda URLs y metadatos.
           </p>
         </section>
       </div>

@@ -99,9 +99,9 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
   if (orders.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5">
-        <p className="text-sm text-black/60">Tus pedidos apareceran aqui cuando completes compras en la tienda.</p>
+        <p className="text-sm text-black/60">Tus pedidos aparecerán aquí cuando completes compras en la tienda.</p>
         <Link href="/catalogo" className="mt-4 inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-medium text-white">
-          Ver catalogo
+          Ver catálogo
         </Link>
       </div>
     );
@@ -132,9 +132,9 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
 
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
               <Info label="Pago" value={paymentStatusLabels[order.payment_status ?? "pending"] ?? "Pendiente"} />
-              <Info label="Metodo" value={paymentMethodLabels[order.payment_method] ?? order.payment_method} />
+              <Info label="Método" value={paymentMethodLabels[order.payment_method] ?? order.payment_method} />
               <Info label="Total" value={formatCurrency(order.total)} strong />
-              <Info label="Modo" value={order.price_mode === "wholesale" ? "Mayorista" : "Retail"} />
+              <Info label="Modo" value={order.price_mode === "wholesale" ? "Mayorista" : "Al detalle"} />
             </div>
 
             <div className="mt-4 divide-y divide-black/10 rounded-md border border-black/10">

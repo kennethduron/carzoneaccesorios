@@ -45,11 +45,11 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
             <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
             <p>ISV: {formatCurrency(invoice.isv)}</p>
             <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
-            <p>{invoice.priceMode === "wholesale" ? "Mayorista" : "Retail"}</p>
+            <p>{invoice.priceMode === "wholesale" ? "Mayorista" : "Al detalle"}</p>
           </div>
 
           <div className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
-            <p>Metodo de pago: {invoice.paymentMethod}</p>
+            <p>Método de pago: {invoice.paymentMethod}</p>
             {invoice.paymentMethod === "Transferencia bancaria" && invoice.paymentReference ? (
               <p>Referencia: {invoice.paymentReference}</p>
             ) : null}

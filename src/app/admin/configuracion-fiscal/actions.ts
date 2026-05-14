@@ -53,6 +53,11 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
     return { ok: false, message: "La comisión por pago al recibir no puede ser mayor a 100%." };
   }
 
+  const invalidSocialUrl = validateSocialUrls(input);
+  if (invalidSocialUrl) {
+    return { ok: false, message: invalidSocialUrl };
+  }
+
   const previousSettings = await getAdminCompanySettings();
   await saveAdminCompanySettings(input);
   const changes = commerceSettingsChanges(previousSettings, input);
@@ -70,8 +75,38 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
   revalidatePath("/admin/configuracion-fiscal");
   revalidatePath("/checkout");
   revalidatePath("/");
+  revalidatePath("/contacto");
 
   return { ok: true, message: "Configuración comercial guardada correctamente." };
+}
+
+function validateOptionalUrl(label: string, value: string) {
+  const cleanValue = value.trim();
+  if (!cleanValue) {
+    return null;
+  }
+
+  try {
+    const url = new URL(cleanValue);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return `${label} debe iniciar con https:// o http://.`;
+    }
+  } catch {
+    return `${label} debe ser una URL válida.`;
+  }
+
+  return null;
+}
+
+function validateSocialUrls(input: AdminCompanySettings) {
+  return (
+    validateOptionalUrl("Facebook", input.facebook_url) ??
+    validateOptionalUrl("Instagram", input.instagram_url) ??
+    validateOptionalUrl("WhatsApp", input.whatsapp_url) ??
+    validateOptionalUrl("TikTok", input.tiktok_url) ??
+    validateOptionalUrl("YouTube", input.youtube_url) ??
+    validateOptionalUrl("Sitio web", input.website_url)
+  );
 }
 
 function notificationSettingsChanges(previous: NotificationSettings, next: NotificationSettings) {
@@ -158,4 +193,3 @@ export async function saveNotificationSettingsAction(input: NotificationSettings
 
   return { ok: true, message: "Configuración de notificaciones guardada correctamente." };
 }
-

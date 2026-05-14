@@ -1,6 +1,13 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { AdminCrmData, CrmCustomerOption, CrmDuplicateGroup, CrmFollowupRow, CrmNoteRow } from "@/types/crm";
+import type {
+  AdminCrmData,
+  CrmCustomerOption,
+  CrmCustomerProfile,
+  CrmDuplicateGroup,
+  CrmFollowupRow,
+  CrmNoteRow,
+} from "@/types/crm";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 
 export type AdminCrmPageFilters = {
@@ -101,6 +108,46 @@ type DuplicateCustomerQueryRow = {
 type CustomerReferenceRow = {
   id: string;
   customer_id: string | null;
+};
+
+type CustomerProfileOrderRow = {
+  id: string;
+  order_number: string;
+  tracking_code: string | null;
+  customer_id: string | null;
+  user_id: string | null;
+  email: string | null;
+  created_at: string;
+  status: string;
+  payment_method: string;
+  price_mode: "retail" | "wholesale";
+  total: unknown;
+  invoices: Array<{ invoice_number: string | null }> | { invoice_number: string | null } | null;
+};
+
+type CustomerProfileInvoiceRow = {
+  id: string;
+  invoice_number: string;
+  order_id: string;
+  customer_id: string | null;
+  status: string;
+  total: unknown;
+  issued_at: string | null;
+  created_at: string;
+  orders: { order_number: string | null } | null;
+};
+
+type CustomerProfileWholesaleCodeRow = {
+  id: string;
+  code: string;
+  label: string;
+  minimum_order: unknown;
+  max_uses: number | null;
+  used_count: unknown;
+  status: string;
+  active: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
 };
 
 function normalizePhoneKey(value: string | null | undefined) {
@@ -616,5 +663,199 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     customerPage,
     followupPage,
     pageSize,
+  };
+}
+
+export async function getAdminCustomerProfile(customerId: string): Promise<CrmCustomerProfile | null> {
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select(
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+    )
+    .eq("id", customerId)
+    .maybeSingle<CustomerQueryRow>();
+
+  if (customerError) {
+    throw new Error(customerError.message);
+  }
+
+  if (!customerRow) {
+    return null;
+  }
+
+  const accountEmail = customerRow.users?.email ?? customerRow.email;
+  const normalizedEmail = accountEmail ? normalizeAccountEmail(accountEmail) : null;
+  const authByUserId = new Map<string, CustomerAuthMeta>();
+
+  if (customerRow.user_id) {
+    const { data } = await admin.auth.admin.getUserById(customerRow.user_id);
+    if (data.user) {
+      authByUserId.set(customerRow.user_id, {
+        email_confirmed_at: data.user.email_confirmed_at ?? null,
+        confirmed_at: data.user.confirmed_at ?? null,
+      });
+    }
+  }
+
+  const orderQueries: Array<() => Promise<{ data: CustomerProfileOrderRow[] | null; error: { message: string } | null }>> = [
+    async () =>
+      admin
+        .from("orders")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+        .eq("customer_id", customerId)
+        .order("created_at", { ascending: false })
+        .limit(30)
+        .returns<CustomerProfileOrderRow[]>(),
+  ];
+
+  if (customerRow.user_id) {
+    orderQueries.push(
+      async () =>
+        admin
+          .from("orders")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+          .eq("user_id", customerRow.user_id)
+          .order("created_at", { ascending: false })
+          .limit(30)
+          .returns<CustomerProfileOrderRow[]>(),
+    );
+  }
+
+  if (normalizedEmail) {
+    orderQueries.push(
+      async () =>
+        admin
+          .from("orders")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+          .ilike("email", normalizedEmail)
+          .order("created_at", { ascending: false })
+          .limit(30)
+          .returns<CustomerProfileOrderRow[]>(),
+    );
+  }
+
+  const [
+    orderResults,
+    { data: invoices, error: invoicesError },
+    { data: notes, error: notesError },
+    { data: followups, error: followupsError },
+    { data: wholesaleCodes, error: wholesaleCodesError },
+  ] = await Promise.all([
+    Promise.all(orderQueries.map((query) => query())),
+    admin
+      .from("invoices")
+      .select("id, invoice_number, order_id, customer_id, status, total, issued_at, created_at, orders(order_number)")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+      .returns<CustomerProfileInvoiceRow[]>(),
+    admin
+      .from("crm_notes")
+      .select("id, customer_id, user_id, note, created_at, customers(contact_name, business_name)")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+      .returns<NoteQueryRow[]>(),
+    admin
+      .from("crm_followups")
+      .select(
+        "id, customer_id, order_id, assigned_user_id, title, interaction_type, next_action, due_at, priority, phone, notes, estimated_value, monthly_amount, status, completed_at, created_at, customers(contact_name, business_name)",
+      )
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(30)
+      .returns<FollowupQueryRow[]>(),
+    admin
+      .from("wholesale_codes")
+      .select("id, code, label, minimum_order, max_uses, used_count, status, active, expires_at, last_used_at")
+      .eq("customer_id", customerId)
+      .order("updated_at", { ascending: false })
+      .limit(20)
+      .returns<CustomerProfileWholesaleCodeRow[]>(),
+  ]);
+
+  for (const result of orderResults) {
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  }
+
+  if (invoicesError) {
+    throw new Error(invoicesError.message);
+  }
+  if (notesError) {
+    throw new Error(notesError.message);
+  }
+  if (followupsError) {
+    throw new Error(followupsError.message);
+  }
+  if (wholesaleCodesError) {
+    throw new Error(wholesaleCodesError.message);
+  }
+
+  const ordersById = new Map<string, CustomerProfileOrderRow>();
+  for (const result of orderResults) {
+    for (const order of result.data ?? []) {
+      ordersById.set(order.id, order);
+    }
+  }
+
+  const orders = Array.from(ordersById.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const ordersByCustomerId = new Map([[customerId, orders]]);
+  const ordersByUserId = customerRow.user_id ? new Map([[customerRow.user_id, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
+  const ordersByEmail = normalizedEmail ? new Map([[normalizedEmail, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
+  const invoiceCountsByCustomerId = new Map([[customerId, invoices?.length ?? 0]]);
+  const wholesaleCodeCountsByCustomerId = new Map([[customerId, wholesaleCodes?.length ?? 0]]);
+  const customer = normalizeCustomer(
+    customerRow,
+    authByUserId,
+    ordersByCustomerId,
+    ordersByUserId,
+    ordersByEmail,
+    invoiceCountsByCustomerId,
+    wholesaleCodeCountsByCustomerId,
+  );
+
+  return {
+    customer,
+    orders: orders.slice(0, 30).map((order) => {
+      const invoice = Array.isArray(order.invoices) ? order.invoices[0] ?? null : order.invoices;
+      return {
+        id: order.id,
+        order_number: order.order_number,
+        tracking_code: order.tracking_code,
+        created_at: order.created_at,
+        status: order.status,
+        payment_method: order.payment_method,
+        price_mode: order.price_mode,
+        total: toNumber(order.total),
+        invoice_number: invoice?.invoice_number ?? null,
+      };
+    }),
+    invoices: (invoices ?? []).map((invoice) => ({
+      id: invoice.id,
+      invoice_number: invoice.invoice_number,
+      order_id: invoice.order_id,
+      order_number: invoice.orders?.order_number ?? null,
+      status: invoice.status,
+      total: toNumber(invoice.total),
+      issued_at: invoice.issued_at,
+      created_at: invoice.created_at,
+    })),
+    notes: (notes ?? []).map(normalizeNote),
+    followups: (followups ?? []).map(normalizeFollowup),
+    wholesaleCodes: (wholesaleCodes ?? []).map((code) => ({
+      id: code.id,
+      code: code.code,
+      label: code.label,
+      minimum_order: toNumber(code.minimum_order),
+      max_uses: code.max_uses,
+      used_count: toNumber(code.used_count),
+      status: code.status,
+      active: code.active,
+      expires_at: code.expires_at,
+      last_used_at: code.last_used_at,
+    })),
   };
 }

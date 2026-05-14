@@ -177,8 +177,9 @@ export function AdminOrdersManager({
   return (
     <div className="space-y-5">
       <PaginationControls basePath="/admin/pedidos" page={page} pageSize={pageSize} total={total} label="pedidos" />
-      <section className="rounded-lg border border-black/10 bg-white p-4">
-        <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
+      <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+          <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 transition-colors focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15">
           <Search size={18} className="text-black/45" />
           <input
             value={query}
@@ -186,7 +187,15 @@ export function AdminOrdersManager({
             placeholder="Buscar por pedido, cliente, teléfono, referencia o factura"
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
-        </label>
+          </label>
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
+          >
+            Limpiar filtros
+          </button>
+        </div>
       </section>
       <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
         <div className="rounded-lg border border-black/10 bg-white">
@@ -196,7 +205,7 @@ export function AdminOrdersManager({
           </div>
           <div className="divide-y divide-black/10">
             {filteredOrders.length === 0 ? (
-              <p className="p-4 text-sm text-black/55">No hay pedidos para mostrar.</p>
+              <p className="p-4 text-sm text-black/55">No se encontraron resultados con estos filtros.</p>
             ) : null}
             {filteredOrders.map((order) => (
               <button

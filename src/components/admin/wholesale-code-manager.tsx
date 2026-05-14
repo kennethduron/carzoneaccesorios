@@ -262,7 +262,7 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto_auto]">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
             <input
@@ -284,6 +284,9 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
             <Download size={17} />
             CSV
           </Button>
+          <Button onClick={() => setQuery("")} variant="ghost">
+            Limpiar filtros
+          </Button>
         </div>
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
@@ -304,7 +307,14 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
-              {filteredCodes.map((code) => {
+              {filteredCodes.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
+                    No se encontraron resultados con estos filtros.
+                  </td>
+                </tr>
+              ) : (
+                filteredCodes.map((code) => {
                 const accountText = accountLabel({
                   user_id: code.customer_user_id,
                   status: code.customer_status,
@@ -354,7 +364,8 @@ export function WholesaleCodeManager({ codes, customers }: WholesaleCodeManagerP
                     </td>
                   </tr>
                 );
-              })}
+                })
+              )}
             </tbody>
           </table>
         </div>

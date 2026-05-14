@@ -46,6 +46,28 @@ select {
   cursor: pointer;
 }
 
+a,
+button {
+  transition-duration: 180ms;
+  transition-property: background-color, border-color, box-shadow, color, opacity, transform;
+  transition-timing-function: ease;
+}
+
+input,
+select,
+textarea {
+  transition-duration: 180ms;
+  transition-property: border-color, box-shadow, background-color;
+  transition-timing-function: ease;
+}
+
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--brand-red);
+  box-shadow: 0 0 0 3px rgba(228, 37, 44, 0.14);
+  outline: none;
+}
+
 ::selection {
   background: var(--brand-red);
   color: #ffffff;

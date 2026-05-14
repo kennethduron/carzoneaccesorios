@@ -3,13 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
-import { FaFacebookF, FaInstagram, FaTiktok, FaWhatsapp, FaYoutube } from "react-icons/fa";
-import { FiGlobe } from "react-icons/fi";
 import { useEffect, useRef, useState } from "react";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
+import { SocialLinks } from "@/components/store/social-links";
 import type { SocialSettings } from "@/types/settings";
 
 const primaryLinks = [
@@ -260,25 +259,8 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </div>
           <div>
             <p className="mb-2 text-sm font-semibold">Síguenos</p>
-            <div className="mb-3 flex flex-wrap gap-2">
-              <SocialLink href={socialSettings?.facebook_url} label="Facebook">
-                <FaFacebookF />
-              </SocialLink>
-              <SocialLink href={socialSettings?.instagram_url} label="Instagram">
-                <FaInstagram />
-              </SocialLink>
-              <SocialLink href={socialSettings?.whatsapp_url} label="WhatsApp">
-                <FaWhatsapp />
-              </SocialLink>
-              <SocialLink href={socialSettings?.tiktok_url} label="TikTok">
-                <FaTiktok />
-              </SocialLink>
-              <SocialLink href={socialSettings?.youtube_url} label="YouTube">
-                <FaYoutube />
-              </SocialLink>
-              <SocialLink href={socialSettings?.website_url} label="Sitio web">
-                <FiGlobe />
-              </SocialLink>
+            <div className="mb-3">
+              <SocialLinks settings={socialSettings} />
             </div>
             <div className="flex flex-wrap gap-2 text-sm">
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
@@ -297,24 +279,3 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
     </main>
   );
 }
-
-function SocialLink({ href, label, children }: { href?: string | null; label: string; children: React.ReactNode }) {
-  if (!href?.trim()) {
-    return null;
-  }
-
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={label}
-      title={label}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#080808] hover:bg-[#f4f4f5]"
-    >
-      {children}
-    </a>
-  );
-}
-
-

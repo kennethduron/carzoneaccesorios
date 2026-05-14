@@ -388,7 +388,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
     const confirmed = await toast.confirm({
       title: "Eliminar imagen",
-      message: "Esta imagen se quitara del producto. ¿Deseas continuar?",
+      message: "Esta imagen se quitará del producto. ¿Deseas continuar?",
       confirmLabel: "Eliminar imagen",
       cancelLabel: "Cancelar",
       tone: "danger",
@@ -445,12 +445,12 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
         ...current,
         [index]: {
           status: "error",
-          message: "Solo se permiten imagenes JPG, PNG, WebP o AVIF.",
+          message: "Solo se permiten imágenes JPG, PNG, WebP o AVIF.",
           fileName: file.name,
           file,
         },
       }));
-      showMessage("Solo se permiten imagenes JPG, PNG, WebP o AVIF para productos.", "error");
+      showMessage("Solo se permiten imágenes JPG, PNG, WebP o AVIF para productos.", "error");
       return;
     }
 
@@ -486,7 +486,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
         },
       };
     });
-    showMessage("Subiendo imagen. El formulario permanecera abierto aunque falle.", "neutral");
+    showMessage("Subiendo imagen. El formulario permanecerá abierto aunque falle.", "neutral");
 
     startTransition(async () => {
       const formData = new FormData();
@@ -570,7 +570,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     }
 
     if (product.wholesale_min_quantity < 1) {
-      return "La cantidad minima mayorista debe ser al menos 1.";
+      return "La cantidad mínima mayorista debe ser al menos 1.";
     }
 
     return null;
@@ -582,7 +582,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     }
 
     if (editing.images.length >= maxProductImages) {
-      showMessage(`Puedes subir hasta ${maxProductImages} imagenes por producto.`, "error");
+      showMessage(`Puedes subir hasta ${maxProductImages} imágenes por producto.`, "error");
       return;
     }
 
@@ -623,7 +623,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       `${product.sku} ${product.name} ${product.slug} ${product.internal_code ?? ""}`,
     );
     const confirmed = await toast.confirm({
-      title: "Confirmar eliminacion",
+      title: "Confirmar eliminación",
       message: `¿Eliminar ${product.name}? Esta acción no se puede deshacer.`,
       confirmLabel: isTestProduct ? "ELIMINAR TEST" : "Eliminar",
       cancelLabel: "Cancelar",
@@ -826,6 +826,12 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           <button className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
             Filtrar
           </button>
+          <Link
+            href="/admin/productos"
+            className="inline-flex items-center justify-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
+          >
+            Limpiar filtros
+          </Link>
           <Button onClick={openNewProduct} variant="dark">
             <Plus size={17} />
             Nuevo
@@ -903,8 +909,15 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
-              {filteredProducts.map((product) => (
-                <tr key={product.id}>
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
+                    No se encontraron resultados con estos filtros.
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map((product) => (
+                <tr key={product.id} className="transition-colors hover:bg-[#f4f4f5]">
                   <td className="px-4 py-3">
                     <p className="font-semibold">{product.name}</p>
                     <p className="text-xs text-black/50">
@@ -938,7 +951,8 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                     </div>
                   </td>
                 </tr>
-              ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -1061,14 +1075,14 @@ function ProductEditor({
                 </Field>
                 <Field
                   label="Marca del producto"
-                  help="Marca comercial del producto o fabricante del accesorio. Ej. Pioneer, JBL, Osram, Toyota o Generico."
-                  tooltip="Marca del producto no es lo mismo que marca del vehiculo."
+                  help="Marca comercial del producto o fabricante del accesorio. Ej. Pioneer, JBL, Osram, Toyota o Genérico."
+                  tooltip="Marca del producto no es lo mismo que marca del vehículo."
                 >
                   <Input value={product.brand} onChange={(event) => onField("brand", event.target.value)} placeholder="Ej. Pioneer" />
                 </Field>
               </div>
 
-              <Field label="Descripcion" help="Resume el uso, compatibilidad o contenido del producto.">
+              <Field label="Descripción" help="Resume el uso, compatibilidad o contenido del producto.">
                 <textarea
                   value={product.description}
                   onChange={(event) => onField("description", event.target.value)}
@@ -1078,13 +1092,13 @@ function ProductEditor({
               </Field>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_180px_180px]">
-                <Field label="Categoria">
+                <Field label="Categoría">
                   <select
                     value={product.category_id ?? ""}
                     onChange={(event) => onField("category_id", event.target.value || null)}
                     className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
                   >
-                    <option value="">Sin categoria</option>
+                    <option value="">Sin categoría</option>
                     {categories.map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
@@ -1156,7 +1170,7 @@ function ProductEditor({
                 <Field label="Stock mínimo" help="Activa alertas cuando el producto llega a este nivel.">
                   <Input type="number" min={0} value={product.min_stock} onChange={(event) => onField("min_stock", numberValue(event.target.value))} />
                 </Field>
-                <Field label="Cantidad minima mayorista" help="Cantidad minima requerida para aplicar precio mayorista.">
+                <Field label="Cantidad mínima mayorista" help="Cantidad mínima requerida para aplicar precio mayorista.">
                   <Input
                     type="number"
                     min={1}
@@ -1184,7 +1198,7 @@ function ProductEditor({
               ) : null}
             </FormSection>
 
-            <FormSection title="Compatibilidad del vehiculo" description="Indica para que vehiculo es compatible este producto.">
+            <FormSection title="Compatibilidad del vehículo" description="Indica para qué vehículo es compatible este producto.">
               <div className="flex flex-wrap items-start gap-3">
                 <label className="inline-flex max-w-md items-start gap-3 rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm">
                   <input
@@ -1196,7 +1210,7 @@ function ProductEditor({
                   <span>
                     <span className="block font-medium">Producto universal</span>
                     <span className="block text-xs text-black/55">
-                      Compatible con multiples vehiculos.
+                      Compatible con múltiples vehículos.
                     </span>
                   </span>
                 </label>
@@ -1205,18 +1219,18 @@ function ProductEditor({
               {!vehicleUniversal ? (
                 <>
                   <p className="rounded-md bg-[#fff1f2] px-3 py-2 text-xs text-[#b91c25]">
-                    Marca del producto no es lo mismo que marca del vehiculo. Ejemplo: marca del producto Pioneer,
-                    marca del vehiculo Toyota, modelo Corolla, anos 2010 - 2014.
+                    Marca del producto no es lo mismo que marca del vehículo. Ejemplo: marca del producto Pioneer,
+                    marca del vehículo Toyota, modelo Corolla, años 2010 - 2014.
                   </p>
 
                   <div className="grid gap-3 sm:grid-cols-4">
-                    <Field label="Marca del vehiculo">
+                    <Field label="Marca del vehículo">
                       <Input value={product.vehicle_brand ?? ""} onChange={(event) => onField("vehicle_brand", event.target.value || null)} placeholder="Ej. Toyota" />
                     </Field>
-                    <Field label="Modelo del vehiculo">
+                    <Field label="Modelo del vehículo">
                       <Input value={product.vehicle_model ?? ""} onChange={(event) => onField("vehicle_model", event.target.value || null)} placeholder="Ej. Corolla" />
                     </Field>
-                    <Field label="Ano inicial">
+                    <Field label="Año inicial">
                       <Input
                         type="number"
                         min={1900}
@@ -1225,7 +1239,7 @@ function ProductEditor({
                         placeholder="2010"
                       />
                     </Field>
-                    <Field label="Ano final">
+                    <Field label="Año final">
                       <Input
                         type="number"
                         min={1900}
@@ -1250,7 +1264,7 @@ function ProductEditor({
                     onClick={() => setSlugEditable((current) => !current)}
                     className="text-xs font-semibold text-[#e4252c]"
                   >
-                    {slugEditable ? "Bloquear edicion" : "Editar slug"}
+                    {slugEditable ? "Bloquear edición" : "Editar slug"}
                   </button>
                 }
               >
@@ -1444,8 +1458,8 @@ function ProductEditor({
           </div>
 
           <FormSection
-            title="Imagenes del producto"
-            description="Sube la imagen principal y, si hace falta, imagenes adicionales para la galeria."
+            title="Imágenes del producto"
+            description="Sube la imagen principal y, si hace falta, imágenes adicionales para la galería."
             className="self-start"
           >
             <div className="flex items-center justify-between">
@@ -1459,7 +1473,7 @@ function ProductEditor({
               </Button>
             </div>
             <p className="hidden text-xs text-black/50">
-              Sube de 3 a 5 imagenes JPG, PNG, WebP o AVIF. La tienda servira versiones optimizadas desde Cloudinary.
+              Sube de 3 a 5 imágenes JPG, PNG, WebP o AVIF. La tienda servirá versiones optimizadas desde Cloudinary.
             </p>
             {product.images.map((image, index) => {
               const uploadState = imageUploads[index];
@@ -1532,7 +1546,7 @@ function ProductEditor({
                   >
                     {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
                     <span>{isUploading ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
-                    <span className="text-xs font-normal text-black/50">Tambien puedes arrastrar la imagen aqui.</span>
+                    <span className="text-xs font-normal text-black/50">También puedes arrastrar la imagen aquí.</span>
                     <span className="text-xs font-normal text-black/50">JPG, PNG, WebP o AVIF hasta 8 MB</span>
                     <input
                       type="file"
@@ -1571,7 +1585,7 @@ function ProductEditor({
                     </div>
                   ) : null}
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="Tipo/angulo" help="Opcional. Ayuda a ordenar la galeria.">
+                    <Field label="Tipo/ángulo" help="Opcional. Ayuda a ordenar la galería.">
                       <select
                         value={image.angle}
                         onChange={(event) => onImage(index, { angle: event.target.value })}

@@ -37,7 +37,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
   }
 
   return (
-    <section className="rounded-lg border border-black/10 bg-white p-5">
+    <section className="rounded-lg border border-black/10 bg-white p-5 shadow-sm transition-all hover:shadow-md">
       <div className="mb-4">
         <h2 className="font-semibold">Configuración comercial</h2>
         <p className="mt-1 text-sm text-black/55">Envío, pago al recibir, mínimo mayorista y redes sociales.</p>
@@ -96,17 +96,23 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
         Activar comisión por pago al recibir
       </label>
 
+      <div className="mt-6">
+        <h3 className="font-semibold">Redes sociales públicas</h3>
+        <p className="mt-1 text-sm text-black/55">
+          Estos enlaces aparecen en footer, contacto y home. Si un campo queda vacío, no se muestra al cliente.
+        </p>
+      </div>
+
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         {([
           ["facebook_url", "Facebook"],
           ["instagram_url", "Instagram"],
           ["whatsapp_url", "WhatsApp"],
           ["tiktok_url", "TikTok"],
-          ["youtube_url", "YouTube"],
-          ["website_url", "Sitio web"],
         ] as const).map(([field, label]) => (
           <Field key={field} label={label}>
             <Input
+              type="url"
               value={form[field]}
               disabled={!canEdit}
               placeholder="https://..."

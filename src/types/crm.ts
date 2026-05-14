@@ -104,6 +104,51 @@ export type CrmDuplicateGroup = {
   customers: CrmDuplicateCandidate[];
 };
 
+export type CrmCustomerOrderProfileRow = {
+  id: string;
+  order_number: string;
+  tracking_code: string | null;
+  created_at: string;
+  status: string;
+  payment_method: string;
+  price_mode: "retail" | "wholesale";
+  total: number;
+  invoice_number: string | null;
+};
+
+export type CrmCustomerInvoiceProfileRow = {
+  id: string;
+  invoice_number: string;
+  order_id: string;
+  order_number: string | null;
+  status: string;
+  total: number;
+  issued_at: string | null;
+  created_at: string;
+};
+
+export type CrmCustomerWholesaleCodeProfileRow = {
+  id: string;
+  code: string;
+  label: string;
+  minimum_order: number;
+  max_uses: number | null;
+  used_count: number;
+  status: string;
+  active: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+};
+
+export type CrmCustomerProfile = {
+  customer: CrmCustomerOption;
+  orders: CrmCustomerOrderProfileRow[];
+  invoices: CrmCustomerInvoiceProfileRow[];
+  notes: CrmNoteRow[];
+  followups: CrmFollowupRow[];
+  wholesaleCodes: CrmCustomerWholesaleCodeProfileRow[];
+};
+
 export type CrmLeadInput = {
   id?: string;
   business_name: string;

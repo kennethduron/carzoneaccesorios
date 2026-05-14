@@ -5,7 +5,8 @@ import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
+import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
+import type { CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
   nonNegativeNumber,
@@ -19,6 +20,12 @@ import {
 type CrmMutationResult = {
   ok: boolean;
   message: string;
+};
+
+type CustomerProfileResult = {
+  ok: boolean;
+  message: string;
+  profile: CrmCustomerProfile | null;
 };
 
 type TestAccountDeletionInput = {
@@ -143,6 +150,30 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
 
   revalidatePath("/admin/crm");
   return { ok: true, message: input.id || existingCustomerId ? "Cliente actualizado." : "Cliente potencial creado." };
+}
+
+export async function getCustomerProfileAction(customerId: string): Promise<CustomerProfileResult> {
+  await requirePermission("crm:manage");
+
+  const customer = uuidLike(customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message, profile: null };
+  }
+
+  try {
+    const profile = await getAdminCustomerProfile(customer.value);
+    if (!profile) {
+      return { ok: false, message: "No encontramos el perfil del cliente.", profile: null };
+    }
+
+    return { ok: true, message: "Perfil cargado.", profile };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "No se pudo cargar el perfil del cliente.",
+      profile: null,
+    };
+  }
 }
 
 export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<CrmMutationResult> {
@@ -416,6 +447,74 @@ export async function suspendCustomerAccountAction(customerId: string): Promise<
   revalidatePath("/admin/clientes");
 
   return { ok: true, message: "Cuenta suspendida correctamente." };
+}
+
+export async function reactivateCustomerAccountAction(customerId: string): Promise<CrmMutationResult> {
+  await requirePermission("customers:manage");
+
+  const customer = uuidLike(customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select("id, user_id, email, contact_name, active, status, notes")
+    .eq("id", customer.value)
+    .maybeSingle<{
+      id: string;
+      user_id: string | null;
+      email: string | null;
+      contact_name: string;
+      active: boolean;
+      status: string;
+      notes: string | null;
+    }>();
+
+  if (customerError || !customerRow) {
+    return { ok: false, message: "No pudimos encontrar la cuenta del cliente." };
+  }
+
+  const { error: updateCustomerError } = await admin
+    .from("customers")
+    .update({
+      active: true,
+      status: "active",
+      notes: [customerRow.notes, customerRow.contact_name ? `Cuenta reactivada desde admin para ${customerRow.contact_name}.` : null]
+        .filter(Boolean)
+        .join("\n"),
+    })
+    .eq("id", customer.value);
+
+  if (updateCustomerError) {
+    return { ok: false, message: "No pudimos reactivar la cuenta del cliente." };
+  }
+
+  if (customerRow.user_id) {
+    await admin.from("users").update({ active: true }).eq("id", customerRow.user_id);
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.value,
+    action: "customer_account.reactivated",
+    oldData: {
+      active: customerRow.active,
+      status: customerRow.status,
+    },
+    newData: {
+      active: true,
+      status: "active",
+      email: customerRow.email,
+      user_id: customerRow.user_id,
+    },
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+
+  return { ok: true, message: "Cuenta reactivada correctamente." };
 }
 
 export async function mergeDuplicateCustomerAction(input: MergeDuplicateCustomerInput): Promise<CrmMutationResult> {

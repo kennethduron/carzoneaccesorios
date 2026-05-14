@@ -43,8 +43,8 @@ export default async function CatalogoPage({
   return (
     <PublicStoreShell>
       <section className="mx-auto max-w-7xl px-5 pt-8">
-        <p className="text-sm text-black/50">Tienda publica</p>
-        <h1 className="mt-2 text-4xl font-semibold">Catalogo</h1>
+        <p className="text-sm text-black/50">Tienda pública</p>
+        <h1 className="mt-2 text-4xl font-semibold">Catálogo</h1>
       </section>
       <CatalogBrowser
         products={catalog.products}
