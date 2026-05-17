@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  archiveCrmNoteAction,
   approveWholesaleRequestAction,
   deleteTestAccountAction,
   getCustomerProfileAction,
@@ -64,6 +65,8 @@ type DuplicateMergeRequest = {
   source: CrmDuplicateCandidate;
   target: CrmDuplicateCandidate;
 };
+
+type CrmDrawerMode = "lead" | "followup" | "note" | "followup-detail" | null;
 
 const interactionLabels: Record<CrmInteractionType, string> = {
   seguimiento: "Seguimiento",
@@ -172,6 +175,19 @@ function isOverdue(followup: CrmFollowupRow) {
   return followup.status === "pending" && followup.due_at ? new Date(followup.due_at) < new Date() : false;
 }
 
+function followupStatusLabel(followup: CrmFollowupRow) {
+  if (isOverdue(followup)) {
+    return "Atrasado";
+  }
+  if (followup.status === "completed") {
+    return "Completado";
+  }
+  if (followup.status === "cancelled") {
+    return "Archivado";
+  }
+  return "Pendiente";
+}
+
 export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" }: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
@@ -180,9 +196,13 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
   const [customerFilter, setCustomerFilter] = useState<CustomerFilter>("all");
-  const [openLeadForm, setOpenLeadForm] = useState(false);
-  const [openFollowupForm, setOpenFollowupForm] = useState(false);
-  const [openNoteForm, setOpenNoteForm] = useState(false);
+  const [followupStatusFilter, setFollowupStatusFilter] = useState<"all" | "pending" | "completed" | "cancelled" | "overdue">("all");
+  const [followupPriorityFilter, setFollowupPriorityFilter] = useState<"all" | CrmPriority>("all");
+  const [followupTypeFilter, setFollowupTypeFilter] = useState<"all" | CrmInteractionType>("all");
+  const [openLeadForm] = useState(false);
+  const [openFollowupForm] = useState(false);
+  const [openNoteForm] = useState(false);
+  const [crmDrawer, setCrmDrawer] = useState<CrmDrawerMode>(null);
   const [mergeRequest, setMergeRequest] = useState<DuplicateMergeRequest | null>(null);
   const [profileCustomerId, setProfileCustomerId] = useState<string | null>(null);
   const [customerProfile, setCustomerProfile] = useState<CrmCustomerProfile | null>(null);
@@ -196,15 +216,20 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const filteredFollowups = useMemo(() => {
     const normalized = debouncedQuery.trim().toLowerCase();
     return data.followups.filter((item) => {
-      if (!normalized) {
-        return true;
-      }
+      const matchesQuery =
+        !normalized ||
+        `${item.title} ${item.next_action ?? ""} ${item.notes ?? ""} ${item.customer_name ?? ""} ${item.business_name ?? ""}`
+          .toLowerCase()
+          .includes(normalized);
+      const matchesStatus =
+        followupStatusFilter === "all" ||
+        (followupStatusFilter === "overdue" ? isOverdue(item) : item.status === followupStatusFilter);
+      const matchesPriority = followupPriorityFilter === "all" || item.priority === followupPriorityFilter;
+      const matchesType = followupTypeFilter === "all" || item.interaction_type === followupTypeFilter;
 
-      return `${item.title} ${item.next_action ?? ""} ${item.notes ?? ""} ${item.customer_name ?? ""} ${item.business_name ?? ""}`
-        .toLowerCase()
-        .includes(normalized);
+      return matchesQuery && matchesStatus && matchesPriority && matchesType;
     });
-  }, [data.followups, debouncedQuery]);
+  }, [data.followups, debouncedQuery, followupPriorityFilter, followupStatusFilter, followupTypeFilter]);
 
   const searchedCustomers = useMemo(() => {
     const normalized = debouncedQuery.trim().toLowerCase();
@@ -273,6 +298,91 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
     }));
   }
 
+  function openLeadDrawer(customer?: CrmCustomerOption) {
+    if (customer) {
+      setLead({
+        id: customer.id,
+        business_name: customer.business_name ?? customer.company_name ?? "",
+        contact_name: customer.contact_name,
+        email: customer.email ?? customer.account_email ?? "",
+        phone: customer.phone ?? customer.account_phone ?? "",
+        tax_id: customer.tax_id ?? "",
+        address: "",
+        city: customer.city ?? "",
+        notes: customer.notes ?? "",
+        lead_status: customer.lead_status,
+        estimated_value: customer.estimated_value,
+        monthly_amount: customer.monthly_amount,
+      });
+    } else {
+      setLead(emptyLead);
+    }
+    setCrmDrawer("lead");
+  }
+
+  function openFollowupDrawer(item?: CrmFollowupRow) {
+    if (item) {
+      setSelectedFollowupId(item.id);
+      setFollowup({
+        id: item.id,
+        customer_id: item.customer_id,
+        title: item.title,
+        interaction_type: item.interaction_type,
+        next_action: item.next_action ?? "",
+        due_at: item.due_at ? item.due_at.slice(0, 16) : "",
+        priority: item.priority,
+        phone: item.phone ?? "",
+        notes: item.notes ?? "",
+        estimated_value: item.estimated_value,
+        monthly_amount: item.monthly_amount,
+        status: item.status,
+      });
+    } else {
+      setFollowup(emptyFollowup);
+    }
+    setCrmDrawer("followup");
+  }
+
+  function openNoteDrawer(item?: CrmNoteRow) {
+    if (item) {
+      setNote({
+        id: item.id,
+        customer_id: item.customer_id,
+        note_type: item.note_type ?? "nota",
+        note: item.note,
+      });
+    } else {
+      setNote(emptyNote);
+    }
+    setCrmDrawer("note");
+  }
+
+  function openFollowupDetail(item: CrmFollowupRow) {
+    setSelectedFollowupId(item.id);
+    setCrmDrawer("followup-detail");
+  }
+
+  async function closeCrmDrawer() {
+    const hasLeadDraft = crmDrawer === "lead" && JSON.stringify(lead) !== JSON.stringify(emptyLead);
+    const hasFollowupDraft = crmDrawer === "followup" && JSON.stringify(followup) !== JSON.stringify(emptyFollowup);
+    const hasNoteDraft = crmDrawer === "note" && JSON.stringify(note) !== JSON.stringify(emptyNote);
+
+    if (hasLeadDraft || hasFollowupDraft || hasNoteDraft) {
+      const confirmed = await toast.confirm({
+        title: "Cambios sin guardar",
+        message: "Tienes cambios sin guardar. ¿Deseas salir?",
+        confirmLabel: "Salir",
+        cancelLabel: "Seguir editando",
+        tone: "neutral",
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setCrmDrawer(null);
+  }
+
   function submitLead() {
     startTransition(async () => {
       const result = await saveCrmLeadAction(lead);
@@ -280,6 +390,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       if (result.ok) {
         toast.success(result.message || "Cliente creado correctamente.");
         setLead(emptyLead);
+        setCrmDrawer(null);
       } else {
         toast.error(result.message || "No se pudo guardar el cliente.");
       }
@@ -293,6 +404,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       if (result.ok) {
         toast.success(result.message || "Seguimiento creado correctamente.");
         setFollowup(emptyFollowup);
+        setCrmDrawer(null);
       } else {
         toast.error(result.message || "No se pudo guardar el seguimiento.");
       }
@@ -306,6 +418,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       if (result.ok) {
         toast.success(result.message || "Nota agregada al cliente.");
         setNote(emptyNote);
+        setCrmDrawer(null);
       } else {
         toast.error(result.message || "No se pudo guardar la nota.");
       }
@@ -320,6 +433,30 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         toast.success(result.message || "Seguimiento actualizado correctamente.");
       } else {
         toast.error(result.message || "No se pudo actualizar el seguimiento.");
+      }
+    });
+  }
+
+  async function archiveNote(item: CrmNoteRow) {
+    const confirmed = await toast.confirm({
+      title: "Archivar nota",
+      message: "La nota quedará archivada y se conservará en el historial. ¿Deseas continuar?",
+      confirmLabel: "Archivar",
+      cancelLabel: "Cancelar",
+      tone: "neutral",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await archiveCrmNoteAction(item.id);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message || "Nota archivada correctamente.");
+      } else {
+        toast.error(result.message || "No se pudo archivar la nota.");
       }
     });
   }
@@ -471,12 +608,23 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         label={focus === "customers" ? "clientes" : "seguimientos"}
       />
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <Metric label="Prospectos" value={prospects.length.toLocaleString("es-HN")} />
         <Metric label="Pendientes" value={pendingFollowups.length.toLocaleString("es-HN")} />
         <Metric label="Atrasados" value={overdueCount.toLocaleString("es-HN")} />
         <Metric label="Solicitudes mayoreo" value={wholesaleRequests.length.toLocaleString("es-HN")} />
+        <Metric label="Pipeline estimado" value={formatCurrency(estimatedPipeline)} />
       </div>
+
+      {focus !== "customers" ? (
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <HelpCard title="Prospecto" text="Persona o negocio interesado que aún no ha comprado." />
+          <HelpCard title="Cliente" text="Persona o negocio con pedido, cuenta o relación comercial activa." />
+          <HelpCard title="Seguimiento" text="Tarea pendiente para contactar al cliente o completar una acción." />
+          <HelpCard title="Nota" text="Información importante: llamada, interés, duda o acuerdo." />
+          <HelpCard title="Solicitud mayorista" text="Negocio que desea comprar con precios de mayoreo." />
+        </section>
+      ) : null}
 
       {focus !== "customers" ? (
       <section className="rounded-lg border border-black/10 bg-white p-4">
@@ -488,17 +636,17 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setOpenLeadForm((value) => !value)} variant="ghost">
+            <Button onClick={() => openLeadDrawer()} variant="ghost">
               <UserPlus size={16} />
-              + Nuevo cliente potencial
+              Nuevo prospecto
             </Button>
-            <Button onClick={() => setOpenFollowupForm((value) => !value)} variant="ghost">
+            <Button onClick={() => openFollowupDrawer()} variant="ghost">
               <Clock size={16} />
-              + Nuevo seguimiento
+              Nuevo seguimiento
             </Button>
-            <Button onClick={() => setOpenNoteForm((value) => !value)} variant="ghost">
+            <Button onClick={() => openNoteDrawer()} variant="ghost">
               <MessageSquarePlus size={16} />
-              + Nueva nota
+              Agregar nota
             </Button>
           </div>
         </div>
@@ -506,7 +654,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       ) : null}
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
             <input
@@ -516,23 +664,62 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
-          <p className="text-sm text-black/55">
-            Pipeline estimado: <span className="font-semibold text-[#080808]">{formatCurrency(estimatedPipeline)}</span>
-          </p>
           <Button
             onClick={() => {
               setQuery("");
               setCustomerFilter("all");
+              setFollowupStatusFilter("all");
+              setFollowupPriorityFilter("all");
+              setFollowupTypeFilter("all");
             }}
             variant="ghost"
           >
             Limpiar filtros
           </Button>
         </div>
+        {focus !== "customers" ? (
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <select
+              value={followupTypeFilter}
+              onChange={(event) => setFollowupTypeFilter(event.target.value as "all" | CrmInteractionType)}
+              className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+            >
+              <option value="all">Todos los tipos</option>
+              {Object.entries(interactionLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={followupStatusFilter}
+              onChange={(event) => setFollowupStatusFilter(event.target.value as "all" | "pending" | "completed" | "cancelled" | "overdue")}
+              className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+            >
+              <option value="all">Todos los estados</option>
+              <option value="pending">Pendiente</option>
+              <option value="overdue">Atrasado</option>
+              <option value="completed">Completado</option>
+              <option value="cancelled">Archivado</option>
+            </select>
+            <select
+              value={followupPriorityFilter}
+              onChange={(event) => setFollowupPriorityFilter(event.target.value as "all" | CrmPriority)}
+              className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+            >
+              <option value="all">Todas las prioridades</option>
+              {Object.entries(priorityLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         {message ? <p className="mt-3 text-sm text-black/60">{message}</p> : null}
       </section>
 
-      {focus !== "customers" ? (
+      {false ? (
       <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
         <div className={`rounded-lg border border-black/10 bg-white p-5 ${openLeadForm ? "" : "hidden"}`}>
           <div className="mb-4 flex items-center gap-2">
@@ -760,7 +947,14 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/10">
-                {filteredFollowups.map((item) => (
+                {filteredFollowups.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
+                      No se encontraron resultados con estos filtros.
+                    </td>
+                  </tr>
+                ) : (
+                filteredFollowups.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3">
                       <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
@@ -786,28 +980,32 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                       <p>{formatCurrency(item.estimated_value)}</p>
                       <p className="text-xs text-black/45">Mensual {formatCurrency(item.monthly_amount)}</p>
                     </td>
-                    <td className="px-4 py-3">{item.status}</td>
+                    <td className="px-4 py-3">{followupStatusLabel(item)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <IconButton label="Completar" onClick={() => setStatus(item.id, "completed")}>
+                        <IconButton label="Marcar completado" onClick={() => setStatus(item.id, "completed")}>
                           <CheckCircle2 size={16} />
                         </IconButton>
-                        <IconButton label="Cancelar" onClick={() => setStatus(item.id, "cancelled")}>
+                        <IconButton label="Editar seguimiento" onClick={() => openFollowupDrawer(item)}>
+                          <Save size={16} />
+                        </IconButton>
+                        <IconButton label="Archivar seguimiento" onClick={() => setStatus(item.id, "cancelled")}>
                           <X size={16} />
                         </IconButton>
-                        <IconButton label="Ver detalle" onClick={() => setSelectedFollowupId(item.id)}>
+                        <IconButton label="Ver detalle" onClick={() => openFollowupDetail(item)}>
                           <Search size={16} />
                         </IconButton>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="space-y-5">
+        <div className="hidden">
           <CustomerDetailCard
             customer={selectedCustomer}
             pending={isPending}
@@ -904,6 +1102,47 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         </div>
       </section>
       ) : null}
+      {focus !== "customers" ? (
+        <RecentNotesCard notes={data.notes} onEdit={openNoteDrawer} onArchive={archiveNote} />
+      ) : null}
+      {focus !== "customers" ? (
+        <CrmActionDrawer
+          mode={crmDrawer}
+          lead={lead}
+          followup={followup}
+          note={note}
+          selectedFollowup={selectedFollowup}
+          customers={data.customers}
+          pending={isPending}
+          onClose={closeCrmDrawer}
+          onUpdateLead={updateLead}
+          onUpdateFollowup={updateFollowup}
+          onUpdateNote={(field, value) => setNote((current) => ({ ...current, [field]: value }))}
+          onSelectFollowupCustomer={selectFollowupCustomer}
+          onSubmitLead={submitLead}
+          onSubmitFollowup={submitFollowup}
+          onSubmitNote={submitNote}
+          onEditFollowup={openFollowupDrawer}
+          onCompleteFollowup={(id) => setStatus(id, "completed")}
+          onArchiveFollowup={(id) => setStatus(id, "cancelled")}
+          onViewCustomer={openCustomerProfile}
+        />
+      ) : null}
+      {focus !== "customers" ? (
+        <CustomerProfileDrawer
+          open={Boolean(profileCustomerId)}
+          profile={customerProfile}
+          fallbackCustomer={data.customers.find((customer) => customer.id === profileCustomerId) ?? selectedCustomer}
+          loading={profileLoading}
+          error={profileError}
+          pending={isPending}
+          onClose={closeCustomerProfile}
+          onApproveWholesale={approveWholesaleCustomer}
+          onSuspend={suspendCustomer}
+          onReactivate={reactivateCustomer}
+          onDeleteTest={deleteTestCustomer}
+        />
+      ) : null}
       {mergeRequest ? (
         <DuplicateMergeConfirmModal
           request={mergeRequest}
@@ -937,6 +1176,336 @@ function CustomerFilterTabs({ value, onChange }: { value: CustomerFilter; onChan
         })}
       </div>
     </section>
+  );
+}
+
+function CrmActionDrawer({
+  mode,
+  lead,
+  followup,
+  note,
+  selectedFollowup,
+  customers,
+  pending,
+  onClose,
+  onUpdateLead,
+  onUpdateFollowup,
+  onUpdateNote,
+  onSelectFollowupCustomer,
+  onSubmitLead,
+  onSubmitFollowup,
+  onSubmitNote,
+  onEditFollowup,
+  onCompleteFollowup,
+  onArchiveFollowup,
+  onViewCustomer,
+}: {
+  mode: CrmDrawerMode;
+  lead: CrmLeadInput;
+  followup: CrmFollowupInput;
+  note: CrmNoteInput;
+  selectedFollowup: CrmFollowupRow | null;
+  customers: AdminCrmData["customers"];
+  pending: boolean;
+  onClose: () => Promise<void>;
+  onUpdateLead: <K extends keyof CrmLeadInput>(field: K, value: CrmLeadInput[K]) => void;
+  onUpdateFollowup: <K extends keyof CrmFollowupInput>(field: K, value: CrmFollowupInput[K]) => void;
+  onUpdateNote: <K extends keyof CrmNoteInput>(field: K, value: CrmNoteInput[K]) => void;
+  onSelectFollowupCustomer: (customerId: string) => void;
+  onSubmitLead: () => void;
+  onSubmitFollowup: () => void;
+  onSubmitNote: () => void;
+  onEditFollowup: (followup: CrmFollowupRow) => void;
+  onCompleteFollowup: (id: string) => void;
+  onArchiveFollowup: (id: string) => void;
+  onViewCustomer: (customerId: string) => void;
+}) {
+  useEffect(() => {
+    if (!mode) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        void onClose();
+      }
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mode, onClose]);
+
+  if (!mode) {
+    return null;
+  }
+
+  const title =
+    mode === "lead"
+      ? lead.id
+        ? "Editar prospecto"
+        : "Nuevo prospecto"
+      : mode === "followup"
+        ? followup.id
+          ? "Editar seguimiento"
+          : "Nuevo seguimiento"
+        : mode === "note"
+          ? note.id
+            ? "Editar nota"
+            : "Agregar nota"
+          : "Detalle de seguimiento";
+  const help =
+    mode === "lead"
+      ? "Un prospecto es una persona o negocio interesado que aún no ha comprado."
+      : mode === "followup"
+        ? "Un seguimiento es una tarea pendiente para contactar al cliente o completar una acción."
+        : mode === "note"
+          ? "Una nota guarda información importante sobre el cliente, por ejemplo: llamada realizada, interés, duda o acuerdo."
+          : "Revisa el detalle de la tarea antes de editarla, completarla o archivarla.";
+
+  return (
+    <div className="fixed inset-0 z-[85] bg-black/45 backdrop-blur-sm" onClick={() => void onClose()}>
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="ml-auto flex h-full w-full flex-col bg-[#f4f4f5] text-[#080808] shadow-2xl md:max-w-[820px]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="shrink-0 border-b border-black/10 bg-white px-4 py-4 sm:px-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase text-[#e4252c]">CRM</p>
+              <h2 className="mt-1 text-xl font-semibold">{title}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-black/60">{help}</p>
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar ventana CRM"
+              onClick={() => void onClose()}
+              className="grid size-10 shrink-0 place-items-center rounded-md border border-black/10 bg-white text-black/60 transition-colors hover:bg-[#f4f4f5] hover:text-[#080808]"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+          {mode === "lead" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Empresa">
+                <Input value={lead.business_name} onChange={(event) => onUpdateLead("business_name", event.target.value)} />
+              </Field>
+              <Field label="Cliente">
+                <Input value={lead.contact_name} onChange={(event) => onUpdateLead("contact_name", event.target.value)} />
+              </Field>
+              <Field label="Teléfono">
+                <Input value={lead.phone} onChange={(event) => onUpdateLead("phone", event.target.value)} />
+              </Field>
+              <Field label="Correo electrónico">
+                <Input type="email" value={lead.email} onChange={(event) => onUpdateLead("email", event.target.value)} />
+              </Field>
+              <Field label="RTN">
+                <Input value={lead.tax_id} onChange={(event) => onUpdateLead("tax_id", event.target.value)} />
+              </Field>
+              <Field label="Ciudad">
+                <Input value={lead.city} onChange={(event) => onUpdateLead("city", event.target.value)} />
+              </Field>
+              <Field label="Valor estimado">
+                <Input type="number" min={0} value={lead.estimated_value} onChange={(event) => onUpdateLead("estimated_value", numberValue(event.target.value))} />
+              </Field>
+              <Field label="Mensualidad">
+                <Input type="number" min={0} value={lead.monthly_amount} onChange={(event) => onUpdateLead("monthly_amount", numberValue(event.target.value))} />
+              </Field>
+              <Field label="Estado">
+                <select
+                  value={lead.lead_status}
+                  onChange={(event) => onUpdateLead("lead_status", event.target.value as CrmLeadStatus)}
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                >
+                  {Object.entries(leadStatusLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Dirección">
+                <Input value={lead.address} onChange={(event) => onUpdateLead("address", event.target.value)} />
+              </Field>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Notas</span>
+                <textarea
+                  value={lead.notes}
+                  onChange={(event) => onUpdateLead("notes", event.target.value)}
+                  className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {mode === "followup" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Cliente">
+                <CustomerSelect customers={customers} value={followup.customer_id} onChange={onSelectFollowupCustomer} />
+              </Field>
+              <Field label="Tipo">
+                <select
+                  value={followup.interaction_type}
+                  onChange={(event) => onUpdateFollowup("interaction_type", event.target.value as CrmInteractionType)}
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                >
+                  {Object.entries(interactionLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Acción">
+                <Input value={followup.title} onChange={(event) => onUpdateFollowup("title", event.target.value)} />
+              </Field>
+              <Field label="Próxima acción">
+                <Input value={followup.next_action} onChange={(event) => onUpdateFollowup("next_action", event.target.value)} />
+              </Field>
+              <Field label="Teléfono / WhatsApp">
+                <Input value={followup.phone} onChange={(event) => onUpdateFollowup("phone", event.target.value)} placeholder="Ej. 31986284" />
+              </Field>
+              <Field label="Fecha próxima">
+                <Input type="datetime-local" value={followup.due_at} onChange={(event) => onUpdateFollowup("due_at", event.target.value)} />
+              </Field>
+              <Field label="Prioridad">
+                <select
+                  value={followup.priority}
+                  onChange={(event) => onUpdateFollowup("priority", event.target.value as CrmPriority)}
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                >
+                  {Object.entries(priorityLabels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Estado">
+                <select
+                  value={followup.status ?? "pending"}
+                  onChange={(event) => onUpdateFollowup("status", event.target.value as CrmFollowupRow["status"])}
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                >
+                  <option value="pending">Pendiente</option>
+                  <option value="completed">Completado</option>
+                  <option value="cancelled">Archivado</option>
+                </select>
+              </Field>
+              <Field label="Valor estimado">
+                <Input type="number" min={0} value={followup.estimated_value} onChange={(event) => onUpdateFollowup("estimated_value", numberValue(event.target.value))} />
+              </Field>
+              <Field label="Mensualidad">
+                <Input type="number" min={0} value={followup.monthly_amount} onChange={(event) => onUpdateFollowup("monthly_amount", numberValue(event.target.value))} />
+              </Field>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Notas</span>
+                <textarea
+                  value={followup.notes}
+                  onChange={(event) => onUpdateFollowup("notes", event.target.value)}
+                  className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {mode === "note" ? (
+            <div className="grid gap-3">
+              <Field label="Cliente">
+                <CustomerSelect customers={customers} value={note.customer_id} onChange={(value) => onUpdateNote("customer_id", value)} />
+              </Field>
+              <Field label="Tipo de nota">
+                <select
+                  value={note.note_type ?? "nota"}
+                  onChange={(event) => onUpdateNote("note_type", event.target.value)}
+                  className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                >
+                  <option value="nota">Nota</option>
+                  <option value="llamada">Llamada</option>
+                  <option value="acuerdo">Acuerdo</option>
+                  <option value="duda">Duda</option>
+                  <option value="seguimiento">Seguimiento</option>
+                </select>
+              </Field>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Contenido</span>
+                <textarea
+                  value={note.note}
+                  onChange={(event) => onUpdateNote("note", event.target.value)}
+                  className="min-h-40 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {mode === "followup-detail" && selectedFollowup ? (
+            <div className="space-y-3 text-sm">
+              <InfoLine label="Cliente" value={selectedFollowup.business_name ?? selectedFollowup.customer_name ?? "Cliente"} />
+              <InfoLine label="Acción" value={selectedFollowup.title} />
+              <InfoLine label="Tipo" value={interactionLabels[selectedFollowup.interaction_type]} />
+              <InfoLine label="Próxima acción" value={selectedFollowup.next_action ?? "-"} />
+              <InfoLine label="Fecha" value={formatDateTime(selectedFollowup.due_at)} />
+              <InfoLine label="Prioridad" value={priorityLabels[selectedFollowup.priority]} />
+              <InfoLine label="Estado" value={followupStatusLabel(selectedFollowup)} />
+              <InfoLine label="Teléfono" value={selectedFollowup.phone ?? "Sin teléfono"} />
+              {selectedFollowup.notes ? <p className="whitespace-pre-line rounded-md bg-white p-3">{selectedFollowup.notes}</p> : null}
+              <ContactActions phone={selectedFollowup.phone} customerName={selectedFollowup.business_name ?? selectedFollowup.customer_name} />
+            </div>
+          ) : null}
+        </div>
+
+        <footer className="shrink-0 border-t border-black/10 bg-white px-4 py-4 sm:px-6">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="ghost" disabled={pending} onClick={() => void onClose()}>
+              Cancelar
+            </Button>
+            {mode === "lead" ? (
+              <Button type="button" variant="dark" disabled={pending} onClick={onSubmitLead}>
+                <Save size={17} />
+                {lead.id ? "Guardar cambios" : "Crear prospecto"}
+              </Button>
+            ) : null}
+            {mode === "followup" ? (
+              <Button type="button" variant="dark" disabled={pending} onClick={onSubmitFollowup}>
+                <Save size={17} />
+                {followup.id ? "Guardar cambios" : "Crear seguimiento"}
+              </Button>
+            ) : null}
+            {mode === "note" ? (
+              <Button type="button" variant="dark" disabled={pending} onClick={onSubmitNote}>
+                <Save size={17} />
+                {note.id ? "Guardar cambios" : "Agregar nota"}
+              </Button>
+            ) : null}
+            {mode === "followup-detail" && selectedFollowup ? (
+              <>
+                <Button type="button" variant="ghost" disabled={pending} onClick={() => onViewCustomer(selectedFollowup.customer_id)}>
+                  Ver cliente
+                </Button>
+                <Button type="button" variant="ghost" disabled={pending} onClick={() => onEditFollowup(selectedFollowup)}>
+                  Editar
+                </Button>
+                <Button type="button" variant="ghost" disabled={pending} onClick={() => onArchiveFollowup(selectedFollowup.id)}>
+                  Archivar
+                </Button>
+                <Button type="button" variant="dark" disabled={pending} onClick={() => onCompleteFollowup(selectedFollowup.id)}>
+                  Marcar completado
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </footer>
+      </aside>
+    </div>
   );
 }
 
@@ -1113,7 +1682,15 @@ function DuplicateMergeConfirmModal({
   );
 }
 
-function RecentNotesCard({ notes }: { notes: CrmNoteRow[] }) {
+function RecentNotesCard({
+  notes,
+  onEdit,
+  onArchive,
+}: {
+  notes: CrmNoteRow[];
+  onEdit?: (note: CrmNoteRow) => void;
+  onArchive?: (note: CrmNoteRow) => void;
+}) {
   return (
     <div className="rounded-lg border border-black/10 bg-white p-5">
       <h2 className="font-semibold">Notas recientes</h2>
@@ -1124,9 +1701,31 @@ function RecentNotesCard({ notes }: { notes: CrmNoteRow[] }) {
         ) : (
           notes.slice(0, 5).map((item) => (
             <article key={item.id} className="rounded-md bg-[#f4f4f5] p-3 text-sm">
-              <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    {item.note_type ?? "nota"} {item.user_id ? `- Usuario ${item.user_id.slice(0, 8)}` : ""}
+                  </p>
+                </div>
+                {item.archived_at ? <InfoPill>Archivado</InfoPill> : null}
+              </div>
               <p className="mt-1 line-clamp-2 text-black/60">{item.note}</p>
               <p className="mt-2 text-xs text-black/45">{formatDateTime(item.created_at)}</p>
+              {onEdit || onArchive ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {onEdit ? (
+                    <Button type="button" variant="ghost" onClick={() => onEdit(item)}>
+                      Editar
+                    </Button>
+                  ) : null}
+                  {onArchive && !item.archived_at ? (
+                    <Button type="button" variant="ghost" onClick={() => onArchive(item)}>
+                      Archivar
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </article>
           ))
         )}
@@ -1850,6 +2449,15 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-black/10 bg-white p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function HelpCard({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-3 text-sm">
+      <p className="font-semibold">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-black/55">{text}</p>
     </div>
   );
 }

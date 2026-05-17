@@ -15,13 +15,24 @@ export type SocialSettings = {
   website_url: string;
 };
 
+export type BusinessContactSettings = {
+  trade_name: string;
+  legal_business_name: string;
+  business_rtn: string;
+  business_address: string;
+  customer_service_phone: string;
+  customer_service_email: string;
+  customer_service_whatsapp: string;
+  customer_service_hours: string;
+};
+
 export type PublicCompanySettings = CommerceSettings &
   SocialSettings & {
     company_name: string;
     currency: string;
     tax_rate: number;
     logo_url: string | null;
-  };
+  } & BusinessContactSettings;
 
 export type HolidayBanner = {
   id: string;

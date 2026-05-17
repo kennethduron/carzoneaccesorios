@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
 import { createCheckoutOrderAction, getWholesalePurchaseStatusAction } from "@/app/checkout/actions";
+import { CardBrandList } from "@/components/store/card-brand-list";
 import type { CheckoutData } from "@/types/commerce";
 import type { PublicCompanySettings } from "@/types/settings";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -487,15 +488,20 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
               <div className="flex items-start gap-3">
                 <CreditCard size={19} className="mt-0.5 text-[#e4252c]" />
                 <div>
-                  <h2 className="font-semibold">Tarjeta de crédito/débito</h2>
+                  <h2 className="font-semibold">Pago seguro con tarjeta</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Preparado para conectar una pasarela de pago. El pedido quedará pendiente de autorización.
+                    Pendiente de activación BAC. Esta opción queda preparada para procesarse mediante BAC Credomatic o su proveedor autorizado.
                   </p>
                 </div>
               </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input disabled placeholder="Número de tarjeta" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/40" />
-                <input disabled placeholder="MM/AA  CVC" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm text-black/40" />
+              <div className="mt-4 rounded-md border border-[#e4252c]/20 bg-white p-3 text-sm leading-6 text-black/65">
+                <p>No guardamos número de tarjeta, CVV ni fecha de vencimiento en nuestra base de datos.</p>
+                <p>Compatible con validación bancaria y 3D Secure cuando BAC lo requiera y entregue la documentación técnica.</p>
+                <p>El pedido quedará pendiente de aprobación hasta recibir la respuesta de la pasarela.</p>
+              </div>
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium uppercase text-black/50">Tarjetas aceptadas al activar la pasarela</p>
+                <CardBrandList />
               </div>
             </section>
           ) : null}

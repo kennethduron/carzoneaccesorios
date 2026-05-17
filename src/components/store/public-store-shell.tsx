@@ -4,12 +4,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CardBrandList } from "@/components/store/card-brand-list";
+import { SocialLinks } from "@/components/store/social-links";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
-import { SocialLinks } from "@/components/store/social-links";
-import type { SocialSettings } from "@/types/settings";
+import type { PublicCompanySettings } from "@/types/settings";
 
 const primaryLinks = [
   ["Inicio", "/"],
@@ -25,12 +26,22 @@ const userMenuLinks = [
   ["Solicitar mayoreo", "/contacto#mayoreo"],
 ];
 
+const legalLinks = [
+  ["Términos y condiciones", "/terminos-y-condiciones"],
+  ["Política de privacidad", "/politica-de-privacidad"],
+  ["Política de entrega", "/politica-de-entrega"],
+  ["Política de devoluciones", "/politica-de-devoluciones"],
+  ["Política de cancelación", "/politica-de-cancelacion"],
+  ["Servicio al cliente", "/contacto-servicio-cliente"],
+  ["Contacto", "/contacto"],
+];
+
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [cartPulse, setCartPulse] = useState(false);
-  const [socialSettings, setSocialSettings] = useState<SocialSettings | null>(null);
+  const [companySettings, setCompanySettings] = useState<PublicCompanySettings | null>(null);
   const previousCartCount = useRef(0);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const { priceMode } = usePriceMode();
@@ -63,7 +74,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
     getPublicCompanySettingsClient().then((settings) => {
       if (active) {
-        setSocialSettings(settings);
+        setCompanySettings(settings);
       }
     });
 
@@ -107,6 +118,8 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const tradeName = companySettings?.trade_name || companySettings?.company_name || "Car Zone Accesorios";
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f4f4f5] text-[#080808]">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-black/10 bg-white/95 shadow-sm backdrop-blur">
@@ -134,7 +147,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
           <nav className="hidden items-center gap-1 lg:flex">
             {primaryLinks.map(([label, href]) => (
-              <Link key={href} href={href} className="rounded-md px-3 py-2 text-sm hover:bg-white">
+              <Link key={href} href={href} className="rounded-md px-3 py-2 text-sm hover:bg-[#f4f4f5]">
                 {label}
               </Link>
             ))}
@@ -250,19 +263,43 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
       <div className="h-16 sm:h-[70px]" aria-hidden="true" />
       {children}
       <footer className="border-t border-black/10 bg-white">
-        <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 md:grid-cols-[1fr_auto]">
+        <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 lg:grid-cols-[1.2fr_1fr_1fr]">
           <div>
-            <p className="font-semibold">Car Zone Accesorios</p>
+            <p className="font-semibold">{tradeName}</p>
             <p className="mt-2 max-w-xl text-sm text-black/55">
               Tienda profesional de accesorios automotrices con precios al detalle y mayoristas reales.
             </p>
+            <div className="mt-4 space-y-1 text-sm text-black/55">
+              {companySettings?.business_address ? <p>{companySettings.business_address}</p> : null}
+              {companySettings?.customer_service_phone ? <p>{companySettings.customer_service_phone}</p> : null}
+              {companySettings?.customer_service_email ? <p>{companySettings.customer_service_email}</p> : null}
+              {companySettings?.customer_service_hours ? <p>{companySettings.customer_service_hours}</p> : null}
+            </div>
           </div>
+
+          <div>
+            <p className="mb-2 text-sm font-semibold">Políticas y soporte</p>
+            <div className="grid gap-1 text-sm">
+              {legalLinks.map(([label, href]) => (
+                <Link key={href} href={href} className="rounded-md px-3 py-2 text-black/65 hover:bg-[#f4f4f5] hover:text-[#080808]">
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+
           <div>
             <p className="mb-2 text-sm font-semibold">Síguenos</p>
-            <div className="mb-3">
-              <SocialLinks settings={socialSettings} />
+            <div className="mb-5">
+              <SocialLinks settings={companySettings} />
             </div>
-            <div className="flex flex-wrap gap-2 text-sm">
+            <p className="mb-2 text-sm font-semibold">Pagos seguros</p>
+            <p className="mb-3 text-sm text-black/55">Pagos seguros procesados mediante pasarela bancaria autorizada.</p>
+            <CardBrandList compact />
+          </div>
+        </div>
+        <div className="border-t border-black/10 px-5 py-4">
+          <div className="mx-auto flex max-w-7xl flex-wrap gap-2 text-sm text-black/55">
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
               Misión
             </Link>
@@ -272,7 +309,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
               Historia
             </Link>
-            </div>
+            <Link href="/politicas" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
+              Políticas
+            </Link>
           </div>
         </div>
       </footer>

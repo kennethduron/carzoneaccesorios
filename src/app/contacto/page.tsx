@@ -20,9 +20,9 @@ export default async function ContactoPage() {
           </p>
           <div className="mt-6 grid gap-3">
             {[
-              [Phone, "+504 0000-0000"],
-              [Mail, "ventas@carzoneaccesorios.com"],
-              [MapPin, "Honduras"],
+              [Phone, companySettings.customer_service_phone || "+504 0000-0000"],
+              [Mail, companySettings.customer_service_email || "ventas@carzoneaccesorios.com"],
+              [MapPin, companySettings.business_address || "Honduras"],
             ].map(([Icon, text]) => (
               <div key={text as string} className="flex items-center gap-3 rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <Icon size={18} className="text-[#e4252c]" />

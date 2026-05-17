@@ -179,16 +179,21 @@ export async function getCustomerProfileAction(customerId: string): Promise<Cust
 export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<CrmMutationResult> {
   const profile = await requirePermission("crm:manage");
 
+  const followupId = input.id ? uuidLike(input.id, "Seguimiento") : null;
   const customerId = uuidLike(input.customer_id, "Cliente");
-  const title = requireText(input.title, "Titulo");
+  const title = requireText(input.title, "Título");
   const dueAt = optionalDateTime(input.due_at);
   const estimatedValue = nonNegativeNumber(input.estimated_value, "Valor estimado");
   const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Mensualidad");
   const phone = input.phone.trim() ? validateHondurasPhone(input.phone) : { ok: true as const, value: null };
 
+  if (followupId && !followupId.ok) {
+    return { ok: false, message: followupId.message };
+  }
+
   for (const result of [customerId, title, dueAt, estimatedValue, monthlyAmount, phone]) {
     if (!result.ok) {
-      return { ok: false, message: result.message };
+      return { ok: false, message: "message" in result ? result.message : "No pudimos validar el seguimiento." };
     }
   }
 
@@ -204,11 +209,14 @@ export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<Cr
     notes: optionalText(input.notes),
     estimated_value: estimatedValue.value,
     monthly_amount: monthlyAmount.value,
-    status: "pending",
+    status: input.status ?? "pending",
   };
 
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.from("crm_followups").insert(payload).select("id").single<{ id: string }>();
+  const query = followupId
+    ? supabase.from("crm_followups").update(payload).eq("id", followupId.value).select("id").single<{ id: string }>()
+    : supabase.from("crm_followups").insert(payload).select("id").single<{ id: string }>();
+  const { data, error } = await query;
 
   if (error) {
     return { ok: false, message: error.message };
@@ -217,19 +225,24 @@ export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<Cr
   await writeAuditLog({
     tableName: "crm_followups",
     recordId: data.id,
-    action: "crm.followup.created",
+    action: followupId ? "crm.followup.updated" : "crm.followup.created",
     newData: payload,
   });
 
   revalidatePath("/admin/crm");
-  return { ok: true, message: "Actividad CRM creada." };
+  return { ok: true, message: followupId ? "Seguimiento actualizado." : "Seguimiento creado." };
 }
 
 export async function saveCrmNoteAction(input: CrmNoteInput): Promise<CrmMutationResult> {
   const profile = await requirePermission("crm:manage");
 
+  const noteId = input.id ? uuidLike(input.id, "Nota") : null;
   const customerId = uuidLike(input.customer_id, "Cliente");
   const note = requireText(input.note, "Nota", 2000);
+
+  if (noteId && !noteId.ok) {
+    return { ok: false, message: noteId.message };
+  }
 
   for (const result of [customerId, note]) {
     if (!result.ok) {
@@ -241,9 +254,14 @@ export async function saveCrmNoteAction(input: CrmNoteInput): Promise<CrmMutatio
   const payload = {
     customer_id: customerId.value,
     user_id: profile.id,
+    note_type: optionalText(input.note_type) ?? "nota",
     note: note.value,
+    archived_at: null,
   };
-  const { data, error } = await supabase.from("crm_notes").insert(payload).select("id").single<{ id: string }>();
+  const query = noteId
+    ? supabase.from("crm_notes").update(payload).eq("id", noteId.value).select("id").single<{ id: string }>()
+    : supabase.from("crm_notes").insert(payload).select("id").single<{ id: string }>();
+  const { data, error } = await query;
 
   if (error) {
     return { ok: false, message: error.message };
@@ -252,12 +270,39 @@ export async function saveCrmNoteAction(input: CrmNoteInput): Promise<CrmMutatio
   await writeAuditLog({
     tableName: "crm_notes",
     recordId: data.id,
-    action: "crm.note.created",
+    action: noteId ? "crm.note.updated" : "crm.note.created",
     newData: payload,
   });
 
   revalidatePath("/admin/crm");
-  return { ok: true, message: "Nota guardada en el historial." };
+  return { ok: true, message: noteId ? "Nota actualizada." : "Nota guardada en el historial." };
+}
+
+export async function archiveCrmNoteAction(id: string): Promise<CrmMutationResult> {
+  await requirePermission("crm:manage");
+
+  const noteId = uuidLike(id, "Nota");
+  if (!noteId.ok) {
+    return { ok: false, message: noteId.message };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const archivedAt = new Date().toISOString();
+  const { error } = await supabase.from("crm_notes").update({ archived_at: archivedAt }).eq("id", noteId.value);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  await writeAuditLog({
+    tableName: "crm_notes",
+    recordId: noteId.value,
+    action: "crm.note.archived",
+    newData: { archived_at: archivedAt },
+  });
+
+  revalidatePath("/admin/crm");
+  return { ok: true, message: "Nota archivada correctamente." };
 }
 
 export async function setCrmFollowupStatusAction(

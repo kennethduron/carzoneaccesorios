@@ -11,6 +11,17 @@ const defaultSocialSettings: SocialSettings = {
   website_url: "",
 };
 
+const defaultBusinessContactSettings = {
+  trade_name: "Car Zone Accesorios",
+  legal_business_name: "",
+  business_rtn: "",
+  business_address: "Honduras",
+  customer_service_phone: "+504 0000-0000",
+  customer_service_email: "ventas@carzoneaccesorios.com",
+  customer_service_whatsapp: "",
+  customer_service_hours: "Lunes a sábado, 8:00 a.m. a 6:00 p.m.",
+};
+
 export const defaultPublicCompanySettings: PublicCompanySettings = {
   company_name: "Car Zone Accesorios",
   currency: "HNL",
@@ -18,6 +29,7 @@ export const defaultPublicCompanySettings: PublicCompanySettings = {
   logo_url: null,
   ...defaultCommerceSettings,
   ...defaultSocialSettings,
+  ...defaultBusinessContactSettings,
 };
 
 function normalizeUrl(value: unknown) {
@@ -37,6 +49,14 @@ function normalizePublicSettings(row: Partial<PublicCompanySettings> | null | un
     tiktok_url: normalizeUrl(row?.tiktok_url),
     youtube_url: normalizeUrl(row?.youtube_url),
     website_url: normalizeUrl(row?.website_url),
+    trade_name: String(row?.trade_name ?? defaultPublicCompanySettings.trade_name),
+    legal_business_name: String(row?.legal_business_name ?? ""),
+    business_rtn: String(row?.business_rtn ?? ""),
+    business_address: String(row?.business_address ?? defaultPublicCompanySettings.business_address),
+    customer_service_phone: String(row?.customer_service_phone ?? defaultPublicCompanySettings.customer_service_phone),
+    customer_service_email: String(row?.customer_service_email ?? defaultPublicCompanySettings.customer_service_email),
+    customer_service_whatsapp: String(row?.customer_service_whatsapp ?? ""),
+    customer_service_hours: String(row?.customer_service_hours ?? defaultPublicCompanySettings.customer_service_hours),
   };
 }
 

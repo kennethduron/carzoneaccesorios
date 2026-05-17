@@ -81,7 +81,9 @@ export type CrmNoteRow = {
   customer_name: string | null;
   business_name: string | null;
   user_id: string | null;
+  note_type: string;
   note: string;
+  archived_at: string | null;
   created_at: string;
 };
 
@@ -165,6 +167,7 @@ export type CrmLeadInput = {
 };
 
 export type CrmFollowupInput = {
+  id?: string;
   customer_id: string;
   title: string;
   interaction_type: CrmInteractionType;
@@ -175,10 +178,13 @@ export type CrmFollowupInput = {
   notes: string;
   estimated_value: number;
   monthly_amount: number;
+  status?: CrmFollowupStatus;
 };
 
 export type CrmNoteInput = {
+  id?: string;
   customer_id: string;
+  note_type?: string;
   note: string;
 };
 

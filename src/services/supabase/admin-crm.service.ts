@@ -483,7 +483,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       .returns<FollowupQueryRow[]>(),
     supabase
       .from("crm_notes")
-      .select("id, customer_id, user_id, note, created_at, customers(contact_name, business_name)")
+      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers(contact_name, business_name)")
       .order("created_at", { ascending: false })
       .limit(50)
       .returns<NoteQueryRow[]>(),
@@ -752,7 +752,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .returns<CustomerProfileInvoiceRow[]>(),
     admin
       .from("crm_notes")
-      .select("id, customer_id, user_id, note, created_at, customers(contact_name, business_name)")
+      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers(contact_name, business_name)")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(30)

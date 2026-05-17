@@ -72,6 +72,12 @@ const adminModules = [
     permissions: ["fiscal:read", "settings:manage"] satisfies Permission[],
   },
   {
+    title: "Revisión BAC",
+    href: "/admin/revision-bac",
+    description: "Checklist de requisitos web para pasarela BAC Credomatic.",
+    permissions: ["admin:access"] satisfies Permission[],
+  },
+  {
     title: "Banners festivos",
     href: "/admin/banners",
     description: "Flyers, promociones y mensajes por dias festivos de Honduras.",
@@ -80,6 +86,10 @@ const adminModules = [
 ];
 
 function canAccessModule(role: string, permissions: Permission[], modulePermissions: Permission[]) {
+  if (modulePermissions.includes("admin:access") && role !== "admin") {
+    return false;
+  }
+
   if (modulePermissions.includes("system:monitoring")) {
     return permissions.includes("system:monitoring");
   }

@@ -1,8 +1,8 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { CommerceSettings, SocialSettings } from "@/types/settings";
+import type { BusinessContactSettings, CommerceSettings, SocialSettings } from "@/types/settings";
 import { defaultCommerceSettings, normalizeCommerceSettings } from "@/utils/commerce-settings";
 
-export type AdminCompanySettings = CommerceSettings & SocialSettings;
+export type AdminCompanySettings = CommerceSettings & SocialSettings & BusinessContactSettings;
 
 export const defaultAdminCompanySettings: AdminCompanySettings = {
   ...defaultCommerceSettings,
@@ -12,6 +12,14 @@ export const defaultAdminCompanySettings: AdminCompanySettings = {
   tiktok_url: "",
   youtube_url: "",
   website_url: "",
+  trade_name: "Car Zone Accesorios",
+  legal_business_name: "",
+  business_rtn: "",
+  business_address: "Honduras",
+  customer_service_phone: "+504 0000-0000",
+  customer_service_email: "ventas@carzoneaccesorios.com",
+  customer_service_whatsapp: "",
+  customer_service_hours: "Lunes a sábado, 8:00 a.m. a 6:00 p.m.",
 };
 
 function cleanUrl(value: string) {
@@ -27,6 +35,14 @@ function normalizeSettings(row: Partial<AdminCompanySettings> | null | undefined
     tiktok_url: String(row?.tiktok_url ?? "").trim(),
     youtube_url: String(row?.youtube_url ?? "").trim(),
     website_url: String(row?.website_url ?? "").trim(),
+    trade_name: String(row?.trade_name ?? defaultAdminCompanySettings.trade_name).trim(),
+    legal_business_name: String(row?.legal_business_name ?? "").trim(),
+    business_rtn: String(row?.business_rtn ?? "").trim(),
+    business_address: String(row?.business_address ?? defaultAdminCompanySettings.business_address).trim(),
+    customer_service_phone: String(row?.customer_service_phone ?? defaultAdminCompanySettings.customer_service_phone).trim(),
+    customer_service_email: String(row?.customer_service_email ?? defaultAdminCompanySettings.customer_service_email).trim(),
+    customer_service_whatsapp: String(row?.customer_service_whatsapp ?? "").trim(),
+    customer_service_hours: String(row?.customer_service_hours ?? defaultAdminCompanySettings.customer_service_hours).trim(),
   };
 }
 
@@ -35,7 +51,7 @@ export async function getAdminCompanySettings(): Promise<AdminCompanySettings> {
   const { data, error } = await supabase
     .from("company_settings")
     .select(
-      "free_shipping_threshold, standard_shipping_fee, cash_on_delivery_percentage, enable_cash_on_delivery_fee, first_wholesale_minimum, facebook_url, instagram_url, whatsapp_url, tiktok_url, youtube_url, website_url",
+      "free_shipping_threshold, standard_shipping_fee, cash_on_delivery_percentage, enable_cash_on_delivery_fee, first_wholesale_minimum, facebook_url, instagram_url, whatsapp_url, tiktok_url, youtube_url, website_url, trade_name, legal_business_name, business_rtn, business_address, customer_service_phone, customer_service_email, customer_service_whatsapp, customer_service_hours",
     )
     .order("created_at", { ascending: true })
     .limit(1)
@@ -58,6 +74,14 @@ export async function saveAdminCompanySettings(input: AdminCompanySettings) {
     tiktok_url: cleanUrl(input.tiktok_url),
     youtube_url: cleanUrl(input.youtube_url),
     website_url: cleanUrl(input.website_url),
+    trade_name: input.trade_name.trim(),
+    legal_business_name: input.legal_business_name.trim(),
+    business_rtn: input.business_rtn.trim(),
+    business_address: input.business_address.trim(),
+    customer_service_phone: input.customer_service_phone.trim(),
+    customer_service_email: input.customer_service_email.trim(),
+    customer_service_whatsapp: input.customer_service_whatsapp.trim(),
+    customer_service_hours: input.customer_service_hours.trim(),
   };
 
   const { data: existing, error: existingError } = await supabase

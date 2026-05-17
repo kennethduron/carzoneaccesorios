@@ -58,6 +58,14 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
     return { ok: false, message: invalidSocialUrl };
   }
 
+  if (!input.trade_name.trim()) {
+    return { ok: false, message: "El nombre comercial es obligatorio." };
+  }
+
+  if (input.customer_service_email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.customer_service_email.trim())) {
+    return { ok: false, message: "El correo de servicio al cliente debe ser válido." };
+  }
+
   const previousSettings = await getAdminCompanySettings();
   await saveAdminCompanySettings(input);
   const changes = commerceSettingsChanges(previousSettings, input);
@@ -76,6 +84,8 @@ export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
   revalidatePath("/checkout");
   revalidatePath("/");
   revalidatePath("/contacto");
+  revalidatePath("/politicas");
+  revalidatePath("/contacto-servicio-cliente");
 
   return { ok: true, message: "Configuración comercial guardada correctamente." };
 }
@@ -105,7 +115,8 @@ function validateSocialUrls(input: AdminCompanySettings) {
     validateOptionalUrl("WhatsApp", input.whatsapp_url) ??
     validateOptionalUrl("TikTok", input.tiktok_url) ??
     validateOptionalUrl("YouTube", input.youtube_url) ??
-    validateOptionalUrl("Sitio web", input.website_url)
+    validateOptionalUrl("Sitio web", input.website_url) ??
+    validateOptionalUrl("WhatsApp de servicio al cliente", input.customer_service_whatsapp)
   );
 }
 

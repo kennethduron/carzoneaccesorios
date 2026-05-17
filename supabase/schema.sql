@@ -50,3 +50,5 @@
 \i ./migrations/202605130002_checkout_shipping_wholesale_social_banners.sql
 \i ./migrations/202605130003_contact_page_crm_types.sql
 \i ./migrations/202605130004_customer_dedupe_checkout_admin.sql
+\i ./migrations/202605140001_crm_notes_archive_metadata.sql
+\i ./migrations/202605140002_bac_compliance_business_settings.sql
