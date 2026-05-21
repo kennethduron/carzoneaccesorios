@@ -12,7 +12,7 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "bank_reference_number" | "transfer_receipt_url" | "items" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "items" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
   subtotal: unknown;
   tax: unknown;
   shipping_fee: unknown;
@@ -38,11 +38,13 @@ type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | 
 };
 
 type PaymentQueryRow = {
+  id: string;
   order_id: string;
   payment_method: string | null;
   bank_reference_number: string | null;
   reference: string | null;
   transfer_receipt_url: string | null;
+  transfer_receipt_public_id: string | null;
 };
 
 function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, PaymentQueryRow>): AdminInvoiceRow {
@@ -63,8 +65,12 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     status: row.status,
     price_mode: row.price_mode,
     payment_method: payment?.payment_method ?? row.orders?.payment_method ?? "-",
+    payment_id: payment?.id ?? null,
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
-    transfer_receipt_url: payment?.transfer_receipt_url ?? null,
+    transfer_receipt_url: payment?.transfer_receipt_public_id || payment?.transfer_receipt_url
+      ? `/api/admin/transfer-receipts/${payment.id}`
+      : null,
+    transfer_receipt_public_id: payment?.transfer_receipt_public_id ?? null,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
     shipping_fee: toNumber(row.shipping_fee),
@@ -157,7 +163,7 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
   if (orderIds.length > 0) {
     const { data, error } = await supabase
       .from("payments")
-      .select("order_id, payment_method, bank_reference_number, reference, transfer_receipt_url")
+      .select("id, order_id, payment_method, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id")
       .in("order_id", orderIds)
       .order("created_at", { ascending: false })
       .returns<PaymentQueryRow[]>();

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
+import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { validateHondurasPhone } from "@/utils/validation";
@@ -28,6 +30,14 @@ type CheckoutActionResult = {
   orderNumber?: string;
   trackingCode?: string;
   transferReceiptUrl?: string | null;
+};
+
+type TransferReceiptUpload = {
+  publicId: string;
+  resourceType: string;
+  deliveryType: string;
+  format: string | null;
+  originalFilename: string | null;
 };
 
 export type WholesalePurchaseStatusResult = {
@@ -148,7 +158,7 @@ export async function getWholesalePurchaseStatusAction(customerId: string | null
   return { ok: true, isFirstWholesalePurchase: !Boolean(data) };
 }
 
-async function uploadTransferReceipt(file: File | null, bankReference: string) {
+async function uploadTransferReceipt(file: File | null, bankReference: string): Promise<TransferReceiptUpload | null> {
   if (!file || file.size === 0) {
     return null;
   }
@@ -167,23 +177,35 @@ async function uploadTransferReceipt(file: File | null, bankReference: string) {
   const cloudinary = configureCloudinary();
   const buffer = Buffer.from(await file.arrayBuffer());
   const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase() || "archivo";
-  const publicId = `${bankReference.replace(/[^a-z0-9]/gi, "-").slice(0, 40) || "transferencia"}-${randomUUID()}.${extension}`;
+  const publicId = `${bankReference.replace(/[^a-z0-9]/gi, "-").slice(0, 40) || "transferencia"}-${randomUUID()}`;
 
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<TransferReceiptUpload>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        folder: "car-zone/comprobantes-transferencia",
+        folder: "car-zone/comprobantes-transferencia-privados",
         public_id: publicId,
         resource_type: "auto",
+        type: "authenticated",
         overwrite: false,
+        use_filename: false,
+        unique_filename: false,
+        context: {
+          source: "checkout_bank_transfer",
+        },
       },
       (error, uploadResult) => {
-        if (error || !uploadResult?.secure_url) {
+        if (error || !uploadResult?.public_id) {
           reject(error ?? new Error("Cloudinary no devolvio una URL valida para el comprobante."));
           return;
         }
 
-        resolve(uploadResult.secure_url);
+        resolve({
+          publicId: uploadResult.public_id,
+          resourceType: uploadResult.resource_type ?? (isPdf ? "raw" : "image"),
+          deliveryType: uploadResult.type ?? "authenticated",
+          format: uploadResult.format ?? extension,
+          originalFilename: file.name.slice(0, 180),
+        });
       },
     );
 
@@ -198,6 +220,17 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     input = parseCheckoutOrderInput(formData);
   } catch {
     return { ok: false, message: "No se pudo leer la información del checkout." };
+  }
+
+  const checkoutLimit = await checkRateLimit({
+    route: "/checkout",
+    limit: 6,
+    windowSeconds: 10 * 60,
+    key: String(input.checkout.email || input.checkout.phone || "").trim().toLowerCase(),
+  });
+
+  if (!checkoutLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
   }
 
   const customerName = String(input.checkout.customerName ?? "").trim();
@@ -338,11 +371,11 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     }
   }
 
-  let transferReceiptUrl: string | null = null;
+  let transferReceipt: TransferReceiptUpload | null = null;
 
   try {
     const receiptFile = formData.get("transferReceipt");
-    transferReceiptUrl =
+    transferReceipt =
       paymentMethod === "bank_transfer" && receiptFile instanceof File
         ? await uploadTransferReceipt(receiptFile, bankReference)
         : null;
@@ -387,7 +420,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       })),
       wholesale_code: input.wholesaleCode?.trim().toUpperCase() || null,
       wholesale_code_id: input.wholesaleCodeId || null,
-      transfer_receipt_url: transferReceiptUrl,
+      transfer_receipt_url: null,
     })
     .returns<Array<{ order_id: string; order_number: string; tracking_code: string }>>();
 
@@ -414,6 +447,35 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   if (!createdOrder) {
     return { ok: false, message: "No se pudo crear el pedido." };
+  }
+
+  if (transferReceipt) {
+    const admin = getSupabaseAdminClient();
+    const { error: receiptMetadataError } = await admin
+      .from("payments")
+      .update({
+        transfer_receipt_url: null,
+        transfer_receipt_public_id: transferReceipt.publicId,
+        transfer_receipt_resource_type: transferReceipt.resourceType,
+        transfer_receipt_delivery_type: transferReceipt.deliveryType,
+        transfer_receipt_format: transferReceipt.format,
+        transfer_receipt_original_filename: transferReceipt.originalFilename,
+        transfer_receipt_uploaded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("order_id", createdOrder.order_id);
+
+    if (receiptMetadataError) {
+      await writeErrorLog({
+        route: "/checkout",
+        action: "checkout.transfer_receipt_metadata_failed",
+        errorMessage: receiptMetadataError.message,
+        metadata: {
+          order_id: createdOrder.order_id,
+          receipt_public_id_present: Boolean(transferReceipt.publicId),
+        },
+      });
+    }
   }
 
   revalidatePath("/admin/pedidos");
@@ -445,7 +507,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     message: "Pedido creado correctamente. El admin o la contadora podrán revisarlo para facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,
-    transferReceiptUrl,
+    transferReceiptUrl: null,
   };
 }
 

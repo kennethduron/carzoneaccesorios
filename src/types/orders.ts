@@ -96,11 +96,15 @@ export type AdminOrderRow = {
   cash_on_delivery_fee: number;
   total: number;
   status: OrderStatus;
+  order_reservation_status: "not_required" | "reserved" | "confirmed" | "released" | "expired" | "canceled";
+  reservation_expires_at: string | null;
   created_at: string;
   order_items: AdminOrderItem[];
+  payment_id: string | null;
   payment_status: "pending" | "approved" | "rejected" | "refunded" | null;
   bank_reference_number: string | null;
   transfer_receipt_url: string | null;
+  transfer_receipt_public_id: string | null;
   invoice_id: string | null;
   invoice_number: string | null;
   invoice_issued_at: string | null;

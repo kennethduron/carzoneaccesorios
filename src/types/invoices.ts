@@ -53,8 +53,10 @@ export type AdminInvoiceRow = {
   status: InvoiceStatus;
   price_mode: StoreOrder["priceMode"];
   payment_method: string;
+  payment_id: string | null;
   bank_reference_number: string | null;
   transfer_receipt_url: string | null;
+  transfer_receipt_public_id: string | null;
   subtotal: number;
   tax: number;
   shipping_fee: number;

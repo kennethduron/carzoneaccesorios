@@ -1,4 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getEmailProviderStatus, type EmailProviderName } from "@/lib/email/email-provider";
 
 export type UsageMetric = {
   key: string;
@@ -30,6 +32,13 @@ export type TableUsageMetric = {
   totalSizeBytes: number;
 };
 
+export type BackupChecklistItem = {
+  area: string;
+  status: "configured" | "manual" | "pending";
+  cadence: string;
+  recommendation: string;
+};
+
 export type AdminUsageOverview = {
   databaseSizeBytes: number;
   healthStatus: UsageHealthStatus;
@@ -38,7 +47,39 @@ export type AdminUsageOverview = {
   metrics: UsageMetric[];
   logs: LogRetentionMetric[];
   storageReferences: StorageReferenceMetric[];
+  backupChecklist: BackupChecklistItem[];
+  criticalTables: string[];
+  expiredReservationCount: number;
+  reservedOrderCount: number;
+  latestBackupCheck: {
+    checked_at: string;
+    plan_name: string;
+    status: "ok" | "manual_review" | "risk" | "failed";
+    notes: string | null;
+  } | null;
+  cronSecretConfigured: boolean;
+  latestCronRuns: CronRunMetric[];
+  rateLimitRows: number;
+  notificationStatus: {
+    provider: EmailProviderName;
+    configured: boolean;
+    resendConfigured: boolean;
+    brevoConfigured: boolean;
+    sent24h: number;
+    failed24h: number;
+    skipped24h: number;
+  };
   retentionDays: number;
+};
+
+export type CronRunMetric = {
+  job_name: string;
+  status: "success" | "failed" | "unauthorized";
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  result: Record<string, unknown>;
+  error_message: string | null;
 };
 
 type CountTable =
@@ -50,7 +91,15 @@ type CountTable =
   | "error_logs"
   | "notification_logs"
   | "product_images"
-  | "payments";
+  | "payments"
+  | "inventory_reservations";
+
+type BackupCheckRow = {
+  checked_at: string;
+  plan_name: string;
+  status: "ok" | "manual_review" | "risk" | "failed";
+  notes: string | null;
+};
 
 type CleanupRow = {
   table_name: string;
@@ -65,6 +114,12 @@ type MonitoringSnapshotRow = {
   index_size_bytes: number;
   total_size_bytes: number;
 };
+
+type NotificationStatusRow = {
+  status: "sent" | "failed" | "skipped";
+};
+
+type CronRunRow = CronRunMetric;
 
 function getHealthStatus(databaseSizeBytes: number): UsageHealthStatus {
   const databaseSizeMb = databaseSizeBytes / 1024 / 1024;
@@ -153,13 +208,117 @@ async function countTransferReceipts() {
   const { count, error } = await admin
     .from("payments")
     .select("id", { count: "estimated", head: true })
-    .not("transfer_receipt_url", "is", null);
+    .or("transfer_receipt_url.not.is.null,transfer_receipt_public_id.not.is.null");
 
   if (error) {
     throw new Error(error.message);
   }
 
   return count ?? 0;
+}
+
+async function countInventoryReservations(status: "reserved" | "expired", expiredOnly = false) {
+  const admin = getSupabaseAdminClient();
+  let query = admin.from("inventory_reservations").select("id", { count: "estimated", head: true }).eq("status", status);
+
+  if (expiredOnly) {
+    query = query.lte("expires_at", new Date().toISOString());
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    if (error.code === "42P01" || error.message.toLowerCase().includes("inventory_reservations")) {
+      return 0;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return count ?? 0;
+}
+
+async function getLatestBackupCheck() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("operational_backup_checks")
+    .select("checked_at, plan_name, status, notes")
+    .order("checked_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<BackupCheckRow>();
+
+  if (error) {
+    if (error.code === "42P01" || error.message.toLowerCase().includes("operational_backup_checks")) {
+      return null;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return data ?? null;
+}
+
+async function countRateLimitRows() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin.rpc("count_rate_limits");
+
+  if (error) {
+    if (error.code === "42883" || error.message.toLowerCase().includes("count_rate_limits")) {
+      return 0;
+    }
+
+    throw new Error(error.message);
+  }
+
+  return Number(data ?? 0);
+}
+
+async function getNotificationStatusSince(cutoff: string) {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("notification_logs")
+    .select("status")
+    .gte("created_at", cutoff)
+    .returns<NotificationStatusRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).reduce(
+    (summary, row) => {
+      if (row.status === "sent") {
+        summary.sent24h += 1;
+      } else if (row.status === "failed") {
+        summary.failed24h += 1;
+      } else if (row.status === "skipped") {
+        summary.skipped24h += 1;
+      }
+
+      return summary;
+    },
+    { sent24h: 0, failed24h: 0, skipped24h: 0 },
+  );
+}
+
+async function getLatestCronRuns() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("operational_cron_runs")
+    .select("job_name, status, started_at, finished_at, duration_ms, result, error_message")
+    .order("created_at", { ascending: false })
+    .limit(6)
+    .returns<CronRunRow[]>();
+
+  if (error) {
+    if (error.code === "42P01" || error.message.toLowerCase().includes("operational_cron_runs")) {
+      return [];
+    }
+
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
 }
 
 function daysAgo(days: number) {
@@ -171,6 +330,8 @@ function daysAgo(days: number) {
 export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
   const retentionDays = 90;
   const cutoff = daysAgo(retentionDays);
+  const last24h = daysAgo(1);
+  const emailProvider = getEmailProviderStatus();
 
   const [
     monitoring,
@@ -186,6 +347,12 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     oldNotificationLogs,
     productImages,
     transferReceipts,
+    expiredReservationCount,
+    reservedOrderCount,
+    latestBackupCheck,
+    rateLimitRows,
+    notificationCounts,
+    latestCronRuns,
   ] = await Promise.all([
     getMonitoringSnapshot(),
     countRows("orders"),
@@ -200,6 +367,12 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     countRowsOlderThan("notification_logs", cutoff),
     countRows("product_images"),
     countTransferReceipts(),
+    countInventoryReservations("reserved", true),
+    countInventoryReservations("reserved"),
+    getLatestBackupCheck(),
+    countRateLimitRows(),
+    getNotificationStatusSince(last24h),
+    getLatestCronRuns(),
   ]);
   const healthStatus = getHealthStatus(monitoring.databaseSizeBytes);
 
@@ -230,7 +403,7 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
       {
         label: "Comprobantes de transferencia",
         value: transferReceipts,
-        helper: "Solo URL del comprobante guardada en Supabase.",
+        helper: "Metadatos privados de Cloudinary; acceso por ruta admin firmada.",
       },
       {
         label: "PDFs de factura guardados",
@@ -238,7 +411,98 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
         helper: "Se generan bajo demanda desde los datos fiscales.",
       },
     ],
+    criticalTables: [
+      "orders",
+      "order_items",
+      "payments",
+      "customers",
+      "users",
+      "products",
+      "inventory_movements",
+      "inventory_reservations",
+      "invoices",
+      "invoice_items",
+      "fiscal_settings",
+      "wholesale_codes",
+      "crm_notes",
+      "crm_followups",
+      "audit_logs",
+      "company_settings",
+      "product_images",
+    ],
+    expiredReservationCount,
+    reservedOrderCount,
+    latestBackupCheck,
+    cronSecretConfigured: Boolean(process.env.CRON_SECRET),
+    latestCronRuns,
+    rateLimitRows,
+    notificationStatus: {
+      provider: emailProvider.provider,
+      configured: emailProvider.configured,
+      resendConfigured: emailProvider.resendConfigured,
+      brevoConfigured: emailProvider.brevoConfigured,
+      ...notificationCounts,
+    },
+    backupChecklist: [
+      {
+        area: "Supabase database",
+        status: "manual",
+        cadence: "Diario, semanal y mensual",
+        recommendation:
+          "Activar backups automáticos del plan Pro o ejecutar respaldo programado externo con prueba de restauracion mensual.",
+      },
+      {
+        area: "Migraciones Supabase",
+        status: "configured",
+        cadence: "Cada cambio",
+        recommendation: "Mantener supabase/migrations y supabase/schema.sql versionados antes de cualquier deploy.",
+      },
+      {
+        area: "Cloudinary productos",
+        status: "manual",
+        cadence: "Semanal",
+        recommendation: "Exportar listado de public_id, URL y carpeta; habilitar backup/versionado en Cloudinary si el plan lo permite.",
+      },
+      {
+        area: "Comprobantes de pago",
+        status: "pending",
+        cadence: "Diario",
+        recommendation: "Usar carpeta privada o signed URLs y respaldo separado de comprobantes por fecha/pedido.",
+      },
+      {
+        area: "Variables Vercel",
+        status: "manual",
+        cadence: "Mensual y antes de rotar claves",
+        recommendation: "Guardar inventario cifrado de nombres de variables, responsable y fecha de rotacion; nunca guardar valores en Git.",
+      },
+      {
+        area: "Restauracion de emergencia",
+        status: "pending",
+        cadence: "Trimestral",
+        recommendation: "Probar restauracion en proyecto Supabase/Vercel separado antes de depender del plan en produccion.",
+      },
+    ],
   };
+}
+
+export async function recordBackupReview() {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .rpc("record_operational_backup_check", {
+      plan_name: process.env.SUPABASE_PLAN_NAME ?? "free_or_unverified",
+      check_status: "manual_review",
+      database_backup_checked: false,
+      cloudinary_manifest_checked: false,
+      vercel_env_checked: false,
+      restore_drill_checked: false,
+      notes: "Revision registrada desde /admin/uso. Completar evidencia externa segun docs/BACKUPS.md.",
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return String(data ?? "");
 }
 
 export async function cleanupOldOperationalLogs(retentionDays = 90) {

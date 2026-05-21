@@ -3,7 +3,7 @@ import { ArrowLeft, AlertTriangle, BarChart3, Database, FileArchive, HardDrive, 
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requireStrictPermission } from "@/lib/auth/session";
 import { getAdminUsageOverview } from "@/services/supabase/admin-usage.service";
-import { cleanupLogsAction } from "./actions";
+import { cleanupLogsAction, recordBackupReviewAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,17 @@ function formatBytes(value: number) {
   }
 
   return `${value} B`;
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "Sin registro";
+  }
+
+  return new Intl.DateTimeFormat("es-HN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 const healthStyles = {
@@ -87,6 +98,77 @@ export default async function AdminUsagePage() {
           </section>
         ))}
       </div>
+
+      <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <BarChart3 size={18} />
+          <h2 className="font-semibold">Cron y notificaciones</h2>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
+            <p className="text-sm text-black/55">CRON_SECRET</p>
+            <p className="mt-1 text-xl font-semibold">{usage.cronSecretConfigured ? "Configurado" : "No configurado"}</p>
+            <p className="mt-2 text-xs leading-5 text-black/50">No se muestra el valor real del secreto.</p>
+          </div>
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
+            <p className="text-sm text-black/55">Proveedor email</p>
+            <p className="mt-1 text-xl font-semibold">{usage.notificationStatus.provider.toUpperCase()}</p>
+            <p className="mt-2 text-xs leading-5 text-black/50">
+              Estado: {usage.notificationStatus.configured ? "Configurado" : "No configurado"}
+            </p>
+          </div>
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
+            <p className="text-sm text-black/55">Rate limits acumulados</p>
+            <p className="mt-1 text-xl font-semibold">{formatNumber(usage.rateLimitRows)}</p>
+            <p className="mt-2 text-xs leading-5 text-black/50">Se limpian por cron o por el job de reservas.</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-md border border-black/10 p-4">
+            <p className="text-sm font-semibold">Notificaciones ultimas 24h</p>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+              <p>Enviadas: {formatNumber(usage.notificationStatus.sent24h)}</p>
+              <p>Fallidas: {formatNumber(usage.notificationStatus.failed24h)}</p>
+              <p>Omitidas: {formatNumber(usage.notificationStatus.skipped24h)}</p>
+            </div>
+            <p className="mt-3 text-xs text-black/50">
+              Resend: {usage.notificationStatus.resendConfigured ? "Configurado" : "No configurado"} / Brevo:{" "}
+              {usage.notificationStatus.brevoConfigured ? "Configurado" : "No configurado"}
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-md border border-black/10 p-4">
+            <p className="text-sm font-semibold">Ultimas ejecuciones cron</p>
+            <table className="mt-3 w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b border-black/10 text-xs uppercase text-black/45">
+                <tr>
+                  <th className="py-2">Job</th>
+                  <th className="py-2">Estado</th>
+                  <th className="py-2">Inicio</th>
+                  <th className="py-2">Duracion</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {usage.latestCronRuns.length === 0 ? (
+                  <tr>
+                    <td className="py-3 text-black/50" colSpan={4}>
+                      Sin ejecuciones registradas.
+                    </td>
+                  </tr>
+                ) : (
+                  usage.latestCronRuns.map((run) => (
+                    <tr key={`${run.job_name}-${run.started_at}`}>
+                      <td className="py-3 font-medium">{run.job_name}</td>
+                      <td className="py-3">{run.status}</td>
+                      <td className="py-3">{formatDate(run.started_at)}</td>
+                      <td className="py-3">{run.duration_ms ? `${run.duration_ms} ms` : "-"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <section className="rounded-lg border border-black/10 bg-white p-5">
@@ -157,10 +239,104 @@ export default async function AdminUsagePage() {
             ))}
           </div>
           <p className="mt-4 rounded-md bg-[#fff1f2] p-3 text-sm leading-6 text-[#e4252c]">
-            Regla operativa: imágenes y comprobantes viven en Cloudinary o Storage; Supabase solo guarda URLs y metadatos.
+            Regla operativa: imágenes y comprobantes viven en Cloudinary o Storage; Supabase guarda URL pública solo para imágenes de producto y metadatos privados para comprobantes.
           </p>
         </section>
       </div>
+
+      <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <Database size={18} />
+          <h2 className="font-semibold">Estrategia de respaldo</h2>
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-lg border border-dashed border-black/15 bg-[#fafaf7] p-4">
+            <p className="text-sm font-semibold">Tablas criticas</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {usage.criticalTables.map((table) => (
+                <span key={table} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black/65">
+                  {table}
+                </span>
+              ))}
+            </div>
+            <p className="mt-4 text-sm leading-6 text-black/55">
+              Esta pantalla no ejecuta respaldos. Sirve como control interno para validar que base de datos,
+              migraciones, archivos y variables puedan restaurarse sin improvisacion.
+            </p>
+            <div className="mt-4 rounded-md bg-white p-3 text-sm">
+              <p className="font-semibold">Ultima revision</p>
+              <p className="mt-1 text-black/60">{formatDate(usage.latestBackupCheck?.checked_at)}</p>
+              <p className="mt-1 text-xs text-black/50">
+                Plan registrado: {usage.latestBackupCheck?.plan_name ?? "free_or_unverified"} / Estado:{" "}
+                {usage.latestBackupCheck?.status ?? "sin_revision"}
+              </p>
+            </div>
+            <form action={recordBackupReviewAction} className="mt-3">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold"
+              >
+                <FileArchive size={16} />
+                Registrar revision manual
+              </button>
+            </form>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead className="border-b border-black/10 text-xs uppercase text-black/45">
+                <tr>
+                  <th className="py-2">Area</th>
+                  <th className="py-2">Estado</th>
+                  <th className="py-2">Frecuencia</th>
+                  <th className="py-2">Recomendacion</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {usage.backupChecklist.map((item) => (
+                  <tr key={item.area}>
+                    <td className="py-3 font-medium">{item.area}</td>
+                    <td className="py-3">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          item.status === "configured"
+                            ? "bg-[#edf7ed] text-[#2f6f3e]"
+                            : item.status === "manual"
+                              ? "bg-[#fff9db] text-[#806600]"
+                              : "bg-[#fdecec] text-[#a33a2d]"
+                        }`}
+                      >
+                        {item.status === "configured" ? "Configurado" : item.status === "manual" ? "Manual" : "Pendiente"}
+                      </span>
+                    </td>
+                    <td className="py-3">{item.cadence}</td>
+                    <td className="py-3 text-black/60">{item.recommendation}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <AlertTriangle size={18} />
+          <h2 className="font-semibold">Reservas de inventario</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
+            <p className="text-sm text-black/55">Reservas activas</p>
+            <p className="mt-1 text-2xl font-semibold">{formatNumber(usage.reservedOrderCount)}</p>
+          </div>
+          <div className="rounded-md border border-black/10 bg-[#fff7ed] p-4">
+            <p className="text-sm text-[#7c2d12]">Reservas vencidas pendientes de liberar</p>
+            <p className="mt-1 text-2xl font-semibold text-[#7c2d12]">{formatNumber(usage.expiredReservationCount)}</p>
+            <p className="mt-2 text-xs leading-5 text-[#7c2d12]">
+              Endpoint cron: POST /api/cron/release-expired-reservations con Authorization Bearer CRON_SECRET.
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
         <div className="mb-4 flex items-center gap-2">

@@ -59,7 +59,7 @@ export function ProductImageGallery({ product }: { product: Product }) {
             alt={activeImage.alt}
             width={900}
             height={675}
-            priority
+            preload={activeIndex === 0}
             sizes="(min-width: 1024px) 58vw, 100vw"
             quality={78}
             unoptimized={isCloudinaryImageUrl(activeImageUrl)}

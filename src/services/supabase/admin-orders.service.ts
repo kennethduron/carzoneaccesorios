@@ -21,9 +21,11 @@ type OrderQueryRow = Omit<
   | "cash_on_delivery_fee"
   | "total"
   | "order_items"
+  | "payment_id"
   | "payment_status"
   | "bank_reference_number"
   | "transfer_receipt_url"
+  | "transfer_receipt_public_id"
   | "invoice_id"
   | "invoice_number"
   | "invoice_issued_at"
@@ -43,11 +45,13 @@ type OrderQueryRow = Omit<
     wholesale_price_snapshot: unknown;
   }> | null;
   payments: Array<{
+    id: string;
     payment_status: AdminOrderRow["payment_status"];
     status: AdminOrderRow["payment_status"];
     bank_reference_number: string | null;
     reference: string | null;
     transfer_receipt_url: string | null;
+    transfer_receipt_public_id: string | null;
   }> | null;
   invoices: Array<{
     id: string;
@@ -76,9 +80,13 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
     total: toNumber(row.total),
     customer_rtn: row.customers?.tax_id ?? null,
+    payment_id: payment?.id ?? null,
     payment_status: payment?.payment_status ?? payment?.status ?? null,
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
-    transfer_receipt_url: payment?.transfer_receipt_url ?? null,
+    transfer_receipt_url: payment?.transfer_receipt_public_id || payment?.transfer_receipt_url
+      ? `/api/admin/transfer-receipts/${payment.id}`
+      : null,
+    transfer_receipt_public_id: payment?.transfer_receipt_public_id ?? null,
     invoice_id: invoice?.id ?? null,
     invoice_number: invoice?.invoice_number ?? null,
     invoice_issued_at: invoice?.issued_at ?? null,
@@ -140,6 +148,8 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
       cash_on_delivery_fee,
       total,
       status,
+      order_reservation_status,
+      reservation_expires_at,
       created_at,
       order_items(
         id,
@@ -153,7 +163,7 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
+      payments(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
       invoices(id, invoice_number, issued_at),
       customers(tax_id)
     `,

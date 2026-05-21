@@ -24,8 +24,23 @@ function redirectToLogin(request: NextRequest, reason: "missing" | "expired" | "
   return NextResponse.redirect(url);
 }
 
+function redirectToPasswordRecovery(request: NextRequest) {
+  const url = request.nextUrl.clone();
+  url.pathname = "/recuperar-contrasena";
+  url.search = "";
+  url.searchParams.set("reset_error", "expired");
+  return NextResponse.redirect(url);
+}
+
 function redirectAfterConfirmation(request: NextRequest, role: AppRole | null, requestedNext: string) {
   const url = request.nextUrl.clone();
+
+  if (requestedNext === "/restablecer-contrasena") {
+    url.pathname = "/restablecer-contrasena";
+    url.search = "";
+    url.searchParams.set("recovery", "1");
+    return NextResponse.redirect(url);
+  }
 
   if (role && adminRoles.includes(role)) {
     url.pathname = "/admin";
@@ -57,12 +72,21 @@ export async function GET(request: NextRequest) {
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = (request.nextUrl.searchParams.get("type") ?? "email") as EmailOtpType;
   const requestedNext = safeNextPath(request.nextUrl.searchParams.get("next"));
+  const isRecoveryFlow = requestedNext === "/restablecer-contrasena" || type === "recovery";
 
   if (request.nextUrl.searchParams.get("error")) {
+    if (isRecoveryFlow) {
+      return redirectToPasswordRecovery(request);
+    }
+
     return redirectToLogin(request, "failed");
   }
 
   if (!code && !tokenHash) {
+    if (isRecoveryFlow) {
+      return redirectToPasswordRecovery(request);
+    }
+
     return redirectToLogin(request, "missing");
   }
 
@@ -71,6 +95,10 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
+      if (isRecoveryFlow) {
+        return redirectToPasswordRecovery(request);
+      }
+
       return redirectToLogin(request, confirmationErrorReason(error.message));
     }
   } else if (tokenHash) {
@@ -80,6 +108,10 @@ export async function GET(request: NextRequest) {
     });
 
     if (error) {
+      if (isRecoveryFlow) {
+        return redirectToPasswordRecovery(request);
+      }
+
       return redirectToLogin(request, confirmationErrorReason(error.message));
     }
   }
@@ -90,6 +122,10 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
+    if (isRecoveryFlow) {
+      return redirectToPasswordRecovery(request);
+    }
+
     return redirectToLogin(request, "failed");
   }
 

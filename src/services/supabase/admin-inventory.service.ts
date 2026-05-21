@@ -37,7 +37,7 @@ export async function getAdminInventory() {
     await Promise.all([
       supabase
         .from("products")
-        .select("id, sku, name, stock, min_stock")
+        .select("id, sku, name, stock, reserved_stock, available_stock, min_stock")
         .order("name", { ascending: true })
         .returns<InventoryProductOption[]>(),
       supabase
@@ -75,6 +75,8 @@ export async function getAdminInventory() {
     products: (products ?? []).map((product) => ({
       ...product,
       stock: toNumber(product.stock),
+      reserved_stock: toNumber(product.reserved_stock),
+      available_stock: toNumber(product.available_stock ?? product.stock),
       min_stock: toNumber(product.min_stock),
     })),
     movements: (movements ?? []).map(normalizeMovement),

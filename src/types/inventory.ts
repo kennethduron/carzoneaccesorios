@@ -5,6 +5,8 @@ export type InventoryProductOption = {
   sku: string;
   name: string;
   stock: number;
+  reserved_stock: number;
+  available_stock: number;
   min_stock: number;
 };
 

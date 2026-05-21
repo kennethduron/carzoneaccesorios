@@ -59,6 +59,15 @@ const paymentLabels: Record<string, string> = {
   cash: "Efectivo",
 };
 
+const reservationStatusLabels: Record<string, string> = {
+  not_required: "No aplica",
+  reserved: "Reservado",
+  confirmed: "Convertido en venta",
+  released: "Liberado",
+  expired: "Vencido",
+  canceled: "Cancelado",
+};
+
 const editableOrderStatuses = [
   ["recibido", "Pedido recibido"],
   ["confirmed", "Pago confirmado"],
@@ -330,6 +339,7 @@ function OrderDetail({
         </div>
         <InfoBlock label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
         <InfoBlock label="Estado del pago" value={paymentStatusLabels[order.payment_status ?? "pending"] ?? "Pendiente"} />
+        <InfoBlock label="Inventario" value={reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
         <InfoBlock label="Precio usado" value={order.price_mode === "wholesale" ? "Precio mayorista" : "Precio al detalle"} />
         <InfoBlock label="RTN del cliente" value={order.customer_rtn ?? "Sin RTN"} />
         {order.invoice_number ? <InfoBlock label="Factura fiscal" value={order.invoice_number} /> : null}

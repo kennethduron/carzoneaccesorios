@@ -25,6 +25,7 @@ export default async function CatalogoPage({
     marca_carro?: string;
     modelo_carro?: string;
     anio_carro?: string;
+    disponibilidad?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -38,6 +39,7 @@ export default async function CatalogoPage({
     vehicleBrand: params.marca_carro,
     vehicleModel: params.modelo_carro,
     vehicleYear: optionalNumberParam(params.anio_carro),
+    availability: params.disponibilidad,
   });
 
   return (
@@ -59,6 +61,7 @@ export default async function CatalogoPage({
         vehicleBrand={params.marca_carro ?? ""}
         vehicleModel={params.modelo_carro ?? ""}
         vehicleYear={params.anio_carro ?? ""}
+        availability={params.disponibilidad ?? ""}
         filterOptions={catalog.filterOptions}
       />
     </PublicStoreShell>

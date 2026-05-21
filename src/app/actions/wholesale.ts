@@ -1,6 +1,7 @@
 "use server";
 
 import { writeErrorLog } from "@/lib/error-logging";
+import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { WholesaleValidationResult } from "@/types/wholesale";
 
@@ -57,6 +58,20 @@ function toWholesaleAccount(account: WholesaleAccountRpcRow) {
 
 export async function validateWholesaleCodeAction(code: string): Promise<WholesaleValidationResult> {
   const normalizedCode = code.trim().toUpperCase();
+  const wholesaleLimit = await checkRateLimit({
+    route: "/mayoreo/codigo",
+    limit: 8,
+    windowSeconds: 10 * 60,
+    key: normalizedCode.slice(-6),
+  });
+
+  if (!wholesaleLimit.ok) {
+    return {
+      ok: false,
+      message: rateLimitMessage,
+      account: null,
+    };
+  }
 
   if (!normalizedCode) {
     return {

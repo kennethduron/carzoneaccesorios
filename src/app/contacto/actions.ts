@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { optionalText, requireText, validateHondurasPhone } from "@/utils/validation";
 
@@ -63,6 +64,17 @@ async function findExistingCustomerId(supabase: SupabaseClient, email: string, n
 }
 
 export async function submitGeneralContactAction(input: GeneralContactInput): Promise<ContactActionResult> {
+  const contactLimit = await checkRateLimit({
+    route: "/contacto",
+    limit: 5,
+    windowSeconds: 10 * 60,
+    key: input.email.trim().toLowerCase() || input.phone.trim(),
+  });
+
+  if (!contactLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
   const name = requireText(input.name, "Nombre");
   const phone = validateHondurasPhone(input.phone);
   const message = requireText(input.message, "Mensaje", 1200);
@@ -146,6 +158,17 @@ export async function submitGeneralContactAction(input: GeneralContactInput): Pr
 }
 
 export async function submitWholesaleRequestAction(input: WholesaleRequestInput): Promise<ContactActionResult> {
+  const wholesaleRequestLimit = await checkRateLimit({
+    route: "/contacto/mayoreo",
+    limit: 4,
+    windowSeconds: 15 * 60,
+    key: input.email.trim().toLowerCase() || input.phone.trim(),
+  });
+
+  if (!wholesaleRequestLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
   const businessName = requireText(input.businessName, "Nombre del negocio");
   const contactName = requireText(input.contactName, "Nombre de contacto");
   const phone = validateHondurasPhone(input.phone);

@@ -27,6 +27,20 @@ const pendingItems = [
   "Prueba bancaria de aprobación, rechazo, cancelación y pendiente",
 ];
 
+const commerceDataItems = [
+  "Nombre legal del comercio confirmado",
+  "RTN y datos fiscales validados por contabilidad",
+  "Dirección, horario y contacto de servicio al cliente actualizados",
+  "Cuenta bancaria receptora y responsables internos definidos",
+];
+
+const legalReviewItems = [
+  "Políticas revisadas por responsable legal/contable",
+  "Procedimiento de anulación, devolución y cancelación documentado",
+  "Criterio fiscal para comisión por pago contra entrega validado",
+  "Responsable de conciliación bancaria asignado",
+];
+
 const publicRoutes = [
   ["/politicas", "Centro de políticas"],
   ["/terminos-y-condiciones", "Términos y condiciones"],
@@ -71,6 +85,8 @@ export default async function RevisionBacPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <ChecklistCard title="Completado en la web" items={completedItems} status="completed" />
           <ChecklistCard title="Pendiente de BAC/documentación" items={pendingItems} status="pending" />
+          <ChecklistCard title="Requiere datos del comercio" items={commerceDataItems} status="pending" />
+          <ChecklistCard title="Requiere revisión legal/contable" items={legalReviewItems} status="pending" />
         </div>
 
         <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">

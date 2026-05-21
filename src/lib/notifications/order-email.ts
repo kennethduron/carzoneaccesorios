@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { writeErrorLog } from "@/lib/error-logging";
+import { sendTransactionalEmail } from "@/lib/email/email-provider";
 import { formatCurrency } from "@/utils/pricing";
 import type { NotificationLogStatus } from "@/types/notifications";
 
@@ -35,14 +36,8 @@ type OrderNotificationRow = {
   }> | null;
 };
 
-const resendEndpoint = "https://api.resend.com/emails";
-
 function getSiteUrl() {
   return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://carzoneaccesorios.vercel.app";
-}
-
-function getFromEmail() {
-  return process.env.RESEND_FROM_EMAIL || "Car Zone Accesorios <onboarding@resend.dev>";
 }
 
 function parseNotificationEmails(rawValue: string | null | undefined) {
@@ -177,7 +172,7 @@ async function logNotification(input: {
     order_id: input.orderId,
     recipient_email: input.recipientEmail,
     status: input.status,
-    provider: "resend",
+    provider: typeof input.metadata?.provider === "string" ? input.metadata.provider : "unknown",
     provider_message_id: input.providerMessageId ?? null,
     error_message: input.errorMessage ?? null,
     metadata: input.metadata ?? {},
@@ -195,37 +190,6 @@ async function logNotification(input: {
       },
     });
   }
-}
-
-async function sendResendEmail(input: { to: string; subject: string; html: string; idempotencyKey: string }) {
-  const apiKey = process.env.RESEND_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("RESEND_API_KEY is not configured.");
-  }
-
-  const response = await fetch(resendEndpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "Idempotency-Key": input.idempotencyKey,
-    },
-    body: JSON.stringify({
-      from: getFromEmail(),
-      to: input.to,
-      subject: input.subject,
-      html: input.html,
-    }),
-  });
-
-  const payload = (await response.json().catch(() => null)) as { id?: string; message?: string; error?: string } | null;
-
-  if (!response.ok) {
-    throw new Error(payload?.message || payload?.error || `Resend responded with status ${response.status}.`);
-  }
-
-  return payload?.id ?? null;
 }
 
 export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated) {
@@ -309,38 +273,42 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
 
   await Promise.all(
     recipients.map(async (recipient) => {
-      try {
-        const providerMessageId = await sendResendEmail({
-          to: recipient,
-          subject,
-          html,
-          idempotencyKey: `order-created-${createdOrder.orderId}-${recipient}`,
-        });
-        await logNotification({
-          eventType: "order.created",
-          orderId: createdOrder.orderId,
-          recipientEmail: recipient,
-          status: "sent",
-          providerMessageId,
-        });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown email notification error.";
-        await logNotification({
-          eventType: "order.created",
-          orderId: createdOrder.orderId,
-          recipientEmail: recipient,
-          status: "failed",
-          errorMessage,
-        });
+      const result = await sendTransactionalEmail({
+        to: recipient,
+        subject,
+        html,
+        idempotencyKey: `order-created-${createdOrder.orderId}-${recipient}`,
+        metadata: {
+          event_type: "order.created",
+          order_id: createdOrder.orderId,
+          order_number: createdOrder.orderNumber,
+        },
+      });
+
+      await logNotification({
+        eventType: "order.created",
+        orderId: createdOrder.orderId,
+        recipientEmail: recipient,
+        status: result.status,
+        providerMessageId: result.providerMessageId,
+        errorMessage: result.errorMessage,
+        metadata: {
+          provider: result.provider,
+          technical_message: result.technicalMessage,
+        },
+      });
+
+      if (!result.ok) {
         await writeErrorLog({
           route: "/checkout",
-          action: "notifications.order_created_email_failed",
-          errorMessage,
-          errorStack: error instanceof Error ? error.stack : null,
+          action: result.status === "skipped" ? "notifications.email_provider_skipped" : "notifications.order_created_email_failed",
+          errorMessage: result.errorMessage ?? "Email provider failed.",
           metadata: {
             order_id: createdOrder.orderId,
             order_number: createdOrder.orderNumber,
             recipient_email: recipient,
+            provider: result.provider,
+            technical_message: result.technicalMessage,
           },
         });
       }

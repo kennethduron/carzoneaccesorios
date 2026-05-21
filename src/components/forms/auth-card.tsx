@@ -83,6 +83,14 @@ export function AuthCard({ mode }: AuthCardProps) {
       };
     }
 
+    if (searchParams.get("password_updated")) {
+      return {
+        text: "Tu contraseña fue actualizada correctamente.",
+        tone: "success" as const,
+        canResend: false,
+      };
+    }
+
     return null;
   })();
   const visibleMessage = message || queryMessage?.text || "";
@@ -168,7 +176,7 @@ export function AuthCard({ mode }: AuthCardProps) {
         <div className="space-y-6">
           <div className="flex items-center gap-3">
             <div className="grid size-14 place-items-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10">
-              <Image src="/brand/car-zone-logo.jpeg" alt="Car Zone Accesorios" width={96} height={56} className="h-auto w-full object-contain" priority />
+              <Image src="/brand/car-zone-logo.jpeg" alt="Car Zone Accesorios" width={96} height={56} className="h-auto w-full object-contain" preload />
             </div>
             <div>
               <p className="text-2xl font-semibold">Car Zone Accesorios</p>
@@ -243,6 +251,14 @@ export function AuthCard({ mode }: AuthCardProps) {
               required
             />
           </div>
+
+          {isLogin ? (
+            <div className="mt-3 text-right">
+              <Link className="text-sm font-medium text-[#e4252c]" href="/recuperar-contrasena">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
+          ) : null}
 
           {visibleMessage ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{visibleMessage}</p> : null}
 

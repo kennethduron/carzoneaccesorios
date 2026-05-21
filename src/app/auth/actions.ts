@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { writeErrorLog } from "@/lib/error-logging";
+import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
   emailExistsInProfile,
@@ -105,6 +106,56 @@ function getRegisterErrorMessage(rawMessage: string) {
   return "No pudimos crear la cuenta. Revisa la información e intenta nuevamente.";
 }
 
+function getPasswordResetErrorMessage(rawMessage: string) {
+  const message = rawMessage.toLowerCase();
+
+  if (message.includes("expired") || message.includes("invalid") || message.includes("otp") || message.includes("token")) {
+    return "El enlace no es válido o expiró. Solicita uno nuevo.";
+  }
+
+  if (message.includes("weak") || message.includes("password")) {
+    return "La contraseña debe tener al menos 8 caracteres.";
+  }
+
+  if (message.includes("rate limit") || message.includes("too many")) {
+    return rateLimitMessage;
+  }
+
+  return "No pudimos actualizar tu contraseña. Solicita un nuevo enlace e intenta nuevamente.";
+}
+
+function decodeJwtPayload(token: string | null | undefined) {
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) {
+      return null;
+    }
+
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = Buffer.from(normalized, "base64").toString("utf8");
+    return JSON.parse(decoded) as { amr?: Array<string | { method?: string }> };
+  } catch {
+    return null;
+  }
+}
+
+function hasRecoverySession(accessToken: string | null | undefined) {
+  const payload = decodeJwtPayload(accessToken);
+  const methods = Array.isArray(payload?.amr) ? payload.amr : [];
+
+  return methods.some((method) => {
+    if (typeof method === "string") {
+      return method === "recovery";
+    }
+
+    return method?.method === "recovery";
+  });
+}
+
 async function resolveLoginEmail(identifierInput: string) {
   const identifier = identifierInput.trim();
 
@@ -135,6 +186,17 @@ async function resolveLoginEmail(identifierInput: string) {
 }
 
 export async function loginWithEmailAction(identifierInput: string, password: string, nextPathInput?: string): Promise<AuthActionResult> {
+  const rateLimit = await checkRateLimit({
+    route: "/login",
+    limit: 8,
+    windowSeconds: 5 * 60,
+    key: identifierInput.trim().toLowerCase(),
+  });
+
+  if (!rateLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
   const resolved = await resolveLoginEmail(identifierInput);
   const nextPath = safeNextPath(nextPathInput);
 
@@ -200,6 +262,17 @@ export async function registerWithEmailAction(input: {
   password: string;
   nextPath?: string;
 }): Promise<AuthActionResult> {
+  const registerLimit = await checkRateLimit({
+    route: "/registro",
+    limit: 4,
+    windowSeconds: 15 * 60,
+    key: input.email.trim().toLowerCase(),
+  });
+
+  if (!registerLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
   const fullName = normalizeText(input.fullName);
   const username = validateUsername(input.username);
   const email = normalizeEmail(input.email);
@@ -292,6 +365,17 @@ export async function registerWithEmailAction(input: {
 }
 
 export async function resendConfirmationEmailAction(identifierInput: string): Promise<AuthActionResult> {
+  const resendLimit = await checkRateLimit({
+    route: "/login/resend-confirmation",
+    limit: 3,
+    windowSeconds: 15 * 60,
+    key: identifierInput.trim().toLowerCase(),
+  });
+
+  if (!resendLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
   const resolved = await resolveLoginEmail(identifierInput);
 
   if (!resolved.ok) {
@@ -325,4 +409,85 @@ export async function resendConfirmationEmailAction(identifierInput: string): Pr
   }
 
   return { ok: true, message: "Te enviamos un nuevo correo de confirmación." };
+}
+
+export async function requestPasswordResetAction(emailInput: string): Promise<AuthActionResult> {
+  const email = normalizeEmail(emailInput);
+  const safeMessage = "Si el correo está registrado, recibirás instrucciones para restablecer tu contraseña.";
+  const resetLimit = await checkRateLimit({
+    route: "/recuperar-contrasena",
+    limit: 4,
+    windowSeconds: 15 * 60,
+    key: email,
+  });
+
+  if (!resetLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
+  if (!validateEmail(email)) {
+    return { ok: true, message: safeMessage };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const siteUrl = await getSiteUrl();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: buildAuthCallbackUrl(siteUrl, "/restablecer-contrasena"),
+  });
+
+  if (error) {
+    await writeErrorLog({
+      route: "/recuperar-contrasena",
+      action: "auth.password_reset_request_failed",
+      errorMessage: error.message,
+      metadata: { email_present: true },
+    });
+  }
+
+  return { ok: true, message: safeMessage };
+}
+
+export async function updatePasswordAfterRecoveryAction(password: string): Promise<AuthActionResult> {
+  const updateLimit = await checkRateLimit({
+    route: "/restablecer-contrasena",
+    limit: 6,
+    windowSeconds: 15 * 60,
+  });
+
+  if (!updateLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
+
+  if (password.length < 8) {
+    return { ok: false, message: "La contraseña debe tener al menos 8 caracteres." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session || !hasRecoverySession(session.access_token)) {
+    return { ok: false, message: "El enlace no es válido o expiró. Solicita uno nuevo." };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    await writeErrorLog({
+      route: "/restablecer-contrasena",
+      action: "auth.password_update_failed",
+      errorMessage: error.message,
+    });
+
+    return { ok: false, message: getPasswordResetErrorMessage(error.message) };
+  }
+
+  await supabase.auth.signOut();
+
+  return {
+    ok: true,
+    message: "Tu contraseña fue actualizada correctamente.",
+    redirectTo: "/login?password_updated=1",
+  };
 }

@@ -39,10 +39,11 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
   const toast = useToast();
 
   const lowStockProducts = useMemo(
-    () => products.filter((product) => product.stock <= product.min_stock),
+    () => products.filter((product) => product.available_stock <= product.min_stock),
     [products],
   );
   const totalStock = products.reduce((sum, product) => sum + product.stock, 0);
+  const reservedStock = products.reduce((sum, product) => sum + product.reserved_stock, 0);
 
   function submitMovement() {
     startTransition(async () => {
@@ -61,9 +62,10 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Productos controlados" value={products.length.toLocaleString("es-HN")} />
         <Metric label="Unidades en stock" value={totalStock.toLocaleString("es-HN")} />
+        <Metric label="Unidades reservadas" value={reservedStock.toLocaleString("es-HN")} />
         <Metric label="Alertas bajo stock" value={lowStockProducts.length.toLocaleString("es-HN")} />
       </div>
 
@@ -84,7 +86,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
                 <option value="">Seleccionar producto</option>
                 {products.map((product) => (
                   <option key={product.id} value={product.id}>
-                    {product.sku} - {product.name} ({product.stock})
+                    {product.sku} - {product.name} ({product.available_stock} disponibles)
                   </option>
                 ))}
               </select>
@@ -151,7 +153,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
                 <div key={product.id} className="rounded-md bg-[#fff0ea] p-3 text-sm">
                   <p className="font-semibold text-[#9b341b]">{product.name}</p>
                   <p className="text-black/60">
-                    Stock {product.stock} / mínimo {product.min_stock}
+                    Disponible {product.available_stock} / reservado {product.reserved_stock} / mínimo {product.min_stock}
                   </p>
                 </div>
               ))

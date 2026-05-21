@@ -13,6 +13,7 @@ export type ProductCatalogFilters = {
   vehicleBrand?: string;
   vehicleModel?: string;
   vehicleYear?: number;
+  availability?: string;
 };
 
 export type ProductCatalogPage = {
@@ -53,6 +54,7 @@ type CatalogProductRow = {
   vehicle_year_end: number | null;
   description: string;
   stock: number;
+  available_stock?: number | null;
   retail_price: unknown;
   wholesale_price: unknown;
   categories: {
@@ -141,7 +143,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     vehicle_year_end: row.vehicle_year_end,
     image: normalizedImages[0]?.url ?? "/window.svg",
     images: normalizedImages,
-    stock: toNumber(row.stock),
+    stock: toNumber(row.available_stock ?? row.stock),
     retail_price: toNumber(row.retail_price),
     wholesale_price: toNumber(row.wholesale_price),
     description: row.description,
@@ -284,6 +286,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const vehicleBrand = filters.vehicleBrand?.trim() ?? "";
   const vehicleModel = filters.vehicleModel?.trim() ?? "";
   const vehicleYear = normalizeOptionalNumber(filters.vehicleYear);
+  const availability = filters.availability?.trim() ?? "";
 
   try {
     const supabase = getSupabasePublicClient();
@@ -302,6 +305,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         vehicle_year_end,
         description,
         stock,
+        available_stock,
         retail_price,
         wholesale_price,
         categories(name, slug)
@@ -336,6 +340,14 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 
     if (vehicleYear !== null) {
       productsQuery = productsQuery.lte("vehicle_year_start", vehicleYear).gte("vehicle_year_end", vehicleYear);
+    }
+
+    if (availability === "disponible") {
+      productsQuery = productsQuery.gt("available_stock", 0);
+    }
+
+    if (availability === "agotado") {
+      productsQuery = productsQuery.lte("available_stock", 0);
     }
 
     const pagedProductsQuery = productsQuery
@@ -402,6 +414,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         vehicle_year_end,
         description,
         stock,
+        available_stock,
         retail_price,
         wholesale_price,
         categories(name, slug)
@@ -442,6 +455,7 @@ export async function getProductBySlug(slug: string) {
         vehicle_year_end,
         description,
         stock,
+        available_stock,
         retail_price,
         wholesale_price,
         categories(name, slug),
@@ -467,6 +481,49 @@ export async function getProductBySlug(slug: string) {
   } catch (error) {
     await logProductServiceError("catalog.product_detail.load_failed", error, { slug });
     return null;
+  }
+}
+
+export async function getRelatedProducts(product: Product, limit = 4) {
+  try {
+    const supabase = getSupabasePublicClient();
+    const { data, error } = await supabase
+      .from("products")
+      .select(
+        `
+        id,
+        sku,
+        slug,
+        name,
+        brand,
+        vehicle_brand,
+        vehicle_model,
+        vehicle_year_start,
+        vehicle_year_end,
+        description,
+        stock,
+        available_stock,
+        retail_price,
+        wholesale_price,
+        categories(name, slug)
+      `,
+      )
+      .eq("active", true)
+      .neq("id", product.id)
+      .eq("categories.name", product.category)
+      .order("updated_at", { ascending: false })
+      .limit(limit)
+      .returns<CatalogProductRow[]>();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((item) => item.id));
+    return (data ?? []).map((item) => normalizeProduct(item, imageByProduct.get(item.id)));
+  } catch (error) {
+    await logProductServiceError("catalog.related_products.load_failed", error, { productId: product.id });
+    return [];
   }
 }
 

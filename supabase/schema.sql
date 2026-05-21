@@ -52,3 +52,7 @@
 \i ./migrations/202605130004_customer_dedupe_checkout_admin.sql
 \i ./migrations/202605140001_crm_notes_archive_metadata.sql
 \i ./migrations/202605140002_bac_compliance_business_settings.sql
+\i ./migrations/202605200001_lock_direct_checkout_table_writes.sql
+\i ./migrations/202605200002_operational_hardening_indexes_tracking.sql
+\i ./migrations/202605210001_operational_hardening_phase.sql
+\i ./migrations/202605210002_email_provider_cron_ops.sql

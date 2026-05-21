@@ -1,6 +1,7 @@
 "use server";
 
 import { writeErrorLog } from "@/lib/error-logging";
+import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export type PublicTrackingItem = {
@@ -45,6 +46,16 @@ export type PublicTrackingResult =
 
 export async function getPublicOrderTrackingAction(rawCode: string): Promise<PublicTrackingResult> {
   const trackingCode = rawCode.trim().toUpperCase();
+  const trackingLimit = await checkRateLimit({
+    route: "/rastreo",
+    limit: 10,
+    windowSeconds: 5 * 60,
+    key: trackingCode.slice(-6),
+  });
+
+  if (!trackingLimit.ok) {
+    return { ok: false, message: rateLimitMessage };
+  }
 
   if (!trackingCode) {
     return { ok: false, message: "Ingresa el código de seguimiento." };
