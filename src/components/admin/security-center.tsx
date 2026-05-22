@@ -556,7 +556,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
       </section>
 
       {roleDraft ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 p-4">
+        <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold">Cambiar rol de usuario</h2>
             <p className="mt-2 text-sm leading-6 text-black/60">

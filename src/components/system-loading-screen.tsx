@@ -7,7 +7,7 @@ type SystemLoadingScreenProps = {
 export function SystemLoadingScreen({ fullScreen = false }: SystemLoadingScreenProps) {
   return (
     <div
-      className={`grid place-items-center bg-white px-5 text-[#080808] ${fullScreen ? "fixed inset-0 z-[80]" : "min-h-screen"}`}
+      className={`grid place-items-center bg-white px-5 text-[#080808] ${fullScreen ? "cz-layer-modal fixed inset-0" : "min-h-screen"}`}
       role="status"
       aria-live="polite"
       aria-label="Cargando sistema"

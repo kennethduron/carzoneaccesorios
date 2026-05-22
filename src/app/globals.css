@@ -11,6 +11,12 @@
   --brand-red: #e4252c;
   --brand-red-dark: #b91c25;
   --brand-red-soft: #fff1f2;
+  --cz-layer-content: 0;
+  --cz-layer-header: 50;
+  --cz-layer-overlay: 70;
+  --cz-layer-drawer: 80;
+  --cz-layer-modal: 100;
+  --cz-layer-toast: 120;
 }
 
 @theme inline {
@@ -71,6 +77,22 @@ textarea:focus-visible {
 ::selection {
   background: var(--brand-red);
   color: #ffffff;
+}
+
+.cz-layer-overlay {
+  z-index: var(--cz-layer-overlay);
+}
+
+.cz-layer-drawer {
+  z-index: var(--cz-layer-drawer);
+}
+
+.cz-layer-modal {
+  z-index: var(--cz-layer-modal);
+}
+
+.cz-layer-toast {
+  z-index: var(--cz-layer-toast);
 }
 
 .brand-card {

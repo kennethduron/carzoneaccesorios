@@ -663,7 +663,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
       </aside>
     </section>
     {confirmation ? (
-      <div className="fixed inset-0 z-[70] grid place-items-center bg-black/45 px-4 py-6">
+      <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
         <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
           <div className="grid size-12 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
             <BadgeCheck size={24} />

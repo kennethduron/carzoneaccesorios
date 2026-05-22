@@ -73,6 +73,7 @@ type DuplicateMergeRequest = {
 type PermanentDeleteDraft = {
   customer: CrmCustomerOption;
   confirmation: string;
+  errorMessage?: string;
 };
 
 type CrmDrawerMode = "lead" | "followup" | "note" | "followup-detail" | null;
@@ -670,7 +671,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
 
   function requestPermanentDeleteCustomer(customer: CrmCustomerOption) {
     if (!customer.can_delete_permanently) {
-      toast.warning(customer.delete_block_reason || "No se puede eliminar porque tiene historial. Puedes suspender la cuenta.");
+      toast.warning(customer.delete_block_reason || "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla.");
       return;
     }
 
@@ -697,7 +698,9 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         setPermanentDeleteDraft(null);
         closeCustomerProfile();
       } else {
-        toast.error(result.message || "No se pudo eliminar la cuenta.");
+        const errorMessage = result.message || "No se pudo eliminar la cuenta.";
+        setPermanentDeleteDraft((current) => (current ? { ...current, errorMessage } : current));
+        toast.error(errorMessage);
       }
     });
   }
@@ -1301,7 +1304,9 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           draft={permanentDeleteDraft}
           pending={isPending}
           onCancel={() => setPermanentDeleteDraft(null)}
-          onChange={(confirmation) => setPermanentDeleteDraft((current) => (current ? { ...current, confirmation } : current))}
+          onChange={(confirmation) =>
+            setPermanentDeleteDraft((current) => (current ? { ...current, confirmation, errorMessage: undefined } : current))
+          }
           onConfirm={confirmPermanentDeleteCustomer}
         />
       ) : null}
@@ -1429,7 +1434,7 @@ function CrmActionDrawer({
           : "Revisa el detalle de la tarea antes de editarla, completarla o archivarla.";
 
   return (
-    <div className="fixed inset-0 z-[85] bg-black/45 backdrop-blur-sm" onClick={() => void onClose()}>
+    <div className="cz-layer-drawer fixed inset-0 bg-black/45 backdrop-blur-sm" onClick={() => void onClose()}>
       <aside
         role="dialog"
         aria-modal="true"
@@ -1836,7 +1841,7 @@ function PermanentDeleteAccountModal({
   const canConfirm = draft.confirmation.trim() === "ELIMINAR CUENTA";
 
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/45 px-4 py-6">
+    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
       <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
         <div className="flex items-start gap-3">
           <div className="grid size-11 shrink-0 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
@@ -1874,6 +1879,12 @@ function PermanentDeleteAccountModal({
           Si el backend detecta pedidos, facturas, pagos, reservas, comprobantes o historial fiscal, bloqueará la eliminación y solo permitirá suspender.
         </div>
 
+        {draft.errorMessage ? (
+          <div className="mt-4 rounded-md border border-[#f2b8a8] bg-[#fff6f2] p-3 text-sm font-medium text-[#7c2d12]" role="alert">
+            {draft.errorMessage}
+          </div>
+        ) : null}
+
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
             Cancelar
@@ -1900,7 +1911,7 @@ function DuplicateMergeConfirmModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-black/45 px-4 py-6">
+    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
       <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
         <h2 className="text-xl font-semibold">Unificar cliente duplicado</h2>
         <p className="mt-2 text-sm leading-6 text-black/65">
@@ -2070,7 +2081,7 @@ function CustomerProfileDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/45 backdrop-blur-sm" onClick={onClose}>
+    <div className="cz-layer-drawer fixed inset-0 bg-black/45 backdrop-blur-sm" onClick={onClose}>
       <aside
         role="dialog"
         aria-modal="true"
@@ -2603,7 +2614,7 @@ function CustomerProfileActions({
           </Button>
         ) : (
           <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-xs text-black/55">
-            {customer.delete_block_reason ?? "No se puede eliminar porque tiene historial. Puedes suspender la cuenta."}
+            {customer.delete_block_reason ?? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."}
           </p>
         )}
       </div>
@@ -2779,7 +2790,7 @@ function CustomerDetailCard({
               </Button>
             ) : (
               <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-xs text-black/55">
-                {customer.delete_block_reason ?? "No se puede eliminar porque tiene historial. Puedes suspender la cuenta."}
+                {customer.delete_block_reason ?? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."}
               </p>
             )}
           </div>
@@ -2908,7 +2919,7 @@ function CustomerAccountsTable({
                           </IconButton>
                         ) : (
                           <span
-                            title={customer.delete_block_reason ?? "No se puede eliminar porque tiene historial. Puedes suspender la cuenta."}
+                            title={customer.delete_block_reason ?? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."}
                             className="grid size-9 place-items-center rounded-md border border-black/10 bg-[#f4f4f5] text-black/30"
                           >
                             <Trash2 size={16} />

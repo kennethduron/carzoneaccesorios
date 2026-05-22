@@ -397,13 +397,13 @@ function normalizeCustomer(
   const isOperationalWholesaleAccount = row.is_wholesale || wholesaleStatus === "approved" || wholesaleStatus === "suspended";
   const deleteBlockReason =
     relatedOrders.size > 0
-      ? "No se puede eliminar porque tiene pedidos relacionados. Puedes suspender la cuenta."
+      ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
       : (invoiceCountsByCustomerId.get(row.id) ?? 0) > 0
-        ? "No se puede eliminar porque tiene facturas relacionadas. Puedes suspender la cuenta."
+        ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
         : isOperationalWholesaleAccount
-          ? "No se puede eliminar porque tiene historial mayorista operativo. Puedes suspender la cuenta."
+          ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
           : (wholesaleCodeCountsByCustomerId.get(row.id) ?? 0) > 0
-            ? "No se puede eliminar porque tiene códigos o acceso mayorista relacionado. Puedes suspender la cuenta."
+            ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
             : null;
 
   return {
@@ -627,7 +627,11 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     const [{ data: customerInvoices, error: customerInvoicesError }, { data: customerWholesaleCodes, error: customerWholesaleCodesError }] =
       await Promise.all([
         admin.from("invoices").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
-        admin.from("wholesale_codes").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
+        admin
+          .from("wholesale_codes")
+          .select("id, customer_id, used_count, last_used_at")
+          .in("customer_id", customerIds)
+          .returns<Array<CustomerReferenceRow & { used_count: number | null; last_used_at: string | null }>>(),
       ]);
 
     if (customerInvoicesError) {
@@ -645,7 +649,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     }
 
     for (const code of customerWholesaleCodes ?? []) {
-      if (code.customer_id) {
+      if (code.customer_id && (Number(code.used_count ?? 0) > 0 || code.last_used_at)) {
         wholesaleCodeCountsByCustomerId.set(code.customer_id, (wholesaleCodeCountsByCustomerId.get(code.customer_id) ?? 0) + 1);
       }
     }
@@ -860,7 +864,9 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const ordersByUserId = customerRow.user_id ? new Map([[customerRow.user_id, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
   const ordersByEmail = normalizedEmail ? new Map([[normalizedEmail, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
   const invoiceCountsByCustomerId = new Map([[customerId, invoices?.length ?? 0]]);
-  const wholesaleCodeCountsByCustomerId = new Map([[customerId, wholesaleCodes?.length ?? 0]]);
+  const wholesaleCodeCountsByCustomerId = new Map([
+    [customerId, (wholesaleCodes ?? []).filter((code) => Number(code.used_count ?? 0) > 0 || code.last_used_at).length],
+  ]);
   const customer = normalizeCustomer(
     customerRow,
     authByUserId,

@@ -445,7 +445,7 @@ function InvoiceModal({
   const [customerAddress, setCustomerAddress] = useState(invoice.customer_address ?? "");
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
       <section className="mx-auto my-8 max-w-4xl rounded-lg bg-white p-5 text-[#080808]">
         <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
           <div>

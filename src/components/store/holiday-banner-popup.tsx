@@ -35,7 +35,7 @@ export function HolidayBannerPopup({ banner }: { banner: HolidayBanner | null })
   }
 
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/45 px-4 py-6">
+    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
       <section className="relative w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-xl">
         <button
           type="button"

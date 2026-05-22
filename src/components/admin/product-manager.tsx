@@ -1052,7 +1052,7 @@ function ProductEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/45 p-4">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
       <section className="mx-auto my-6 w-full max-w-6xl rounded-lg bg-white text-[#080808]">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>

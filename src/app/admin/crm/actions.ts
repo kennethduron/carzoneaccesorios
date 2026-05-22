@@ -21,6 +21,7 @@ import {
 type CrmMutationResult = {
   ok: boolean;
   message: string;
+  deletion_block?: DeletionBlock;
 };
 
 type CustomerProfileResult = {
@@ -71,8 +72,17 @@ type DeletionUserRow = {
 
 type IdRow = { id: string };
 
+type DeletionBlock = {
+  table: string;
+  condition: string;
+  recordId: string | null;
+  reason: string;
+  record?: Record<string, unknown>;
+};
+
 const permanentDeletionRoles: AppRole[] = ["business_owner", "admin", "technical_owner"];
 const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
+const commercialHistoryDeletionMessage = "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla.";
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -119,6 +129,44 @@ function isInternalRole(role: AppRole | null | undefined) {
 
 function hasProtectedEmail(email: string | null | undefined) {
   return normalizeAccountEmail(email ?? "") === protectedTechnicalEmail;
+}
+
+function isAutomaticRegistrationFollowup(row: { title: string | null; interaction_type?: string | null; notes?: string | null }) {
+  return (
+    row.title === "Nuevo cliente registrado" ||
+    (row.title === "Solicitud de cuenta mayorista" && row.interaction_type === "solicitud_mayorista") ||
+    Boolean(row.notes?.includes("Cuenta creada desde registro publico"))
+  );
+}
+
+function isAutomaticRegistrationNote(row: { note_type?: string | null; note?: string | null }) {
+  return (
+    row.note_type === "wholesale_status" ||
+    Boolean(row.note?.includes("Cuenta creada desde registro publico")) ||
+    Boolean(row.note?.includes("[SOLICITUD_MAYOREO]"))
+  );
+}
+
+async function blockedCustomerDeletion(input: {
+  profileId: string;
+  customerId?: string | null;
+  email?: string | null;
+  block: DeletionBlock;
+}): Promise<CrmMutationResult> {
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: input.customerId ?? null,
+    action: "user.account_delete_blocked",
+    oldData: {
+      actor_id: input.profileId,
+      email: input.email ?? null,
+    },
+    newData: {
+      block: input.block,
+    },
+  });
+
+  return { ok: false, message: input.block.reason, deletion_block: input.block };
 }
 
 async function addWholesaleHistoryNote(input: {
@@ -911,7 +959,18 @@ export async function deleteCustomerAccountPermanentlyAction(input: PermanentAcc
   }
 
   if (hasProtectedEmail(email)) {
-    return { ok: false, message: "No se puede eliminar la cuenta técnica protegida." };
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: "customers",
+        condition: "email is protected technical owner account",
+        recordId: targetCustomer.id,
+        reason: "No se puede eliminar la cuenta técnica protegida.",
+        record: { email },
+      },
+    });
   }
 
   let authUsers: Array<{ id: string; email: string | undefined }>;
@@ -1000,91 +1059,273 @@ export async function deleteCustomerAccountPermanentlyAction(input: PermanentAcc
   }
 
   if (userIds.includes(profile.id)) {
-    return { ok: false, message: "No puedes eliminar la cuenta con la que estás administrando el sistema." };
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: "users",
+        condition: "target user id matches current admin session",
+        recordId: profile.id,
+        reason: "No puedes eliminar la cuenta con la que estás administrando el sistema.",
+      },
+    });
   }
 
   const protectedUser = Array.from(usersByMap.values()).find((user) => hasProtectedEmail(user.email));
   if (protectedUser || authUsers.some((user) => hasProtectedEmail(user.email))) {
-    return { ok: false, message: "No se puede eliminar la cuenta técnica protegida." };
+    const protectedRecord = protectedUser ?? authUsers.find((user) => hasProtectedEmail(user.email));
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: protectedUser ? "users" : "auth.users",
+        condition: "email is protected technical owner account",
+        recordId: protectedRecord?.id ?? null,
+        reason: "No se puede eliminar la cuenta técnica protegida.",
+        record: { email: protectedRecord?.email ?? email },
+      },
+    });
   }
 
   const internalUser = Array.from(usersByMap.values()).find((user) => isInternalRole(user.roles?.name));
   if (internalUser) {
-    return { ok: false, message: "No se pueden eliminar usuarios internos desde esta acción. Usa suspensión o gestión de roles." };
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: "users",
+        condition: "roles.name is internal",
+        recordId: internalUser.id,
+        reason: "No se pueden eliminar usuarios internos desde esta acción. Usa suspensión o gestión de roles.",
+        record: { email: internalUser.email, role: internalUser.roles?.name ?? null },
+      },
+    });
   }
 
   const wholesaleAccount = customerRows.find(
     (row) => row.is_wholesale || row.wholesale_status === "approved" || row.wholesale_status === "suspended",
   );
   if (wholesaleAccount) {
-    return {
-      ok: false,
-      message:
-        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
-    };
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: "customers",
+        condition: "is_wholesale is true or wholesale_status in (approved, suspended)",
+        recordId: wholesaleAccount.id,
+        reason: commercialHistoryDeletionMessage,
+        record: {
+          is_wholesale: wholesaleAccount.is_wholesale,
+          wholesale_status: wholesaleAccount.wholesale_status,
+        },
+      },
+    });
   }
 
-  const fiscalCustomer = customerRows.find((row) => row.tax_id?.trim());
-  if (fiscalCustomer) {
-    return {
-      ok: false,
-      message:
-        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
-    };
-  }
-
-  const orderQueries: Array<() => Promise<{ data: IdRow[] | null; error: { message: string } | null }>> = [];
   if (customerIds.length > 0) {
-    orderQueries.push(async () => admin.from("orders").select("id").in("customer_id", customerIds).returns<IdRow[]>());
+    const { data: orderByCustomer, error: orderByCustomerError } = await admin
+      .from("orders")
+      .select("id, customer_id, user_id, email, order_number, status")
+      .in("customer_id", customerIds)
+      .limit(1)
+      .returns<Array<IdRow & Record<string, unknown>>>();
+    if (orderByCustomerError) {
+      return { ok: false, message: "No pudimos revisar pedidos relacionados." };
+    }
+    if (orderByCustomer?.[0]) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "orders",
+          condition: "orders.customer_id in related customer ids",
+          recordId: orderByCustomer[0].id,
+          reason: commercialHistoryDeletionMessage,
+          record: orderByCustomer[0],
+        },
+      });
+    }
   }
-  if (userIds.length > 0) {
-    orderQueries.push(async () => admin.from("orders").select("id").in("user_id", userIds).returns<IdRow[]>());
-  }
-  orderQueries.push(async () => admin.from("orders").select("id").ilike("email", email).returns<IdRow[]>());
 
-  const orderResults = await Promise.all(orderQueries.map((query) => query()));
-  const orderError = orderResults.find((result) => result.error)?.error;
-  if (orderError) {
+  if (userIds.length > 0) {
+    const { data: orderByUser, error: orderByUserError } = await admin
+      .from("orders")
+      .select("id, customer_id, user_id, email, order_number, status")
+      .in("user_id", userIds)
+      .limit(1)
+      .returns<Array<IdRow & Record<string, unknown>>>();
+    if (orderByUserError) {
+      return { ok: false, message: "No pudimos revisar pedidos relacionados." };
+    }
+    if (orderByUser?.[0]) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "orders",
+          condition: "orders.user_id in related user ids",
+          recordId: orderByUser[0].id,
+          reason: commercialHistoryDeletionMessage,
+          record: orderByUser[0],
+        },
+      });
+    }
+  }
+
+  const { data: orderByEmail, error: orderByEmailError } = await admin
+    .from("orders")
+    .select("id, customer_id, user_id, email, order_number, status")
+    .ilike("email", email)
+    .limit(1)
+    .returns<Array<IdRow & Record<string, unknown>>>();
+  if (orderByEmailError) {
     return { ok: false, message: "No pudimos revisar pedidos relacionados." };
   }
+  if (orderByEmail?.[0]) {
+    return blockedCustomerDeletion({
+      profileId: profile.id,
+      customerId: targetCustomer.id,
+      email,
+      block: {
+        table: "orders",
+        condition: "orders.email matches account email",
+        recordId: orderByEmail[0].id,
+        reason: commercialHistoryDeletionMessage,
+        record: orderByEmail[0],
+      },
+    });
+  }
 
-  const orderIds = uniqueValues(orderResults.flatMap((result) => (result.data ?? []).map((row) => row.id)));
-
-  const criticalQueries: Array<() => Promise<{ data: IdRow[] | null; error: { message: string } | null }>> = [];
   if (customerIds.length > 0) {
-    criticalQueries.push(async () => admin.from("payments").select("id").in("customer_id", customerIds).returns<IdRow[]>());
-    criticalQueries.push(async () => admin.from("invoices").select("id").in("customer_id", customerIds).returns<IdRow[]>());
-    criticalQueries.push(async () => admin.from("crm_notes").select("id").in("customer_id", customerIds).not("order_id", "is", null).returns<IdRow[]>());
-    criticalQueries.push(async () =>
-      admin.from("crm_followups").select("id").in("customer_id", customerIds).not("order_id", "is", null).returns<IdRow[]>(),
-    );
-    criticalQueries.push(async () => admin.from("wholesale_codes").select("id").in("customer_id", customerIds).gt("used_count", 0).returns<IdRow[]>());
-  }
-  if (orderIds.length > 0) {
-    criticalQueries.push(async () => admin.from("payments").select("id").in("order_id", orderIds).returns<IdRow[]>());
-    criticalQueries.push(async () => admin.from("invoices").select("id").in("order_id", orderIds).returns<IdRow[]>());
-    criticalQueries.push(async () => admin.from("inventory_reservations").select("id").in("order_id", orderIds).returns<IdRow[]>());
+    const [
+      { data: paymentRows, error: paymentRowsError },
+      { data: invoiceRows, error: invoiceRowsError },
+      { data: noteRows, error: noteRowsError },
+      { data: followupRows, error: followupRowsError },
+      { data: wholesaleCodeRows, error: wholesaleCodeRowsError },
+    ] = await Promise.all([
+      admin
+        .from("payments")
+        .select("id, customer_id, order_id, status, amount, transfer_receipt_url, transfer_receipt_public_id")
+        .in("customer_id", customerIds)
+        .limit(1)
+        .returns<Array<IdRow & Record<string, unknown>>>(),
+      admin
+        .from("invoices")
+        .select("id, customer_id, order_id, invoice_number, status, customer_rtn")
+        .in("customer_id", customerIds)
+        .limit(1)
+        .returns<Array<IdRow & Record<string, unknown>>>(),
+      admin
+        .from("crm_notes")
+        .select("id, customer_id, order_id, note_type, note")
+        .in("customer_id", customerIds)
+        .returns<Array<IdRow & { order_id: string | null; note_type: string | null; note: string | null }>>(),
+      admin
+        .from("crm_followups")
+        .select("id, customer_id, order_id, title, interaction_type, notes")
+        .in("customer_id", customerIds)
+        .returns<Array<IdRow & { order_id: string | null; title: string | null; interaction_type: string | null; notes: string | null }>>(),
+      admin
+        .from("wholesale_codes")
+        .select("id, customer_id, used_count, status, active, last_used_at")
+        .in("customer_id", customerIds)
+        .returns<Array<IdRow & { used_count: number | null; last_used_at: string | null; status: string | null; active: boolean | null }>>(),
+    ]);
+
+    if (paymentRowsError || invoiceRowsError || noteRowsError || followupRowsError || wholesaleCodeRowsError) {
+      return { ok: false, message: "No pudimos validar historial crítico antes de eliminar." };
+    }
+
+    if (paymentRows?.[0]) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "payments",
+          condition: "payments.customer_id in related customer ids",
+          recordId: paymentRows[0].id,
+          reason: commercialHistoryDeletionMessage,
+          record: paymentRows[0],
+        },
+      });
+    }
+
+    if (invoiceRows?.[0]) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "invoices",
+          condition: "invoices.customer_id in related customer ids",
+          recordId: invoiceRows[0].id,
+          reason: commercialHistoryDeletionMessage,
+          record: invoiceRows[0],
+        },
+      });
+    }
+
+    const criticalNote = (noteRows ?? []).find((row) => row.order_id || !isAutomaticRegistrationNote(row));
+    if (criticalNote) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "crm_notes",
+          condition: criticalNote.order_id ? "crm_notes.order_id is not null" : "crm_notes is not automatic registration CRM",
+          recordId: criticalNote.id,
+          reason: commercialHistoryDeletionMessage,
+          record: criticalNote,
+        },
+      });
+    }
+
+    const criticalFollowup = (followupRows ?? []).find((row) => row.order_id || !isAutomaticRegistrationFollowup(row));
+    if (criticalFollowup) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "crm_followups",
+          condition: criticalFollowup.order_id ? "crm_followups.order_id is not null" : "crm_followups is not automatic registration CRM",
+          recordId: criticalFollowup.id,
+          reason: commercialHistoryDeletionMessage,
+          record: criticalFollowup,
+        },
+      });
+    }
+
+    const usedWholesaleCode = (wholesaleCodeRows ?? []).find((row) => Number(row.used_count ?? 0) > 0 || Boolean(row.last_used_at));
+    if (usedWholesaleCode) {
+      return blockedCustomerDeletion({
+        profileId: profile.id,
+        customerId: targetCustomer.id,
+        email,
+        block: {
+          table: "wholesale_codes",
+          condition: "used_count > 0 or last_used_at is not null",
+          recordId: usedWholesaleCode.id,
+          reason: commercialHistoryDeletionMessage,
+          record: usedWholesaleCode,
+        },
+      });
+    }
   }
 
-  const criticalResults = await Promise.all(criticalQueries.map((query) => query()));
-  const criticalError = criticalResults.find((result) => result.error)?.error;
-  if (criticalError) {
-    return { ok: false, message: "No pudimos validar historial crítico antes de eliminar." };
-  }
-
-  const criticalCount = orderIds.length + criticalResults.reduce((sum, result) => sum + (result.data?.length ?? 0), 0);
   const { data: relatedAuditLogs } =
     [...customerIds, ...userIds].length > 0
       ? await admin.from("audit_logs").select("id").in("record_id", uniqueValues([...customerIds, ...userIds])).returns<IdRow[]>()
       : { data: [] as IdRow[] };
-
-  if (criticalCount > 0) {
-    return {
-      ok: false,
-      message:
-        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
-    };
-  }
 
   if (customerIds.length > 0) {
     await admin.from("wholesale_codes").delete().in("customer_id", customerIds);
@@ -1129,6 +1370,8 @@ export async function deleteCustomerAccountPermanentlyAction(input: PermanentAcc
         invoices: 0,
         critical_crm_items: 0,
         used_wholesale_codes: 0,
+        approved_or_suspended_wholesale: 0,
+        tax_id_only_blocked: false,
         related_audit_logs_preserved: relatedAuditLogs?.length ?? 0,
       },
     },

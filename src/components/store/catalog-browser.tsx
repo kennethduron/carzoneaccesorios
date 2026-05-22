@@ -236,7 +236,7 @@ export function CatalogBrowser({
         </form>
 
         {filtersOpen ? (
-          <div className="fixed inset-0 z-[65] md:hidden">
+          <div className="cz-layer-overlay fixed inset-0 md:hidden">
             <button
               type="button"
               className="absolute inset-0 bg-black/45"
