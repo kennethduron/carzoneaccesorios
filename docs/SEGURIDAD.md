@@ -14,7 +14,7 @@
 - `invoices`, `invoice_items`, `fiscal_settings`
 - `inventory_movements`
 - `crm_notes`, `crm_followups`
-- `wholesale_codes`
+- `customers.wholesale_status` y `wholesale_codes` historico
 - `audit_logs`, `error_logs`, `notification_logs`
 - `company_settings`
 
@@ -25,6 +25,7 @@
 - Facturacion por RPC con bloqueo de correlativo.
 - Logs de notificacion/error separados de la operacion principal.
 - Service role solo debe usarse en servidor.
+- El frontend no puede activar mayoreo: el checkout valida en RPC que el usuario tenga `customers.wholesale_status = 'approved'`.
 
 ## Riesgos a vigilar
 

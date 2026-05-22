@@ -1,25 +1,17 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { CommerceSettingsForm } from "@/components/admin/commerce-settings-form";
 import { FiscalSettingsForm } from "@/components/admin/fiscal-settings-form";
-import { NotificationSettingsForm } from "@/components/admin/notification-settings-form";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminCompanySettings } from "@/services/supabase/admin-commerce-settings.service";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
-import { getNotificationSettings } from "@/services/supabase/admin-notification-settings.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminFiscalSettingsPage() {
   const profile = await requirePermission("fiscal:read");
-  const canEdit = profile.role === "admin" || profile.permissions.includes("settings:manage");
-  const [settings, notificationSettings, commerceSettings] = await Promise.all([
-    getFiscalSettings(),
-    getNotificationSettings(),
-    getAdminCompanySettings(),
-  ]);
+  const canEditTechnicalSettings = profile.role === "admin" || profile.permissions.includes("settings:manage");
+  const settings = await getFiscalSettings();
   const alerts = getFiscalAlerts(settings);
 
   return (
@@ -34,9 +26,15 @@ export default async function AdminFiscalSettingsPage() {
         </Link>
       </div>
       <div className="space-y-5">
-        <FiscalSettingsForm settings={settings} alerts={alerts} canEdit={canEdit} />
-        <CommerceSettingsForm settings={commerceSettings} canEdit={canEdit} />
-        <NotificationSettingsForm settings={notificationSettings} canEdit={canEdit} />
+        <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
+          Esta pantalla queda reservada para datos fiscales: RTN, CAI, rango, correlativo y datos legales de factura.
+          Redes, contacto, mayoristas, pagos, notificaciones y BAC operativo se gestionan en{" "}
+          <Link href="/admin/configuracion" className="font-semibold text-[#e4252c]">
+            Configuración empresarial
+          </Link>
+          .
+        </div>
+        <FiscalSettingsForm settings={settings} alerts={alerts} canEdit={canEditTechnicalSettings} />
       </div>
     </AdminShell>
   );

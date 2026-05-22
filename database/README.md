@@ -17,6 +17,8 @@ La regla de precios del sistema exige que cada producto mantenga dos columnas re
 
 Los pedidos guardan un snapshot del precio aplicado en `order_items.unit_price`, junto con `retail_price_snapshot` y `wholesale_price_snapshot`, para que la factura no cambie si el producto se edita despues.
 
+El acceso mayorista se controla por cuenta aprobada en `customers.wholesale_status = 'approved'`. La tabla `wholesale_codes` queda solo como historial/compatibilidad por pedidos antiguos con `orders.wholesale_code_id`; no debe usarse para activar precios.
+
 ## Pagos Por Transferencia
 
 La tabla `payments` mantiene campos normalizados para transferencias bancarias:

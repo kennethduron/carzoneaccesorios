@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type { PriceMode } from "@/types/commerce";
 import type { WholesaleAccount } from "@/types/wholesale";
 
@@ -15,6 +15,12 @@ const PriceModeContext = createContext<PriceModeContextValue | null>(null);
 
 export function PriceModeProvider({ children }: { children: React.ReactNode }) {
   const [wholesaleAccount, setWholesaleAccount] = useState<WholesaleAccount | null>(null);
+  const activateWholesaleMode = useCallback((account: WholesaleAccount) => {
+    setWholesaleAccount(account);
+  }, []);
+  const clearWholesaleMode = useCallback(() => {
+    setWholesaleAccount(null);
+  }, []);
 
   const value = useMemo<PriceModeContextValue>(() => {
     const priceMode: PriceMode = wholesaleAccount ? "wholesale" : "retail";
@@ -22,14 +28,10 @@ export function PriceModeProvider({ children }: { children: React.ReactNode }) {
     return {
       priceMode,
       wholesaleAccount,
-      activateWholesaleMode(account) {
-        setWholesaleAccount(account);
-      },
-      clearWholesaleMode() {
-        setWholesaleAccount(null);
-      },
+      activateWholesaleMode,
+      clearWholesaleMode,
     };
-  }, [wholesaleAccount]);
+  }, [activateWholesaleMode, clearWholesaleMode, wholesaleAccount]);
 
   return <PriceModeContext.Provider value={value}>{children}</PriceModeContext.Provider>;
 }

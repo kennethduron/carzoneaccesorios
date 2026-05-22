@@ -8,7 +8,7 @@ import { getAdminHolidayBanners } from "@/services/supabase/holiday-banners.serv
 export const dynamic = "force-dynamic";
 
 export default async function AdminBannersPage() {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
   const banners = await getAdminHolidayBanners();
 
   return (

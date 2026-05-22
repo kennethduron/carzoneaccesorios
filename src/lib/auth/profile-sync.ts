@@ -111,14 +111,15 @@ export async function ensureRetailProfile(input: {
 
   const { data: pendingCustomer } = await admin
     .from("customers")
-    .select("id, is_wholesale")
+    .select("id, is_wholesale, wholesale_status")
     .is("user_id", null)
     .ilike("email", email)
     .order("created_at", { ascending: false })
     .limit(1)
-    .maybeSingle<{ id: string; is_wholesale: boolean }>();
+    .maybeSingle<{ id: string; is_wholesale: boolean; wholesale_status: string | null }>();
 
   if (pendingCustomer?.id) {
+    const approvedWholesale = pendingCustomer.wholesale_status === "approved" || pendingCustomer.is_wholesale;
     await admin
       .from("customers")
       .update({
@@ -126,6 +127,8 @@ export async function ensureRetailProfile(input: {
         contact_name: fullName,
         email,
         phone,
+        is_wholesale: approvedWholesale,
+        wholesale_status: approvedWholesale ? "approved" : pendingCustomer.wholesale_status,
         status: "active",
         active: true,
       })

@@ -52,7 +52,7 @@ function normalizeBanner(input: HolidayBannerInput) {
 }
 
 export async function saveHolidayBannerAction(input: HolidayBannerInput): Promise<BannerMutationResult> {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
 
   try {
     const payload = normalizeBanner(input);
@@ -84,7 +84,7 @@ export async function saveHolidayBannerAction(input: HolidayBannerInput): Promis
 }
 
 export async function toggleHolidayBannerAction(id: string, isActive: boolean): Promise<BannerMutationResult> {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.from("holiday_banners").update({ is_active: isActive, updated_at: new Date().toISOString() }).eq("id", id);
 
@@ -105,7 +105,7 @@ export async function toggleHolidayBannerAction(id: string, isActive: boolean): 
 }
 
 export async function deleteTestHolidayBannerAction(id: string): Promise<BannerMutationResult> {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
   const supabase = await getSupabaseServerClient();
   const { data: banner, error: bannerError } = await supabase
     .from("holiday_banners")
@@ -140,7 +140,7 @@ export async function deleteTestHolidayBannerAction(id: string): Promise<BannerM
 }
 
 export async function uploadHolidayBannerImageAction(formData: FormData): Promise<BannerMutationResult> {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
   const file = formData.get("file");
 
   if (!(file instanceof File) || file.size === 0) {

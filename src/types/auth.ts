@@ -1,4 +1,4 @@
-export type AppRole = "technical_owner" | "admin" | "vendedor" | "bodega" | "contadora" | "cliente";
+export type AppRole = "technical_owner" | "admin" | "business_owner" | "vendedor" | "bodega" | "contadora" | "cliente";
 
 export type Permission =
   | "admin:access"
@@ -20,6 +20,9 @@ export type Permission =
   | "crm:manage"
   | "reports:read"
   | "settings:manage"
+  | "commercial_settings:manage"
+  | "users:manage"
+  | "roles:assign"
   | "audit:read"
   | "system:monitoring"
   | "store:buy"

@@ -210,8 +210,9 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
     estimated_value: 0,
     monthly_amount: 0,
     is_wholesale: false,
+    wholesale_status: "pending",
     status: "pending_account",
-    active: false,
+    active: true,
   };
 
   const customerQuery = existingCustomerId
@@ -227,7 +228,9 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
           city: city.value,
           notes: note,
           lead_status: "prospecto",
+          wholesale_status: "pending",
           status: "pending_account",
+          active: true,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existingCustomerId)

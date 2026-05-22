@@ -82,7 +82,7 @@ export function CartView() {
         <h2 className="font-semibold">Resumen</h2>
         {wholesaleAccount ? (
           <p className="mt-3 rounded-md bg-[#fff1f2] p-3 text-sm text-[#b91c25]">
-            Código aplicado: {wholesaleAccount.code}
+            Cuenta mayorista aprobada: {wholesaleAccount.businessName}
           </p>
         ) : null}
         <Totals subtotal={subtotal} tax={tax} total={total} />

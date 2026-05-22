@@ -1,8 +1,24 @@
+import type { Metadata } from "next";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogBrowser } from "@/components/store/catalog-browser";
 import { getCatalogProducts } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Catálogo de accesorios automotrices",
+  description:
+    "Explora el catálogo de accesorios automotrices de Car Zone Accesorios con filtros por categoría, vehículo, precio y disponibilidad.",
+  alternates: {
+    canonical: "/catalogo",
+  },
+  openGraph: {
+    title: "Catálogo de accesorios automotrices | Car Zone Accesorios",
+    description:
+      "Accesorios automotrices preparados para venta al detalle y cuentas mayoristas.",
+    url: "/catalogo",
+  },
+};
 
 function optionalNumberParam(value: string | undefined) {
   if (!value?.trim()) {

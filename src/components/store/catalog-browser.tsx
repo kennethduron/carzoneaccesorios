@@ -57,6 +57,7 @@ export function CatalogBrowser({
   const { registerProducts } = useProductRegistry();
   const hasNextPage = page * pageSize < total;
   const hasActiveFilters = Boolean(query || category || minPrice || maxPrice || vehicleBrand || vehicleModel || vehicleYear || availability);
+  const isEmptyCatalog = total === 0 && !hasActiveFilters;
 
   useEffect(() => {
     registerProducts(products);
@@ -268,14 +269,22 @@ export function CatalogBrowser({
 
         {products.length === 0 ? (
           <div className="rounded-lg border border-dashed border-black/15 bg-white p-8 text-center">
-            <h2 className="text-xl font-semibold">No se encontraron resultados con estos filtros.</h2>
-            <p className="mt-2 text-sm text-black/55">Prueba con otra busqueda, categoria, precio o compatibilidad.</p>
-            <Link
-              href="/catalogo"
-              className="mt-4 inline-flex items-center justify-center rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#e4252c]"
-            >
-              Limpiar filtros
-            </Link>
+            <h2 className="text-xl font-semibold">
+              {isEmptyCatalog ? "Catalogo listo para cargar productos reales." : "No se encontraron resultados con estos filtros."}
+            </h2>
+            <p className="mt-2 text-sm text-black/55">
+              {isEmptyCatalog
+                ? "Aun no hay productos publicados. El equipo puede cargar el primer producto real desde el panel administrativo."
+                : "Prueba con otra busqueda, categoria, precio o compatibilidad."}
+            </p>
+            {isEmptyCatalog ? null : (
+              <Link
+                href="/catalogo"
+                className="mt-4 inline-flex items-center justify-center rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#e4252c]"
+              >
+                Limpiar filtros
+              </Link>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3">
@@ -301,7 +310,7 @@ export function CatalogBrowser({
         <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
           <h2 className="font-semibold">Atencion comercial</h2>
           <p className="mt-2 text-sm text-black/60">
-            Para pedidos de volumen, solicita tu codigo mayorista y el catalogo cambiara a precio mayorista.
+            Para pedidos de volumen, inicia sesion o solicita acceso mayorista. Los precios especiales se activan solo para cuentas aprobadas.
           </p>
         </section>
       </aside>

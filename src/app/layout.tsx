@@ -44,6 +44,17 @@ export const metadata: Metadata = {
   alternates: {
     canonical: siteUrl,
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   manifest: "/site.webmanifest",
   icons: {
     icon: [
@@ -83,6 +94,28 @@ export const metadata: Metadata = {
   category: "automotive ecommerce",
 };
 
+const structuredData = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Car Zone Accesorios",
+    url: siteUrl,
+    logo: `${siteUrl}/brand/car-zone-logo.jpeg`,
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "AutoPartsStore",
+    name: "Car Zone Accesorios",
+    url: siteUrl,
+    image: ogImageUrl,
+    areaServed: "Honduras",
+    address: {
+      "@type": "PostalAddress",
+      addressCountry: "HN",
+    },
+  },
+];
+
 export const viewport: Viewport = {
   themeColor: "#E4252C",
   colorScheme: "light",
@@ -96,6 +129,11 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${rajdhani.variable} ${titillium.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
+        <script
+          type="application/ld+json"
+          suppressHydrationWarning
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

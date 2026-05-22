@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Car, Headphones, Lightbulb, PackageCheck, Sparkles, Wrench } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
@@ -5,16 +6,30 @@ import { getCategorySummaries } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
 
+export const metadata: Metadata = {
+  title: "Categorías",
+  description:
+    "Categorías preparadas para accesorios automotrices por línea de producto, compatibilidad de vehículo y necesidades de compra.",
+  alternates: {
+    canonical: "/categorias",
+  },
+  openGraph: {
+    title: "Categorías | Car Zone Accesorios",
+    description: "Explora accesorios automotrices por categoría y compatibilidad.",
+    url: "/categorias",
+  },
+};
+
 const expectedCategories = [
-  ["Exterior", "exterior", "Carroceria, defensas, molduras y proteccion.", Wrench],
-  ["Interior", "interior", "Comodidad, organizacion y acabado de cabina.", Car],
-  ["Iluminacion", "iluminacion", "LED, focos, neblineras y senalizacion.", Lightbulb],
+  ["Exterior", "exterior", "Carrocería, defensas, molduras y protección.", Wrench],
+  ["Interior", "interior", "Comodidad, organización y acabado de cabina.", Car],
+  ["Iluminación", "iluminacion", "LED, focos, neblineras y señalización.", Lightbulb],
   ["Audio", "audio", "Radios, bocinas, pantallas y accesorios.", Headphones],
   ["Motos", "motos", "Accesorios para motos y uso diario.", Sparkles],
   ["Aros y llantas", "aros-y-llantas", "Complementos para rueda y acabado exterior.", PackageCheck],
-  ["Accesorios universales", "accesorios-universales", "Productos compatibles con multiples vehiculos.", PackageCheck],
-  ["Por marca de vehiculo", "", "Usa filtros por marca en el catalogo.", Car],
-  ["Por modelo de vehiculo", "", "Combina marca, modelo y anio.", Car],
+  ["Accesorios universales", "accesorios-universales", "Productos compatibles con múltiples vehículos.", PackageCheck],
+  ["Por marca de vehículo", "", "Usa filtros por marca en el catálogo.", Car],
+  ["Por modelo de vehículo", "", "Combina marca, modelo y año.", Car],
 ] as const;
 
 export default async function CategoriasPage() {
@@ -25,10 +40,10 @@ export default async function CategoriasPage() {
   return (
     <PublicStoreShell>
       <section className="mx-auto max-w-7xl px-4 py-8 sm:px-5">
-        <p className="text-sm font-medium uppercase text-[#e4252c]">Explora por linea</p>
-        <h1 className="mt-2 text-4xl font-semibold">Categorias</h1>
+        <p className="text-sm font-medium uppercase text-[#e4252c]">Explora por línea</p>
+        <h1 className="mt-2 text-4xl font-semibold">Categorías</h1>
         <p className="mt-3 max-w-2xl text-sm text-black/58">
-          Organizacion pensada para una tienda automotriz: por linea de producto y por compatibilidad de vehiculo.
+          Organización pensada para una tienda automotriz: por línea de producto y por compatibilidad de vehículo.
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3">
@@ -53,7 +68,7 @@ export default async function CategoriasPage() {
 
         {extraCategories.length > 0 ? (
           <div className="mt-8">
-            <h2 className="text-2xl font-semibold">Otras categorias activas</h2>
+            <h2 className="text-2xl font-semibold">Otras categorías activas</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {extraCategories.map((category) => (
                 <Link

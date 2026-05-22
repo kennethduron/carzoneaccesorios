@@ -9,6 +9,7 @@ export type CrmInteractionType =
 export type CrmPriority = "baja" | "media" | "alta" | "urgente";
 export type CrmFollowupStatus = "pending" | "completed" | "cancelled";
 export type CrmLeadStatus = "prospecto" | "contactado" | "calificado" | "cliente" | "perdido";
+export type CrmWholesaleStatus = "none" | "pending" | "approved" | "rejected" | "suspended";
 
 export type CrmCustomerOption = {
   id: string;
@@ -22,6 +23,7 @@ export type CrmCustomerOption = {
   city: string | null;
   notes: string | null;
   is_wholesale: boolean;
+  wholesale_status: CrmWholesaleStatus;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
   lead_status: CrmLeadStatus;
@@ -52,6 +54,8 @@ export type CrmCustomerOption = {
   customer_type: "Retail" | "Mayorista";
   has_wholesale_request: boolean;
   is_test_account: boolean;
+  can_delete_permanently: boolean;
+  delete_block_reason: string | null;
 };
 
 export type CrmFollowupRow = {
@@ -113,6 +117,7 @@ export type CrmCustomerOrderProfileRow = {
   created_at: string;
   status: string;
   payment_method: string;
+  payment_status: string | null;
   price_mode: "retail" | "wholesale";
   total: number;
   invoice_number: string | null;
@@ -142,6 +147,14 @@ export type CrmCustomerWholesaleCodeProfileRow = {
   last_used_at: string | null;
 };
 
+export type CrmCustomerWholesaleHistoryRow = {
+  id: string;
+  note: string;
+  created_at: string;
+  user_name: string | null;
+  user_email: string | null;
+};
+
 export type CrmCustomerProfile = {
   customer: CrmCustomerOption;
   orders: CrmCustomerOrderProfileRow[];
@@ -149,6 +162,7 @@ export type CrmCustomerProfile = {
   notes: CrmNoteRow[];
   followups: CrmFollowupRow[];
   wholesaleCodes: CrmCustomerWholesaleCodeProfileRow[];
+  wholesaleHistory: CrmCustomerWholesaleHistoryRow[];
 };
 
 export type CrmLeadInput = {

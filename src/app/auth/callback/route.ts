@@ -1,12 +1,9 @@
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { ensureRetailProfile, getUserRole } from "@/lib/auth/profile-sync";
-import type { AppRole } from "@/types/auth";
+import { ensureRetailProfile } from "@/lib/auth/profile-sync";
 
 export const dynamic = "force-dynamic";
-
-const adminRoles: AppRole[] = ["technical_owner", "admin", "vendedor", "bodega", "contadora"];
 
 function safeNextPath(value: string | null) {
   if (!value?.startsWith("/") || value.startsWith("//")) {
@@ -16,11 +13,18 @@ function safeNextPath(value: string | null) {
   return value;
 }
 
-function redirectToLogin(request: NextRequest, reason: "missing" | "expired" | "failed" | "already_confirmed" = "failed") {
+function redirectToVerificationError(
+  request: NextRequest,
+  reason: "missing" | "expired" | "failed" | "already_confirmed" = "failed",
+) {
   const url = request.nextUrl.clone();
-  url.pathname = "/login";
+  url.pathname = reason === "already_confirmed" ? "/verificacion/cuenta-confirmada" : "/verificacion/enlace-invalido";
   url.search = "";
-  url.searchParams.set("confirmation_error", reason);
+  if (reason === "already_confirmed") {
+    url.searchParams.set("status", "already");
+  } else {
+    url.searchParams.set("reason", reason);
+  }
   return NextResponse.redirect(url);
 }
 
@@ -32,24 +36,11 @@ function redirectToPasswordRecovery(request: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-function redirectAfterConfirmation(request: NextRequest, role: AppRole | null, requestedNext: string) {
+function redirectToVerified(request: NextRequest, status: "verified" | "already" = "verified") {
   const url = request.nextUrl.clone();
-
-  if (requestedNext === "/restablecer-contrasena") {
-    url.pathname = "/restablecer-contrasena";
-    url.search = "";
-    url.searchParams.set("recovery", "1");
-    return NextResponse.redirect(url);
-  }
-
-  if (role && adminRoles.includes(role)) {
-    url.pathname = "/admin";
-  } else {
-    url.pathname = requestedNext.startsWith("/admin") ? "/cuenta" : requestedNext;
-  }
-
+  url.pathname = "/verificacion/cuenta-confirmada";
   url.search = "";
-  url.searchParams.set("confirmed", "1");
+  url.searchParams.set("status", status);
   return NextResponse.redirect(url);
 }
 
@@ -70,7 +61,7 @@ function confirmationErrorReason(message: string) {
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
-  const type = (request.nextUrl.searchParams.get("type") ?? "email") as EmailOtpType;
+  const type = (request.nextUrl.searchParams.get("type") ?? "signup") as EmailOtpType;
   const requestedNext = safeNextPath(request.nextUrl.searchParams.get("next"));
   const isRecoveryFlow = requestedNext === "/restablecer-contrasena" || type === "recovery";
 
@@ -79,7 +70,7 @@ export async function GET(request: NextRequest) {
       return redirectToPasswordRecovery(request);
     }
 
-    return redirectToLogin(request, "failed");
+    return redirectToVerificationError(request, "failed");
   }
 
   if (!code && !tokenHash) {
@@ -87,7 +78,7 @@ export async function GET(request: NextRequest) {
       return redirectToPasswordRecovery(request);
     }
 
-    return redirectToLogin(request, "missing");
+    return redirectToVerificationError(request, "missing");
   }
 
   const supabase = await getSupabaseServerClient();
@@ -99,7 +90,7 @@ export async function GET(request: NextRequest) {
         return redirectToPasswordRecovery(request);
       }
 
-      return redirectToLogin(request, confirmationErrorReason(error.message));
+      return redirectToVerificationError(request, confirmationErrorReason(error.message));
     }
   } else if (tokenHash) {
     const { error } = await supabase.auth.verifyOtp({
@@ -112,7 +103,7 @@ export async function GET(request: NextRequest) {
         return redirectToPasswordRecovery(request);
       }
 
-      return redirectToLogin(request, confirmationErrorReason(error.message));
+      return redirectToVerificationError(request, confirmationErrorReason(error.message));
     }
   }
 
@@ -126,16 +117,25 @@ export async function GET(request: NextRequest) {
       return redirectToPasswordRecovery(request);
     }
 
-    return redirectToLogin(request, "failed");
+    return redirectToVerificationError(request, "failed");
   }
 
-  const roleFromSync = await ensureRetailProfile({
+  if (isRecoveryFlow) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/restablecer-contrasena";
+    url.search = "";
+    url.searchParams.set("recovery", "1");
+    return NextResponse.redirect(url);
+  }
+
+  await ensureRetailProfile({
     userId: user.id,
     email: user.email ?? "",
     fullName: user.user_metadata?.full_name,
     phone: user.user_metadata?.phone,
   });
-  const role = roleFromSync ?? (await getUserRole(user.id));
 
-  return redirectAfterConfirmation(request, role, requestedNext);
+  await supabase.auth.signOut();
+
+  return redirectToVerified(request);
 }

@@ -8,7 +8,7 @@ import { getAdminSecurity } from "@/services/supabase/admin-security.service";
 export const dynamic = "force-dynamic";
 
 export default async function AdminSecurityPage() {
-  await requirePermission("audit:read");
+  const profile = await requirePermission("audit:read");
   const security = await getAdminSecurity();
 
   return (
@@ -22,7 +22,7 @@ export default async function AdminSecurityPage() {
           Panel administrativo
         </Link>
       </div>
-      <SecurityCenter data={security} />
+      <SecurityCenter data={security} currentUser={profile} />
     </AdminShell>
   );
 }

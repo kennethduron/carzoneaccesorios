@@ -56,3 +56,7 @@
 \i ./migrations/202605200002_operational_hardening_indexes_tracking.sql
 \i ./migrations/202605210001_operational_hardening_phase.sql
 \i ./migrations/202605210002_email_provider_cron_ops.sql
+\i ./migrations/202605210003_account_based_wholesale.sql
+\i ./migrations/202605210004_fix_rate_limit_conflict_target.sql
+\i ./migrations/202605210005_business_owner_user_management.sql
+\i ./migrations/202605210006_business_settings_center.sql

@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
+import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { CardBrandList } from "@/components/store/card-brand-list";
 import { SocialLinks } from "@/components/store/social-links";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -14,60 +16,98 @@ import type { PublicCompanySettings } from "@/types/settings";
 
 const primaryLinks = [
   ["Inicio", "/"],
-  ["Catálogo", "/catalogo"],
+  ["Catalogo", "/catalogo"],
+  ["Categorias", "/categorias"],
   ["Contacto", "/contacto"],
   ["Rastrear pedido", "/rastreo"],
+  ["Solicitar mayoreo", "/contacto#mayoreo"],
+  ["Politicas", "/politicas"],
 ];
 
-const userMenuLinks = [
+const customerAccountLinks = [
   ["Mi cuenta", "/cuenta"],
   ["Mis pedidos", "/mis-pedidos"],
   ["Facturas", "/facturas"],
-  ["Solicitar mayoreo", "/contacto#mayoreo"],
 ];
 
 const legalLinks = [
-  ["Términos y condiciones", "/terminos-y-condiciones"],
-  ["Política de privacidad", "/politica-de-privacidad"],
-  ["Política de entrega", "/politica-de-entrega"],
-  ["Política de devoluciones", "/politica-de-devoluciones"],
-  ["Política de cancelación", "/politica-de-cancelacion"],
+  ["Terminos y condiciones", "/terminos-y-condiciones"],
+  ["Politica de privacidad", "/politica-de-privacidad"],
+  ["Politica de entrega", "/politica-de-entrega"],
+  ["Politica de devoluciones", "/politica-de-devoluciones"],
+  ["Politica de cancelacion", "/politica-de-cancelacion"],
   ["Servicio al cliente", "/contacto-servicio-cliente"],
   ["Contacto", "/contacto"],
 ];
 
+const guestAccountState: PublicAccountMenuState = {
+  isAuthenticated: false,
+  role: null,
+  hasAdminAccess: false,
+};
+
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accountState, setAccountState] = useState<PublicAccountMenuState>(guestAccountState);
   const [cartPulse, setCartPulse] = useState(false);
   const [companySettings, setCompanySettings] = useState<PublicCompanySettings | null>(null);
   const previousCartCount = useRef(0);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { priceMode } = usePriceMode();
+  const mobileMenuRef = useRef<HTMLElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const { priceMode, activateWholesaleMode, clearWholesaleMode } = usePriceMode();
   const { cartCount } = useShoppingCart();
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (active) {
-        setIsAuthenticated(Boolean(data.session));
+    async function refreshAccountState(hasSession: boolean) {
+      if (!active) {
+        return;
       }
+
+      if (!hasSession) {
+        setAccountState(guestAccountState);
+        clearWholesaleMode();
+        return;
+      }
+
+      const [state, wholesaleState] = await Promise.all([getPublicAccountMenuStateAction(), getWholesaleAccessStateAction()]);
+      if (active) {
+        setAccountState(state);
+        if (wholesaleState.account) {
+          activateWholesaleMode(wholesaleState.account);
+        } else {
+          clearWholesaleMode();
+        }
+      }
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      const hasSession = Boolean(data.session);
+      if (!hasSession) {
+        clearWholesaleMode();
+      }
+      void refreshAccountState(hasSession);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(Boolean(session));
+      const hasSession = Boolean(session);
+      if (!hasSession) {
+        clearWholesaleMode();
+      }
+      void refreshAccountState(hasSession);
     });
 
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [activateWholesaleMode, clearWholesaleMode]);
 
   useEffect(() => {
     let active = true;
@@ -97,8 +137,12 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
-      if (!userMenuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!userMenuRef.current?.contains(target)) {
         setUserMenuOpen(false);
+      }
+      if (!mobileMenuRef.current?.contains(target) && !mobileMenuButtonRef.current?.contains(target)) {
+        setOpen(false);
       }
     }
 
@@ -145,7 +189,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-1 lg:flex">
+          <nav className="hidden items-center gap-1 xl:flex">
             {primaryLinks.map(([label, href]) => (
               <Link key={href} href={href} className="rounded-md px-3 py-2 text-sm hover:bg-[#f4f4f5]">
                 {label}
@@ -163,9 +207,12 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
             <div ref={userMenuRef} className="relative">
               <button
                 type="button"
-                onClick={() => setUserMenuOpen((current) => !current)}
+                onClick={() => {
+                  setUserMenuOpen((current) => !current);
+                  setOpen(false);
+                }}
                 className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-2.5 text-sm hover:bg-white/80 sm:px-3"
-                aria-label="Abrir menú de usuario"
+                aria-label="Abrir menu de usuario"
                 aria-expanded={userMenuOpen}
               >
                 <UserRound size={17} />
@@ -174,36 +221,55 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
               {userMenuOpen ? (
                 <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-black/10 bg-white py-2 shadow-xl">
-                  {userMenuLinks.map(([label, href]) => (
-                    <Link
-                      key={href}
-                      href={href}
-                      className="block px-4 py-2 text-sm hover:bg-[#f4f4f5]"
-                      onClick={() => setUserMenuOpen(false)}
-                    >
-                      {label}
-                    </Link>
-                  ))}
-
-                  <div className="mt-2 border-t border-black/10 pt-2">
-                    {isAuthenticated ? (
-                      <form action="/auth/logout" method="post">
-                        <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f4f4f5]">
-                          <LogOut size={16} />
-                          Cerrar sesión
-                        </button>
-                      </form>
-                    ) : (
+                  {accountState.isAuthenticated ? (
+                    <>
+                      {accountState.hasAdminAccess ? (
+                        <Link
+                          href="/admin"
+                          className="block px-4 py-2 text-sm font-medium hover:bg-[#f4f4f5]"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          Panel administrativo
+                        </Link>
+                      ) : null}
+                      {(accountState.hasAdminAccess ? [["Mi cuenta", "/cuenta"]] : customerAccountLinks).map(([label, href]) => (
+                        <Link
+                          key={href}
+                          href={href}
+                          className="block px-4 py-2 text-sm hover:bg-[#f4f4f5]"
+                          onClick={() => setUserMenuOpen(false)}
+                        >
+                          {label}
+                        </Link>
+                      ))}
+                      <div className="mt-2 border-t border-black/10 pt-2">
+                        <form action="/auth/logout" method="post">
+                          <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f4f4f5]">
+                            <LogOut size={16} />
+                            Cerrar sesion
+                          </button>
+                        </form>
+                      </div>
+                    </>
+                  ) : (
+                    <>
                       <Link
                         href="/login"
                         className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-[#f4f4f5]"
                         onClick={() => setUserMenuOpen(false)}
                       >
                         <LogIn size={16} />
-                        Iniciar sesión
+                        Iniciar sesion
                       </Link>
-                    )}
-                  </div>
+                      <Link
+                        href="/registro"
+                        className="block px-4 py-2 text-sm hover:bg-[#f4f4f5]"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        Crear cuenta
+                      </Link>
+                    </>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -218,9 +284,14 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               <span>{cartCount}</span>
             </Link>
             <button
-              onClick={() => setOpen((current) => !current)}
-              className="grid size-10 place-items-center rounded-md border border-black/10 bg-white lg:hidden"
-              aria-label="Abrir menú"
+              ref={mobileMenuButtonRef}
+              onClick={() => {
+                setOpen((current) => !current);
+                setUserMenuOpen(false);
+              }}
+              className="grid size-10 place-items-center rounded-md border border-black/10 bg-white xl:hidden"
+              aria-label="Abrir menu principal"
+              aria-expanded={open}
             >
               {open ? <X size={18} /> : <Menu size={18} />}
             </button>
@@ -228,14 +299,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {open ? (
-          <nav className="border-t border-black/10 bg-white px-5 py-3 lg:hidden">
+          <nav ref={mobileMenuRef} className="border-t border-black/10 bg-white px-5 py-3 xl:hidden">
             <div className="mx-auto grid max-w-7xl gap-1">
               {primaryLinks.map(([label, href]) => (
-                <Link key={href} href={href} className="rounded-md px-3 py-2 text-sm" onClick={() => setOpen(false)}>
-                  {label}
-                </Link>
-              ))}
-              {userMenuLinks.map(([label, href]) => (
                 <Link key={href} href={href} className="rounded-md px-3 py-2 text-sm" onClick={() => setOpen(false)}>
                   {label}
                 </Link>
@@ -243,19 +309,6 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               {priceMode === "wholesale" ? (
                 <span className="rounded-md px-3 py-2 text-sm font-medium text-[#e4252c]">Mayoreo activo</span>
               ) : null}
-              {isAuthenticated ? (
-                <form action="/auth/logout" method="post">
-                  <button type="submit" className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm">
-                    <LogOut size={16} />
-                    Cerrar sesión
-                  </button>
-                </form>
-              ) : (
-                <Link href="/login" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm" onClick={() => setOpen(false)}>
-                  <LogIn size={16} />
-                  Iniciar sesión
-                </Link>
-              )}
             </div>
           </nav>
         ) : null}
@@ -278,7 +331,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold">Políticas y soporte</p>
+            <p className="mb-2 text-sm font-semibold">Politicas y soporte</p>
             <div className="grid gap-1 text-sm">
               {legalLinks.map(([label, href]) => (
                 <Link key={href} href={href} className="rounded-md px-3 py-2 text-black/65 hover:bg-[#f4f4f5] hover:text-[#080808]">
@@ -289,7 +342,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold">Síguenos</p>
+            <p className="mb-2 text-sm font-semibold">Siguenos</p>
             <div className="mb-5">
               <SocialLinks settings={companySettings} />
             </div>
@@ -301,16 +354,16 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-black/10 px-5 py-4">
           <div className="mx-auto flex max-w-7xl flex-wrap gap-2 text-sm text-black/55">
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Misión
+              Mision
             </Link>
             <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Visión
+              Vision
             </Link>
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
               Historia
             </Link>
             <Link href="/politicas" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Políticas
+              Politicas
             </Link>
           </div>
         </div>

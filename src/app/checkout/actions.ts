@@ -8,6 +8,7 @@ import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
 import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { validateHondurasPhone } from "@/utils/validation";
 
@@ -20,8 +21,6 @@ type CreateCheckoutOrderInput = {
   checkout: CheckoutData;
   items: CheckoutOrderItemInput[];
   priceMode: PriceMode;
-  wholesaleCode?: string | null;
-  wholesaleCodeId?: string | null;
 };
 
 type CheckoutActionResult = {
@@ -46,25 +45,16 @@ export type WholesalePurchaseStatusResult = {
   message?: string;
 };
 
-type WholesaleCodeActivationRow = {
-  id: string;
-};
-
-type WholesaleCodePublicRow = {
-  is_valid: boolean;
-};
-
 type CustomerAuthorizationRow = {
   id: string;
   is_wholesale: boolean;
+  wholesale_status: "none" | "pending" | "approved" | "rejected" | "suspended" | null;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
 };
 
 const wholesaleMessages = {
-  invalidCode: "Código mayorista inválido.",
-  loginRequired: "Código válido. Inicia sesión con tu cuenta mayorista para activar precios.",
-  codeNotOwned: "Este código mayorista no pertenece a tu cuenta.",
+  loginRequired: "Inicia sesion con tu cuenta mayorista aprobada para activar precios.",
   accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
 };
 const hondurasOnlyMessage = "Actualmente solo realizamos entregas dentro de Honduras.";
@@ -117,8 +107,6 @@ function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
     checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
     items: JSON.parse(String(formData.get("items") ?? "[]")) as CheckoutOrderItemInput[],
     priceMode: String(formData.get("priceMode") ?? "retail") as PriceMode,
-    wholesaleCode: String(formData.get("wholesaleCode") ?? "").trim() || null,
-    wholesaleCodeId: String(formData.get("wholesaleCodeId") ?? "").trim() || null,
   };
 }
 
@@ -141,7 +129,7 @@ export async function getWholesalePurchaseStatusAction(customerId: string | null
     .select("id")
     .eq("id", customerId)
     .eq("user_id", user.id)
-    .eq("is_wholesale", true)
+    .eq("wholesale_status", "approved")
     .eq("active", true)
     .maybeSingle<{ id: string }>();
 
@@ -244,6 +232,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
   const bankReference = String(input.checkout.bankTransferReference ?? "").trim();
   const rawItems = Array.isArray(input.items) ? input.items : [];
+  const settings = await getPublicCompanySettings();
 
   if (country !== "Honduras") {
     return { ok: false, message: hondurasOnlyMessage };
@@ -259,12 +248,20 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "Completa tus datos y agrega productos para crear el pedido." };
   }
 
-  if (paymentMethod === "bank_transfer" && !bankReference) {
-    return { ok: false, message: "Debes ingresar el número de referencia de la transferencia." };
+  if (paymentMethod === "bank_transfer" && !settings.allow_bank_transfer) {
+    return { ok: false, message: "La transferencia bancaria no está disponible en este momento." };
   }
 
-  if (input.priceMode === "wholesale" && (!input.wholesaleCode?.trim() || !input.wholesaleCodeId?.trim())) {
-    return { ok: false, message: wholesaleMessages.invalidCode };
+  if (paymentMethod === "cash" && !settings.allow_cash_on_delivery) {
+    return { ok: false, message: "El pago contra entrega no está disponible en este momento." };
+  }
+
+  if (paymentMethod === "card" && settings.bac_card_status === "hidden") {
+    return { ok: false, message: "El pago con tarjeta no está disponible en este momento." };
+  }
+
+  if (paymentMethod === "bank_transfer" && settings.require_bank_reference && !bankReference) {
+    return { ok: false, message: "Debes ingresar el número de referencia de la transferencia." };
   }
 
   const normalizedItems = rawItems
@@ -327,6 +324,10 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   if (input.priceMode === "wholesale") {
+    if (!settings.wholesale_purchases_enabled) {
+      return { ok: false, message: "Las compras mayoristas están desactivadas temporalmente." };
+    }
+
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -335,39 +336,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       return { ok: false, message: wholesaleMessages.loginRequired };
     }
 
-    const { data: publicValidationData } = await supabase
-      .rpc("validate_wholesale_code_public", { raw_code: input.wholesaleCode?.trim().toUpperCase() || "" })
-      .returns<WholesaleCodePublicRow[]>();
+    const { data: customerRows, error: customerError } = await supabase
+      .from("customers")
+      .select("id, is_wholesale, wholesale_status, status, active")
+      .eq("user_id", user.id)
+      .returns<CustomerAuthorizationRow[]>();
 
-    const publicValidationRows = Array.isArray(publicValidationData) ? publicValidationData : [];
-    if (!publicValidationRows[0]?.is_valid) {
-      return { ok: false, message: wholesaleMessages.invalidCode };
-    }
-
-    const { data: activatedData, error: activationError } = await supabase
-      .rpc("activate_wholesale_account", { raw_code: input.wholesaleCode?.trim().toUpperCase() || "" })
-      .returns<WholesaleCodeActivationRow[]>();
-
-    if (activationError) {
+    if (customerError) {
       return { ok: false, message: wholesaleMessages.accountNotAuthorized };
     }
 
-    const activatedRows = Array.isArray(activatedData) ? activatedData : [];
-    if (!activatedRows.some((row) => row.id === input.wholesaleCodeId)) {
-      const { data: customerRows } = await supabase
-        .from("customers")
-        .select("id, is_wholesale, status, active")
-        .eq("user_id", user.id)
-        .returns<CustomerAuthorizationRow[]>();
+    const hasAuthorizedWholesaleAccount = (customerRows ?? []).some(
+      (customer) =>
+        customer.active &&
+        (customer.wholesale_status === "approved" ||
+          (customer.wholesale_status === null && customer.is_wholesale && customer.status === "active")),
+    );
 
-      const hasAuthorizedWholesaleAccount = (customerRows ?? []).some(
-        (customer) => customer.is_wholesale && customer.active && customer.status === "active",
-      );
-
-      return {
-        ok: false,
-        message: hasAuthorizedWholesaleAccount ? wholesaleMessages.codeNotOwned : wholesaleMessages.accountNotAuthorized,
-      };
+    if (!hasAuthorizedWholesaleAccount) {
+      return { ok: false, message: wholesaleMessages.accountNotAuthorized };
     }
   }
 
@@ -376,9 +363,13 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   try {
     const receiptFile = formData.get("transferReceipt");
     transferReceipt =
-      paymentMethod === "bank_transfer" && receiptFile instanceof File
+      paymentMethod === "bank_transfer" && settings.transfer_receipt_requirement !== "disabled" && receiptFile instanceof File
         ? await uploadTransferReceipt(receiptFile, bankReference)
         : null;
+
+    if (paymentMethod === "bank_transfer" && settings.transfer_receipt_requirement === "required" && !transferReceipt) {
+      return { ok: false, message: "Debes subir el comprobante de transferencia." };
+    }
   } catch (error) {
     await writeErrorLog({
       route: "/checkout",
@@ -418,8 +409,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         product_id: item.productId,
         quantity: item.quantity,
       })),
-      wholesale_code: input.wholesaleCode?.trim().toUpperCase() || null,
-      wholesale_code_id: input.wholesaleCodeId || null,
+      wholesale_code: null,
+      wholesale_code_id: null,
       transfer_receipt_url: null,
     })
     .returns<Array<{ order_id: string; order_number: string; tracking_code: string }>>();

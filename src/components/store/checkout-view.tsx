@@ -77,10 +77,36 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     () => calculateCheckoutFees({ subtotal, paymentMethod: checkout.paymentMethod, settings }),
     [checkout.paymentMethod, settings, subtotal],
   );
+  const paymentMethods = useMemo(() => {
+    const methods: Array<[CheckoutData["paymentMethod"], typeof Banknote]> = [];
+    if (settings.allow_bank_transfer) {
+      methods.push(["Transferencia bancaria", Banknote]);
+    }
+    if (settings.bac_card_status !== "hidden") {
+      methods.push(["Tarjeta", CreditCard]);
+    }
+    if (settings.allow_cash_on_delivery) {
+      methods.push(["Efectivo", Store]);
+    }
+    return methods;
+  }, [settings.allow_bank_transfer, settings.allow_cash_on_delivery, settings.bac_card_status]);
   const finalTotal = Math.round((subtotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee) * 100) / 100;
   const wholesaleMinimumMissing = Math.max(0, settings.first_wholesale_minimum - subtotal);
   const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
-  const blocksFirstWholesaleOrder = priceMode === "wholesale" && effectiveIsFirstWholesalePurchase && wholesaleMinimumMissing > 0;
+  const wholesaleMinimumApplies =
+    priceMode === "wholesale" && (!settings.wholesale_allow_repeat_without_minimum || effectiveIsFirstWholesalePurchase);
+  const blocksFirstWholesaleOrder = wholesaleMinimumApplies && wholesaleMinimumMissing > 0;
+  const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
+
+  useEffect(() => {
+    if (paymentMethods.length === 0) {
+      return;
+    }
+
+    if (!paymentMethods.some(([method]) => method === checkout.paymentMethod)) {
+      updateCheckoutField("paymentMethod", paymentMethods[0][0]);
+    }
+  }, [checkout.paymentMethod, paymentMethods]);
 
   useEffect(() => {
     let active = true;
@@ -178,14 +204,41 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     const isBankTransfer = checkout.paymentMethod === "Transferencia bancaria";
     const bankTransferReference = checkout.bankTransferReference.trim();
 
-    if (isBankTransfer && !bankTransferReference) {
+    if (isBankTransfer && !settings.allow_bank_transfer) {
+      showCheckoutError("paymentMethod", "La transferencia bancaria no está disponible en este momento.");
+      return;
+    }
+
+    if (checkout.paymentMethod === "Efectivo" && !settings.allow_cash_on_delivery) {
+      showCheckoutError("paymentMethod", "El pago contra entrega no está disponible en este momento.");
+      return;
+    }
+
+    if (checkout.paymentMethod === "Tarjeta" && settings.bac_card_status === "hidden") {
+      showCheckoutError("paymentMethod", "El pago con tarjeta no está disponible en este momento.");
+      return;
+    }
+
+    if (isBankTransfer && settings.require_bank_reference && !bankTransferReference) {
       showCheckoutError("bankTransferReference", "Ingresa el número de referencia de la transferencia.");
       return;
     }
 
-    if (isBankTransfer && proofMessage && !proofFile) {
+    if (isBankTransfer && settings.transfer_receipt_requirement === "required" && !proofFile) {
+      showCheckoutError("transferReceipt", "Sube el comprobante de transferencia para continuar.");
+      return;
+    }
+
+    if (isBankTransfer && settings.transfer_receipt_requirement !== "disabled" && proofMessage && !proofFile) {
       setCheckoutMessage(proofMessage);
       toast.error(proofMessage);
+      return;
+    }
+
+    if (blocksWholesalePurchases) {
+      const message = "Las compras mayoristas están desactivadas temporalmente.";
+      setCheckoutMessage(message);
+      toast.error(message);
       return;
     }
 
@@ -207,10 +260,8 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
       formData.set("checkout", JSON.stringify({ ...checkout, phone: phone.value }));
       formData.set("items", JSON.stringify(items));
       formData.set("priceMode", priceMode);
-      formData.set("wholesaleCode", wholesaleAccount?.code ?? "");
-      formData.set("wholesaleCodeId", wholesaleAccount?.id ?? "");
 
-      if (isBankTransfer && proofFile) {
+      if (isBankTransfer && settings.transfer_receipt_requirement !== "disabled" && proofFile) {
         formData.set("transferReceipt", proofFile);
       }
 
@@ -237,7 +288,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           wholesalePriceSnapshot: item.product.wholesale_price,
         })),
         priceMode,
-        wholesaleCode: wholesaleAccount?.code ?? null,
+        wholesaleCode: null,
         subtotal,
         tax,
         total: finalTotal,
@@ -370,11 +421,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           <div className="mt-2">
             <p className="mb-2 text-sm font-semibold">Método de pago</p>
             <div className="grid gap-2 sm:grid-cols-3">
-            {[
-              ["Transferencia bancaria", Banknote],
-              ["Tarjeta", CreditCard],
-              ["Efectivo", Store],
-            ].map(([method, Icon]) => (
+            {paymentMethods.map(([method, Icon]) => (
               <button
                 key={method as string}
                 onClick={() => {
@@ -404,13 +451,13 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Realiza la transferencia e ingresa la referencia bancaria para que contabilidad confirme el pago.
+                    Realiza la transferencia{settings.require_bank_reference ? " e ingresa la referencia bancaria" : ""} para que contabilidad confirme el pago.
                   </p>
                 </div>
               </div>
               <label className="mt-4 block">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">
-                  Número de referencia de la transferencia
+                  Número de referencia de la transferencia{settings.require_bank_reference ? "" : " (opcional)"}
                 </span>
                 <input
                   value={checkout.bankTransferReference}
@@ -426,51 +473,58 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                   <span className="mt-1 block text-xs text-[#9b341b]">{fieldErrors.bankTransferReference}</span>
                 ) : null}
                 <span className="mt-1 block text-xs text-black/50">
-                  Ingresa el número de referencia que aparece en tu comprobante bancario.
+                  {settings.require_bank_reference
+                    ? "Ingresa el número de referencia que aparece en tu comprobante bancario."
+                    : "Puedes dejarlo vacío si todavía no tienes la referencia."}
                 </span>
               </label>
-              <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-white px-4 py-4 text-sm font-medium">
-                <Upload size={17} />
-                {proofFileName || "Subir comprobante si aplica"}
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    if (!file) {
-                      setProofFile(null);
-                      setProofFileName("");
-                      setProofMessage("");
-                      return;
-                    }
+              {settings.transfer_receipt_requirement !== "disabled" ? (
+                <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-white px-4 py-4 text-sm font-medium">
+                  <Upload size={17} />
+                  {proofFileName ||
+                    (settings.transfer_receipt_requirement === "required"
+                      ? "Subir comprobante obligatorio"
+                      : "Subir comprobante si aplica")}
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (!file) {
+                        setProofFile(null);
+                        setProofFileName("");
+                        setProofMessage("");
+                        return;
+                      }
 
-                    const isAllowedType = file.type.startsWith("image/") || file.type === "application/pdf";
-                    if (!isAllowedType) {
-                      const message = "El comprobante debe ser imagen o PDF.";
-                      setProofFile(null);
-                      setProofFileName("");
-                      setProofMessage(message);
-                      toast.error(message);
-                      return;
-                    }
+                      const isAllowedType = file.type.startsWith("image/") || file.type === "application/pdf";
+                      if (!isAllowedType) {
+                        const message = "El comprobante debe ser imagen o PDF.";
+                        setProofFile(null);
+                        setProofFileName("");
+                        setProofMessage(message);
+                        toast.error(message);
+                        return;
+                      }
 
-                    if (file.size > 8 * 1024 * 1024) {
-                      const message = "El comprobante no debe superar 8 MB.";
-                      setProofFile(null);
-                      setProofFileName("");
-                      setProofMessage(message);
-                      toast.error(message);
-                      return;
-                    }
+                      if (file.size > 8 * 1024 * 1024) {
+                        const message = "El comprobante no debe superar 8 MB.";
+                        setProofFile(null);
+                        setProofFileName("");
+                        setProofMessage(message);
+                        toast.error(message);
+                        return;
+                      }
 
-                    setProofFile(file);
-                    setProofFileName(file.name);
-                    setProofMessage("Comprobante listo para subir al crear el pedido.");
-                    toast.success("Comprobante listo para subir al crear el pedido.");
-                  }}
-                />
-              </label>
+                      setProofFile(file);
+                      setProofFileName(file.name);
+                      setProofMessage("Comprobante listo para subir al crear el pedido.");
+                      toast.success("Comprobante listo para subir al crear el pedido.");
+                    }}
+                  />
+                </label>
+              ) : null}
               {proofMessage ? (
                 <p
                   className={`mt-2 rounded-md px-3 py-2 text-xs ${
@@ -490,7 +544,9 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 <div>
                   <h2 className="font-semibold">Pago seguro con tarjeta</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Pendiente de activación BAC. Esta opción queda preparada para procesarse mediante BAC Credomatic o su proveedor autorizado.
+                    {settings.bac_card_status === "active"
+                      ? "Opción activa para procesarse mediante BAC Credomatic o su proveedor autorizado."
+                      : "Pendiente de activación BAC. Esta opción queda preparada para procesarse mediante BAC Credomatic o su proveedor autorizado."}
                   </p>
                 </div>
               </div>
@@ -532,7 +588,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
 
           <button
             onClick={submitOrder}
-            disabled={!sellsInHonduras || isPending || blocksFirstWholesaleOrder}
+            disabled={!sellsInHonduras || isPending || blocksFirstWholesaleOrder || blocksWholesalePurchases || paymentMethods.length === 0}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
@@ -571,10 +627,15 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
         </div>
         {wholesaleAccount ? (
           <p className="mt-4 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            Código mayorista: {wholesaleAccount.code}
+            Cuenta mayorista aprobada: {wholesaleAccount.businessName}
           </p>
         ) : null}
-        {wholesaleAccount && effectiveIsFirstWholesalePurchase ? (
+        {blocksWholesalePurchases ? (
+          <p className="mt-3 rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">
+            Las compras mayoristas están desactivadas temporalmente.
+          </p>
+        ) : null}
+        {wholesaleAccount && wholesaleMinimumApplies ? (
           <p
             className={`mt-3 rounded-md p-3 text-sm ${
               blocksFirstWholesaleOrder ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff1f2] text-[#b91c25]"

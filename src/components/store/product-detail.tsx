@@ -48,13 +48,21 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
               <p className="mt-1 text-3xl font-semibold">{formatCurrency(product.retail_price)}</p>
               <p className="mt-1 text-sm text-black/55">Precio publico del catalogo</p>
             </div>
-            <div className="rounded-lg border border-black/10 bg-white p-4">
-              <p className="text-sm text-black/45">Precio mayorista</p>
-              <p className="mt-1 text-3xl font-semibold">{formatCurrency(product.wholesale_price)}</p>
-              <p className="mt-1 text-sm text-black/55">
-                {priceMode === "wholesale" ? "Aplicado ahora" : "Disponible con codigo mayorista"}
-              </p>
-            </div>
+            {priceMode === "wholesale" ? (
+              <div className="rounded-lg border border-black/10 bg-white p-4">
+                <p className="text-sm text-black/45">Precio mayorista</p>
+                <p className="mt-1 text-3xl font-semibold">{formatCurrency(product.wholesale_price)}</p>
+                <p className="mt-1 text-sm text-black/55">Aplicado ahora</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-black/10 bg-white p-4">
+                <p className="text-sm text-black/45">Mayoreo</p>
+                <p className="mt-1 text-lg font-semibold">Disponible para cuentas aprobadas</p>
+                <Link href="/contacto#mayoreo" className="mt-2 inline-flex text-sm font-medium text-[#e4252c]">
+                  Solicitar acceso mayorista
+                </Link>
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-black/10 bg-white p-4">

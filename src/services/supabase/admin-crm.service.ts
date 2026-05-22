@@ -70,6 +70,7 @@ type CustomerQueryRow = Omit<
 > & {
   estimated_value: unknown;
   monthly_amount: unknown;
+  wholesale_status: CrmCustomerOption["wholesale_status"] | null;
   users: {
     id: string;
     email: string | null;
@@ -120,6 +121,7 @@ type CustomerProfileOrderRow = {
   created_at: string;
   status: string;
   payment_method: string;
+  payments: Array<{ payment_status: string | null; status: string | null }> | null;
   price_mode: "retail" | "wholesale";
   total: unknown;
   invoices: Array<{ invoice_number: string | null }> | { invoice_number: string | null } | null;
@@ -148,6 +150,16 @@ type CustomerProfileWholesaleCodeRow = {
   active: boolean;
   expires_at: string | null;
   last_used_at: string | null;
+};
+
+type CustomerWholesaleHistoryRow = {
+  id: string;
+  note: string;
+  created_at: string;
+  users: {
+    full_name: string | null;
+    email: string | null;
+  } | null;
 };
 
 function normalizePhoneKey(value: string | null | undefined) {
@@ -307,6 +319,7 @@ function buildDuplicateGroups(
 function getAccountState(input: {
   active: boolean;
   status: CrmCustomerOption["status"];
+  wholesaleStatus: CrmCustomerOption["wholesale_status"];
   accountActive: boolean | null;
   userId: string | null;
   emailConfirmedAt: string | null;
@@ -317,11 +330,15 @@ function getAccountState(input: {
     return "Cuenta suspendida" as const;
   }
 
-  if (input.isWholesale && input.status === "active") {
+  if (input.wholesaleStatus === "suspended") {
+    return "Cuenta suspendida" as const;
+  }
+
+  if (input.wholesaleStatus === "approved" || (input.isWholesale && input.status === "active")) {
     return "Mayorista aprobado" as const;
   }
 
-  if (input.hasWholesaleRequest || (input.isWholesale && input.status === "pending_account")) {
+  if (input.wholesaleStatus === "pending" || input.hasWholesaleRequest || (input.isWholesale && input.status === "pending_account")) {
     return "Mayorista pendiente" as const;
   }
 
@@ -366,9 +383,32 @@ function normalizeCustomer(
   const emailConfirmedAt = authMeta?.email_confirmed_at ?? null;
   const confirmedAt = authMeta?.confirmed_at ?? null;
   const hasWholesaleRequest = Boolean(row.notes?.includes("[SOLICITUD_MAYOREO]")) && !row.is_wholesale;
+  const wholesaleStatus =
+    row.wholesale_status ??
+    (row.is_wholesale && row.active && row.status === "active"
+      ? "approved"
+      : row.status === "pending_account" || hasWholesaleRequest
+        ? "pending"
+        : row.is_wholesale && (!row.active || row.status === "disabled")
+          ? "suspended"
+          : row.is_wholesale && row.status === "inactive"
+            ? "rejected"
+            : "none");
+  const isOperationalWholesaleAccount = row.is_wholesale || wholesaleStatus === "approved" || wholesaleStatus === "suspended";
+  const deleteBlockReason =
+    relatedOrders.size > 0
+      ? "No se puede eliminar porque tiene pedidos relacionados. Puedes suspender la cuenta."
+      : (invoiceCountsByCustomerId.get(row.id) ?? 0) > 0
+        ? "No se puede eliminar porque tiene facturas relacionadas. Puedes suspender la cuenta."
+        : isOperationalWholesaleAccount
+          ? "No se puede eliminar porque tiene historial mayorista operativo. Puedes suspender la cuenta."
+          : (wholesaleCodeCountsByCustomerId.get(row.id) ?? 0) > 0
+            ? "No se puede eliminar porque tiene códigos o acceso mayorista relacionado. Puedes suspender la cuenta."
+            : null;
 
   return {
     ...row,
+    wholesale_status: wholesaleStatus,
     estimated_value: toNumber(row.estimated_value),
     monthly_amount: toNumber(row.monthly_amount),
     account_email: accountEmail ?? null,
@@ -386,15 +426,18 @@ function normalizeCustomer(
     account_state: getAccountState({
       active: row.active,
       status: row.status,
+      wholesaleStatus,
       accountActive: row.users?.active ?? null,
       userId: row.user_id,
       emailConfirmedAt,
       isWholesale: row.is_wholesale,
       hasWholesaleRequest,
     }),
-    customer_type: row.is_wholesale ? "Mayorista" : "Retail",
-    has_wholesale_request: hasWholesaleRequest,
+    customer_type: wholesaleStatus === "approved" ? "Mayorista" : "Retail",
+    has_wholesale_request: wholesaleStatus === "pending" || hasWholesaleRequest,
     is_test_account: accountEmail ? isSafeTestAccountEmail(accountEmail) : false,
+    can_delete_permanently: !deleteBlockReason,
+    delete_block_reason: deleteBlockReason,
   };
 }
 
@@ -448,7 +491,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     supabase
       .from("customers")
       .select(
-        "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+        "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
         { count: "exact" },
       )
       .order("created_at", { ascending: false })
@@ -671,7 +714,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();
@@ -702,7 +745,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     async () =>
       admin
         .from("orders")
-        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false })
         .limit(30)
@@ -714,7 +757,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
           .eq("user_id", customerRow.user_id)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -727,7 +770,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
           .ilike("email", normalizedEmail)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -741,6 +784,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     { data: notes, error: notesError },
     { data: followups, error: followupsError },
     { data: wholesaleCodes, error: wholesaleCodesError },
+    { data: wholesaleHistory, error: wholesaleHistoryError },
   ] = await Promise.all([
     Promise.all(orderQueries.map((query) => query())),
     admin
@@ -773,6 +817,13 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .order("updated_at", { ascending: false })
       .limit(20)
       .returns<CustomerProfileWholesaleCodeRow[]>(),
+    admin
+      .from("crm_notes")
+      .select("id, note, created_at, users(full_name, email)")
+      .eq("customer_id", customerId)
+      .eq("note_type", "wholesale_status")
+      .order("created_at", { ascending: true })
+      .returns<CustomerWholesaleHistoryRow[]>(),
   ]);
 
   for (const result of orderResults) {
@@ -792,6 +843,9 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   }
   if (wholesaleCodesError) {
     throw new Error(wholesaleCodesError.message);
+  }
+  if (wholesaleHistoryError) {
+    throw new Error(wholesaleHistoryError.message);
   }
 
   const ordersById = new Map<string, CustomerProfileOrderRow>();
@@ -821,6 +875,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     customer,
     orders: orders.slice(0, 30).map((order) => {
       const invoice = Array.isArray(order.invoices) ? order.invoices[0] ?? null : order.invoices;
+      const payment = order.payments?.[0] ?? null;
       return {
         id: order.id,
         order_number: order.order_number,
@@ -828,6 +883,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
         created_at: order.created_at,
         status: order.status,
         payment_method: order.payment_method,
+        payment_status: payment?.payment_status ?? payment?.status ?? null,
         price_mode: order.price_mode,
         total: toNumber(order.total),
         invoice_number: invoice?.invoice_number ?? null,
@@ -856,6 +912,13 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       active: code.active,
       expires_at: code.expires_at,
       last_used_at: code.last_used_at,
+    })),
+    wholesaleHistory: (wholesaleHistory ?? []).map((item) => ({
+      id: item.id,
+      note: item.note,
+      created_at: item.created_at,
+      user_name: item.users?.full_name ?? null,
+      user_email: item.users?.email ?? null,
     })),
   };
 }

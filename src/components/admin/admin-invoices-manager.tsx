@@ -246,6 +246,13 @@ export function AdminInvoicesManager({
     <div className="space-y-5">
       <FiscalAlertsPanel alerts={fiscalAlerts} />
 
+      <section className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+        <p className="font-semibold">Validación fiscal</p>
+        <p className="mt-1">
+          Antes de emitir facturas reales, valide CAI, rango y datos fiscales con la contadora.
+        </p>
+      </section>
+
       <PaginationControls basePath="/admin/facturas" page={page} pageSize={pageSize} total={total} label="facturas" />
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -253,6 +260,15 @@ export function AdminInvoicesManager({
         <Metric label="ISV" value={formatCurrency(totals.tax)} />
         <Metric label="Total facturado" value={formatCurrency(totals.total)} />
       </div>
+
+      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatusGuide title="Pago pendiente" detail="Requiere validación antes de facturar." />
+        <StatusGuide title="Pago confirmado" detail="Puede avanzar a emisión si los datos son correctos." />
+        <StatusGuide title="Factura pendiente" detail="Documento aún no emitido fiscalmente." />
+        <StatusGuide title="Factura emitida" detail="Lista para descargar o reimprimir." />
+        <StatusGuide title="Factura anulada" detail="Debe conservar auditoría y motivo." />
+        <StatusGuide title="Reimpresión" detail="No cambia datos fiscales, solo genera el PDF." />
+      </section>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto] lg:items-end">
@@ -571,6 +587,15 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-black/10 bg-white p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function StatusGuide({ title, detail }: { title: string; detail: string }) {
+  return (
+    <div className="rounded-lg border border-black/10 bg-white p-4">
+      <p className="text-sm font-semibold">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-black/55">{detail}</p>
     </div>
   );
 }

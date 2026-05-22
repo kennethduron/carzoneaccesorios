@@ -2,13 +2,18 @@ insert into public.roles (name, description, permissions)
 values
   (
     'technical_owner',
-    'Proveedor tecnico del sistema. Acceso exclusivo a monitoreo de infraestructura y mantenimiento tecnico.',
-    '["admin:access","system:monitoring"]'::jsonb
+    'Proveedor tecnico del sistema. Acceso a monitoreo, seguridad, backups, integraciones y recuperacion tecnica.',
+    '["admin:access","system:monitoring","settings:manage","users:manage","roles:assign","audit:read"]'::jsonb
   ),
   (
     'admin',
     'Acceso completo al panel administrativo.',
-    '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","payments:read","payments:manage","invoices:read","invoices:create","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","settings:manage","audit:read"]'::jsonb
+    '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","payments:read","payments:manage","invoices:read","invoices:create","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","settings:manage","audit:read","system:monitoring","users:manage","roles:assign","commercial_settings:manage"]'::jsonb
+  ),
+  (
+    'business_owner',
+    'Dueno operativo del negocio. Administra operacion, equipo, clientes, inventario, pedidos, facturas y reportes sin acceso tecnico critico.',
+    '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","customers:manage","payments:read","payments:manage","invoices:read","invoices:create","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","users:manage","roles:assign","audit:read","commercial_settings:manage"]'::jsonb
   ),
   (
     'vendedor',
@@ -79,6 +84,7 @@ insert into public.customers (
   address,
   city,
   is_wholesale,
+  wholesale_status,
   active
 )
 select
@@ -89,50 +95,13 @@ select
   'Honduras',
   'Tegucigalpa',
   true,
+  'approved',
   true
 where not exists (
   select 1
   from public.customers
   where business_name = 'Auto Repuestos Lopez'
 );
-
-insert into public.wholesale_codes (
-  customer_id,
-  code,
-  code_hash,
-  label,
-  minimum_order,
-  max_uses,
-  used_count,
-  status,
-  active,
-  starts_at,
-  expires_at
-)
-values (
-  (select id from public.customers where business_name = 'Auto Repuestos Lopez' order by created_at desc limit 1),
-  'MAYOREO-LOPEZ2026',
-  encode(extensions.digest('MAYOREO-LOPEZ2026', 'sha256'), 'hex'),
-  'Codigo mayorista Auto Repuestos Lopez',
-  5000,
-  null,
-  0,
-  'active',
-  true,
-  now(),
-  '2026-12-31 23:59:59-06'
-)
-on conflict (code) do update
-set
-  customer_id = excluded.customer_id,
-  code_hash = excluded.code_hash,
-  label = excluded.label,
-  minimum_order = excluded.minimum_order,
-  max_uses = excluded.max_uses,
-  status = excluded.status,
-  active = excluded.active,
-  starts_at = excluded.starts_at,
-  expires_at = excluded.expires_at;
 
 insert into public.products (
   category_id,

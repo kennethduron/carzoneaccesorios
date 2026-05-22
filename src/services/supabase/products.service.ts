@@ -76,6 +76,10 @@ type ProductFilterOptionRow = {
   vehicle_year_end: number | null;
 };
 
+type CatalogSettingsRow = {
+  out_of_stock_catalog_mode: "show" | "hide" | null;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -230,6 +234,16 @@ function buildVehicleYears(products: ProductFilterOptionRow[]) {
   return Array.from(years).sort((left, right) => right - left);
 }
 
+async function getOutOfStockCatalogMode() {
+  const supabase = getSupabasePublicClient();
+  const { data } = await supabase
+    .from("public_company_settings")
+    .select("out_of_stock_catalog_mode")
+    .maybeSingle<CatalogSettingsRow>();
+
+  return data?.out_of_stock_catalog_mode === "hide" ? "hide" : "show";
+}
+
 const getCachedActiveCategories = unstable_cache(
   async () => {
     const supabase = getSupabasePublicClient();
@@ -289,6 +303,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const availability = filters.availability?.trim() ?? "";
 
   try {
+    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
     const supabase = getSupabasePublicClient();
     let productsQuery = supabase
       .from("products")
@@ -313,6 +328,10 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         { count: "exact" },
       )
       .eq("active", true);
+
+    if (outOfStockCatalogMode === "hide") {
+      productsQuery = productsQuery.gt("available_stock", 0);
+    }
 
     if (query) {
       productsQuery = productsQuery.or(`sku.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
@@ -398,8 +417,9 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 
 export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
   try {
+    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
     const supabase = getSupabasePublicClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("products")
       .select(
         `
@@ -420,10 +440,13 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         categories(name, slug)
       `,
       )
-      .eq("active", true)
-      .order("updated_at", { ascending: false })
-      .limit(limit)
-      .returns<CatalogProductRow[]>();
+      .eq("active", true);
+
+    if (outOfStockCatalogMode === "hide") {
+      query = query.gt("available_stock", 0);
+    }
+
+    const { data, error } = await query.order("updated_at", { ascending: false }).limit(limit).returns<CatalogProductRow[]>();
 
     if (error) {
       throw new Error(error.message);
@@ -486,8 +509,9 @@ export async function getProductBySlug(slug: string) {
 
 export async function getRelatedProducts(product: Product, limit = 4) {
   try {
+    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
     const supabase = getSupabasePublicClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from("products")
       .select(
         `
@@ -510,10 +534,13 @@ export async function getRelatedProducts(product: Product, limit = 4) {
       )
       .eq("active", true)
       .neq("id", product.id)
-      .eq("categories.name", product.category)
-      .order("updated_at", { ascending: false })
-      .limit(limit)
-      .returns<CatalogProductRow[]>();
+      .eq("categories.name", product.category);
+
+    if (outOfStockCatalogMode === "hide") {
+      query = query.gt("available_stock", 0);
+    }
+
+    const { data, error } = await query.order("updated_at", { ascending: false }).limit(limit).returns<CatalogProductRow[]>();
 
     if (error) {
       throw new Error(error.message);

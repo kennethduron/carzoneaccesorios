@@ -6,6 +6,68 @@ export type CommerceSettings = {
   first_wholesale_minimum: number;
 };
 
+export type BacCardStatus = "hidden" | "pending" | "active";
+export type TransferReceiptRequirement = "disabled" | "optional" | "required";
+export type OutOfStockCatalogMode = "show" | "hide";
+
+export type DashboardCardKey =
+  | "sales_today"
+  | "pending_orders"
+  | "pending_payments"
+  | "low_inventory"
+  | "wholesale_requests"
+  | "customers_attention"
+  | "pending_invoices"
+  | "bac_alerts"
+  | "backup_cron_status";
+
+export type DashboardCardSettings = Record<DashboardCardKey, boolean>;
+
+export type BusinessNotificationSettings = {
+  notification_emails: string;
+  notify_new_orders: boolean;
+  notify_payment_confirmed: boolean;
+  notify_transfer_receipt_uploaded: boolean;
+  notify_wholesale_requests: boolean;
+  notify_customer_account_created: boolean;
+  notify_low_stock: boolean;
+  send_daily_activity_summary: boolean;
+  send_weekly_sales_summary: boolean;
+};
+
+export type CrmBusinessSettings = {
+  crm_auto_followup_on_customer_created: boolean;
+  crm_auto_followup_after_purchase: boolean;
+  crm_show_inactive_customers: boolean;
+  crm_detect_duplicates: boolean;
+  crm_alert_overdue_followups: boolean;
+};
+
+export type WholesaleBusinessSettings = {
+  wholesale_manual_approval: boolean;
+  wholesale_purchases_enabled: boolean;
+  wholesale_allow_repeat_without_minimum: boolean;
+  wholesale_auto_suspend_inactive: boolean;
+};
+
+export type OrderBusinessSettings = {
+  allow_bank_transfer: boolean;
+  allow_cash_on_delivery: boolean;
+  bac_card_status: BacCardStatus;
+  send_order_confirmation_email: boolean;
+  send_order_status_update_email: boolean;
+  require_bank_reference: boolean;
+  transfer_receipt_requirement: TransferReceiptRequirement;
+};
+
+export type InventoryBusinessSettings = {
+  low_stock_alerts_enabled: boolean;
+  global_low_stock_threshold: number;
+  out_of_stock_catalog_mode: OutOfStockCatalogMode;
+  stock_reservations_enabled: boolean;
+  stock_reservation_minutes: number;
+};
+
 export type SocialSettings = {
   facebook_url: string;
   instagram_url: string;
@@ -32,7 +94,21 @@ export type PublicCompanySettings = CommerceSettings &
     currency: string;
     tax_rate: number;
     logo_url: string | null;
-  } & BusinessContactSettings;
+  } & BusinessContactSettings &
+  Pick<WholesaleBusinessSettings, "wholesale_purchases_enabled" | "wholesale_allow_repeat_without_minimum"> &
+  OrderBusinessSettings &
+  Pick<InventoryBusinessSettings, "out_of_stock_catalog_mode" | "stock_reservations_enabled">;
+
+export type BusinessSettings = CommerceSettings &
+  BusinessNotificationSettings &
+  CrmBusinessSettings &
+  WholesaleBusinessSettings &
+  OrderBusinessSettings &
+  InventoryBusinessSettings &
+  SocialSettings &
+  BusinessContactSettings & {
+    dashboard_cards: DashboardCardSettings;
+  };
 
 export type HolidayBanner = {
   id: string;

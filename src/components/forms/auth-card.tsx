@@ -67,9 +67,17 @@ export function AuthCard({ mode }: AuthCardProps) {
       };
     }
 
+    if (searchParams.get("verified")) {
+      return {
+        text: "Cuenta verificada correctamente. Ahora inicia sesión.",
+        tone: "success" as const,
+        canResend: false,
+      };
+    }
+
     if (searchParams.get("check_email")) {
       return {
-        text: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
+        text: "Revisa tu correo para confirmar tu cuenta.",
         tone: "info" as const,
         canResend: true,
       };
@@ -140,7 +148,7 @@ export function AuthCard({ mode }: AuthCardProps) {
     if (result.needsEmailConfirmation) {
       setMessageTone("info");
       setShowConfirmationHelp(true);
-      toast.info(result.message);
+      toast.success(result.message);
       router.push(result.redirectTo ?? `/login?check_email=1&email=${encodeURIComponent(email)}`);
       return;
     }

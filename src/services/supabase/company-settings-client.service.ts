@@ -1,6 +1,12 @@
 import { getSupabasePublicClient } from "@/lib/supabase";
 import type { PublicCompanySettings } from "@/types/settings";
-import { defaultCommerceSettings, normalizeCommerceSettings } from "@/utils/commerce-settings";
+import {
+  defaultCommerceSettings,
+  defaultInventoryBusinessSettings,
+  defaultOrderBusinessSettings,
+  defaultWholesaleBusinessSettings,
+  normalizeCommerceSettings,
+} from "@/utils/commerce-settings";
 
 const defaultPublicCompanySettings: PublicCompanySettings = {
   company_name: "Car Zone Accesorios",
@@ -8,6 +14,11 @@ const defaultPublicCompanySettings: PublicCompanySettings = {
   tax_rate: 0.15,
   logo_url: null,
   ...defaultCommerceSettings,
+  wholesale_purchases_enabled: defaultWholesaleBusinessSettings.wholesale_purchases_enabled,
+  wholesale_allow_repeat_without_minimum: defaultWholesaleBusinessSettings.wholesale_allow_repeat_without_minimum,
+  ...defaultOrderBusinessSettings,
+  out_of_stock_catalog_mode: defaultInventoryBusinessSettings.out_of_stock_catalog_mode,
+  stock_reservations_enabled: defaultInventoryBusinessSettings.stock_reservations_enabled,
   facebook_url: "",
   instagram_url: "",
   whatsapp_url: "",
@@ -35,6 +46,22 @@ function normalizePublicSettings(row: Partial<PublicCompanySettings> | null | un
     tax_rate: Number(row?.tax_rate ?? defaultPublicCompanySettings.tax_rate),
     logo_url: row?.logo_url ?? null,
     ...normalizeCommerceSettings(row),
+    wholesale_purchases_enabled:
+      row?.wholesale_purchases_enabled ?? defaultPublicCompanySettings.wholesale_purchases_enabled,
+    wholesale_allow_repeat_without_minimum:
+      row?.wholesale_allow_repeat_without_minimum ?? defaultPublicCompanySettings.wholesale_allow_repeat_without_minimum,
+    allow_bank_transfer: row?.allow_bank_transfer ?? defaultPublicCompanySettings.allow_bank_transfer,
+    allow_cash_on_delivery: row?.allow_cash_on_delivery ?? defaultPublicCompanySettings.allow_cash_on_delivery,
+    bac_card_status: row?.bac_card_status ?? defaultPublicCompanySettings.bac_card_status,
+    send_order_confirmation_email:
+      row?.send_order_confirmation_email ?? defaultPublicCompanySettings.send_order_confirmation_email,
+    send_order_status_update_email:
+      row?.send_order_status_update_email ?? defaultPublicCompanySettings.send_order_status_update_email,
+    require_bank_reference: row?.require_bank_reference ?? defaultPublicCompanySettings.require_bank_reference,
+    transfer_receipt_requirement:
+      row?.transfer_receipt_requirement ?? defaultPublicCompanySettings.transfer_receipt_requirement,
+    out_of_stock_catalog_mode: row?.out_of_stock_catalog_mode ?? defaultPublicCompanySettings.out_of_stock_catalog_mode,
+    stock_reservations_enabled: row?.stock_reservations_enabled ?? defaultPublicCompanySettings.stock_reservations_enabled,
     facebook_url: normalizeUrl(row?.facebook_url),
     instagram_url: normalizeUrl(row?.instagram_url),
     whatsapp_url: normalizeUrl(row?.whatsapp_url),

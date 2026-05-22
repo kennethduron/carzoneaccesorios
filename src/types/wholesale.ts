@@ -1,15 +1,12 @@
+export type WholesaleAccountStatus = "pending" | "approved" | "rejected" | "suspended";
 export type WholesaleCodeStatus = "active" | "inactive" | "expired" | "disabled";
 
 export type WholesaleAccount = {
   id: string;
-  code: string;
-  customerId: string | null;
+  customerId: string;
   customerName: string;
   businessName: string;
-  minimumOrder: number;
-  expiresAt: string | null;
-  usedCount: number;
-  status: WholesaleCodeStatus;
+  status: WholesaleAccountStatus;
 };
 
 export type WholesaleValidationResult = {
@@ -18,6 +15,16 @@ export type WholesaleValidationResult = {
   account: WholesaleAccount | null;
   requiresLogin?: boolean;
   code?: string;
+};
+
+export type WholesaleAccessKind = "guest" | "regular" | "pending" | "approved" | "rejected" | "suspended";
+
+export type WholesaleAccessState = {
+  kind: WholesaleAccessKind;
+  title: string;
+  message: string;
+  canEnterCode: boolean;
+  account: WholesaleAccount | null;
 };
 
 export type WholesaleCustomerOption = {

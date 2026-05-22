@@ -35,8 +35,24 @@ export type SecurityRoleSummary = {
   permissions: Permission[];
 };
 
+export type AdminUserSummary = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  username: string | null;
+  phone: string | null;
+  role: AppRole;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sign_in_at: string | null;
+  email_confirmed_at: string | null;
+  customer_id: string | null;
+};
+
 export type AdminSecurityData = {
   roles: SecurityRoleSummary[];
+  users: AdminUserSummary[];
   auditLogs: AuditLogRow[];
   backupLogs: BackupLogRow[];
 };

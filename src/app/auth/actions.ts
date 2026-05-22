@@ -68,13 +68,16 @@ function buildAuthCallbackUrl(siteUrl: string, nextPath = "/cuenta") {
   return callbackUrl.toString();
 }
 
+const genericConfirmationResendMessage =
+  "Si el correo está registrado, enviaremos un nuevo enlace de verificación.";
+
 function getLoginErrorMessage(rawMessage: string, userExists: boolean) {
   const message = rawMessage.toLowerCase();
 
   if (message.includes("email not confirmed") || message.includes("not confirmed")) {
     return userExists
-      ? "Tu cuenta fue creada, pero aún debes confirmar tu correo. Revisa tu bandeja de entrada o spam."
-      : "Revisa tu correo y confirma tu cuenta antes de iniciar sesión.";
+      ? "Tu cuenta aún no ha sido verificada. Revisa tu correo o solicita un nuevo enlace."
+      : "Tu cuenta aún no ha sido verificada. Revisa tu correo o solicita un nuevo enlace.";
   }
 
   if (message.includes("invalid login credentials")) {
@@ -351,7 +354,7 @@ export async function registerWithEmailAction(input: {
   if (!data.session) {
     return {
       ok: true,
-      message: "Cuenta creada. Te enviamos un correo para confirmar tu cuenta antes de iniciar sesión.",
+      message: "Cuenta creada. Te enviamos un correo para confirmar tu dirección. Después de verificarla, podrás iniciar sesión.",
       redirectTo: `/login?check_email=1&email=${encodeURIComponent(email)}`,
       needsEmailConfirmation: true,
     };
@@ -365,28 +368,47 @@ export async function registerWithEmailAction(input: {
 }
 
 export async function resendConfirmationEmailAction(identifierInput: string): Promise<AuthActionResult> {
+  const normalizedIdentifier = identifierInput.trim();
   const resendLimit = await checkRateLimit({
     route: "/login/resend-confirmation",
     limit: 3,
     windowSeconds: 15 * 60,
-    key: identifierInput.trim().toLowerCase(),
+    key: normalizedIdentifier.toLowerCase(),
   });
 
   if (!resendLimit.ok) {
     return { ok: false, message: rateLimitMessage };
   }
 
-  const resolved = await resolveLoginEmail(identifierInput);
+  let email: string | null = null;
+  let identifierKind: "email" | "username" | "invalid" = "invalid";
 
-  if (!resolved.ok) {
-    return { ok: false, message: "Ingresa un correo o usuario válido para reenviar la confirmación." };
+  if (looksLikeEmail(normalizedIdentifier)) {
+    const normalizedEmail = normalizeEmail(normalizedIdentifier);
+    if (validateEmail(normalizedEmail)) {
+      email = normalizedEmail;
+      identifierKind = "email";
+    }
+  } else {
+    const username = validateUsername(normalizedIdentifier);
+    if (username.ok) {
+      const resolvedEmail = await getEmailForUsername(username.username);
+      if (resolvedEmail && resolvedEmail !== "__suspended__") {
+        email = resolvedEmail;
+      }
+      identifierKind = "username";
+    }
+  }
+
+  if (!email) {
+    return { ok: true, message: genericConfirmationResendMessage };
   }
 
   const supabase = await getSupabaseServerClient();
   const siteUrl = await getSiteUrl();
   const { error } = await supabase.auth.resend({
     type: "signup",
-    email: resolved.email,
+    email,
     options: {
       emailRedirectTo: buildAuthCallbackUrl(siteUrl),
     },
@@ -398,17 +420,12 @@ export async function resendConfirmationEmailAction(identifierInput: string): Pr
       action: "auth.resend_confirmation_failed",
       errorMessage: error.message,
       metadata: {
-        identifier_type: resolved.kind,
+        identifier_type: identifierKind,
       },
     });
-
-    return {
-      ok: false,
-      message: "No pudimos reenviar el correo. Verifica el correo e intenta nuevamente.",
-    };
   }
 
-  return { ok: true, message: "Te enviamos un nuevo correo de confirmación." };
+  return { ok: true, message: genericConfirmationResendMessage };
 }
 
 export async function requestPasswordResetAction(emailInput: string): Promise<AuthActionResult> {

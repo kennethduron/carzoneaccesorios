@@ -47,7 +47,7 @@ function fiscalSettingsChanges(previous: FiscalSettings, next: FiscalSettings) {
 }
 
 export async function saveCommerceSettingsAction(input: AdminCompanySettings) {
-  await requirePermission("settings:manage");
+  await requirePermission("commercial_settings:manage");
 
   if (input.cash_on_delivery_percentage > 100) {
     return { ok: false, message: "La comisión por pago al recibir no puede ser mayor a 100%." };

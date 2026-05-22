@@ -912,7 +912,9 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
               {filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
-                    No se encontraron resultados con estos filtros.
+                    {total === 0 && !filters.query && !filters.status && !filters.categoryId
+                      ? "Aun no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
+                      : "No se encontraron resultados con estos filtros."}
                   </td>
                 </tr>
               ) : (

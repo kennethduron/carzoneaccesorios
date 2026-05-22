@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/session";
+import { requirePermission, requireSession } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
+import type { AppRole } from "@/types/auth";
 import type { CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
@@ -33,10 +34,45 @@ type TestAccountDeletionInput = {
   confirmation: string;
 };
 
+type PermanentAccountDeletionInput = {
+  customerId: string;
+  confirmation: string;
+  reason?: string;
+};
+
 type MergeDuplicateCustomerInput = {
   sourceCustomerId: string;
   targetCustomerId: string;
 };
+
+type CustomerDeletionRow = {
+  id: string;
+  user_id: string | null;
+  email: string | null;
+  contact_name: string;
+  phone: string | null;
+  tax_id: string | null;
+  active: boolean;
+  status: string;
+  is_wholesale: boolean;
+  wholesale_status: string | null;
+  created_at: string;
+};
+
+type DeletionUserRow = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  phone: string | null;
+  active: boolean;
+  created_at: string;
+  roles: { name: AppRole } | null;
+};
+
+type IdRow = { id: string };
+
+const permanentDeletionRoles: AppRole[] = ["business_owner", "admin", "technical_owner"];
+const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -73,13 +109,39 @@ async function findAuthUsersByEmail(email: string) {
   return matches;
 }
 
+function uniqueValues(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
+function isInternalRole(role: AppRole | null | undefined) {
+  return Boolean(role && role !== "cliente");
+}
+
+function hasProtectedEmail(email: string | null | undefined) {
+  return normalizeAccountEmail(email ?? "") === protectedTechnicalEmail;
+}
+
+async function addWholesaleHistoryNote(input: {
+  customerId: string;
+  userId: string;
+  note: string;
+}) {
+  const admin = getSupabaseAdminClient();
+  await admin.from("crm_notes").insert({
+    customer_id: input.customerId,
+    user_id: input.userId,
+    note_type: "wholesale_status",
+    note: input.note,
+  });
+}
+
 export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutationResult> {
   await requirePermission("crm:manage");
 
   const contactName = requireText(input.contact_name, "Cliente");
   const phone = validateHondurasPhone(input.phone);
   const estimatedValue = nonNegativeNumber(input.estimated_value, "Valor estimado");
-  const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Mensualidad");
+  const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Valor interno");
 
   for (const result of [contactName, phone, estimatedValue, monthlyAmount]) {
     if (!result.ok) {
@@ -184,7 +246,7 @@ export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<Cr
   const title = requireText(input.title, "Título");
   const dueAt = optionalDateTime(input.due_at);
   const estimatedValue = nonNegativeNumber(input.estimated_value, "Valor estimado");
-  const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Mensualidad");
+  const monthlyAmount = nonNegativeNumber(input.monthly_amount, "Valor interno");
   const phone = input.phone.trim() ? validateHondurasPhone(input.phone) : { ok: true as const, value: null };
 
   if (followupId && !followupId.ok) {
@@ -336,7 +398,7 @@ export async function setCrmFollowupStatusAction(
 }
 
 export async function approveWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
-  await requirePermission("customers:manage");
+  const profile = await requirePermission("customers:manage");
 
   const customer = uuidLike(customerId, "Cliente");
   if (!customer.ok) {
@@ -346,7 +408,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   const admin = getSupabaseAdminClient();
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
-    .select("id, email, business_name, company_name, contact_name, phone, notes")
+    .select("id, email, business_name, company_name, contact_name, phone, notes, wholesale_status, is_wholesale, status, active")
     .eq("id", customer.value)
     .maybeSingle<{
       id: string;
@@ -356,6 +418,10 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       contact_name: string;
       phone: string;
       notes: string | null;
+      wholesale_status: string | null;
+      is_wholesale: boolean;
+      status: string;
+      active: boolean;
     }>();
 
   if (customerError || !customerRow) {
@@ -373,13 +439,13 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
     .ilike("email", email)
     .maybeSingle<{ id: string; email: string | null; active: boolean }>();
 
-  const hasAccount = Boolean(userProfile?.id);
-  const nextStatus = hasAccount && userProfile?.active !== false ? "active" : "pending_account";
+  const hasActiveAccount = Boolean(userProfile?.id && userProfile.active !== false);
+  const nextWholesaleStatus = "approved";
   const nextNotes = [
     customerRow.notes,
-    hasAccount
-      ? `Mayorista aprobado y vinculado a la cuenta ${userProfile?.email ?? email}.`
-      : "Mayorista aprobado. Cuenta mayorista pendiente de crear o vincular.",
+    hasActiveAccount
+      ? `Mayorista aprobado por ${profile.full_name || profile.email}.`
+      : "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesion.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -390,9 +456,10 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       user_id: userProfile?.id ?? null,
       business_name: customerRow.business_name ?? customerRow.company_name ?? customerRow.contact_name,
       company_name: customerRow.company_name ?? customerRow.business_name ?? customerRow.contact_name,
-      is_wholesale: true,
-      status: nextStatus,
-      active: nextStatus === "active",
+      is_wholesale: hasActiveAccount,
+      wholesale_status: nextWholesaleStatus,
+      status: hasActiveAccount ? "active" : "pending_account",
+      active: true,
       lead_status: "cliente",
       notes: nextNotes,
     })
@@ -406,24 +473,146 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
     tableName: "customers",
     recordId: customer.value,
     action: "wholesale_request.approved",
+    oldData: {
+      is_wholesale: customerRow.is_wholesale,
+      wholesale_status: customerRow.wholesale_status,
+      status: customerRow.status,
+      active: customerRow.active,
+    },
     newData: {
       user_id: userProfile?.id ?? null,
-      is_wholesale: true,
-      status: nextStatus,
-      active: nextStatus === "active",
+      is_wholesale: hasActiveAccount,
+      wholesale_status: nextWholesaleStatus,
+      status: hasActiveAccount ? "active" : "pending_account",
+      active: true,
     },
+  });
+
+  await addWholesaleHistoryNote({
+    customerId: customer.value,
+    userId: profile.id,
+    note: hasActiveAccount ? "Solicitud mayorista aprobada." : "Solicitud mayorista aprobada; pendiente de cuenta activa.",
   });
 
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");
-  revalidatePath("/admin/codigos-mayoristas");
+  revalidatePath("/admin/clientes-mayoristas");
 
   return {
     ok: true,
-    message: hasAccount
-      ? "Mayorista aprobado y vinculado a su cuenta. Ahora puedes generar su código."
-      : "Mayorista aprobado. Cuenta mayorista pendiente de crear; cuando se registre con ese correo quedará listo para vincular.",
+    message: hasActiveAccount
+      ? "Mayorista aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesion."
+      : "Solicitud aprobada, pero falta una cuenta activa vinculada para activar precios al iniciar sesion.",
   };
+}
+
+async function setWholesaleStatusAction(input: {
+  customerId: string;
+  status: "rejected" | "suspended" | "approved";
+  action: string;
+  note: string;
+  successMessage: string;
+}): Promise<CrmMutationResult> {
+  const profile = await requirePermission("customers:manage");
+  const customer = uuidLike(input.customerId, "Cliente");
+
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select("id, is_wholesale, wholesale_status, status, active")
+    .eq("id", customer.value)
+    .maybeSingle<{
+      id: string;
+      is_wholesale: boolean;
+      wholesale_status: string | null;
+      status: string;
+      active: boolean;
+    }>();
+
+  if (customerError || !customerRow) {
+    return { ok: false, message: "No pudimos encontrar el cliente mayorista." };
+  }
+
+  const isApproved = input.status === "approved";
+  const nextCustomerStatus = "active";
+  const { error: updateError } = await admin
+    .from("customers")
+    .update({
+      is_wholesale: isApproved,
+      wholesale_status: input.status,
+      status: nextCustomerStatus,
+      active: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", customer.value);
+
+  if (updateError) {
+    return { ok: false, message: "No pudimos actualizar el estado mayorista." };
+  }
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.value,
+    action: input.action,
+    oldData: {
+      is_wholesale: customerRow.is_wholesale,
+      wholesale_status: customerRow.wholesale_status,
+      status: customerRow.status,
+      active: customerRow.active,
+    },
+    newData: {
+      is_wholesale: isApproved,
+      wholesale_status: input.status,
+      status: nextCustomerStatus,
+      active: true,
+    },
+  });
+
+  await addWholesaleHistoryNote({
+    customerId: customer.value,
+    userId: profile.id,
+    note: input.note,
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/clientes-mayoristas");
+
+  return { ok: true, message: input.successMessage };
+}
+
+export async function rejectWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
+  return setWholesaleStatusAction({
+    customerId,
+    status: "rejected",
+    action: "wholesale_request.rejected",
+    note: "Solicitud mayorista rechazada.",
+    successMessage: "Solicitud mayorista rechazada.",
+  });
+}
+
+export async function suspendWholesaleAccessAction(customerId: string): Promise<CrmMutationResult> {
+  return setWholesaleStatusAction({
+    customerId,
+    status: "suspended",
+    action: "wholesale_access.suspended",
+    note: "Acceso mayorista suspendido.",
+    successMessage: "Acceso mayorista suspendido.",
+  });
+}
+
+export async function reactivateWholesaleAccessAction(customerId: string): Promise<CrmMutationResult> {
+  return setWholesaleStatusAction({
+    customerId,
+    status: "approved",
+    action: "wholesale_access.reactivated",
+    note: "Acceso mayorista reactivado.",
+    successMessage: "Acceso mayorista reactivado.",
+  });
 }
 
 export async function suspendCustomerAccountAction(customerId: string): Promise<CrmMutationResult> {
@@ -685,6 +874,274 @@ export async function mergeDuplicateCustomerAction(input: MergeDuplicateCustomer
   return { ok: true, message: "Cliente duplicado unificado correctamente. El historial fue movido al perfil principal." };
 }
 
+export async function deleteCustomerAccountPermanentlyAction(input: PermanentAccountDeletionInput): Promise<CrmMutationResult> {
+  const profile = await requireSession();
+
+  if (!permanentDeletionRoles.includes(profile.role)) {
+    return { ok: false, message: "No tienes autorización para eliminar cuentas de cliente." };
+  }
+
+  if (!profile.permissions.includes("customers:manage") && profile.role !== "admin" && profile.role !== "technical_owner") {
+    return { ok: false, message: "No tienes autorización para eliminar cuentas de cliente." };
+  }
+
+  const customer = uuidLike(input.customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  if (input.confirmation.trim() !== "ELIMINAR CUENTA") {
+    return { ok: false, message: "Escribe ELIMINAR CUENTA para confirmar esta acción." };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: targetCustomer, error: targetCustomerError } = await admin
+    .from("customers")
+    .select("id, user_id, email, contact_name, phone, tax_id, active, status, is_wholesale, wholesale_status, created_at")
+    .eq("id", customer.value)
+    .maybeSingle<CustomerDeletionRow>();
+
+  if (targetCustomerError || !targetCustomer) {
+    return { ok: false, message: "No pudimos encontrar la cuenta del cliente." };
+  }
+
+  const email = normalizeAccountEmail(targetCustomer.email ?? "");
+  if (!email || !validateEmail(email)) {
+    return { ok: false, message: "Esta cuenta no tiene un correo válido para liberar." };
+  }
+
+  if (hasProtectedEmail(email)) {
+    return { ok: false, message: "No se puede eliminar la cuenta técnica protegida." };
+  }
+
+  let authUsers: Array<{ id: string; email: string | undefined }>;
+  try {
+    authUsers = await findAuthUsersByEmail(email);
+  } catch {
+    return { ok: false, message: "No pudimos revisar Supabase Auth para esta cuenta." };
+  }
+
+  const initialUserIds = uniqueValues([targetCustomer.user_id, ...authUsers.map((user) => user.id)]);
+  const userByIdQuery =
+    initialUserIds.length > 0
+      ? admin
+          .from("users")
+          .select("id, email, full_name, phone, active, created_at, roles(name)")
+          .in("id", initialUserIds)
+          .returns<DeletionUserRow[]>()
+      : Promise.resolve({ data: [], error: null });
+  const userByEmailQuery = admin
+    .from("users")
+    .select("id, email, full_name, phone, active, created_at, roles(name)")
+    .ilike("email", email)
+    .returns<DeletionUserRow[]>();
+
+  const [{ data: usersById, error: usersByIdError }, { data: usersByEmail, error: usersByEmailError }] = await Promise.all([
+    userByIdQuery,
+    userByEmailQuery,
+  ]);
+
+  if (usersByIdError || usersByEmailError) {
+    return { ok: false, message: "No pudimos revisar el perfil de usuario relacionado." };
+  }
+
+  const usersByMap = new Map<string, DeletionUserRow>();
+  for (const user of [...(usersById ?? []), ...(usersByEmail ?? [])]) {
+    usersByMap.set(user.id, user);
+  }
+
+  const candidateUserIds = uniqueValues([...initialUserIds, ...Array.from(usersByMap.keys())]);
+  const customerByUserQuery =
+    candidateUserIds.length > 0
+      ? admin
+          .from("customers")
+          .select("id, user_id, email, contact_name, phone, tax_id, active, status, is_wholesale, wholesale_status, created_at")
+          .in("user_id", candidateUserIds)
+          .returns<CustomerDeletionRow[]>()
+      : Promise.resolve({ data: [], error: null });
+  const customerByEmailQuery = admin
+    .from("customers")
+    .select("id, user_id, email, contact_name, phone, tax_id, active, status, is_wholesale, wholesale_status, created_at")
+    .ilike("email", email)
+    .returns<CustomerDeletionRow[]>();
+
+  const [{ data: customersByUser, error: customersByUserError }, { data: customersByEmail, error: customersByEmailError }] =
+    await Promise.all([customerByUserQuery, customerByEmailQuery]);
+
+  if (customersByUserError || customersByEmailError) {
+    return { ok: false, message: "No pudimos revisar los clientes relacionados." };
+  }
+
+  const customersByMap = new Map<string, CustomerDeletionRow>();
+  for (const row of [targetCustomer, ...(customersByUser ?? []), ...(customersByEmail ?? [])]) {
+    customersByMap.set(row.id, row);
+  }
+
+  const customerRows = Array.from(customersByMap.values());
+  const customerIds = customerRows.map((row) => row.id);
+  const userIds = uniqueValues([...candidateUserIds, ...customerRows.map((row) => row.user_id)]);
+
+  const finalUserQuery =
+    userIds.length > 0
+      ? admin
+          .from("users")
+          .select("id, email, full_name, phone, active, created_at, roles(name)")
+          .in("id", userIds)
+          .returns<DeletionUserRow[]>()
+      : Promise.resolve({ data: [], error: null });
+  const { data: finalUsers, error: finalUsersError } = await finalUserQuery;
+
+  if (finalUsersError) {
+    return { ok: false, message: "No pudimos revisar roles relacionados." };
+  }
+
+  for (const user of finalUsers ?? []) {
+    usersByMap.set(user.id, user);
+  }
+
+  if (userIds.includes(profile.id)) {
+    return { ok: false, message: "No puedes eliminar la cuenta con la que estás administrando el sistema." };
+  }
+
+  const protectedUser = Array.from(usersByMap.values()).find((user) => hasProtectedEmail(user.email));
+  if (protectedUser || authUsers.some((user) => hasProtectedEmail(user.email))) {
+    return { ok: false, message: "No se puede eliminar la cuenta técnica protegida." };
+  }
+
+  const internalUser = Array.from(usersByMap.values()).find((user) => isInternalRole(user.roles?.name));
+  if (internalUser) {
+    return { ok: false, message: "No se pueden eliminar usuarios internos desde esta acción. Usa suspensión o gestión de roles." };
+  }
+
+  const wholesaleAccount = customerRows.find(
+    (row) => row.is_wholesale || row.wholesale_status === "approved" || row.wholesale_status === "suspended",
+  );
+  if (wholesaleAccount) {
+    return {
+      ok: false,
+      message:
+        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
+    };
+  }
+
+  const fiscalCustomer = customerRows.find((row) => row.tax_id?.trim());
+  if (fiscalCustomer) {
+    return {
+      ok: false,
+      message:
+        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
+    };
+  }
+
+  const orderQueries: Array<() => Promise<{ data: IdRow[] | null; error: { message: string } | null }>> = [];
+  if (customerIds.length > 0) {
+    orderQueries.push(async () => admin.from("orders").select("id").in("customer_id", customerIds).returns<IdRow[]>());
+  }
+  if (userIds.length > 0) {
+    orderQueries.push(async () => admin.from("orders").select("id").in("user_id", userIds).returns<IdRow[]>());
+  }
+  orderQueries.push(async () => admin.from("orders").select("id").ilike("email", email).returns<IdRow[]>());
+
+  const orderResults = await Promise.all(orderQueries.map((query) => query()));
+  const orderError = orderResults.find((result) => result.error)?.error;
+  if (orderError) {
+    return { ok: false, message: "No pudimos revisar pedidos relacionados." };
+  }
+
+  const orderIds = uniqueValues(orderResults.flatMap((result) => (result.data ?? []).map((row) => row.id)));
+
+  const criticalQueries: Array<() => Promise<{ data: IdRow[] | null; error: { message: string } | null }>> = [];
+  if (customerIds.length > 0) {
+    criticalQueries.push(async () => admin.from("payments").select("id").in("customer_id", customerIds).returns<IdRow[]>());
+    criticalQueries.push(async () => admin.from("invoices").select("id").in("customer_id", customerIds).returns<IdRow[]>());
+    criticalQueries.push(async () => admin.from("crm_notes").select("id").in("customer_id", customerIds).not("order_id", "is", null).returns<IdRow[]>());
+    criticalQueries.push(async () =>
+      admin.from("crm_followups").select("id").in("customer_id", customerIds).not("order_id", "is", null).returns<IdRow[]>(),
+    );
+    criticalQueries.push(async () => admin.from("wholesale_codes").select("id").in("customer_id", customerIds).gt("used_count", 0).returns<IdRow[]>());
+  }
+  if (orderIds.length > 0) {
+    criticalQueries.push(async () => admin.from("payments").select("id").in("order_id", orderIds).returns<IdRow[]>());
+    criticalQueries.push(async () => admin.from("invoices").select("id").in("order_id", orderIds).returns<IdRow[]>());
+    criticalQueries.push(async () => admin.from("inventory_reservations").select("id").in("order_id", orderIds).returns<IdRow[]>());
+  }
+
+  const criticalResults = await Promise.all(criticalQueries.map((query) => query()));
+  const criticalError = criticalResults.find((result) => result.error)?.error;
+  if (criticalError) {
+    return { ok: false, message: "No pudimos validar historial crítico antes de eliminar." };
+  }
+
+  const criticalCount = orderIds.length + criticalResults.reduce((sum, result) => sum + (result.data?.length ?? 0), 0);
+  const { data: relatedAuditLogs } =
+    [...customerIds, ...userIds].length > 0
+      ? await admin.from("audit_logs").select("id").in("record_id", uniqueValues([...customerIds, ...userIds])).returns<IdRow[]>()
+      : { data: [] as IdRow[] };
+
+  if (criticalCount > 0) {
+    return {
+      ok: false,
+      message:
+        "Esta cuenta tiene historial relacionado y no puede eliminarse permanentemente. Puedes suspenderla o anonimizarla según política del negocio.",
+    };
+  }
+
+  if (customerIds.length > 0) {
+    await admin.from("wholesale_codes").delete().in("customer_id", customerIds);
+    await admin.from("crm_notes").delete().in("customer_id", customerIds);
+    await admin.from("crm_followups").delete().in("customer_id", customerIds);
+  }
+
+  const authUserIds = uniqueValues([...authUsers.map((user) => user.id), ...userIds]);
+  for (const authUserId of authUserIds) {
+    const { error } = await admin.auth.admin.deleteUser(authUserId);
+    if (error && !error.message.toLowerCase().includes("not found")) {
+      return { ok: false, message: "No pudimos eliminar la cuenta de Supabase Auth." };
+    }
+  }
+
+  if (userIds.length > 0) {
+    await admin.from("users").delete().in("id", userIds);
+  }
+
+  if (customerIds.length > 0) {
+    await admin.from("customers").delete().in("id", customerIds);
+  }
+
+  await writeAuditLog({
+    tableName: "users",
+    recordId: userIds[0] ?? null,
+    action: "user.account_deleted",
+    oldData: {
+      deleted_user_ids: userIds,
+      deleted_customer_ids: customerIds,
+      email,
+      customer_name: targetCustomer.contact_name,
+      actor_id: profile.id,
+      reason: input.reason?.trim() || "Eliminación permanente solicitada desde admin.",
+    },
+    newData: {
+      auth_users_deleted: authUserIds.length,
+      customers_deleted: customerIds.length,
+      validation: {
+        orders: 0,
+        payments: 0,
+        invoices: 0,
+        critical_crm_items: 0,
+        used_wholesale_codes: 0,
+        related_audit_logs_preserved: relatedAuditLogs?.length ?? 0,
+      },
+    },
+  });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/clientes-mayoristas");
+  revalidatePath("/admin/seguridad");
+
+  return { ok: true, message: "Cuenta eliminada permanentemente. El correo puede registrarse nuevamente." };
+}
+
 export async function deleteTestAccountAction(input: TestAccountDeletionInput): Promise<CrmMutationResult> {
   const profile = await requirePermission("settings:manage");
 
@@ -804,7 +1261,7 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
 
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");
-  revalidatePath("/admin/codigos-mayoristas");
+  revalidatePath("/admin/clientes-mayoristas");
 
   return { ok: true, message: "Cuenta TEST eliminada correctamente." };
 }

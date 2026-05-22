@@ -1,196 +1,150 @@
 "use server";
 
 import { writeErrorLog } from "@/lib/error-logging";
-import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { WholesaleValidationResult } from "@/types/wholesale";
+import type { WholesaleAccessState, WholesaleAccount, WholesaleAccountStatus } from "@/types/wholesale";
 
-const wholesaleMessages = {
-  invalidCode: "Código mayorista inválido.",
-  loginRequired: "Código válido. Inicia sesión con tu cuenta mayorista para activar precios.",
-  codeNotOwned: "Este código mayorista no pertenece a tu cuenta.",
-  accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
-  success: "Cuenta mayorista verificada. Precios de mayoreo activados.",
-};
-
-type WholesaleCodePublicRpcRow = {
-  code: string;
-  is_valid: boolean;
-  status: string;
-  message: string;
-  requires_login: boolean;
-  expires_at: string | null;
-};
-
-type CustomerAuthorizationRow = {
+type CustomerAccessRow = {
   id: string;
+  business_name: string | null;
+  company_name: string | null;
+  contact_name: string;
+  notes: string | null;
   is_wholesale: boolean;
+  wholesale_status: WholesaleAccountStatus | "none" | null;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
 };
 
-type WholesaleAccountRpcRow = {
-  id: string;
-  code: string;
-  customer_id: string | null;
-  customer_name: string | null;
-  business_name: string | null;
-  label: string;
-  minimum_order: number | string;
-  expires_at: string | null;
-  used_count: number;
-  status: "active" | "inactive" | "expired" | "disabled";
-};
+function toAccount(customer: CustomerAccessRow): WholesaleAccount {
+  const businessName = customer.business_name || customer.company_name || customer.contact_name || "Cuenta mayorista";
 
-function toWholesaleAccount(account: WholesaleAccountRpcRow) {
   return {
-    id: account.id,
-    code: account.code,
-    customerId: account.customer_id,
-    customerName: account.customer_name ?? account.label,
-    businessName: account.business_name ?? account.label,
-    minimumOrder: Number(account.minimum_order),
-    expiresAt: account.expires_at,
-    usedCount: account.used_count,
-    status: account.status,
+    id: customer.id,
+    customerId: customer.id,
+    customerName: customer.contact_name,
+    businessName,
+    status: "approved",
   };
 }
 
-export async function validateWholesaleCodeAction(code: string): Promise<WholesaleValidationResult> {
-  const normalizedCode = code.trim().toUpperCase();
-  const wholesaleLimit = await checkRateLimit({
-    route: "/mayoreo/codigo",
-    limit: 8,
-    windowSeconds: 10 * 60,
-    key: normalizedCode.slice(-6),
-  });
-
-  if (!wholesaleLimit.ok) {
-    return {
-      ok: false,
-      message: rateLimitMessage,
-      account: null,
-    };
+function getWholesaleStatus(customer: CustomerAccessRow): WholesaleAccountStatus | "none" {
+  if (customer.wholesale_status) {
+    return customer.wholesale_status;
   }
 
-  if (!normalizedCode) {
-    return {
-      ok: false,
-      message: wholesaleMessages.invalidCode,
-      account: null,
-    };
+  if (customer.is_wholesale && customer.active && customer.status === "active") {
+    return "approved";
   }
 
-  try {
-    const supabase = await getSupabaseServerClient();
-    const { data, error } = await supabase
-      .rpc("validate_wholesale_code_public", { raw_code: normalizedCode })
-      .returns<WholesaleCodePublicRpcRow[]>();
-
-    if (error) {
-      await writeErrorLog({
-        route: "/",
-        action: "wholesale.public_validation_failed",
-        errorMessage: error.message,
-        metadata: {
-          code_suffix: normalizedCode.slice(-4),
-          code: error.code ?? null,
-        },
-      });
-      return {
-        ok: false,
-        message: wholesaleMessages.invalidCode,
-        account: null,
-      };
-    }
-
-    const rows = Array.isArray(data) ? (data as WholesaleCodePublicRpcRow[]) : [];
-    const publicValidation = rows[0];
-
-    if (!publicValidation?.is_valid) {
-      return {
-        ok: false,
-        message: publicValidation?.message ?? wholesaleMessages.invalidCode,
-        account: null,
-      };
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return {
-        ok: true,
-        message: wholesaleMessages.loginRequired,
-        account: null,
-        requiresLogin: publicValidation.requires_login,
-        code: publicValidation.code,
-      };
-    }
-
-    const { data: activatedData, error: activationError } = await supabase
-      .rpc("activate_wholesale_account", { raw_code: normalizedCode })
-      .returns<WholesaleAccountRpcRow[]>();
-
-    if (activationError) {
-      await writeErrorLog({
-        route: "/",
-        action: "wholesale.activation_failed",
-        errorMessage: activationError.message,
-        metadata: {
-          code_suffix: normalizedCode.slice(-4),
-          code: activationError.code ?? null,
-        },
-      });
-      return {
-        ok: false,
-        message: wholesaleMessages.accountNotAuthorized,
-        account: null,
-      };
-    }
-
-    const activatedRows = Array.isArray(activatedData) ? (activatedData as WholesaleAccountRpcRow[]) : [];
-    const activatedAccount = activatedRows[0];
-
-    if (!activatedAccount) {
-      const { data: customerRows } = await supabase
-        .from("customers")
-        .select("id, is_wholesale, status, active")
-        .eq("user_id", user.id)
-        .returns<CustomerAuthorizationRow[]>();
-
-      const hasAuthorizedWholesaleAccount = (customerRows ?? []).some(
-        (customer) => customer.is_wholesale && customer.active && customer.status === "active",
-      );
-
-      return {
-        ok: false,
-        message: hasAuthorizedWholesaleAccount ? wholesaleMessages.codeNotOwned : wholesaleMessages.accountNotAuthorized,
-        account: null,
-      };
-    }
-
-    return {
-      ok: true,
-      message: wholesaleMessages.success,
-      account: toWholesaleAccount(activatedAccount),
-    };
-  } catch (error) {
-    await writeErrorLog({
-      route: "/",
-      action: "wholesale.validation_unhandled_error",
-      errorMessage: error instanceof Error ? error.message : "Unknown wholesale validation error",
-      errorStack: error instanceof Error ? error.stack : null,
-      metadata: {
-        code_suffix: normalizedCode.slice(-4),
-      },
-    });
-    return {
-      ok: false,
-      message: wholesaleMessages.invalidCode,
-      account: null,
-    };
+  if (customer.is_wholesale && (!customer.active || customer.status === "disabled")) {
+    return "suspended";
   }
+
+  if (customer.status === "pending_account" || Boolean(customer.notes?.includes("[SOLICITUD_MAYOREO]"))) {
+    return "pending";
+  }
+
+  if (customer.is_wholesale && customer.status === "inactive") {
+    return "rejected";
+  }
+
+  return "none";
 }
 
+function guestWholesaleState(): WholesaleAccessState {
+  return {
+    kind: "guest",
+    title: "Acceso mayorista",
+    message: "Inicia sesion o solicita acceso mayorista para que el equipo apruebe tu cuenta.",
+    canEnterCode: false,
+    account: null,
+  };
+}
+
+export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessState> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return guestWholesaleState();
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customers, error } = await admin
+    .from("customers")
+    .select("id, business_name, company_name, contact_name, notes, is_wholesale, wholesale_status, status, active")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .returns<CustomerAccessRow[]>();
+
+  if (error) {
+    await writeErrorLog({
+      route: "/",
+      action: "wholesale.access_state_failed",
+      errorMessage: error.message,
+      metadata: { user_id: user.id },
+    });
+    return {
+      kind: "regular",
+      title: "Acceso mayorista",
+      message: "Tu cuenta aun no tiene acceso mayorista. Puedes solicitarlo para revision.",
+      canEnterCode: false,
+      account: null,
+    };
+  }
+
+  const customerRows = customers ?? [];
+  const approvedCustomer = customerRows.find((customer) => getWholesaleStatus(customer) === "approved" && customer.active);
+
+  if (approvedCustomer) {
+    return {
+      kind: "approved",
+      title: "Mayorista aprobado",
+      message: "Precio mayorista activo automaticamente para esta cuenta.",
+      canEnterCode: false,
+      account: toAccount(approvedCustomer),
+    };
+  }
+
+  if (customerRows.some((customer) => getWholesaleStatus(customer) === "suspended")) {
+    return {
+      kind: "suspended",
+      title: "Acceso mayorista suspendido",
+      message: "Tu acceso mayorista esta suspendido. Puedes comprar al detalle o contactar al equipo comercial.",
+      canEnterCode: false,
+      account: null,
+    };
+  }
+
+  if (customerRows.some((customer) => getWholesaleStatus(customer) === "rejected")) {
+    return {
+      kind: "rejected",
+      title: "Solicitud mayorista rechazada",
+      message: "Tu solicitud mayorista no fue aprobada. Contacta al equipo comercial si necesitas una revision.",
+      canEnterCode: false,
+      account: null,
+    };
+  }
+
+  if (customerRows.some((customer) => getWholesaleStatus(customer) === "pending")) {
+    return {
+      kind: "pending",
+      title: "Solicitud mayorista en revision",
+      message: "Aun no puedes ver precios mayoristas. Te contactaremos cuando la cuenta sea aprobada.",
+      canEnterCode: false,
+      account: null,
+    };
+  }
+
+  return {
+    kind: "regular",
+    title: "Acceso mayorista",
+    message: "Tu cuenta aun no tiene acceso mayorista. Puedes solicitarlo para revision.",
+    canEnterCode: false,
+    account: null,
+  };
+}

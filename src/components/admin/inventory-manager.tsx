@@ -20,9 +20,16 @@ type InventoryManagerProps = {
 
 const movementLabels: Record<InventoryMovementType, string> = {
   purchase: "Entrada",
-  return: "Devolucion",
+  return: "Devolución",
   sale: "Salida",
   adjustment: "Ajuste",
+};
+
+const movementHelp: Record<InventoryMovementType, string> = {
+  purchase: "Agrega stock recibido.",
+  return: "Registra productos devueltos al inventario.",
+  sale: "Registra salida manual de inventario.",
+  adjustment: "Corrige inventario físico después de revisión.",
 };
 
 const emptyMovement: InventoryMovementInput = {
@@ -40,6 +47,10 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
 
   const lowStockProducts = useMemo(
     () => products.filter((product) => product.available_stock <= product.min_stock),
+    [products],
+  );
+  const outOfStockProducts = useMemo(
+    () => products.filter((product) => product.available_stock <= 0),
     [products],
   );
   const totalStock = products.reduce((sum, product) => sum + product.stock, 0);
@@ -66,7 +77,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
         <Metric label="Productos controlados" value={products.length.toLocaleString("es-HN")} />
         <Metric label="Unidades en stock" value={totalStock.toLocaleString("es-HN")} />
         <Metric label="Unidades reservadas" value={reservedStock.toLocaleString("es-HN")} />
-        <Metric label="Alertas bajo stock" value={lowStockProducts.length.toLocaleString("es-HN")} />
+        <Metric label="Productos sin stock" value={outOfStockProducts.length.toLocaleString("es-HN")} />
       </div>
 
       <section className="grid gap-5 lg:grid-cols-[420px_1fr]">
@@ -110,6 +121,13 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
                 ))}
               </select>
             </label>
+            <div className="grid gap-2 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+              {Object.entries(movementHelp).map(([type, help]) => (
+                <p key={type}>
+                  <span className="font-semibold text-black">{movementLabels[type as InventoryMovementType]}:</span> {help}
+                </p>
+              ))}
+            </div>
             <label className="block">
               <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cantidad</span>
               <Input
@@ -143,11 +161,18 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
             <AlertTriangle size={19} />
-            <h2 className="font-semibold">Alertas de bajo stock</h2>
+            <h2 className="font-semibold">Alertas de inventario</h2>
+          </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
+            <Metric label="Bajo mínimo" value={lowStockProducts.length.toLocaleString("es-HN")} compact />
+            <Metric label="Sin stock" value={outOfStockProducts.length.toLocaleString("es-HN")} compact />
+            <Metric label="Reservas activas" value={reservedStock.toLocaleString("es-HN")} compact />
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {lowStockProducts.length === 0 ? (
-              <p className="text-sm text-black/55">No hay productos bajo mínimo.</p>
+              <p className="text-sm text-black/55">
+                Inventario sin alertas. Cuando un producto llegue al mínimo o se quede sin stock, aparecerá aquí.
+              </p>
             ) : (
               lowStockProducts.map((product) => (
                 <div key={product.id} className="rounded-md bg-[#fff0ea] p-3 text-sm">
@@ -176,7 +201,7 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Cantidad</th>
                 <th className="px-4 py-3">Antes</th>
-                <th className="px-4 py-3">Despues</th>
+                <th className="px-4 py-3">Después</th>
                 <th className="px-4 py-3">Notas</th>
               </tr>
             </thead>
@@ -203,11 +228,11 @@ export function InventoryManager({ products, movements }: InventoryManagerProps)
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
     <div className="rounded-lg border border-black/10 bg-white p-4">
       <p className="text-sm text-black/50">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
+      <p className={`mt-1 font-semibold ${compact ? "text-xl" : "text-2xl"}`}>{value}</p>
     </div>
   );
 }
