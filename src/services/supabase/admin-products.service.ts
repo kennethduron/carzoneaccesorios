@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CategoryOption, ProductAdminRow } from "@/types/products";
+import { normalizeVehicleBrand, normalizeVehicleModel, suggestedVehicleBrands, uniqueVehicleValues } from "@/utils/vehicle-compatibility";
 
 export type AdminProductCatalogFilters = {
   page?: number;
@@ -12,6 +13,11 @@ export type AdminProductCatalogFilters = {
 type ProductQueryRow = Omit<ProductAdminRow, "category_name" | "images"> & {
   categories: { name: string } | null;
   product_images: ProductAdminRow["images"] | null;
+};
+
+type ProductVehicleOptionRow = {
+  vehicle_brand: string | null;
+  vehicle_model: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -28,11 +34,15 @@ function normalizeProduct(row: ProductQueryRow): ProductAdminRow {
     slug: row.slug,
     name: row.name,
     brand: row.brand,
-    vehicle_brand: row.vehicle_brand,
-    vehicle_model: row.vehicle_model,
+    vehicle_brand: normalizeVehicleBrand(row.vehicle_brand),
+    vehicle_model: normalizeVehicleModel(row.vehicle_model),
     vehicle_year_start: row.vehicle_year_start,
     vehicle_year_end: row.vehicle_year_end,
+    short_description: row.short_description,
     description: row.description,
+    features: row.features,
+    specifications: row.specifications,
+    compatibility_notes: row.compatibility_notes,
     stock: toNumber(row.stock),
     min_stock: toNumber(row.min_stock),
     cost_price: toNumber(row.cost_price),
@@ -65,6 +75,10 @@ function normalizePageSize(value: unknown) {
   return Math.min(Math.floor(pageSize), 100);
 }
 
+function sanitizePostgrestSearch(value: string) {
+  return value.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export async function getAdminProductCatalogPage(filters: AdminProductCatalogFilters = {}) {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(filters.page);
@@ -90,7 +104,11 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
       vehicle_model,
       vehicle_year_start,
       vehicle_year_end,
+      short_description,
       description,
+      features,
+      specifications,
+      compatibility_notes,
       stock,
       min_stock,
       cost_price,
@@ -117,7 +135,12 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
     );
 
   if (query) {
-    productsQuery = productsQuery.or(`sku.ilike.%${query}%,internal_code.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
+    const search = sanitizePostgrestSearch(query);
+    if (search) {
+      productsQuery = productsQuery.or(
+        `sku.ilike.%${search}%,internal_code.ilike.%${search}%,name.ilike.%${search}%,brand.ilike.%${search}%,vehicle_brand.ilike.%${search}%,vehicle_model.ilike.%${search}%,short_description.ilike.%${search}%,description.ilike.%${search}%,features.ilike.%${search}%,specifications.ilike.%${search}%,compatibility_notes.ilike.%${search}%`,
+      );
+    }
   }
 
   if (status !== "all") {
@@ -133,7 +156,11 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
     .range(from, to)
     .returns<ProductQueryRow[]>();
 
-  const [{ data: products, error: productsError, count }, { data: categories, error: categoriesError }] =
+  const [
+    { data: products, error: productsError, count },
+    { data: categories, error: categoriesError },
+    { data: vehicleRows, error: vehicleRowsError },
+  ] =
     await Promise.all([
       pagedProductsQuery,
       supabase
@@ -141,6 +168,10 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
         .select("id, name, slug")
         .order("name", { ascending: true })
         .returns<CategoryOption[]>(),
+      supabase
+        .from("products")
+        .select("vehicle_brand, vehicle_model")
+        .returns<ProductVehicleOptionRow[]>(),
     ]);
 
   if (productsError) {
@@ -151,9 +182,15 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
     throw new Error(categoriesError.message);
   }
 
+  if (vehicleRowsError) {
+    throw new Error(vehicleRowsError.message);
+  }
+
   return {
     products: (products ?? []).map(normalizeProduct),
     categories: categories ?? [],
+    vehicleBrands: uniqueVehicleValues([...suggestedVehicleBrands, ...(vehicleRows ?? []).map((row) => row.vehicle_brand)], "brand"),
+    vehicleModels: uniqueVehicleValues((vehicleRows ?? []).map((row) => row.vehicle_model), "model"),
     total: count ?? 0,
     page,
     pageSize,

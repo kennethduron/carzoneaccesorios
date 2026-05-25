@@ -3,17 +3,16 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Copy, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
-import { logInvoiceReprintAction } from "@/app/admin/facturas/actions";
+import { getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
 import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction, updateOrderStatusAction } from "@/app/admin/pedidos/actions";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import type { FiscalSettings } from "@/types/fiscal";
 import type { AdminOrderRow } from "@/types/orders";
-import { formatHnDate, formatHnDateTime } from "@/utils/format";
-import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
+import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
+import { formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminOrdersManagerProps = {
@@ -21,7 +20,6 @@ type AdminOrdersManagerProps = {
   total: number;
   page: number;
   pageSize: number;
-  fiscalSettings: FiscalSettings;
   canManagePayments: boolean;
   canGenerateInvoices: boolean;
 };
@@ -47,6 +45,7 @@ const orderStatusLabels: Record<string, string> = {
 const paymentStatusLabels: Record<string, string> = {
   pending: "Pendiente",
   approved: "Aprobado",
+  paid: "Pagado",
   rejected: "Rechazado",
   refunded: "Reembolsado",
   pending_review: "Pendiente de revisión",
@@ -85,7 +84,6 @@ export function AdminOrdersManager({
   total,
   page,
   pageSize,
-  fiscalSettings,
   canManagePayments,
   canGenerateInvoices,
 }: AdminOrdersManagerProps) {
@@ -126,12 +124,17 @@ export function AdminOrdersManager({
   );
 
   function generateInvoice(order: AdminOrderRow) {
+    if (!canIssueInvoice(order)) {
+      showAdminMessage("No se puede emitir factura porque el pago aún no ha sido confirmado.", false);
+      return;
+    }
+
     startTransition(async () => {
       const result = await generateInvoiceFromOrderAction(order.id);
       showAdminMessage(result.message, result.ok);
 
-      if (result.ok && result.invoiceNumber) {
-        await exportGeneratedInvoicePdf(order, fiscalSettings, result.invoiceNumber, result.bankReference ?? order.bank_reference_number);
+      if (result.ok && result.invoice) {
+        await exportAdminInvoicePdf(result.invoice);
         router.refresh();
       }
     });
@@ -165,11 +168,17 @@ export function AdminOrdersManager({
     }
 
     startTransition(async () => {
+      const detail = await getInvoiceDetailAction(order.invoice_id ?? "");
+      if (!detail.ok || !detail.invoice) {
+        showAdminMessage(detail.message || "No se pudo cargar el detalle de la factura.", false);
+        return;
+      }
+
       const result = await logInvoiceReprintAction(order.invoice_id ?? "");
       showAdminMessage(result.message, result.ok);
 
       if (result.ok) {
-        await exportGeneratedInvoicePdf(order, fiscalSettings, order.invoice_number ?? "", order.bank_reference_number);
+        await exportAdminInvoicePdf(detail.invoice);
         router.refresh();
       }
     });
@@ -256,6 +265,25 @@ export function AdminOrdersManager({
   );
 }
 
+function canIssueInvoice(order: AdminOrderRow) {
+  const paymentConfirmed = ["approved", "confirmed", "paid"].includes(order.payment_status ?? "");
+  const orderReady = [
+    "confirmed",
+    "confirmado",
+    "paid",
+    "preparacion",
+    "preparing",
+    "empacado",
+    "enviado",
+    "shipped",
+    "en_ruta",
+    "entregado",
+    "delivered",
+  ].includes(order.status);
+
+  return paymentConfirmed && orderReady;
+}
+
 function OrderDetail({
   order,
   canManagePayments,
@@ -282,6 +310,7 @@ function OrderDetail({
   const isBankTransfer = order.payment_method === "bank_transfer";
   const paymentIsApproved = order.payment_status === "approved";
   const paymentIsRejected = order.payment_status === "rejected";
+  const invoiceCanBeIssued = canIssueInvoice(order);
 
   return (
     <article className="rounded-lg border border-black/10 bg-white p-5">
@@ -368,7 +397,7 @@ function OrderDetail({
 
       <div className="mt-5 flex flex-wrap gap-2">
         {canGenerateInvoices && !order.invoice_number ? (
-          <Button onClick={onGenerateInvoice} disabled={isPending} variant="dark">
+          <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark">
             <FileText size={17} />
             {isPending ? "Generando..." : "Generar factura"}
           </Button>
@@ -395,6 +424,11 @@ function OrderDetail({
           </>
         ) : null}
       </div>
+      {canGenerateInvoices && !order.invoice_number && !invoiceCanBeIssued ? (
+        <p className="mt-3 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          No se puede emitir factura porque el pago aún no ha sido confirmado.
+        </p>
+      ) : null}
       {message ? <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
 
       <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
@@ -427,53 +461,13 @@ function OrderDetail({
   );
 }
 
-async function exportGeneratedInvoicePdf(
-  order: AdminOrderRow,
-  fiscalSettings: FiscalSettings,
-  invoiceNumber: string,
-  bankReference: string | null,
-) {
-  const { doc, autoTable } = await createPdfDocument();
-  doc.setFontSize(14);
-  doc.text(fiscalSettings.legal_name || "Car Zone Accesorios", 14, 16);
-  doc.setFontSize(9);
-  doc.text(`RTN: ${fiscalSettings.rtn || "-"}`, 14, 23);
-  doc.text(`CAI: ${fiscalSettings.cai || "-"}`, 14, 29);
-  doc.text(`Factura: ${invoiceNumber}`, 140, 16);
-  doc.text(`Pedido: ${order.order_number}`, 140, 23);
-  doc.text(`Fecha: ${formatHnDate(order.invoice_issued_at ?? order.created_at)}`, 140, 29);
-  doc.text(`Cliente: ${order.customer_name}`, 14, 42);
-  doc.text(`RTN cliente: ${order.customer_rtn ?? "-"}`, 14, 48);
+/*
   doc.text(`Teléfono: ${order.phone}`, 14, 54);
-  doc.text(`Pago: ${paymentLabels[order.payment_method] ?? order.payment_method}`, 14, 60);
-  doc.text(`Precio usado: ${order.price_mode === "wholesale" ? "precio mayorista" : "precio al detalle"}`, 14, 66);
-  if (bankReference) {
-    doc.text(`Referencia bancaria: ${bankReference}`, 14, 72);
-  }
-
-  autoTable(doc, {
-    startY: bankReference ? 80 : 74,
-    head: [["SKU", "Producto", "Cantidad", "Precio", "Total"]],
-    body: order.order_items.map((item) => [
-      item.sku,
-      item.product_name,
-      item.quantity,
-      formatCurrency(item.unit_price),
-      formatCurrency(item.line_total),
-    ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [228, 37, 44] },
-  });
-
-  const finalY = getLastAutoTableY(doc);
-  doc.text(`Subtotal: ${formatCurrency(order.subtotal)}`, 140, finalY + 10);
-  doc.text(`ISV: ${formatCurrency(order.tax)}`, 140, finalY + 16);
   doc.text(`Envío: ${formatCurrency(order.shipping_fee)}`, 140, finalY + 22);
   doc.text(`Comisión entrega: ${formatCurrency(order.cash_on_delivery_fee)}`, 140, finalY + 28);
-  doc.text(`Total: ${formatCurrency(order.total)}`, 140, finalY + 34);
   doc.text("Validar tratamiento fiscal de envío y comisión con la contadora.", 14, finalY + 34);
-  doc.save(`${invoiceNumber}.pdf`);
-}
+
+*/
 
 function InfoBlock({ label, value }: { label: string; value: string }) {
   return (

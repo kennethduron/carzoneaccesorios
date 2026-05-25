@@ -1,5 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
+import type { AdminInvoiceDetail, AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
 
 export type AdminInvoicesPage = {
   invoices: AdminInvoiceRow[];
@@ -12,7 +12,7 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "items" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "payment_status" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
   subtotal: unknown;
   tax: unknown;
   shipping_fee: unknown;
@@ -28,13 +28,6 @@ type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | 
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
-  invoice_items: Array<Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
-    quantity: unknown;
-    unit_price: unknown;
-    line_total: unknown;
-    retail_price_snapshot: unknown;
-    wholesale_price_snapshot: unknown;
-  }> | null;
 };
 
 type PaymentQueryRow = {
@@ -45,6 +38,30 @@ type PaymentQueryRow = {
   reference: string | null;
   transfer_receipt_url: string | null;
   transfer_receipt_public_id: string | null;
+  payment_status: string | null;
+  status: string | null;
+};
+
+type InvoiceItemQueryRow = Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
+  quantity: unknown;
+  unit_price: unknown;
+  line_total: unknown;
+  retail_price_snapshot: unknown;
+  wholesale_price_snapshot: unknown;
+};
+
+type InvoiceDetailQueryRow = InvoiceQueryRow & {
+  customer_email: string | null;
+  company_legal_name: string | null;
+  company_rtn: string | null;
+  company_address: string | null;
+  company_phone: string | null;
+  company_email: string | null;
+  company_logo_url: string | null;
+  fiscal_range_start: string | null;
+  fiscal_range_end: string | null;
+  due_at: string | null;
+  invoice_items: InvoiceItemQueryRow[] | null;
 };
 
 function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, PaymentQueryRow>): AdminInvoiceRow {
@@ -71,6 +88,7 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
       ? `/api/admin/transfer-receipts/${payment.id}`
       : null,
     transfer_receipt_public_id: payment?.transfer_receipt_public_id ?? null,
+    payment_status: payment?.payment_status ?? payment?.status ?? null,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
     shipping_fee: toNumber(row.shipping_fee),
@@ -78,15 +96,37 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     total: toNumber(row.total),
     issued_at: row.issued_at,
     cancelled_at: row.cancelled_at,
+    cancelled_by: row.cancelled_by,
+    cancellation_reason: row.cancellation_reason,
     created_at: row.created_at,
-    items: (row.invoice_items ?? []).map((item) => ({
-      ...item,
-      quantity: toNumber(item.quantity),
-      unit_price: toNumber(item.unit_price),
-      line_total: toNumber(item.line_total),
-      retail_price_snapshot: toNumber(item.retail_price_snapshot),
-      wholesale_price_snapshot: toNumber(item.wholesale_price_snapshot),
-    })),
+  };
+}
+
+function normalizeItems(items: InvoiceItemQueryRow[] | null): AdminInvoiceItem[] {
+  return (items ?? []).map((item) => ({
+    ...item,
+    quantity: toNumber(item.quantity),
+    unit_price: toNumber(item.unit_price),
+    line_total: toNumber(item.line_total),
+    retail_price_snapshot: toNumber(item.retail_price_snapshot),
+    wholesale_price_snapshot: toNumber(item.wholesale_price_snapshot),
+  }));
+}
+
+function normalizeDetail(row: InvoiceDetailQueryRow, paymentByOrder: Map<string, PaymentQueryRow>): AdminInvoiceDetail {
+  return {
+    ...normalizeInvoice(row, paymentByOrder),
+    customer_email: row.customer_email,
+    company_legal_name: row.company_legal_name,
+    company_rtn: row.company_rtn,
+    company_address: row.company_address,
+    company_phone: row.company_phone,
+    company_email: row.company_email,
+    company_logo_url: row.company_logo_url,
+    fiscal_range_start: row.fiscal_range_start,
+    fiscal_range_end: row.fiscal_range_end,
+    due_at: row.due_at,
+    items: normalizeItems(row.invoice_items),
   };
 }
 
@@ -134,18 +174,10 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       total,
       issued_at,
       cancelled_at,
+      cancelled_by,
+      cancellation_reason,
       created_at,
-      orders(order_number, customer_name, phone, delivery_address, payment_method),
-      invoice_items(
-        id,
-        sku,
-        product_name,
-        quantity,
-        unit_price,
-        line_total,
-        retail_price_snapshot,
-        wholesale_price_snapshot
-      )
+      orders(order_number, customer_name, phone, delivery_address, payment_method)
     `,
       { count: "exact" },
     )
@@ -163,7 +195,7 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
   if (orderIds.length > 0) {
     const { data, error } = await supabase
       .from("payments")
-      .select("id, order_id, payment_method, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id")
+      .select("id, order_id, payment_method, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id")
       .in("order_id", orderIds)
       .order("created_at", { ascending: false })
       .returns<PaymentQueryRow[]>();
@@ -193,4 +225,86 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
 export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
   const page = await getAdminInvoicesPage();
   return page.invoices;
+}
+
+export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInvoiceDetail | null> {
+  const supabase = await getSupabaseServerClient();
+  const { data: invoice, error } = await supabase
+    .from("invoices")
+    .select(
+      `
+      id,
+      invoice_number,
+      order_id,
+      customer_id,
+      customer_name,
+      customer_phone,
+      customer_email,
+      customer_address,
+      rtn,
+      cai,
+      customer_rtn,
+      status,
+      price_mode,
+      subtotal,
+      tax,
+      shipping_fee,
+      cash_on_delivery_fee,
+      total,
+      issued_at,
+      cancelled_at,
+      cancelled_by,
+      cancellation_reason,
+      due_at,
+      company_legal_name,
+      company_rtn,
+      company_address,
+      company_phone,
+      company_email,
+      company_logo_url,
+      fiscal_range_start,
+      fiscal_range_end,
+      created_at,
+      orders(order_number, customer_name, phone, delivery_address, payment_method),
+      invoice_items(
+        id,
+        sku,
+        product_name,
+        quantity,
+        unit_price,
+        line_total,
+        retail_price_snapshot,
+        wholesale_price_snapshot
+      )
+    `,
+    )
+    .eq("id", invoiceId)
+    .maybeSingle<InvoiceDetailQueryRow>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!invoice) {
+    return null;
+  }
+
+  const { data: payments, error: paymentError } = await supabase
+    .from("payments")
+    .select("id, order_id, payment_method, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id")
+    .eq("order_id", invoice.order_id)
+    .order("created_at", { ascending: false })
+    .returns<PaymentQueryRow[]>();
+
+  if (paymentError) {
+    throw new Error(paymentError.message);
+  }
+
+  const paymentByOrder = new Map<string, PaymentQueryRow>();
+  const payment = payments?.[0] ?? null;
+  if (payment) {
+    paymentByOrder.set(invoice.order_id, payment);
+  }
+
+  return normalizeDetail(invoice, paymentByOrder);
 }

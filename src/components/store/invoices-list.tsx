@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import type { StoreInvoice } from "@/types/invoices";
 import { formatCurrency } from "@/utils/pricing";
@@ -8,17 +9,32 @@ function isIssued(invoice: StoreInvoice) {
   return ["emitida", "issued", "paid"].includes(invoice.status);
 }
 
-export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoice[]; focusInvoice?: string }) {
+export function InvoicesList({
+  invoices,
+  focusInvoice,
+  page,
+  pageSize,
+  total,
+}: {
+  invoices: StoreInvoice[];
+  focusInvoice?: string;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+}) {
   if (invoices.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
-        No hay facturas fiscales emitidas para tu cuenta. Estaran disponibles cuando el pago sea confirmado y administracion emita la factura.
+        No hay facturas fiscales emitidas para tu cuenta. Estarán disponibles cuando el pago sea confirmado y la factura esté lista.
       </div>
     );
   }
 
   return (
     <div className="mt-6 grid gap-4">
+      {page && pageSize && total !== undefined ? (
+        <PaginationControls basePath="/facturas" page={page} pageSize={pageSize} total={total} label="facturas" params={{ factura: focusInvoice }} />
+      ) : null}
       {invoices.map((invoice) => (
         <article
           key={invoice.id}
@@ -72,6 +88,9 @@ export function InvoicesList({ invoices, focusInvoice }: { invoices: StoreInvoic
           )}
         </article>
       ))}
+      {page && pageSize && total !== undefined ? (
+        <PaginationControls basePath="/facturas" page={page} pageSize={pageSize} total={total} label="facturas" params={{ factura: focusInvoice }} />
+      ) : null}
     </div>
   );
 }

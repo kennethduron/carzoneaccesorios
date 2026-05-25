@@ -60,3 +60,9 @@
 \i ./migrations/202605210004_fix_rate_limit_conflict_target.sql
 \i ./migrations/202605210005_business_owner_user_management.sql
 \i ./migrations/202605210006_business_settings_center.sql
+\i ./migrations/202605220001_operation_readiness_dashboard.sql
+\i ./migrations/202605220002_wholesale_one_click_requests.sql
+\i ./migrations/202605220003_customer_account_dashboard.sql
+\i ./migrations/202605220004_operational_error_logging.sql
+\i ./migrations/202605240001_fiscal_invoice_controls.sql
+\i ./migrations/202605240002_product_content_fields.sql

@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { PriceMode, Product } from "@/types/commerce";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { formatCurrency, getProductPrice } from "@/utils/pricing";
+import { getProductCardDescription } from "@/utils/product-content";
 import { Button } from "@/components/ui/button";
 
 type ProductCardProps = {
@@ -18,12 +19,13 @@ type ProductCardProps = {
 export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const imageUrl = getProductThumbnailUrl(product.image);
+  const cardDescription = getProductCardDescription(product);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-black/10 bg-white">
+    <article className="flex h-full flex-col overflow-hidden rounded-lg border border-black/10 bg-white">
       <button onClick={() => onOpen(product)} className="block w-full text-left">
         {imageFailed ? (
-          <div className="grid h-44 w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
+          <div className="grid aspect-[4/3] w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
             <div className="flex flex-col items-center gap-2 text-sm">
               <ImageOff size={24} />
               Imagen no disponible
@@ -39,7 +41,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
             loading="lazy"
             quality={70}
             unoptimized={isCloudinaryImageUrl(imageUrl)}
-            className="h-44 w-full object-cover"
+            className="aspect-[4/3] w-full object-cover"
             onError={() => setImageFailed(true)}
           />
         )}
@@ -51,7 +53,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
             </div>
             <span className="rounded-md bg-[#e7e5e4] px-2 py-1 text-xs">{product.category}</span>
           </div>
-          <p className="line-clamp-2 text-sm text-black/60">{product.description}</p>
+          {cardDescription ? <p className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-black/60">{cardDescription}</p> : null}
           <div className="flex items-end justify-between">
             <div>
               <p className="text-xs text-black/45">
@@ -65,7 +67,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
           </div>
         </div>
       </button>
-      <div className="border-t border-black/10 p-4">
+      <div className="mt-auto border-t border-black/10 p-4">
         <Button onClick={() => onAdd(product.id)} variant="dark" className="w-full py-3">
           <Plus size={18} />
           Agregar

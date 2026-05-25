@@ -45,6 +45,20 @@ const healthStyles = {
   rojo: "bg-[#fdecec] text-[#a33a2d]",
 };
 
+const severityStyles = {
+  info: "bg-[#eef6ff] text-[#1d4f7a]",
+  warning: "bg-[#fff9db] text-[#806600]",
+  error: "bg-[#fff4e5] text-[#9b5b00]",
+  critical: "bg-[#fdecec] text-[#a33a2d]",
+};
+
+const statusLabels = {
+  open: "Abierto",
+  reviewing: "En revisión",
+  resolved: "Resuelto",
+  ignored: "Ignorado",
+};
+
 export default async function AdminUsagePage() {
   await requireStrictPermission("system:monitoring");
   const usage = await getAdminUsageOverview();
@@ -170,6 +184,73 @@ export default async function AdminUsagePage() {
         </div>
       </section>
 
+      <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <AlertTriangle size={18} />
+          <h2 className="font-semibold">Errores recientes</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-left text-sm">
+            <thead className="border-b border-black/10 text-xs uppercase text-black/45">
+              <tr>
+                <th className="py-2">Fecha</th>
+                <th className="py-2">Módulo / acción</th>
+                <th className="py-2">Cliente</th>
+                <th className="py-2">Razón</th>
+                <th className="py-2">Severidad</th>
+                <th className="py-2">Estado</th>
+                <th className="py-2">Recomendación</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/10">
+              {usage.recentErrors.length === 0 ? (
+                <tr>
+                  <td className="py-3 text-black/50" colSpan={7}>
+                    Sin errores operativos recientes.
+                  </td>
+                </tr>
+              ) : (
+                usage.recentErrors.map((error) => {
+                  const severity = error.severity ?? "error";
+                  const status = error.status ?? "open";
+                  return (
+                    <tr key={error.id} className="align-top">
+                      <td className="py-3 text-xs text-black/55">{formatDate(error.created_at)}</td>
+                      <td className="py-3">
+                        <p className="font-medium">{error.module ?? error.category ?? "system"}</p>
+                        <p className="mt-1 text-xs text-black/50">{error.action}</p>
+                        {error.route ? <p className="mt-1 text-xs text-black/40">{error.route}</p> : null}
+                      </td>
+                      <td className="py-3">
+                        <p>{error.user_email ?? "Anónimo / sistema"}</p>
+                        {error.user_id ? <p className="mt-1 text-xs text-black/40">Usuario validado</p> : null}
+                      </td>
+                      <td className="py-3 text-black/65">
+                        {error.admin_reason ?? error.customer_message ?? "Error técnico registrado sin clasificación previa."}
+                        {error.error_code || error.http_status ? (
+                          <p className="mt-1 text-xs text-black/45">
+                            {error.error_code ? `Código: ${error.error_code}` : null}
+                            {error.error_code && error.http_status ? " / " : null}
+                            {error.http_status ? `HTTP ${error.http_status}` : null}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="py-3">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${severityStyles[severity]}`}>
+                          {severity}
+                        </span>
+                      </td>
+                      <td className="py-3">{statusLabels[status]}</td>
+                      <td className="py-3 text-black/65">{error.recommendation ?? "Escalar a soporte técnico si se repite."}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <section className="rounded-lg border border-black/10 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
@@ -182,7 +263,7 @@ export default async function AdminUsagePage() {
                 <tr>
                   <th className="py-2">Tabla</th>
                   <th className="py-2">Total</th>
-                  <th className="py-2">Mas de {usage.retentionDays} dias</th>
+                  <th className="py-2">Más de {usage.retentionDays} días</th>
                   <th className="py-2">Estado</th>
                 </tr>
               </thead>
@@ -210,8 +291,8 @@ export default async function AdminUsagePage() {
           <form action={cleanupLogsAction} className="mt-4 rounded-lg border border-dashed border-black/15 bg-[#fafaf7] p-4">
             <p className="text-sm font-medium">Limpieza segura de logs antiguos</p>
             <p className="mt-1 text-sm text-black/55">
-              Elimina registros de error_logs y notification_logs con mas de {usage.retentionDays} dias.
-              Conserva la operacion diaria ligera para Supabase Free.
+              Elimina registros de error_logs y notification_logs con más de {usage.retentionDays} días.
+              Conserva la operación diaria ligera para Supabase Free.
             </p>
             <button
               type="submit"
@@ -261,10 +342,10 @@ export default async function AdminUsagePage() {
             </div>
             <p className="mt-4 text-sm leading-6 text-black/55">
               Esta pantalla no ejecuta respaldos. Sirve como control interno para validar que base de datos,
-              migraciones, archivos y variables puedan restaurarse sin improvisacion.
+              migraciones, archivos y variables puedan restaurarse sin improvisación.
             </p>
             <div className="mt-4 rounded-md bg-white p-3 text-sm">
-              <p className="font-semibold">Ultima revision</p>
+              <p className="font-semibold">Última revisión</p>
               <p className="mt-1 text-black/60">{formatDate(usage.latestBackupCheck?.checked_at)}</p>
               <p className="mt-1 text-xs text-black/50">
                 Plan registrado: {usage.latestBackupCheck?.plan_name ?? "free_or_unverified"} / Estado:{" "}
@@ -277,7 +358,7 @@ export default async function AdminUsagePage() {
                 className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold"
               >
                 <FileArchive size={16} />
-                Registrar revision manual
+                Registrar revisión manual
               </button>
             </form>
           </div>
@@ -341,7 +422,7 @@ export default async function AdminUsagePage() {
       <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
         <div className="mb-4 flex items-center gap-2">
           <AlertTriangle size={18} />
-          <h2 className="font-semibold">Tablas mas pesadas</h2>
+          <h2 className="font-semibold">Tablas más pesadas</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">

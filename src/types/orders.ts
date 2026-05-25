@@ -101,7 +101,7 @@ export type AdminOrderRow = {
   created_at: string;
   order_items: AdminOrderItem[];
   payment_id: string | null;
-  payment_status: "pending" | "approved" | "rejected" | "refunded" | null;
+  payment_status: "pending" | "approved" | "confirmed" | "paid" | "rejected" | "refunded" | null;
   bank_reference_number: string | null;
   transfer_receipt_url: string | null;
   transfer_receipt_public_id: string | null;

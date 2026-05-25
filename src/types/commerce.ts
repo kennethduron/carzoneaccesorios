@@ -15,6 +15,7 @@ export type Product = {
   sku: string;
   name: string;
   slug: string;
+  category_id: string | null;
   category: string;
   brand: string;
   vehicle_brand: string | null;
@@ -26,7 +27,11 @@ export type Product = {
   stock: number;
   retail_price: number;
   wholesale_price: number;
+  short_description: string | null;
   description: string;
+  features: string | null;
+  specifications: string | null;
+  compatibility_notes: string | null;
 };
 
 export type CartItem = {

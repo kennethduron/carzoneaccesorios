@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  deleteUploadedProductImageAction,
   deleteProductAction,
   importProductsAction,
   saveProductAction,
@@ -32,11 +33,27 @@ import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency } from "@/utils/pricing";
+import { productShortDescriptionMaxLength } from "@/utils/product-content";
+import {
+  formatMegapixels,
+  isAllowedProductImageMimeType,
+  productImageAccept,
+  productImageHelpText,
+  productImageInvalidFormatMessage,
+  productImageMaxBytes,
+  productImageMaxDisplayDimension,
+  productImageMaxPixels,
+  productImageTooLargeMessage,
+  productImageTooManyPixelsMessage,
+} from "@/utils/product-image-rules";
+import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 import type { CategoryOption, ProductAdminRow, ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 
 type ProductManagerProps = {
   products: ProductAdminRow[];
   categories: CategoryOption[];
+  vehicleBrands: string[];
+  vehicleModels: string[];
   total: number;
   page: number;
   pageSize: number;
@@ -62,8 +79,6 @@ type ImageUploadState = {
 
 const productDraftStorageKey = "car-zone-product-editor-draft";
 const maxProductImages = 5;
-const allowedProductImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
-const productImageAccept = "image/jpeg,image/png,image/webp,image/avif";
 const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detalle", "otro"];
 
 const statusLabels: Record<ProductStatus, string> = {
@@ -94,7 +109,11 @@ const emptyProduct: ProductFormInput = {
   vehicle_model: null,
   vehicle_year_start: null,
   vehicle_year_end: null,
+  short_description: null,
   description: "",
+  features: null,
+  specifications: null,
+  compatibility_notes: null,
   stock: 0,
   min_stock: 5,
   cost_price: 0,
@@ -115,11 +134,15 @@ function toFormProduct(product: ProductAdminRow): ProductFormInput {
     slug: product.slug,
     name: product.name,
     brand: product.brand,
-    vehicle_brand: product.vehicle_brand,
-    vehicle_model: product.vehicle_model,
+    vehicle_brand: normalizeVehicleBrand(product.vehicle_brand),
+    vehicle_model: normalizeVehicleModel(product.vehicle_model),
     vehicle_year_start: product.vehicle_year_start,
     vehicle_year_end: product.vehicle_year_end,
+    short_description: product.short_description,
     description: product.description,
+    features: product.features,
+    specifications: product.specifications,
+    compatibility_notes: product.compatibility_notes,
     stock: product.stock,
     min_stock: product.min_stock,
     cost_price: product.cost_price,
@@ -130,6 +153,49 @@ function toFormProduct(product: ProductAdminRow): ProductFormInput {
     active: product.active,
     images: product.images.length > 0 ? product.images : [emptyImage],
   };
+}
+
+function readImageDimensions(file: File) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      const dimensions = { width: image.naturalWidth, height: image.naturalHeight };
+      URL.revokeObjectURL(url);
+      resolve(dimensions);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("No se pudo leer la imagen."));
+    };
+    image.src = url;
+  });
+}
+
+async function optimizeImageInBrowser(file: File, dimensions: { width: number; height: number }) {
+  const scale = Math.min(1, productImageMaxDisplayDimension / Math.max(dimensions.width, dimensions.height));
+  const width = Math.max(1, Math.round(dimensions.width * scale));
+  const height = Math.max(1, Math.round(dimensions.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: true });
+
+  if (!context) {
+    return file;
+  }
+
+  const bitmap = await createImageBitmap(file);
+  context.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.82));
+  if (!blob || blob.size >= file.size) {
+    return file;
+  }
+
+  return new File([blob], file.name.replace(/\.[^.]+$/, ".webp"), { type: "image/webp" });
 }
 
 function numberValue(value: string) {
@@ -156,6 +222,11 @@ const productCsvHeaders = [
   "modelo_carro",
   "anio_inicial",
   "anio_final",
+  "descripcion_corta",
+  "descripcion_completa",
+  "caracteristicas",
+  "especificaciones",
+  "notas_compatibilidad",
   "categoria",
   "stock",
   "stock_minimo",
@@ -217,7 +288,7 @@ function persistProductDraft(product: ProductFormInput | null) {
   }
 }
 
-export function ProductManager({ products, categories, total, page, pageSize, filters }: ProductManagerProps) {
+export function ProductManager({ products, categories, vehicleBrands, vehicleModels, total, page, pageSize, filters }: ProductManagerProps) {
   const [query, setQuery] = useState(filters.query);
   const [status, setStatus] = useState<ProductStatus | "all">(filters.status as ProductStatus | "all");
   const [categoryId, setCategoryId] = useState(filters.categoryId);
@@ -234,7 +305,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     return products.filter((product) => {
       const matchesQuery =
         !normalizedQuery ||
-        `${product.sku} ${product.internal_code ?? ""} ${product.name} ${product.brand} ${product.description}`
+        `${product.sku} ${product.internal_code ?? ""} ${product.name} ${product.brand} ${product.category_name ?? ""} ${product.vehicle_brand ?? ""} ${product.vehicle_model ?? ""} ${product.vehicle_year_start ?? ""} ${product.vehicle_year_end ?? ""} ${product.short_description ?? ""} ${product.description} ${product.features ?? ""} ${product.specifications ?? ""} ${product.compatibility_notes ?? ""}`
           .toLowerCase()
           .includes(normalizedQuery);
       const matchesStatus = status === "all" || product.status === status;
@@ -299,7 +370,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     setImageUploads({});
     showMessage(
       draft
-        ? "Se recupero un borrador local. Revisa los datos antes de guardar."
+        ? "Se recuperó un borrador local. Revisa los datos antes de guardar."
         : "Completa los datos del producto. Si algo falla, el formulario se mantiene abierto.",
     );
   }
@@ -344,6 +415,14 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
       return { ...current, [field]: value };
     });
+  }
+
+  function normalizeVehicleFields(product: ProductFormInput): ProductFormInput {
+    return {
+      ...product,
+      vehicle_brand: normalizeVehicleBrand(product.vehicle_brand),
+      vehicle_model: normalizeVehicleModel(product.vehicle_model),
+    };
   }
 
   function updateImage(index: number, patch: Partial<ProductImageInput>) {
@@ -398,6 +477,9 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       return;
     }
 
+    const imageToRemove = editing.images[index];
+    const unsavedPublicId = !imageToRemove?.id ? imageToRemove?.public_id || imageToRemove?.storage_path : null;
+
     setEditing((current) => {
       if (!current) {
         return current;
@@ -432,43 +514,89 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       return next;
     });
 
+    if (unsavedPublicId) {
+      startTransition(async () => {
+        await deleteUploadedProductImageAction(unsavedPublicId);
+      });
+    }
+
     showMessage("Imagen removida del formulario. Guarda el producto para confirmar el cambio.", "neutral");
   }
 
-  function uploadImage(index: number, file: File | null) {
+  async function uploadImage(index: number, file: File | null) {
     if (!file || !editing) {
       return;
     }
 
-    if (!allowedProductImageTypes.has(file.type)) {
+    if (!isAllowedProductImageMimeType(file.type)) {
       setImageUploads((current) => ({
         ...current,
         [index]: {
           status: "error",
-          message: "Solo se permiten imágenes JPG, PNG, WebP o AVIF.",
+          message: productImageInvalidFormatMessage,
           fileName: file.name,
           file,
         },
       }));
-      showMessage("Solo se permiten imágenes JPG, PNG, WebP o AVIF para productos.", "error");
+      showMessage(productImageInvalidFormatMessage, "error");
       return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
+    if (file.size > productImageMaxBytes) {
       setImageUploads((current) => ({
         ...current,
         [index]: {
           status: "error",
-          message: "La imagen no puede superar 8 MB.",
+          message: productImageTooLargeMessage,
           fileName: file.name,
           file,
         },
       }));
-      showMessage("La imagen no puede superar 8 MB.", "error");
+      showMessage(productImageTooLargeMessage, "error");
       return;
     }
 
-    const previewUrl = URL.createObjectURL(file);
+    let uploadFile = file;
+    let dimensions: { width: number; height: number };
+
+    try {
+      dimensions = await readImageDimensions(file);
+    } catch {
+      setImageUploads((current) => ({
+        ...current,
+        [index]: {
+          status: "error",
+          message: productImageInvalidFormatMessage,
+          fileName: file.name,
+          file,
+        },
+      }));
+      showMessage(productImageInvalidFormatMessage, "error");
+      return;
+    }
+
+    if (dimensions.width * dimensions.height > productImageMaxPixels) {
+      const megapixels = formatMegapixels(dimensions.width, dimensions.height);
+      setImageUploads((current) => ({
+        ...current,
+        [index]: {
+          status: "error",
+          message: `${productImageTooManyPixelsMessage} Esta imagen tiene ${megapixels} MP.`,
+          fileName: file.name,
+          file,
+        },
+      }));
+      showMessage(productImageTooManyPixelsMessage, "error");
+      return;
+    }
+
+    try {
+      uploadFile = await optimizeImageInBrowser(file, dimensions);
+    } catch {
+      uploadFile = file;
+    }
+
+    const previewUrl = URL.createObjectURL(uploadFile);
     setImageUploads((current) => {
       const previousPreview = current[index]?.previewUrl;
       if (previousPreview) {
@@ -480,9 +608,9 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
         [index]: {
           status: "uploading",
           message: "Subiendo imagen a Cloudinary...",
-          fileName: file.name,
+          fileName: uploadFile.name,
           previewUrl,
-          file,
+          file: uploadFile,
         },
       };
     });
@@ -490,7 +618,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
     startTransition(async () => {
       const formData = new FormData();
-      formData.set("file", file);
+      formData.set("file", uploadFile);
       formData.set("productSlug", editing.slug || editing.sku || editing.name || "producto");
       formData.set("angle", editing.images[index]?.angle || "principal");
 
@@ -498,6 +626,12 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       showMessage(result.message, result.ok ? "success" : "error");
 
       if (result.ok && result.publicUrl) {
+        const previousImage = editing.images[index];
+        const previousUnsavedPublicId = !previousImage?.id ? previousImage?.public_id || previousImage?.storage_path : null;
+        if (previousUnsavedPublicId && previousUnsavedPublicId !== (result.publicId ?? result.storagePath)) {
+          await deleteUploadedProductImageAction(previousUnsavedPublicId);
+        }
+
         updateImage(index, {
           public_url: result.publicUrl,
           storage_path: result.storagePath,
@@ -543,6 +677,10 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
 
     if (!product.brand.trim()) {
       return "Escribe la marca del producto.";
+    }
+
+    if ((product.short_description?.length ?? 0) > productShortDescriptionMaxLength) {
+      return `La descripción corta no puede superar ${productShortDescriptionMaxLength} caracteres.`;
     }
 
     if (product.stock < 0) {
@@ -601,7 +739,9 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
     }
 
     startTransition(async () => {
-      const result = await saveProductAction(editing);
+      const normalizedProduct = normalizeVehicleFields(editing);
+      setEditing(normalizedProduct);
+      const result = await saveProductAction(normalizedProduct);
       showMessage(result.message, result.ok ? "success" : "error");
       if (result.ok) {
         persistProductDraft(null);
@@ -651,6 +791,11 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       product.vehicle_model,
       product.vehicle_year_start,
       product.vehicle_year_end,
+      product.short_description,
+      product.description,
+      product.features,
+      product.specifications,
+      product.compatibility_notes,
       product.category_name,
       product.stock,
       product.min_stock,
@@ -684,6 +829,11 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       "Hilux",
       "2018",
       "2026",
+      "Radio Android con pantalla tactil para Hilux.",
+      "Radio Android con pantalla táctil, Bluetooth y soporte para cámara de retroceso.",
+      "Bluetooth; USB; pantalla táctil; cámara de retroceso",
+      "Pantalla 9 pulgadas; Android; memoria segun lote",
+      "Validar arnes y moldura antes de instalar.",
       categories[0]?.name ?? "",
       "10",
       "2",
@@ -739,7 +889,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       const imported = lines.map((line) => {
         const values = parseCsvLine(line);
         const row = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-        const category = categories.find((item) => item.name === row.category || item.id === row.category_id);
+        const category = categories.find((item) => item.name === row.category || item.name === row.categoria || item.id === row.category_id);
 
         return {
           ...emptyProduct,
@@ -747,10 +897,15 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
           internal_code: row.internal_code || row.codigo_proveedor || row.codigo_oem || row.codigo_interno || row["código_interno"] || null,
           name: row.name ?? row.nombre ?? "",
           brand: row.brand ?? row.marca ?? "",
-          vehicle_brand: row.vehicle_brand || row.marca_carro || null,
-          vehicle_model: row.vehicle_model || row.modelo_carro || null,
+          vehicle_brand: normalizeVehicleBrand(row.vehicle_brand || row.marca_carro || null),
+          vehicle_model: normalizeVehicleModel(row.vehicle_model || row.modelo_carro || null),
           vehicle_year_start: row.vehicle_year_start || row.anio_inicial ? numberValue(row.vehicle_year_start || row.anio_inicial) : null,
           vehicle_year_end: row.vehicle_year_end || row.anio_final ? numberValue(row.vehicle_year_end || row.anio_final) : null,
+          short_description: row.short_description || row.descripcion_corta || null,
+          description: row.description || row.descripcion_completa || row.descripcion || "",
+          features: row.features || row.caracteristicas || row["características"] || null,
+          specifications: row.specifications || row.especificaciones || null,
+          compatibility_notes: row.compatibility_notes || row.notas_compatibilidad || null,
           category_id: category?.id ?? null,
           stock: numberValue(row.stock ?? "0"),
           min_stock: numberValue(row.min_stock ?? row.stock_minimo ?? row["stock_mínimo"] ?? "5"),
@@ -913,7 +1068,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
                     {total === 0 && !filters.query && !filters.status && !filters.categoryId
-                      ? "Aun no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
+                      ? "Aún no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
                       : "No se encontraron resultados con estos filtros."}
                   </td>
                 </tr>
@@ -922,6 +1077,7 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
                 <tr key={product.id} className="transition-colors hover:bg-[#f4f4f5]">
                   <td className="px-4 py-3">
                     <p className="font-semibold">{product.name}</p>
+                    {product.short_description ? <p className="mt-1 line-clamp-1 max-w-md text-xs text-black/55">{product.short_description}</p> : null}
                     <p className="text-xs text-black/50">
                       {product.sku} {product.internal_code ? `/ ${product.internal_code}` : ""}
                     </p>
@@ -963,6 +1119,8 @@ export function ProductManager({ products, categories, total, page, pageSize, fi
       {editing ? (
         <ProductEditor
           categories={categories}
+          vehicleBrands={vehicleBrands}
+          vehicleModels={vehicleModels}
           product={editing}
           pending={isPending}
           imageUploads={imageUploads}
@@ -1006,6 +1164,8 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
 
 function ProductEditor({
   categories,
+  vehicleBrands,
+  vehicleModels,
   product,
   pending,
   imageUploads,
@@ -1020,6 +1180,8 @@ function ProductEditor({
   onPrimaryImage,
 }: {
   categories: CategoryOption[];
+  vehicleBrands: string[];
+  vehicleModels: string[];
   product: ProductFormInput;
   pending: boolean;
   imageUploads: Record<number, ImageUploadState>;
@@ -1049,6 +1211,14 @@ function ProductEditor({
       onField("vehicle_year_start", null);
       onField("vehicle_year_end", null);
     }
+  }
+
+  function normalizeVehicleField(field: "vehicle_brand" | "vehicle_model") {
+    const normalized =
+      field === "vehicle_brand"
+        ? normalizeVehicleBrand(product.vehicle_brand)
+        : normalizeVehicleModel(product.vehicle_model);
+    onField(field, normalized);
   }
 
   return (
@@ -1084,14 +1254,55 @@ function ProductEditor({
                 </Field>
               </div>
 
+              <Field
+                label="Descripción corta"
+                help="Se usa en catálogo, tarjetas y SEO. Máximo 160 caracteres."
+                action={
+                  <span
+                    className={`text-xs font-medium ${
+                      (product.short_description?.length ?? 0) > productShortDescriptionMaxLength ? "text-[#b91c25]" : "text-black/45"
+                    }`}
+                  >
+                    {(product.short_description?.length ?? 0).toLocaleString("es-HN")}/{productShortDescriptionMaxLength}
+                  </span>
+                }
+              >
+                <textarea
+                  value={product.short_description ?? ""}
+                  onChange={(event) => onField("short_description", event.target.value.slice(0, productShortDescriptionMaxLength))}
+                  placeholder="Ej. Radio Android con pantalla tactil compatible con Toyota Corolla."
+                  maxLength={productShortDescriptionMaxLength}
+                  className="min-h-20 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                />
+              </Field>
+
               <Field label="Descripción" help="Resume el uso, compatibilidad o contenido del producto.">
                 <textarea
                   value={product.description}
                   onChange={(event) => onField("description", event.target.value)}
                   placeholder="Describe el producto de forma clara para ventas y clientes."
-                  className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                  className="min-h-36 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
                 />
               </Field>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Características" help="Una por línea o separadas por punto y coma.">
+                  <textarea
+                    value={product.features ?? ""}
+                    onChange={(event) => onField("features", event.target.value || null)}
+                    placeholder={"Ej. Bluetooth\nUSB\nControl desde volante"}
+                    className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                  />
+                </Field>
+                <Field label="Especificaciones" help="Datos técnicos que ayudan a confirmar compatibilidad.">
+                  <textarea
+                    value={product.specifications ?? ""}
+                    onChange={(event) => onField("specifications", event.target.value || null)}
+                    placeholder={"Ej. Pantalla 9 pulgadas\nAndroid\nVoltaje 12V"}
+                    className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                  />
+                </Field>
+              </div>
 
               <div className="grid gap-3 sm:grid-cols-[1fr_180px_180px]">
                 <Field label="Categoría">
@@ -1227,10 +1438,34 @@ function ProductEditor({
 
                   <div className="grid gap-3 sm:grid-cols-4">
                     <Field label="Marca del vehículo">
-                      <Input value={product.vehicle_brand ?? ""} onChange={(event) => onField("vehicle_brand", event.target.value || null)} placeholder="Ej. Toyota" />
+                      <Input
+                        value={product.vehicle_brand ?? ""}
+                        onChange={(event) => onField("vehicle_brand", event.target.value || null)}
+                        onBlur={() => normalizeVehicleField("vehicle_brand")}
+                        list="vehicle-brand-options"
+                        placeholder="Ej. Toyota"
+                        autoComplete="off"
+                      />
+                      <datalist id="vehicle-brand-options">
+                        {vehicleBrands.map((brand) => (
+                          <option key={brand} value={brand} />
+                        ))}
+                      </datalist>
                     </Field>
                     <Field label="Modelo del vehículo">
-                      <Input value={product.vehicle_model ?? ""} onChange={(event) => onField("vehicle_model", event.target.value || null)} placeholder="Ej. Corolla" />
+                      <Input
+                        value={product.vehicle_model ?? ""}
+                        onChange={(event) => onField("vehicle_model", event.target.value || null)}
+                        onBlur={() => normalizeVehicleField("vehicle_model")}
+                        list="vehicle-model-options"
+                        placeholder="Ej. Corolla"
+                        autoComplete="off"
+                      />
+                      <datalist id="vehicle-model-options">
+                        {vehicleModels.map((model) => (
+                          <option key={model} value={model} />
+                        ))}
+                      </datalist>
                     </Field>
                     <Field label="Año inicial">
                       <Input
@@ -1253,6 +1488,15 @@ function ProductEditor({
                   </div>
                 </>
               ) : null}
+
+              <Field label="Notas de compatibilidad" help="Aclara excepciones, arneses, molduras o verificaciones antes de instalar.">
+                <textarea
+                  value={product.compatibility_notes ?? ""}
+                  onChange={(event) => onField("compatibility_notes", event.target.value || null)}
+                  placeholder="Ej. Validar arnes original antes de instalar. Puede requerir moldura adicional."
+                  className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                />
+              </Field>
             </FormSection>
 
             <FormSection title="Opciones avanzadas" description="Normalmente no necesitas tocar estos campos.">
@@ -1467,7 +1711,7 @@ function ProductEditor({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-semibold">Imagen principal</h3>
-                <p className="text-xs text-black/50">JPG, PNG, WebP o AVIF hasta 8 MB.</p>
+                <p className="text-xs text-black/50">{productImageHelpText}</p>
               </div>
               <Button onClick={onAddImage} disabled={product.images.length >= maxProductImages} variant="ghost" className="px-3">
                 <Plus size={16} />
@@ -1475,7 +1719,7 @@ function ProductEditor({
               </Button>
             </div>
             <p className="hidden text-xs text-black/50">
-              Sube de 3 a 5 imágenes JPG, PNG, WebP o AVIF. La tienda servirá versiones optimizadas desde Cloudinary.
+              Sube de 3 a 5 imágenes JPG, PNG o WEBP. La tienda servirá versiones optimizadas desde Cloudinary.
             </p>
             {product.images.map((image, index) => {
               const uploadState = imageUploads[index];
@@ -1549,7 +1793,7 @@ function ProductEditor({
                     {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
                     <span>{isUploading ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
                     <span className="text-xs font-normal text-black/50">También puedes arrastrar la imagen aquí.</span>
-                    <span className="text-xs font-normal text-black/50">JPG, PNG, WebP o AVIF hasta 8 MB</span>
+                    <span className="text-xs font-normal text-black/50">{productImageHelpText}</span>
                     <input
                       type="file"
                       accept={productImageAccept}

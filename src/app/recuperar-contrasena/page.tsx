@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Mail } from "lucide-react";
@@ -13,17 +13,29 @@ export default function PasswordRecoveryPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [ok, setOk] = useState(true);
+  const submitLockRef = useRef(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setLoading(true);
     setMessage("");
 
-    const result = await requestPasswordResetAction(email);
-
-    setLoading(false);
-    setOk(result.ok);
-    setMessage(result.message);
+    try {
+      const result = await requestPasswordResetAction(email);
+      setOk(result.ok);
+      setMessage(result.message);
+    } catch {
+      setOk(false);
+      setMessage("No pudimos completar la acción por un problema de conexión. Inténtalo nuevamente.");
+    } finally {
+      setLoading(false);
+      submitLockRef.current = false;
+    }
   }
 
   return (
@@ -36,10 +48,10 @@ export default function PasswordRecoveryPage() {
             </div>
             <div>
               <p className="text-2xl font-semibold">Car Zone Accesorios</p>
-              <p className="text-sm text-black/55">Recuperación segura con Supabase Auth</p>
+              <p className="text-sm text-black/55">Recuperación segura de cuenta</p>
             </div>
           </div>
-          <h1 className="max-w-xl text-4xl font-semibold leading-tight">Restablece tu acceso.</h1>
+          <h1 className="max-w-xl text-4xl font-semibold leading-tight">Recupera el acceso a tu cuenta.</h1>
           <p className="max-w-lg text-black/60">
             Ingresa tu correo y, si existe una cuenta registrada, enviaremos un enlace seguro para crear una nueva contraseña.
           </p>
@@ -57,6 +69,7 @@ export default function PasswordRecoveryPage() {
             placeholder="Correo electrónico"
             type="email"
             autoComplete="email"
+            disabled={loading}
             required
           />
 

@@ -13,6 +13,7 @@ const loadingState: WholesaleAccessState = {
   message: "Estamos validando el estado de tu cuenta.",
   canEnterCode: false,
   account: null,
+  shouldShowApprovedNotice: false,
 };
 
 const stateIcon = {
@@ -62,13 +63,13 @@ export function WholesaleCodePanel() {
       </div>
 
       <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-sm text-black/60" aria-live="polite">
-        {wholesaleAccount ? "Precio mayorista activo automaticamente." : accessState.message}
+        {wholesaleAccount ? "Precio mayorista activo automáticamente." : accessState.message}
       </p>
 
       {wholesaleAccount ? (
         <div className="mt-3 rounded-md bg-[#fff1f2] p-3 text-sm text-[#b91c25]">
           <p className="font-medium">{wholesaleAccount.businessName}</p>
-          <p>Tu cuenta aprobada habilita precios mayoristas en catalogo, carrito y checkout.</p>
+          <p>Tu cuenta aprobada habilita precios mayoristas en catálogo, carrito y checkout.</p>
         </div>
       ) : null}
 
@@ -79,7 +80,7 @@ export function WholesaleCodePanel() {
             className="inline-flex items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-2 text-sm font-medium text-white"
           >
             <LogIn size={16} />
-            Iniciar sesion
+            Iniciar sesión
           </Link>
           <Link
             href="/contacto#mayoreo"

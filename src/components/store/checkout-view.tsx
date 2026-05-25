@@ -451,7 +451,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Realiza la transferencia{settings.require_bank_reference ? " e ingresa la referencia bancaria" : ""} para que contabilidad confirme el pago.
+                    Realiza la transferencia{settings.require_bank_reference ? " e ingresa la referencia bancaria" : ""} para confirmar tu pedido.
                   </p>
                 </div>
               </div>

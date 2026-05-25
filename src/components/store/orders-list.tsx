@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FileText, PackageCheck, Route } from "lucide-react";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import type { CustomerOrderRow } from "@/services/supabase/customer-account.service";
 import type { StoreInvoice } from "@/types/invoices";
@@ -70,8 +71,20 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     orderNumber: order.order_number,
     rtn: invoice.rtn ?? "",
     cai: invoice.cai ?? "",
+    companyLegalName: null,
+    companyRtn: invoice.rtn ?? null,
+    companyAddress: null,
+    companyPhone: null,
+    companyEmail: null,
+    companyLogoUrl: null,
+    fiscalRangeStart: null,
+    fiscalRangeEnd: null,
+    fiscalDeadline: null,
     customerName: order.customer_name,
     customerRtn: invoice.customer_rtn,
+    customerEmail: order.email,
+    customerPhone: order.phone,
+    customerAddress: order.delivery_address,
     items: order.order_items.map((item) => ({
       productId: item.product_id ?? item.id,
       sku: item.sku,
@@ -84,6 +97,8 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     })),
     subtotal: order.subtotal,
     isv: order.tax,
+    shippingFee: order.shipping_total,
+    cashOnDeliveryFee: 0,
     total: order.total,
     priceMode: order.price_mode,
     paymentMethod:
@@ -95,7 +110,17 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
   };
 }
 
-export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
+export function OrdersList({
+  orders,
+  page,
+  pageSize,
+  total,
+}: {
+  orders: CustomerOrderRow[];
+  page?: number;
+  pageSize?: number;
+  total?: number;
+}) {
   if (orders.length === 0) {
     return (
       <div className="mt-6 rounded-lg border border-black/10 bg-white p-5">
@@ -109,6 +134,9 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
 
   return (
     <div className="mt-6 grid gap-4">
+      {page && pageSize && total !== undefined ? (
+        <PaginationControls basePath="/mis-pedidos" page={page} pageSize={pageSize} total={total} label="pedidos" />
+      ) : null}
       {orders.map((order) => {
         const issuedInvoice = invoiceToStoreInvoice(order);
         const pendingInvoiceMessage = invoiceStatusMessage(order);
@@ -176,6 +204,9 @@ export function OrdersList({ orders }: { orders: CustomerOrderRow[] }) {
           </article>
         );
       })}
+      {page && pageSize && total !== undefined ? (
+        <PaginationControls basePath="/mis-pedidos" page={page} pageSize={pageSize} total={total} label="pedidos" />
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
+import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { optionalText, requireText, validateHondurasPhone } from "@/utils/validation";
 
@@ -26,6 +26,7 @@ type GeneralContactInput = {
 type ContactActionResult = {
   ok: boolean;
   message: string;
+  status?: "pending" | "approved" | "rejected" | "suspended";
 };
 
 function normalizeEmail(value: string) {
@@ -72,7 +73,7 @@ export async function submitGeneralContactAction(input: GeneralContactInput): Pr
   });
 
   if (!contactLimit.ok) {
-    return { ok: false, message: rateLimitMessage };
+    return { ok: false, message: getRateLimitMessage(contactLimit.retryAfter) };
   }
 
   const name = requireText(input.name, "Nombre");
@@ -94,6 +95,40 @@ export async function submitGeneralContactAction(input: GeneralContactInput): Pr
   const supabase = getSupabaseAdminClient();
   const note = ["[CONTACTO_GENERAL]", `Correo: ${email}`, `Mensaje: ${message.value}`].join("\n");
   const existingCustomerId = await findExistingCustomerId(supabase, email, normalizedPhone);
+
+  if (existingCustomerId) {
+    const { data: existingCustomer } = await supabase
+      .from("customers")
+      .select("id, wholesale_status, is_wholesale, active, status")
+      .eq("id", existingCustomerId)
+      .maybeSingle<{
+        id: string;
+        wholesale_status: "none" | "pending" | "approved" | "rejected" | "suspended" | null;
+        is_wholesale: boolean;
+        active: boolean;
+        status: string;
+      }>();
+
+    const currentStatus =
+      existingCustomer?.wholesale_status ??
+      (existingCustomer?.is_wholesale && existingCustomer.active && existingCustomer.status === "active" ? "approved" : "none");
+
+    if (currentStatus === "pending") {
+      return { ok: false, message: "Tu solicitud mayorista está en revisión.", status: "pending" };
+    }
+
+    if (currentStatus === "approved") {
+      return { ok: false, message: "Ya tienes acceso mayorista.", status: "approved" };
+    }
+
+    if (currentStatus === "suspended") {
+      return { ok: false, message: "Tu acceso mayorista está suspendido. Contacta al equipo para más información.", status: "suspended" };
+    }
+
+    if (currentStatus === "rejected") {
+      return { ok: false, message: "Tu solicitud mayorista fue revisada. Puedes contactar al equipo para más información.", status: "rejected" };
+    }
+  }
 
   const customerPayload = {
     contact_name: name.value,
@@ -166,7 +201,7 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
   });
 
   if (!wholesaleRequestLimit.ok) {
-    return { ok: false, message: rateLimitMessage };
+    return { ok: false, message: getRateLimitMessage(wholesaleRequestLimit.retryAfter) };
   }
 
   const businessName = requireText(input.businessName, "Nombre del negocio");
@@ -211,6 +246,9 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
     monthly_amount: 0,
     is_wholesale: false,
     wholesale_status: "pending",
+    wholesale_requested_at: new Date().toISOString(),
+    wholesale_request_source: "formulario_publico",
+    wholesale_approved_notice_seen: false,
     status: "pending_account",
     active: true,
   };
@@ -229,6 +267,9 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
           notes: note,
           lead_status: "prospecto",
           wholesale_status: "pending",
+          wholesale_requested_at: new Date().toISOString(),
+          wholesale_request_source: "formulario_publico",
+          wholesale_approved_notice_seen: false,
           status: "pending_account",
           active: true,
           updated_at: new Date().toISOString(),
@@ -244,18 +285,29 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
     return { ok: false, message: "No pudimos guardar tu solicitud. Intenta nuevamente." };
   }
 
-  const { error: followupError } = await supabase.from("crm_followups").insert({
-    customer_id: customer.id,
-    title: "Solicitud de cuenta mayorista",
-    interaction_type: "solicitud_mayorista",
-    next_action: "Revisar solicitud, validar datos y aprobar si corresponde.",
-    priority: "alta",
-    phone: normalizedPhone,
-    notes: note,
-    estimated_value: 0,
-    monthly_amount: 0,
-    status: "pending",
-  });
+  const { data: existingFollowup } = await supabase
+    .from("crm_followups")
+    .select("id")
+    .eq("customer_id", customer.id)
+    .eq("interaction_type", "solicitud_mayorista")
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  const { error: followupError } = existingFollowup?.id
+    ? { error: null }
+    : await supabase.from("crm_followups").insert({
+        customer_id: customer.id,
+        title: "Solicitud de cuenta mayorista",
+        interaction_type: "solicitud_mayorista",
+        next_action: "Revisar solicitud, validar datos y aprobar si corresponde.",
+        priority: "alta",
+        phone: normalizedPhone,
+        notes: note,
+        estimated_value: 0,
+        monthly_amount: 0,
+        status: "pending",
+      });
 
   if (followupError) {
     return { ok: false, message: "La solicitud se recibio, pero no pudimos crear el seguimiento CRM." };
@@ -266,6 +318,8 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
 
   return {
     ok: true,
-    message: "Solicitud mayorista enviada. Revisaremos tus datos y te contactaremos.",
+    message:
+      "Recibimos tu solicitud. Nuestro equipo revisara tu cuenta y te notificaremos cuando tengas acceso a precios mayoristas.",
+    status: "pending",
   };
 }

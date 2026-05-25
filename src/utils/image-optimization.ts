@@ -65,19 +65,19 @@ function cloudinaryImageUrl(url: string, transformation: string) {
 }
 
 export function getProductThumbnailUrl(imageUrl: string) {
-  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_400,h_276,dpr_auto");
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_720,h_496,dpr_auto");
 }
 
 export function getProductImageUrl(imageUrl: string) {
-  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto,c_limit,w_900,dpr_auto");
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto,c_limit,w_1200,dpr_auto");
 }
 
 export function getProductZoomUrl(imageUrl: string) {
-  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:good,c_limit,w_1400,dpr_auto");
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:good,c_limit,w_1600,dpr_auto");
 }
 
 export function getProductGalleryThumbnailUrl(imageUrl: string) {
-  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_180,h_128,dpr_auto");
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_300,h_214,dpr_auto");
 }
 
 export function productImageUrl(url: string, size: "catalog" | "detail" | "thumbnail" | "zoom") {

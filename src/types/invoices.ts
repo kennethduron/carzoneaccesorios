@@ -8,11 +8,25 @@ export type StoreInvoice = {
   orderNumber: string;
   rtn: string;
   cai: string;
+  companyLegalName: string | null;
+  companyRtn: string | null;
+  companyAddress: string | null;
+  companyPhone: string | null;
+  companyEmail: string | null;
+  companyLogoUrl: string | null;
+  fiscalRangeStart: string | null;
+  fiscalRangeEnd: string | null;
+  fiscalDeadline: string | null;
   customerName: string;
   customerRtn: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
   items: StoreOrder["items"];
   subtotal: number;
   isv: number;
+  shippingFee: number;
+  cashOnDeliveryFee: number;
   total: number;
   priceMode: StoreOrder["priceMode"];
   paymentMethod: StoreOrder["paymentMethod"];
@@ -57,6 +71,7 @@ export type AdminInvoiceRow = {
   bank_reference_number: string | null;
   transfer_receipt_url: string | null;
   transfer_receipt_public_id: string | null;
+  payment_status: string | null;
   subtotal: number;
   tax: number;
   shipping_fee: number;
@@ -64,6 +79,21 @@ export type AdminInvoiceRow = {
   total: number;
   issued_at: string | null;
   cancelled_at: string | null;
+  cancelled_by: string | null;
+  cancellation_reason: string | null;
   created_at: string;
+};
+
+export type AdminInvoiceDetail = AdminInvoiceRow & {
+  customer_email: string | null;
+  company_legal_name: string | null;
+  company_rtn: string | null;
+  company_address: string | null;
+  company_phone: string | null;
+  company_email: string | null;
+  company_logo_url: string | null;
+  fiscal_range_start: string | null;
+  fiscal_range_end: string | null;
+  due_at: string | null;
   items: AdminInvoiceItem[];
 };

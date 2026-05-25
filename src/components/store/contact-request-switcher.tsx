@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Building2, MailQuestion, type LucideIcon } from "lucide-react";
 import { ContactForm } from "@/components/store/contact-form";
 import { WholesaleRequestForm } from "@/components/store/wholesale-request-form";
+import type { WholesaleAccessState } from "@/types/wholesale";
 
 type ContactMode = "general" | "mayoreo";
 
@@ -27,7 +28,7 @@ const options: Array<{
   },
 ];
 
-export function ContactRequestSwitcher() {
+export function ContactRequestSwitcher({ initialWholesaleState }: { initialWholesaleState: WholesaleAccessState }) {
   const [mode, setMode] = useState<ContactMode>("general");
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export function ContactRequestSwitcher() {
         </div>
       </div>
 
-      {mode === "general" ? <ContactForm /> : <WholesaleRequestForm />}
+      {mode === "general" ? <ContactForm /> : <WholesaleRequestForm initialAccessState={initialWholesaleState} />}
     </div>
   );
 }

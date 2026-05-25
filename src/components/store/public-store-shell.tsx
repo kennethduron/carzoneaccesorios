@@ -2,10 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
-import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
+import { getWholesaleAccessStateAction, markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
 import { CardBrandList } from "@/components/store/card-brand-list";
 import { SocialLinks } from "@/components/store/social-links";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -16,12 +16,12 @@ import type { PublicCompanySettings } from "@/types/settings";
 
 const primaryLinks = [
   ["Inicio", "/"],
-  ["Catalogo", "/catalogo"],
-  ["Categorias", "/categorias"],
+  ["Catálogo", "/catalogo"],
+  ["Categorías", "/categorias"],
   ["Contacto", "/contacto"],
   ["Rastrear pedido", "/rastreo"],
   ["Solicitar mayoreo", "/contacto#mayoreo"],
-  ["Politicas", "/politicas"],
+  ["Políticas", "/politicas"],
 ];
 
 const customerAccountLinks = [
@@ -31,11 +31,11 @@ const customerAccountLinks = [
 ];
 
 const legalLinks = [
-  ["Terminos y condiciones", "/terminos-y-condiciones"],
-  ["Politica de privacidad", "/politica-de-privacidad"],
-  ["Politica de entrega", "/politica-de-entrega"],
-  ["Politica de devoluciones", "/politica-de-devoluciones"],
-  ["Politica de cancelacion", "/politica-de-cancelacion"],
+  ["Términos y condiciones", "/terminos-y-condiciones"],
+  ["Política de privacidad", "/politica-de-privacidad"],
+  ["Política de entrega", "/politica-de-entrega"],
+  ["Política de devoluciones", "/politica-de-devoluciones"],
+  ["Política de cancelación", "/politica-de-cancelacion"],
   ["Servicio al cliente", "/contacto-servicio-cliente"],
   ["Contacto", "/contacto"],
 ];
@@ -50,6 +50,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [accountState, setAccountState] = useState<PublicAccountMenuState>(guestAccountState);
+  const [showWholesaleApprovedNotice, setShowWholesaleApprovedNotice] = useState(false);
   const [cartPulse, setCartPulse] = useState(false);
   const [companySettings, setCompanySettings] = useState<PublicCompanySettings | null>(null);
   const previousCartCount = useRef(0);
@@ -79,8 +80,10 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
         setAccountState(state);
         if (wholesaleState.account) {
           activateWholesaleMode(wholesaleState.account);
+          setShowWholesaleApprovedNotice(wholesaleState.shouldShowApprovedNotice);
         } else {
           clearWholesaleMode();
+          setShowWholesaleApprovedNotice(false);
         }
       }
     }
@@ -164,6 +167,11 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
   const tradeName = companySettings?.trade_name || companySettings?.company_name || "Car Zone Accesorios";
 
+  async function closeWholesaleApprovedNotice() {
+    setShowWholesaleApprovedNotice(false);
+    await markWholesaleApprovedNoticeSeenAction();
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f4f4f5] text-[#080808]">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-black/10 bg-white/95 shadow-sm backdrop-blur">
@@ -246,7 +254,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                         <form action="/auth/logout" method="post">
                           <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f4f4f5]">
                             <LogOut size={16} />
-                            Cerrar sesion
+                            Cerrar sesión
                           </button>
                         </form>
                       </div>
@@ -259,7 +267,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                         onClick={() => setUserMenuOpen(false)}
                       >
                         <LogIn size={16} />
-                        Iniciar sesion
+                        Iniciar sesión
                       </Link>
                       <Link
                         href="/registro"
@@ -315,6 +323,40 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
       </header>
       <div className="h-16 sm:h-[70px]" aria-hidden="true" />
       {children}
+      {showWholesaleApprovedNotice ? (
+        <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4">
+          <section className="w-full max-w-lg rounded-lg bg-white p-5 text-[#080808] shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="grid size-11 shrink-0 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
+                <CheckCircle2 size={22} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-semibold">Tu cuenta mayorista fue aprobada</h2>
+                <p className="mt-2 text-sm leading-6 text-black/65">
+                  Ya tienes acceso a precios mayoristas. Los precios se aplicarán automáticamente en el catálogo, carrito y checkout.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeWholesaleApprovedNotice}
+                className="grid size-8 shrink-0 place-items-center rounded-md text-black/45 hover:bg-black/5"
+                aria-label="Cerrar aviso mayorista"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeWholesaleApprovedNotice}
+                className="rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Entendido
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <footer className="border-t border-black/10 bg-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-10 lg:grid-cols-[1.2fr_1fr_1fr]">
           <div>
@@ -331,7 +373,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold">Politicas y soporte</p>
+            <p className="mb-2 text-sm font-semibold">Políticas y soporte</p>
             <div className="grid gap-1 text-sm">
               {legalLinks.map(([label, href]) => (
                 <Link key={href} href={href} className="rounded-md px-3 py-2 text-black/65 hover:bg-[#f4f4f5] hover:text-[#080808]">
@@ -363,7 +405,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               Historia
             </Link>
             <Link href="/politicas" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Politicas
+              Políticas
             </Link>
           </div>
         </div>

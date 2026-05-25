@@ -1,12 +1,25 @@
 "use server";
 
 import { revalidatePath, revalidateTag, updateTag } from "next/cache";
+import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
+import {
+  formatMegapixels,
+  isAllowedProductImageMimeType,
+  productImageGenericLimitMessage,
+  productImageInvalidFormatMessage,
+  productImageMaxBytes,
+  productImageMaxDisplayDimension,
+  productImageMaxPixels,
+  productImageTooLargeMessage,
+  productImageTooManyPixelsMessage,
+} from "@/utils/product-image-rules";
+import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 
 type ProductMutationResult = {
   ok: boolean;
@@ -43,7 +56,11 @@ type ProductDbPayload = {
   vehicle_model: string | null;
   vehicle_year_start: number | null;
   vehicle_year_end: number | null;
+  short_description: string | null;
   description: string;
+  features: string | null;
+  specifications: string | null;
+  compatibility_notes: string | null;
   stock: number;
   low_stock_threshold: number;
   min_stock: number;
@@ -54,8 +71,6 @@ type ProductDbPayload = {
   status: ProductStatus;
   active: boolean;
 };
-
-const allowedProductImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 
 function slugify(value: string) {
   return value
@@ -94,9 +109,11 @@ function revalidateProductCatalog(slug?: string | null) {
   updateTag("products");
   updateTag("featured-products");
   updateTag("vehicle-filters");
+  updateTag("categories");
   revalidateTag("products", "max");
   revalidateTag("featured-products", "max");
   revalidateTag("vehicle-filters", "max");
+  revalidateTag("categories", "max");
 }
 
 function friendlyProductError(message: string) {
@@ -133,6 +150,11 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     throw new Error("El precio mayorista no puede ser mayor que el precio al detalle.");
   }
 
+  const shortDescription = cleanText(input.short_description);
+  if (shortDescription && shortDescription.length > 160) {
+    throw new Error("La descripción corta no puede superar 160 caracteres.");
+  }
+
   return {
     category_id: input.category_id || null,
     sku,
@@ -140,11 +162,15 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     slug,
     name,
     brand: input.brand.trim(),
-    vehicle_brand: cleanText(input.vehicle_brand),
-    vehicle_model: cleanText(input.vehicle_model),
+    vehicle_brand: normalizeVehicleBrand(input.vehicle_brand),
+    vehicle_model: normalizeVehicleModel(input.vehicle_model),
     vehicle_year_start: input.vehicle_year_start ? positiveInteger(input.vehicle_year_start) : null,
     vehicle_year_end: input.vehicle_year_end ? positiveInteger(input.vehicle_year_end) : null,
+    short_description: shortDescription,
     description: input.description.trim(),
+    features: cleanText(input.features),
+    specifications: cleanText(input.specifications),
+    compatibility_notes: cleanText(input.compatibility_notes),
     stock: positiveInteger(input.stock),
     low_stock_threshold: positiveInteger(input.min_stock),
     min_stock: positiveInteger(input.min_stock),
@@ -280,15 +306,52 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
       return { ok: false, message: "Selecciona una imagen valida antes de subir." };
     }
 
-    if (!allowedProductImageTypes.has(file.type)) {
-      return { ok: false, message: "Solo se permiten imágenes JPG, PNG, WebP o AVIF." };
+    if (!isAllowedProductImageMimeType(file.type)) {
+      return { ok: false, message: productImageInvalidFormatMessage };
     }
 
-    if (file.size > 8 * 1024 * 1024) {
-      return { ok: false, message: "La imagen no puede superar 8 MB." };
+    if (file.size > productImageMaxBytes) {
+      return { ok: false, message: productImageTooLargeMessage };
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    let optimizedBuffer: Buffer;
+    let width = 0;
+    let height = 0;
+
+    try {
+      const metadata = await sharp(buffer, { animated: false, limitInputPixels: productImageMaxPixels + 1 })
+        .rotate()
+        .metadata();
+      width = metadata.width ?? 0;
+      height = metadata.height ?? 0;
+
+      if (!width || !height) {
+        return { ok: false, message: productImageInvalidFormatMessage };
+      }
+
+      if (width * height > productImageMaxPixels) {
+        return { ok: false, message: productImageTooManyPixelsMessage };
+      }
+
+      optimizedBuffer = await sharp(buffer, { animated: false })
+        .rotate()
+        .resize({
+          width: productImageMaxDisplayDimension,
+          height: productImageMaxDisplayDimension,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 82, effort: 5 })
+        .toBuffer();
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.toLowerCase().includes("pixel")
+          ? productImageTooManyPixelsMessage
+          : productImageInvalidFormatMessage;
+      return { ok: false, message };
+    }
+
     const folder = `car-zone/productos/${slugify(productSlug) || "producto"}`;
     const publicId = `${angle}-${Date.now()}`;
 
@@ -298,7 +361,15 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
           folder,
           public_id: publicId,
           resource_type: "image",
+          format: "webp",
           overwrite: true,
+          invalidate: true,
+          context: {
+            source: "product_admin",
+            original_bytes: String(file.size),
+            original_megapixels: String(formatMegapixels(width, height)),
+            optimized_bytes: String(optimizedBuffer.length),
+          },
         },
         (error, uploadResult) => {
           if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
@@ -313,12 +384,12 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
         },
       );
 
-      stream.end(buffer);
+      stream.end(optimizedBuffer);
     });
 
     return {
       ok: true,
-      message: "Imagen subida correctamente.",
+      message: "Imagen optimizada y subida correctamente.",
       publicUrl: result.secure_url,
       storagePath: result.public_id,
       publicId: result.public_id,
@@ -329,7 +400,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
       message:
         error instanceof Error
           ? `No se pudo subir la imagen: ${error.message}`
-          : "No se pudo subir la imagen. Revisa la conexion e intenta de nuevo.",
+          : productImageGenericLimitMessage,
     };
 
     await writeErrorLog({
@@ -346,6 +417,18 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
 
     return result;
   }
+}
+
+export async function deleteUploadedProductImageAction(publicId: string): Promise<ProductMutationResult> {
+  await requirePermission("products:manage");
+
+  const cleanPublicId = cleanText(publicId);
+  if (!cleanPublicId) {
+    return { ok: true, message: "Imagen omitida." };
+  }
+
+  await removeCloudinaryImages([cleanPublicId], { reason: "unsaved_product_image_removed" });
+  return { ok: true, message: "Imagen eliminada correctamente." };
 }
 
 export async function saveProductAction(input: ProductFormInput): Promise<ProductMutationResult> {

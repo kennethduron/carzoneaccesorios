@@ -35,6 +35,12 @@ const filters: Array<{ id: Filter; label: string }> = [
   { id: "suspended", label: "Suspendidos" },
 ];
 
+const sourceLabels: Record<NonNullable<CrmCustomerOption["wholesale_request_source"]>, string> = {
+  formulario_publico: "Formulario público",
+  cuenta_registrada: "Cuenta registrada",
+  admin: "Admin",
+};
+
 function customerName(customer: CrmCustomerOption) {
   return customer.business_name || customer.company_name || customer.contact_name;
 }
@@ -114,7 +120,7 @@ export function WholesaleCustomersManager({ customers }: WholesaleCustomersManag
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
             {query ? (
-              <button type="button" onClick={() => setQuery("")} aria-label="Limpiar busqueda">
+              <button type="button" onClick={() => setQuery("")} aria-label="Limpiar búsqueda">
                 <X size={16} />
               </button>
             ) : null}
@@ -140,7 +146,7 @@ export function WholesaleCustomersManager({ customers }: WholesaleCustomersManag
       <section className="rounded-lg border border-black/10 bg-white">
         <div className="border-b border-black/10 p-4">
           <h2 className="font-semibold">Clientes Mayoristas</h2>
-          <p className="mt-1 text-sm text-black/55">El estado de la cuenta es la unica credencial mayorista.</p>
+          <p className="mt-1 text-sm text-black/55">El estado de la cuenta es la única credencial mayorista.</p>
         </div>
         <div className="divide-y divide-black/10">
           {filteredCustomers.length === 0 ? (
@@ -151,6 +157,10 @@ export function WholesaleCustomersManager({ customers }: WholesaleCustomersManag
                 <div>
                   <p className="font-semibold">{customerName(customer)}</p>
                   <p className="text-sm text-black/55">{customer.email ?? "Sin correo"} / {customer.phone}</p>
+                  <p className="mt-1 text-xs text-black/45">
+                    Solicitud: {formatHnDateTime(customer.wholesale_requested_at ?? customer.created_at)} / Origen:{" "}
+                    {customer.wholesale_request_source ? sourceLabels[customer.wholesale_request_source] : "Admin"}
+                  </p>
                   <p className="mt-1 text-xs text-black/45">Actualizado: {formatHnDateTime(customer.updated_at)}</p>
                 </div>
                 <span className="w-fit rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold text-[#b91c25]">
@@ -158,9 +168,9 @@ export function WholesaleCustomersManager({ customers }: WholesaleCustomersManag
                 </span>
                 <p className="text-sm text-black/60">
                   {customer.wholesale_status === "approved"
-                    ? "Precios mayoristas activos automaticamente."
+                    ? "Precios mayoristas activos automáticamente."
                     : customer.wholesale_status === "pending"
-                      ? "Solicitud pendiente de revision administrativa."
+                      ? "Solicitud pendiente de revisión administrativa."
                       : customer.wholesale_status === "suspended"
                         ? "Acceso mayorista suspendido; conserva compra al detalle."
                         : "Sin acceso mayorista activo."}

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 
 type PaymentStatus = "approved" | "rejected";
 type OrderStatus =
@@ -237,6 +238,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     message: `Factura ${invoice.invoice_number} generada correctamente.`,
     invoiceId: invoice.invoice_id,
     invoiceNumber: invoice.invoice_number,
+    invoice: await getAdminInvoiceDetail(invoice.invoice_id),
     bankReference: null,
   };
 }

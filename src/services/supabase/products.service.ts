@@ -2,6 +2,13 @@ import { unstable_cache } from "next/cache";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabasePublicClient } from "@/lib/supabase";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
+import {
+  normalizeVehicleBrand,
+  normalizeVehicleComparable,
+  normalizeVehicleModel,
+  suggestedVehicleBrands,
+  uniqueVehicleValues,
+} from "@/utils/vehicle-compatibility";
 
 export type ProductCatalogFilters = {
   page?: number;
@@ -14,6 +21,7 @@ export type ProductCatalogFilters = {
   vehicleModel?: string;
   vehicleYear?: number;
   availability?: string;
+  priceMode?: "retail" | "wholesale";
 };
 
 export type ProductCatalogPage = {
@@ -26,11 +34,21 @@ export type ProductCatalogPage = {
     vehicleBrands: string[];
     vehicleModels: string[];
     vehicleYears: number[];
+    vehicleOptions: ProductVehicleFilterOption[];
   };
+};
+
+export type ProductVehicleFilterOption = {
+  vehicleBrand: string;
+  vehicleModel: string;
+  vehicleYearStart: number | null;
+  vehicleYearEnd: number | null;
 };
 
 const defaultPageSize = 24;
 const validAngles: ProductAngle[] = ["frontal", "lateral", "trasera", "superior", "detalle"];
+const preferredCompatibilityBrands = suggestedVehicleBrands;
+const invalidVehicleOptionValues = new Set(["", "n/a", "na", "no aplica", "todos", "todo", "all", "none", "null", "sin marca", "sin modelo", "universal"]);
 
 type ProductImageRow = {
   id: string;
@@ -44,7 +62,9 @@ type ProductImageRow = {
 
 type CatalogProductRow = {
   id: string;
+  category_id: string | null;
   sku: string;
+  internal_code?: string | null;
   slug: string;
   name: string;
   brand: string;
@@ -52,7 +72,11 @@ type CatalogProductRow = {
   vehicle_model: string | null;
   vehicle_year_start: number | null;
   vehicle_year_end: number | null;
+  short_description: string | null;
   description: string;
+  features: string | null;
+  specifications: string | null;
+  compatibility_notes: string | null;
   stock: number;
   available_stock?: number | null;
   retail_price: unknown;
@@ -65,6 +89,7 @@ type CatalogProductRow = {
 };
 
 type CategoryRow = {
+  id: string;
   name: string;
   slug: string;
 };
@@ -139,10 +164,11 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     sku: row.sku,
     name: row.name,
     slug: row.slug,
+    category_id: row.category_id,
     category: row.categories?.name ?? "Sin categoría",
     brand: row.brand,
-    vehicle_brand: row.vehicle_brand,
-    vehicle_model: row.vehicle_model,
+    vehicle_brand: normalizeVehicleBrand(row.vehicle_brand),
+    vehicle_model: normalizeVehicleModel(row.vehicle_model),
     vehicle_year_start: row.vehicle_year_start,
     vehicle_year_end: row.vehicle_year_end,
     image: normalizedImages[0]?.url ?? "/window.svg",
@@ -150,7 +176,11 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     stock: toNumber(row.available_stock ?? row.stock),
     retail_price: toNumber(row.retail_price),
     wholesale_price: toNumber(row.wholesale_price),
+    short_description: row.short_description,
     description: row.description,
+    features: row.features,
+    specifications: row.specifications,
+    compatibility_notes: row.compatibility_notes,
   };
 }
 
@@ -204,12 +234,6 @@ async function getPrimaryImagesForProducts(productIds: string[]) {
   return imageByProduct;
 }
 
-function uniqueSorted(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])).sort((left, right) =>
-    left.localeCompare(right, "es-HN"),
-  );
-}
-
 function buildVehicleYears(products: ProductFilterOptionRow[]) {
   const years = new Set<number>();
 
@@ -234,6 +258,58 @@ function buildVehicleYears(products: ProductFilterOptionRow[]) {
   return Array.from(years).sort((left, right) => right - left);
 }
 
+function normalizeComparable(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeVehicleOption(value: string | null | undefined, kind: "brand" | "model") {
+  const cleaned = value?.trim().replace(/\s+/g, " ") ?? "";
+  const comparable = normalizeComparable(cleaned);
+
+  if (invalidVehicleOptionValues.has(comparable)) {
+    return null;
+  }
+
+  return kind === "brand" ? normalizeVehicleBrand(value) : normalizeVehicleModel(value);
+}
+
+function sanitizePostgrestSearch(value: string) {
+  return value.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function buildVehicleOptions(rows: ProductFilterOptionRow[]): ProductVehicleFilterOption[] {
+  const unique = new Map<string, ProductVehicleFilterOption>();
+
+  rows.forEach((row) => {
+    const vehicleBrand = normalizeVehicleOption(row.vehicle_brand, "brand");
+    const vehicleModel = normalizeVehicleOption(row.vehicle_model, "model");
+
+    if (!vehicleBrand) {
+      return;
+    }
+
+    const option: ProductVehicleFilterOption = {
+      vehicleBrand,
+      vehicleModel: vehicleModel ?? "",
+      vehicleYearStart: row.vehicle_year_start,
+      vehicleYearEnd: row.vehicle_year_end,
+    };
+    unique.set(
+      `${normalizeVehicleComparable(option.vehicleBrand)}|${normalizeVehicleComparable(option.vehicleModel)}|${option.vehicleYearStart ?? ""}|${option.vehicleYearEnd ?? ""}`,
+      option,
+    );
+  });
+
+  return Array.from(unique.values()).sort((left, right) => {
+    const brandSort = left.vehicleBrand.localeCompare(right.vehicleBrand, "es-HN");
+    return brandSort || left.vehicleModel.localeCompare(right.vehicleModel, "es-HN");
+  });
+}
+
 async function getOutOfStockCatalogMode() {
   const supabase = getSupabasePublicClient();
   const { data } = await supabase
@@ -244,44 +320,41 @@ async function getOutOfStockCatalogMode() {
   return data?.out_of_stock_catalog_mode === "hide" ? "hide" : "show";
 }
 
-const getCachedActiveCategories = unstable_cache(
-  async () => {
-    const supabase = getSupabasePublicClient();
-    const { data, error } = await supabase
-      .from("categories")
-      .select("name, slug")
-      .eq("active", true)
-      .order("name", { ascending: true })
-      .returns<CategoryRow[]>();
+async function getCachedActiveCategories() {
+  const supabase = getSupabasePublicClient();
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id, name, slug")
+    .eq("active", true)
+    .order("name", { ascending: true })
+    .returns<CategoryRow[]>();
 
-    if (error) {
-      throw new Error(error.message);
-    }
+  if (error) {
+    throw new Error(error.message);
+  }
 
-    return data ?? [];
-  },
-  ["active-categories"],
-  { revalidate: 3600, tags: ["categories"] },
-);
+  return data ?? [];
+}
 
-const getCachedProductFilterOptions = unstable_cache(
-  async () => {
-    const supabase = getSupabasePublicClient();
-    const { data, error } = await supabase
-      .from("products")
-      .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
-      .eq("active", true)
-      .returns<ProductFilterOptionRow[]>();
+async function getCachedProductFilterOptions(outOfStockCatalogMode: "show" | "hide" = "show") {
+  const supabase = getSupabasePublicClient();
+  let query = supabase
+    .from("products")
+    .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
+    .eq("active", true);
 
-    if (error) {
-      throw new Error(error.message);
-    }
+  if (outOfStockCatalogMode === "hide") {
+    query = query.gt("available_stock", 0);
+  }
 
-    return data ?? [];
-  },
-  ["product-filter-options"],
-  { revalidate: 3600, tags: ["products", "vehicle-filters"] },
-);
+  const { data, error } = await query.returns<ProductFilterOptionRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
 
 export async function getActiveProducts() {
   const page = await getCatalogProducts({ pageSize: 48 });
@@ -297,20 +370,27 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const category = filters.category?.trim() ?? "";
   const minPrice = normalizeOptionalNumber(filters.minPrice);
   const maxPrice = normalizeOptionalNumber(filters.maxPrice);
-  const vehicleBrand = filters.vehicleBrand?.trim() ?? "";
-  const vehicleModel = filters.vehicleModel?.trim() ?? "";
+  const vehicleBrand = normalizeVehicleBrand(filters.vehicleBrand) ?? "";
+  const vehicleModel = normalizeVehicleModel(filters.vehicleModel) ?? "";
   const vehicleYear = normalizeOptionalNumber(filters.vehicleYear);
   const availability = filters.availability?.trim() ?? "";
+  const priceColumn = filters.priceMode === "wholesale" ? "wholesale_price" : "retail_price";
 
   try {
-    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
+    const [outOfStockCatalogMode, categories] = await Promise.all([getOutOfStockCatalogMode(), getCachedActiveCategories()]);
+    const normalizedCategory = normalizeComparable(category);
+    const selectedCategory = category
+      ? categories.find((item) => item.slug === category || normalizeComparable(item.slug) === normalizedCategory || normalizeComparable(item.name) === normalizedCategory)
+      : null;
     const supabase = getSupabasePublicClient();
     let productsQuery = supabase
       .from("products")
       .select(
         `
         id,
+        category_id,
         sku,
+        internal_code,
         slug,
         name,
         brand,
@@ -318,7 +398,11 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         vehicle_model,
         vehicle_year_start,
         vehicle_year_end,
+        short_description,
         description,
+        features,
+        specifications,
+        compatibility_notes,
         stock,
         available_stock,
         retail_price,
@@ -334,19 +418,49 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
     }
 
     if (query) {
-      productsQuery = productsQuery.or(`sku.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
+      const search = sanitizePostgrestSearch(query);
+      const normalizedSearch = normalizeComparable(search);
+      const categoryMatches = normalizedSearch
+        ? categories
+            .filter((item) => normalizeComparable(item.name).includes(normalizedSearch) || normalizeComparable(item.slug).includes(normalizedSearch))
+            .map((item) => item.id)
+        : [];
+
+      if (search || categoryMatches.length > 0) {
+        const searchConditions = search
+          ? [
+              `sku.ilike.%${search}%`,
+              `internal_code.ilike.%${search}%`,
+              `name.ilike.%${search}%`,
+              `brand.ilike.%${search}%`,
+              `vehicle_brand.ilike.%${search}%`,
+              `vehicle_model.ilike.%${search}%`,
+              `short_description.ilike.%${search}%`,
+              `description.ilike.%${search}%`,
+              `features.ilike.%${search}%`,
+              `specifications.ilike.%${search}%`,
+              `compatibility_notes.ilike.%${search}%`,
+            ]
+          : [];
+
+        if (categoryMatches.length > 0) {
+          searchConditions.push(`category_id.in.(${categoryMatches.join(",")})`);
+        }
+
+        productsQuery = productsQuery.or(searchConditions.join(","));
+      }
     }
 
     if (category) {
-      productsQuery = productsQuery.eq("categories.slug", category);
+      productsQuery = selectedCategory ? productsQuery.eq("category_id", selectedCategory.id) : productsQuery.eq("category_id", "00000000-0000-0000-0000-000000000000");
     }
 
     if (minPrice !== null) {
-      productsQuery = productsQuery.gte("retail_price", minPrice);
+      productsQuery = productsQuery.gte(priceColumn, minPrice);
     }
 
     if (maxPrice !== null) {
-      productsQuery = productsQuery.lte("retail_price", maxPrice);
+      productsQuery = productsQuery.lte(priceColumn, maxPrice);
     }
 
     if (vehicleBrand) {
@@ -358,7 +472,9 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
     }
 
     if (vehicleYear !== null) {
-      productsQuery = productsQuery.lte("vehicle_year_start", vehicleYear).gte("vehicle_year_end", vehicleYear);
+      productsQuery = productsQuery
+        .or(`vehicle_year_start.is.null,vehicle_year_start.lte.${vehicleYear}`)
+        .or(`vehicle_year_end.is.null,vehicle_year_end.gte.${vehicleYear}`);
     }
 
     if (availability === "disponible") {
@@ -374,10 +490,9 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       .range(from, to)
       .returns<CatalogProductRow[]>();
 
-    const [{ data, error, count }, categories, filterRows] = await Promise.all([
+    const [{ data, error, count }, filterRows] = await Promise.all([
       pagedProductsQuery,
-      getCachedActiveCategories(),
-      getCachedProductFilterOptions(),
+      getCachedProductFilterOptions(outOfStockCatalogMode),
     ]);
 
     if (error) {
@@ -385,6 +500,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
     }
 
     const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
+    const vehicleOptions = buildVehicleOptions(filterRows);
 
     return {
       products: (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id))),
@@ -393,9 +509,10 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       pageSize,
       categories,
       filterOptions: {
-        vehicleBrands: uniqueSorted(filterRows.map((row) => row.vehicle_brand)),
-        vehicleModels: uniqueSorted(filterRows.map((row) => row.vehicle_model)),
+        vehicleBrands: uniqueVehicleValues(vehicleOptions.map((row) => row.vehicleBrand), "brand"),
+        vehicleModels: uniqueVehicleValues(vehicleOptions.map((row) => row.vehicleModel), "model"),
         vehicleYears: buildVehicleYears(filterRows),
+        vehicleOptions,
       },
     };
   } catch (error) {
@@ -410,6 +527,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         vehicleBrands: [],
         vehicleModels: [],
         vehicleYears: [],
+        vehicleOptions: [],
       },
     };
   }
@@ -424,6 +542,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
       .select(
         `
         id,
+        category_id,
         sku,
         slug,
         name,
@@ -432,7 +551,11 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         vehicle_model,
         vehicle_year_start,
         vehicle_year_end,
+        short_description,
         description,
+        features,
+        specifications,
+        compatibility_notes,
         stock,
         available_stock,
         retail_price,
@@ -468,6 +591,7 @@ export async function getProductBySlug(slug: string) {
       .select(
         `
         id,
+        category_id,
         sku,
         slug,
         name,
@@ -476,7 +600,11 @@ export async function getProductBySlug(slug: string) {
         vehicle_model,
         vehicle_year_start,
         vehicle_year_end,
+        short_description,
         description,
+        features,
+        specifications,
+        compatibility_notes,
         stock,
         available_stock,
         retail_price,
@@ -509,13 +637,20 @@ export async function getProductBySlug(slug: string) {
 
 export async function getRelatedProducts(product: Product, limit = 4) {
   try {
-    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
     const supabase = getSupabasePublicClient();
+    const relatedConditions = [
+      product.category_id ? `category_id.eq.${product.category_id}` : null,
+      product.brand && !product.brand.includes(",") ? `brand.eq.${product.brand}` : null,
+      product.vehicle_brand && !product.vehicle_brand.includes(",") ? `vehicle_brand.eq.${product.vehicle_brand}` : null,
+      product.vehicle_model && !product.vehicle_model.includes(",") ? `vehicle_model.eq.${product.vehicle_model}` : null,
+    ].filter(Boolean);
+
     let query = supabase
       .from("products")
       .select(
         `
         id,
+        category_id,
         sku,
         slug,
         name,
@@ -524,7 +659,11 @@ export async function getRelatedProducts(product: Product, limit = 4) {
         vehicle_model,
         vehicle_year_start,
         vehicle_year_end,
+        short_description,
         description,
+        features,
+        specifications,
+        compatibility_notes,
         stock,
         available_stock,
         retail_price,
@@ -534,10 +673,10 @@ export async function getRelatedProducts(product: Product, limit = 4) {
       )
       .eq("active", true)
       .neq("id", product.id)
-      .eq("categories.name", product.category);
+      .gt("available_stock", 0);
 
-    if (outOfStockCatalogMode === "hide") {
-      query = query.gt("available_stock", 0);
+    if (relatedConditions.length > 0) {
+      query = query.or(relatedConditions.join(","));
     }
 
     const { data, error } = await query.order("updated_at", { ascending: false }).limit(limit).returns<CatalogProductRow[]>();
@@ -558,6 +697,24 @@ export async function getCategorySummaries() {
   try {
     return await getCachedActiveCategories();
   } catch {
+    return [];
+  }
+}
+
+export async function getCompatibilityBrandSummaries(limit = 12) {
+  try {
+    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
+    const filterRows = await getCachedProductFilterOptions(outOfStockCatalogMode);
+    const brands = uniqueVehicleValues(buildVehicleOptions(filterRows).map((row) => row.vehicleBrand), "brand");
+    const brandByNormalized = new Map(brands.map((brand) => [normalizeVehicleComparable(brand), brand]));
+    const preferredBrands = preferredCompatibilityBrands
+      .map((brand) => brandByNormalized.get(normalizeVehicleComparable(brand)))
+      .filter(Boolean) as string[];
+    const remainingBrands = brands.filter((brand) => !preferredBrands.some((preferred) => normalizeVehicleComparable(preferred) === normalizeVehicleComparable(brand)));
+
+    return [...preferredBrands, ...remainingBrands].slice(0, limit);
+  } catch (error) {
+    await logProductServiceError("catalog.compatibility_brands.load_failed", error, { limit });
     return [];
   }
 }

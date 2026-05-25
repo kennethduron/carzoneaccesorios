@@ -1,5 +1,23 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getAdminDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import type { InventoryMovementRow, InventoryProductOption } from "@/types/inventory";
+
+export type AdminInventoryFilters = {
+  query?: string;
+  movementPage?: number;
+  movementPageSize?: number;
+};
+
+export type AdminInventorySummary = {
+  productsTotal: number;
+  productOptionsLoaded: number;
+  lowStockProducts: number;
+  outOfStockProducts: number;
+  activeReservations: number;
+  movementsTotal: number;
+  movementPage: number;
+  movementPageSize: number;
+};
 
 type MovementQueryRow = Omit<InventoryMovementRow, "product_name" | "product_sku"> & {
   products: {
@@ -30,16 +48,41 @@ function normalizeMovement(row: MovementQueryRow): InventoryMovementRow {
   };
 }
 
-export async function getAdminInventory() {
-  const supabase = await getSupabaseServerClient();
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
 
-  const [{ data: products, error: productsError }, { data: movements, error: movementsError }] =
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 50;
+  }
+
+  return Math.min(Math.floor(pageSize), 100);
+}
+
+export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
+  const supabase = await getSupabaseServerClient();
+  const query = filters.query?.trim() ?? "";
+  const movementPage = normalizePage(filters.movementPage);
+  const movementPageSize = normalizePageSize(filters.movementPageSize);
+  const movementFrom = (movementPage - 1) * movementPageSize;
+  const movementTo = movementFrom + movementPageSize - 1;
+
+  let productsQuery = supabase
+    .from("products")
+    .select("id, sku, name, stock, reserved_stock, available_stock, min_stock", { count: "exact" })
+    .order("name", { ascending: true })
+    .limit(50);
+
+  if (query) {
+    productsQuery = productsQuery.or(`sku.ilike.%${query}%,internal_code.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
+  }
+
+  const [{ data: products, error: productsError, count }, { data: movements, error: movementsError, count: movementsTotal }, overview] =
     await Promise.all([
-      supabase
-        .from("products")
-        .select("id, sku, name, stock, reserved_stock, available_stock, min_stock")
-        .order("name", { ascending: true })
-        .returns<InventoryProductOption[]>(),
+      productsQuery.returns<InventoryProductOption[]>(),
       supabase
         .from("inventory_movements")
         .select(
@@ -57,10 +100,12 @@ export async function getAdminInventory() {
           created_at,
           products(name, sku)
         `,
+          { count: "exact" },
         )
         .order("created_at", { ascending: false })
-        .limit(100)
+        .range(movementFrom, movementTo)
         .returns<MovementQueryRow[]>(),
+      getAdminDashboardOverview(),
     ]);
 
   if (productsError) {
@@ -71,14 +116,26 @@ export async function getAdminInventory() {
     throw new Error(movementsError.message);
   }
 
-  return {
-    products: (products ?? []).map((product) => ({
+  const normalizedProducts = (products ?? []).map((product) => ({
       ...product,
       stock: toNumber(product.stock),
       reserved_stock: toNumber(product.reserved_stock),
       available_stock: toNumber(product.available_stock ?? product.stock),
       min_stock: toNumber(product.min_stock),
-    })),
+    }));
+
+  return {
+    products: normalizedProducts,
+    summary: {
+      productsTotal: count ?? normalizedProducts.length,
+      productOptionsLoaded: normalizedProducts.length,
+      lowStockProducts: overview.lowStockProducts,
+      outOfStockProducts: overview.outOfStockProducts,
+      activeReservations: overview.activeReservations,
+      movementsTotal: movementsTotal ?? 0,
+      movementPage,
+      movementPageSize,
+    } satisfies AdminInventorySummary,
     movements: (movements ?? []).map(normalizeMovement),
   };
 }

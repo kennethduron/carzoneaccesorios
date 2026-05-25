@@ -9,6 +9,7 @@ import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { formatCurrency, getProductPrice } from "@/utils/pricing";
+import { getProductCardDescription } from "@/utils/product-content";
 
 export function CatalogProductCard({ product }: { product: Product }) {
   const { priceMode } = usePriceMode();
@@ -18,9 +19,10 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const [imageFailed, setImageFailed] = useState(false);
   const hasWholesalePrice = product.wholesale_price > 0 && product.wholesale_price < product.retail_price;
   const isLowStock = product.stock > 0 && product.stock <= 3;
+  const cardDescription = getProductCardDescription(product);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#e4252c]/25 hover:shadow-lg">
+    <article className="flex h-full flex-col overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-[#e4252c]/25 hover:shadow-lg">
       <Link href={`/producto/${product.slug}`} className="block">
         <div className="relative">
           <div className="absolute left-2 top-2 z-10 flex flex-wrap gap-1">
@@ -36,7 +38,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
             ) : null}
           </div>
           {imageFailed ? (
-            <div className="grid h-36 w-full place-items-center bg-[#e7e5e4] text-[#78716c] sm:h-44">
+            <div className="grid aspect-[4/3] w-full place-items-center bg-[#e7e5e4] text-[#78716c]">
               <div className="flex flex-col items-center gap-2 text-sm">
                 <ImageOff size={24} />
                 Imagen no disponible
@@ -52,32 +54,35 @@ export function CatalogProductCard({ product }: { product: Product }) {
               loading="lazy"
               quality={70}
               unoptimized={isCloudinaryImageUrl(imageUrl)}
-              className="h-36 w-full object-cover transition-transform duration-300 hover:scale-[1.02] sm:h-44"
+              className="aspect-[4/3] w-full object-cover transition-transform duration-300 hover:scale-[1.02]"
               onError={() => setImageFailed(true)}
             />
           )}
         </div>
         <div className="space-y-2 p-3 sm:space-y-3 sm:p-4">
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-xs uppercase text-black/45">{product.sku}</p>
+            <div className="min-w-0">
+              <p className="truncate text-xs uppercase text-black/45">{product.sku}</p>
               <h2 className="mt-1 line-clamp-2 text-sm font-semibold leading-tight sm:text-lg">{product.name}</h2>
             </div>
-            <span className="hidden rounded-md bg-[#e7e5e4] px-2 py-1 text-xs sm:inline-flex">{product.category}</span>
+            <span className="max-w-24 shrink-0 truncate rounded-md bg-[#e7e5e4] px-2 py-1 text-[11px] text-black/65 sm:max-w-28 sm:text-xs">{product.category}</span>
           </div>
-          <p className="hidden line-clamp-2 text-sm text-black/60 sm:block">{product.description}</p>
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          {cardDescription ? <p className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-black/60">{cardDescription}</p> : null}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs text-black/45">
-                {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
-              </p>
-              <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(getProductPrice(product, priceMode))}</p>
+              <p className="text-xs text-black/45">precio al detalle</p>
+              <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(product.retail_price)}</p>
+              {priceMode === "wholesale" && hasWholesalePrice ? (
+                <p className="text-xs font-semibold text-[#b91c25]">Mayoreo {formatCurrency(getProductPrice(product, priceMode))}</p>
+              ) : null}
             </div>
-            <p className="text-sm text-black/50">Stock {product.stock}</p>
+            <p className="text-xs font-medium text-black/50">
+              {product.stock <= 0 ? "Sin stock" : isLowStock ? `Quedan ${product.stock}` : "Disponible"}
+            </p>
           </div>
         </div>
       </Link>
-      <div className="grid gap-2 border-t border-black/10 p-3 sm:grid-cols-2 sm:p-4">
+      <div className="mt-auto grid gap-2 border-t border-black/10 p-3 sm:grid-cols-2 sm:p-4">
         <Link
           href={`/producto/${product.slug}`}
           className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-black/10 px-2 text-xs font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] sm:text-sm"

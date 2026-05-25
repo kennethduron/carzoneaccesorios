@@ -41,7 +41,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Seguridad",
-        body: "El sitio utiliza HTTPS/TLS y controles de acceso por rol para proteger la información operativa del comercio y de los clientes.",
+        body: "El sitio utiliza conexión segura y controles de acceso para proteger la información del comercio y de los clientes.",
       },
     ],
   },
@@ -59,7 +59,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Costos de envío",
-        body: "El costo de envío se calcula en checkout según la configuración vigente. Algunas compras pueden aplicar a envío gratis según monto mínimo definido por el comercio.",
+        body: "El costo de envío se calcula al finalizar la compra según la configuración vigente. Algunas compras pueden aplicar a envío gratis según monto mínimo definido por el comercio.",
       },
       {
         title: "Recepción del pedido",
@@ -107,7 +107,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Pagos por transferencia",
-        body: "Los reembolsos por transferencia se revisarán con contabilidad y podrían requerir validación de titularidad de cuenta.",
+        body: "Los reembolsos por transferencia se revisarán con el equipo de atención y podrían requerir validación de titularidad de cuenta.",
       },
     ],
   },

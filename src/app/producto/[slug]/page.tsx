@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ProductDetail } from "@/components/store/product-detail";
 import { getProductBySlug, getRelatedProducts } from "@/services/supabase/products.service";
+import { getProductMetaDescription } from "@/utils/product-content";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     };
   }
 
-  const description = product.description || `${product.name} disponible en Car Zone Accesorios.`;
+  const description = getProductMetaDescription(product);
   const image = absoluteUrl(product.image);
 
   return {

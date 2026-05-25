@@ -1,7 +1,7 @@
 "use server";
 
 import { writeErrorLog } from "@/lib/error-logging";
-import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
+import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export type PublicTrackingItem = {
@@ -54,7 +54,7 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
   });
 
   if (!trackingLimit.ok) {
-    return { ok: false, message: rateLimitMessage };
+    return { ok: false, message: getRateLimitMessage(trackingLimit.retryAfter) };
   }
 
   if (!trackingCode) {

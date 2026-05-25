@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { updatePasswordAfterRecoveryAction } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function PasswordResetPage() {
   const router = useRouter();
@@ -74,20 +74,18 @@ export default function PasswordResetPage() {
           </div>
 
           <div className="space-y-3">
-            <Input
+            <PasswordInput
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Nueva contraseña"
-              type="password"
               minLength={8}
               autoComplete="new-password"
               required
             />
-            <Input
+            <PasswordInput
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               placeholder="Confirmar contraseña"
-              type="password"
               minLength={8}
               autoComplete="new-password"
               required

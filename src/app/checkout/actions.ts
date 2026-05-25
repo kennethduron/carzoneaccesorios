@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
-import { checkRateLimit, rateLimitMessage } from "@/lib/rate-limit";
+import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
@@ -54,7 +54,7 @@ type CustomerAuthorizationRow = {
 };
 
 const wholesaleMessages = {
-  loginRequired: "Inicia sesion con tu cuenta mayorista aprobada para activar precios.",
+  loginRequired: "Inicia sesión con tu cuenta mayorista aprobada para activar precios.",
   accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
 };
 const hondurasOnlyMessage = "Actualmente solo realizamos entregas dentro de Honduras.";
@@ -66,6 +66,17 @@ function isUuid(value: string) {
 
 function safeCheckoutErrorMessage(message: string) {
   const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes("solo hay") ||
+    normalized.includes("stock") ||
+    normalized.includes("inventario") ||
+    normalized.includes("ya no esta disponible") ||
+    normalized.includes("ya no está disponible") ||
+    normalized.includes("no tiene stock suficiente")
+  ) {
+    return "La cantidad solicitada ya no está disponible. Este producto fue tomado por otro cliente; actualiza tu carrito para continuar.";
+  }
 
   if (normalized.includes("invalid input syntax for type uuid")) {
     return "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.";
@@ -218,7 +229,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   });
 
   if (!checkoutLimit.ok) {
-    return { ok: false, message: rateLimitMessage };
+    return { ok: false, message: getRateLimitMessage(checkoutLimit.retryAfter) };
   }
 
   const customerName = String(input.checkout.customerName ?? "").trim();
@@ -495,7 +506,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   return {
     ok: true,
-    message: "Pedido creado correctamente. El admin o la contadora podrán revisarlo para facturación.",
+    message: "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,
     transferReceiptUrl: null,

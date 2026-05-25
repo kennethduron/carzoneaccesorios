@@ -4,7 +4,6 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
-import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminOrdersPage } from "@/services/supabase/admin-orders.service";
 
 export const dynamic = "force-dynamic";
@@ -30,10 +29,7 @@ export default async function AdminOrdersPage({
   const params = await searchParams;
   const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
   const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");
-  const [ordersPage, fiscalSettings] = await Promise.all([
-    getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50 }),
-    getFiscalSettings(),
-  ]);
+  const ordersPage = await getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50 });
 
   return (
     <AdminShell title="Pedidos">
@@ -51,7 +47,6 @@ export default async function AdminOrdersPage({
         total={ordersPage.total}
         page={ordersPage.page}
         pageSize={ordersPage.pageSize}
-        fiscalSettings={fiscalSettings}
         canManagePayments={canManagePayments}
         canGenerateInvoices={canGenerateInvoices}
       />

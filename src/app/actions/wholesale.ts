@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+import { writeAuditLog } from "@/lib/audit";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -10,11 +12,24 @@ type CustomerAccessRow = {
   business_name: string | null;
   company_name: string | null;
   contact_name: string;
+  email: string | null;
+  phone: string | null;
+  tax_id: string | null;
+  city: string | null;
   notes: string | null;
   is_wholesale: boolean;
   wholesale_status: WholesaleAccountStatus | "none" | null;
+  wholesale_requested_at: string | null;
+  wholesale_request_source: string | null;
+  wholesale_approved_notice_seen: boolean | null;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
+};
+
+export type WholesaleRequestActionResult = {
+  ok: boolean;
+  message: string;
+  state?: WholesaleAccessState;
 };
 
 function toAccount(customer: CustomerAccessRow): WholesaleAccount {
@@ -57,9 +72,54 @@ function guestWholesaleState(): WholesaleAccessState {
   return {
     kind: "guest",
     title: "Acceso mayorista",
-    message: "Inicia sesion o solicita acceso mayorista para que el equipo apruebe tu cuenta.",
+    message: "Inicia sesión o solicita acceso mayorista para que el equipo apruebe tu cuenta.",
     canEnterCode: false,
     account: null,
+    shouldShowApprovedNotice: false,
+  };
+}
+
+function regularWholesaleState(): WholesaleAccessState {
+  return {
+    kind: "regular",
+    title: "Solicitar acceso mayorista",
+    message: "Usaremos los datos de tu cuenta para revisar tu solicitud.",
+    canEnterCode: false,
+    account: null,
+    shouldShowApprovedNotice: false,
+  };
+}
+
+function pendingWholesaleState(): WholesaleAccessState {
+  return {
+    kind: "pending",
+    title: "Tu solicitud mayorista está en revisión.",
+    message: "Te notificaremos cuando sea aprobada.",
+    canEnterCode: false,
+    account: null,
+    shouldShowApprovedNotice: false,
+  };
+}
+
+function rejectedWholesaleState(): WholesaleAccessState {
+  return {
+    kind: "rejected",
+    title: "Tu solicitud mayorista fue revisada.",
+    message: "Puedes contactar al equipo para más información.",
+    canEnterCode: false,
+    account: null,
+    shouldShowApprovedNotice: false,
+  };
+}
+
+function suspendedWholesaleState(): WholesaleAccessState {
+  return {
+    kind: "suspended",
+    title: "Tu acceso mayorista está suspendido.",
+    message: "Contacta al equipo para más información.",
+    canEnterCode: false,
+    account: null,
+    shouldShowApprovedNotice: false,
   };
 }
 
@@ -76,7 +136,9 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
   const admin = getSupabaseAdminClient();
   const { data: customers, error } = await admin
     .from("customers")
-    .select("id, business_name, company_name, contact_name, notes, is_wholesale, wholesale_status, status, active")
+    .select(
+      "id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, status, active",
+    )
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
     .returns<CustomerAccessRow[]>();
@@ -91,9 +153,10 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
     return {
       kind: "regular",
       title: "Acceso mayorista",
-      message: "Tu cuenta aun no tiene acceso mayorista. Puedes solicitarlo para revision.",
+      message: "Tu cuenta aún no tiene acceso mayorista. Puedes solicitarlo para revisión.",
       canEnterCode: false,
       account: null,
+      shouldShowApprovedNotice: false,
     };
   }
 
@@ -104,47 +167,237 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
     return {
       kind: "approved",
       title: "Mayorista aprobado",
-      message: "Precio mayorista activo automaticamente para esta cuenta.",
+      message: "Ya tienes acceso mayorista. Los precios mayoristas se aplicarán automáticamente cuando inicies sesión.",
       canEnterCode: false,
       account: toAccount(approvedCustomer),
+      shouldShowApprovedNotice: approvedCustomer.wholesale_approved_notice_seen === false,
     };
   }
 
   if (customerRows.some((customer) => getWholesaleStatus(customer) === "suspended")) {
-    return {
-      kind: "suspended",
-      title: "Acceso mayorista suspendido",
-      message: "Tu acceso mayorista esta suspendido. Puedes comprar al detalle o contactar al equipo comercial.",
-      canEnterCode: false,
-      account: null,
-    };
+    return suspendedWholesaleState();
   }
 
   if (customerRows.some((customer) => getWholesaleStatus(customer) === "rejected")) {
-    return {
-      kind: "rejected",
-      title: "Solicitud mayorista rechazada",
-      message: "Tu solicitud mayorista no fue aprobada. Contacta al equipo comercial si necesitas una revision.",
-      canEnterCode: false,
-      account: null,
-    };
+    return rejectedWholesaleState();
   }
 
   if (customerRows.some((customer) => getWholesaleStatus(customer) === "pending")) {
+    return pendingWholesaleState();
+  }
+
+  return regularWholesaleState();
+}
+
+export async function submitRegisteredWholesaleRequestAction(): Promise<WholesaleRequestActionResult> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Inicia sesión para solicitar mayoreo con un solo clic.", state: guestWholesaleState() };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: userProfile, error: userProfileError } = await admin
+    .from("users")
+    .select("id, email, full_name, phone, active, roles(name)")
+    .eq("id", user.id)
+    .maybeSingle<{
+      id: string;
+      email: string | null;
+      full_name: string | null;
+      phone: string | null;
+      active: boolean;
+      roles: { name: string } | null;
+    }>();
+
+  if (userProfileError || !userProfile || userProfile.active === false) {
+    return { ok: false, message: "No pudimos validar tu cuenta. Intenta iniciar sesión nuevamente." };
+  }
+
+  if (userProfile.roles?.name && userProfile.roles.name !== "cliente") {
+    return { ok: false, message: "La solicitud mayorista debe hacerse desde una cuenta cliente." };
+  }
+
+  const email = (userProfile.email || user.email || "").trim().toLowerCase();
+  const customerFilter = email ? `user_id.eq.${user.id},email.ilike.${email}` : `user_id.eq.${user.id}`;
+  const { data: customerRows, error: customerError } = await admin
+    .from("customers")
+    .select(
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, status, active",
+    )
+    .or(customerFilter)
+    .order("updated_at", { ascending: false })
+    .returns<(CustomerAccessRow & { user_id: string | null })[]>();
+
+  if (customerError) {
+    return { ok: false, message: "No pudimos revisar tu estado mayorista. Intenta nuevamente." };
+  }
+
+  const customers = customerRows ?? [];
+  if (customers.some((customer) => getWholesaleStatus(customer) === "approved")) {
     return {
-      kind: "pending",
-      title: "Solicitud mayorista en revision",
-      message: "Aun no puedes ver precios mayoristas. Te contactaremos cuando la cuenta sea aprobada.",
-      canEnterCode: false,
-      account: null,
+      ok: false,
+      message: "Ya tienes acceso mayorista.",
+      state: {
+        kind: "approved",
+        title: "Ya tienes acceso mayorista.",
+        message: "Los precios mayoristas se aplicarán automáticamente cuando inicies sesión.",
+        canEnterCode: false,
+        account: toAccount(customers.find((customer) => getWholesaleStatus(customer) === "approved")!),
+        shouldShowApprovedNotice: false,
+      },
     };
   }
 
-  return {
-    kind: "regular",
-    title: "Acceso mayorista",
-    message: "Tu cuenta aun no tiene acceso mayorista. Puedes solicitarlo para revision.",
-    canEnterCode: false,
-    account: null,
+  if (customers.some((customer) => getWholesaleStatus(customer) === "pending")) {
+    return { ok: false, message: "Tu solicitud mayorista ya está en revisión.", state: pendingWholesaleState() };
+  }
+
+  if (customers.some((customer) => getWholesaleStatus(customer) === "suspended")) {
+    return { ok: false, message: "Tu acceso mayorista está suspendido. Contacta al equipo.", state: suspendedWholesaleState() };
+  }
+
+  if (customers.some((customer) => getWholesaleStatus(customer) === "rejected")) {
+    return { ok: false, message: "Tu solicitud mayorista fue revisada. Contacta al equipo para más información.", state: rejectedWholesaleState() };
+  }
+
+  const now = new Date().toISOString();
+  const targetCustomer = customers.find((customer) => customer.user_id === user.id) ?? customers[0] ?? null;
+  const contactName = targetCustomer?.contact_name || userProfile.full_name || email || "Cliente registrado";
+  const phone = targetCustomer?.phone || userProfile.phone || "00000000";
+  const note = [
+    "[SOLICITUD_MAYOREO]",
+    "Origen: Cuenta registrada",
+    `Fecha: ${now}`,
+    targetCustomer?.city ? `Ciudad: ${targetCustomer.city}` : null,
+    targetCustomer?.tax_id ? `RTN: ${targetCustomer.tax_id}` : null,
+    "Solicitud creada con un clic desde la cuenta del cliente.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const payload = {
+    user_id: user.id,
+    contact_name: contactName,
+    email,
+    phone,
+    tax_id: targetCustomer?.tax_id ?? null,
+    city: targetCustomer?.city ?? null,
+    notes: [targetCustomer?.notes, note].filter(Boolean).join("\n"),
+    is_wholesale: false,
+    wholesale_status: "pending",
+    wholesale_requested_at: now,
+    wholesale_request_source: "cuenta_registrada",
+    wholesale_approved_notice_seen: false,
+    status: "active",
+    active: true,
+    updated_at: now,
   };
+
+  const customerQuery = targetCustomer?.id
+    ? admin.from("customers").update(payload).eq("id", targetCustomer.id).select("id").single<{ id: string }>()
+    : admin
+        .from("customers")
+        .insert({
+          ...payload,
+          lead_status: "prospecto",
+          estimated_value: 0,
+          monthly_amount: 0,
+        })
+        .select("id")
+        .single<{ id: string }>();
+
+  const { data: customer, error: upsertError } = await customerQuery;
+
+  if (upsertError || !customer) {
+    return { ok: false, message: "No pudimos crear tu solicitud mayorista. Intenta nuevamente." };
+  }
+
+  const { data: existingFollowup } = await admin
+    .from("crm_followups")
+    .select("id")
+    .eq("customer_id", customer.id)
+    .eq("interaction_type", "solicitud_mayorista")
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (!existingFollowup?.id) {
+    await admin.from("crm_followups").insert({
+      customer_id: customer.id,
+      title: "Solicitud de cuenta mayorista",
+      interaction_type: "solicitud_mayorista",
+      next_action: "Revisar datos de cuenta registrada y aprobar si corresponde.",
+      priority: "alta",
+      phone,
+      notes: note,
+      estimated_value: 0,
+      monthly_amount: 0,
+      status: "pending",
+    });
+  }
+
+  await admin.from("crm_notes").insert({
+    customer_id: customer.id,
+    user_id: user.id,
+    note_type: "wholesale_status",
+    note: "Solicitud mayorista enviada desde cuenta registrada.",
+  });
+
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.id,
+    action: "wholesale_request.created_from_account",
+    newData: {
+      user_id: user.id,
+      email,
+      wholesale_status: "pending",
+      wholesale_request_source: "cuenta_registrada",
+      wholesale_requested_at: now,
+    },
+  });
+
+  revalidatePath("/contacto");
+  revalidatePath("/cuenta");
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/clientes-mayoristas");
+
+  return {
+    ok: true,
+    message:
+      "Recibimos tu solicitud. Nuestro equipo revisará tu cuenta y te notificaremos cuando tengas acceso a precios mayoristas.",
+    state: pendingWholesaleState(),
+  };
+}
+
+export async function markWholesaleApprovedNoticeSeenAction(): Promise<{ ok: boolean; message: string }> {
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, message: "Sesión no válida." };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin
+    .from("customers")
+    .update({ wholesale_approved_notice_seen: true, updated_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .eq("wholesale_status", "approved")
+    .eq("wholesale_approved_notice_seen", false);
+
+  if (error) {
+    return { ok: false, message: "No pudimos guardar el aviso como visto." };
+  }
+
+  revalidatePath("/cuenta");
+  revalidatePath("/catalogo");
+
+  return { ok: true, message: "Aviso confirmado." };
 }

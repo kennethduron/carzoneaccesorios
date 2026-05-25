@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
-import { loginWithEmailAction, registerWithEmailAction, resendConfirmationEmailAction } from "@/app/auth/actions";
+import { CheckCircle2, Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
+import {
+  checkRegisteredEmailVerificationAction,
+  loginWithEmailAction,
+  registerWithEmailAction,
+  resendConfirmationEmailAction,
+} from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { SystemLoadingScreen } from "@/components/system-loading-screen";
 import { useToast } from "@/contexts/toast-context";
 
@@ -17,13 +23,20 @@ type AuthCardProps = {
 
 type MessageTone = "info" | "success" | "error";
 
+const VERIFICATION_POLL_INTERVAL_MS = 8_000;
+const VERIFICATION_POLL_MAX_MS = 3 * 60_000;
+
 function safeNextPath(value: string | null) {
   return value?.startsWith("/") && !value.startsWith("//") ? value : "/cuenta";
 }
 
+function looksLikeValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 function getConfirmationErrorMessage(reason: string | null) {
   if (reason === "expired") {
-    return "El enlace de confirmación venció. Solicita uno nuevo.";
+    return "El enlace de verificación venció. Solicita uno nuevo.";
   }
 
   if (reason === "already_confirmed") {
@@ -31,10 +44,10 @@ function getConfirmationErrorMessage(reason: string | null) {
   }
 
   if (reason === "missing") {
-    return "El enlace de confirmación está incompleto. Solicita uno nuevo.";
+    return "El enlace de verificación está incompleto. Solicita uno nuevo.";
   }
 
-  return "No pudimos confirmar tu cuenta. Intenta nuevamente o solicita un nuevo correo de confirmación.";
+  return "No pudimos verificar tu cuenta. Intenta nuevamente o solicita un nuevo correo de verificación.";
 }
 
 export function AuthCard({ mode }: AuthCardProps) {
@@ -48,12 +61,20 @@ export function AuthCard({ mode }: AuthCardProps) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [checkingVerification, setCheckingVerification] = useState(false);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState<MessageTone>("info");
   const [showConfirmationHelp, setShowConfirmationHelp] = useState(false);
+  const [registrationEmailSent, setRegistrationEmailSent] = useState(false);
+  const [autoPollingVerification, setAutoPollingVerification] = useState(false);
+  const [verificationDetected, setVerificationDetected] = useState(false);
+  const [verifiedLoginEmail, setVerifiedLoginEmail] = useState<string | null>(null);
+  const submitLockRef = useRef(false);
+  const resendLockRef = useRef(false);
+  const verificationCheckLockRef = useRef(false);
   const toast = useToast();
 
-  const isLogin = mode === "login";
+  const isLogin = mode === "login" || Boolean(verifiedLoginEmail);
   const queryMessage = (() => {
     if (!isLogin) {
       return null;
@@ -69,7 +90,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("verified")) {
       return {
-        text: "Cuenta verificada correctamente. Ahora inicia sesión.",
+        text: "Cuenta verificada correctamente. Ahora puedes iniciar sesión.",
         tone: "success" as const,
         canResend: false,
       };
@@ -77,7 +98,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("check_email")) {
       return {
-        text: "Revisa tu correo para confirmar tu cuenta.",
+        text: "Revisa tu correo para verificar tu cuenta.",
         tone: "info" as const,
         canResend: true,
       };
@@ -104,9 +125,14 @@ export function AuthCard({ mode }: AuthCardProps) {
   const visibleMessage = message || queryMessage?.text || "";
   const visibleTone = message ? messageTone : queryMessage?.tone ?? "info";
   const shouldShowConfirmationHelp = showConfirmationHelp || Boolean(queryMessage?.canResend);
+  const isCheckEmailMode =
+    isLogin &&
+    Boolean(searchParams.get("check_email")) &&
+    !searchParams.get("verified") &&
+    !searchParams.get("confirmed");
   const messageClassName =
     visibleTone === "success"
-      ? "bg-[#fff1f2] text-[#b91c25]"
+      ? "bg-[#ecfdf5] text-[#166534]"
       : visibleTone === "error"
         ? "bg-[#fff2ed] text-[#9b341b]"
         : "bg-[#f4f4f5] text-black/65";
@@ -127,55 +153,203 @@ export function AuthCard({ mode }: AuthCardProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
     setLoading(true);
     setMessage("");
     setShowConfirmationHelp(false);
 
-    const result = isLogin
-      ? await loginWithEmailAction(email, password, nextPath)
-      : await registerWithEmailAction({ fullName, username, email, phone, password, nextPath });
+    try {
+      const result = isLogin
+        ? await loginWithEmailAction(email, password, nextPath)
+        : await registerWithEmailAction({ fullName, username, email, phone, password, nextPath });
 
-    setLoading(false);
-    setMessage(result.message);
+      setMessage(result.message);
 
-    if (!result.ok) {
-      setMessageTone("error");
-      setShowConfirmationHelp(result.message.toLowerCase().includes("confirm"));
-      toast.error(result.message);
-      return;
-    }
+      if (!result.ok) {
+        setMessageTone("error");
+        setShowConfirmationHelp(result.message.toLowerCase().includes("confirm") || result.message.toLowerCase().includes("verific"));
+        toast.error(result.message);
+        return;
+      }
 
-    if (result.needsEmailConfirmation) {
-      setMessageTone("info");
-      setShowConfirmationHelp(true);
+      if (result.needsEmailConfirmation) {
+        setMessageTone("info");
+        setShowConfirmationHelp(true);
+        setRegistrationEmailSent(true);
+        toast.success(result.message);
+        return;
+      }
+
+      setMessageTone("success");
       toast.success(result.message);
-      router.push(result.redirectTo ?? `/login?check_email=1&email=${encodeURIComponent(email)}`);
-      return;
+      router.push(result.redirectTo ?? nextPath);
+      router.refresh();
+    } catch {
+      const errorMessage = "No pudimos completar la acción por un problema de conexión. Inténtalo nuevamente.";
+      setMessage(errorMessage);
+      setMessageTone("error");
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+      submitLockRef.current = false;
     }
-
-    setMessageTone("success");
-    toast.success(result.message);
-    router.push(result.redirectTo ?? nextPath);
-    router.refresh();
   }
 
   async function handleResendConfirmation() {
+    if (resendLockRef.current) {
+      return;
+    }
+
+    resendLockRef.current = true;
     setResending(true);
     setMessage("");
 
-    const result = await resendConfirmationEmailAction(email);
+    try {
+      const result = await resendConfirmationEmailAction(email);
 
-    setResending(false);
-    setMessage(result.message);
-    setMessageTone(result.ok ? "success" : "error");
-    setShowConfirmationHelp(true);
+      setMessage(result.message);
+      setMessageTone(result.ok ? "success" : "error");
+      setShowConfirmationHelp(true);
 
-    if (result.ok) {
-      toast.success(result.message);
-    } else {
-      toast.error(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    } catch {
+      const errorMessage = "No pudimos completar la acción por un problema de conexión. Inténtalo nuevamente.";
+      setMessage(errorMessage);
+      setMessageTone("error");
+      setShowConfirmationHelp(true);
+      toast.error(errorMessage);
+    } finally {
+      setResending(false);
+      resendLockRef.current = false;
     }
   }
+
+  const runVerificationCheck = useCallback(async (mode: "manual" | "auto") => {
+    if (verificationCheckLockRef.current) {
+      return false;
+    }
+
+    const emailToCheck = email.trim().toLowerCase();
+    if (!looksLikeValidEmail(emailToCheck)) {
+      if (mode === "manual") {
+        const errorMessage = "Ingresa el correo que usaste para crear tu cuenta.";
+        setMessage(errorMessage);
+        setMessageTone("error");
+        toast.error(errorMessage);
+      }
+      return false;
+    }
+
+    verificationCheckLockRef.current = true;
+    if (mode === "manual") {
+      setCheckingVerification(true);
+      setMessage("");
+    }
+
+    try {
+      const result = await checkRegisteredEmailVerificationAction(emailToCheck);
+
+      if (!result.ok) {
+        if (mode === "manual") {
+          setMessage(result.message);
+          setMessageTone("error");
+          setShowConfirmationHelp(true);
+          toast.error(result.message);
+        }
+        return false;
+      }
+
+      setVerificationDetected(true);
+      setVerifiedLoginEmail(emailToCheck);
+      setEmail(emailToCheck);
+      setPassword("");
+      setRegistrationEmailSent(false);
+      setAutoPollingVerification(false);
+      setMessage(result.message);
+      setMessageTone("success");
+      setShowConfirmationHelp(false);
+      toast.success(result.message);
+      router.replace(result.redirectTo ?? `/login?email=${encodeURIComponent(emailToCheck)}`);
+      router.refresh();
+      return true;
+    } catch {
+      const errorMessage = "No pudimos revisar la verificación en este momento. Inténtalo nuevamente.";
+      if (mode === "manual") {
+        setMessage(errorMessage);
+        setMessageTone("error");
+        toast.error(errorMessage);
+      }
+      return false;
+    } finally {
+      if (mode === "manual") {
+        setCheckingVerification(false);
+      }
+      verificationCheckLockRef.current = false;
+    }
+  }, [email, router, toast]);
+
+  async function handleVerificationCheck() {
+    await runVerificationCheck("manual");
+  }
+
+  useEffect(() => {
+    const shouldPoll =
+      !verificationDetected &&
+      looksLikeValidEmail(email) &&
+      (registrationEmailSent || isCheckEmailMode);
+
+    if (!shouldPoll) {
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const startedAt = Date.now();
+
+    const poll = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (Date.now() - startedAt > VERIFICATION_POLL_MAX_MS) {
+        setAutoPollingVerification(false);
+        return;
+      }
+
+      setAutoPollingVerification(true);
+      const confirmed = await runVerificationCheck("auto");
+
+      if (cancelled || confirmed) {
+        setAutoPollingVerification(false);
+        return;
+      }
+
+      if (Date.now() - startedAt + VERIFICATION_POLL_INTERVAL_MS <= VERIFICATION_POLL_MAX_MS) {
+        timer = setTimeout(poll, VERIFICATION_POLL_INTERVAL_MS);
+        return;
+      }
+
+      setAutoPollingVerification(false);
+    };
+
+    timer = setTimeout(poll, 1_000);
+
+    return () => {
+      cancelled = true;
+      setAutoPollingVerification(false);
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [email, isCheckEmailMode, registrationEmailSent, runVerificationCheck, verificationDetected]);
 
   return (
     <section className="min-h-screen bg-[#f4f4f5] px-5 py-10 text-[#080808]">
@@ -188,14 +362,16 @@ export function AuthCard({ mode }: AuthCardProps) {
             </div>
             <div>
               <p className="text-2xl font-semibold">Car Zone Accesorios</p>
-              <p className="text-sm text-black/55">Acceso seguro con Supabase Auth</p>
+              <p className="text-sm text-black/55">Acceso seguro para clientes</p>
             </div>
           </div>
           <h1 className="max-w-xl text-4xl font-semibold leading-tight">
-            {isLogin ? "Ingresa al sistema comercial." : "Crea tu cuenta de cliente."}
+            {isLogin ? "Ingresa a tu cuenta." : "Crea tu cuenta de cliente."}
           </h1>
           <p className="max-w-lg text-black/60">
-            Los roles separan permisos para administración, ventas, bodega, contabilidad y clientes.
+            {isLogin
+              ? "Accede para revisar tus pedidos, facturas y beneficios."
+              : "Regístrate para comprar más rápido, revisar tus pedidos y solicitar acceso mayorista."}
           </p>
         </div>
 
@@ -209,13 +385,65 @@ export function AuthCard({ mode }: AuthCardProps) {
             </p>
           </div>
 
-          <div className="space-y-3">
+          {!isLogin && registrationEmailSent ? (
+            <div className="rounded-lg border border-[#bbf7d0] bg-[#f0fdf4] p-4 text-[#14532d]">
+              <div className="flex items-start gap-3">
+                <CheckCircle2 size={22} className="mt-0.5 shrink-0" />
+                <div>
+                  <h3 className="font-semibold">Cuenta creada correctamente.</h3>
+                  <p className="mt-2 text-sm leading-6">
+                    Te enviamos un correo para verificar tu dirección.
+                  </p>
+                  <p className="mt-2 text-sm leading-6">
+                    Cuando confirmes tu correo, esta pantalla se actualizará automáticamente para iniciar sesión.
+                  </p>
+                  {autoPollingVerification ? (
+                    <p className="mt-3 inline-flex items-center gap-2 text-sm font-medium">
+                      <Loader2 className="animate-spin" size={16} />
+                      Esperando confirmación del correo...
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 lg:grid-cols-3">
+                <Link
+                  href={`/login?check_email=1&email=${encodeURIComponent(email)}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <LogIn size={17} />
+                  Ir a iniciar sesión
+                </Link>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={resending || checkingVerification || !email.trim()}
+                  onClick={handleResendConfirmation}
+                >
+                  {resending ? <Loader2 className="animate-spin" size={17} /> : <MailCheck size={17} />}
+                  {resending ? "Enviando..." : "Reenviar correo"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={checkingVerification || resending || !email.trim()}
+                  onClick={handleVerificationCheck}
+                >
+                  {checkingVerification ? <Loader2 className="animate-spin" size={17} /> : <CheckCircle2 size={17} />}
+                  {checkingVerification ? "Revisando..." : "Ya verifiqué mi cuenta"}
+                </Button>
+              </div>
+              {message ? <p className={`mt-3 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{message}</p> : null}
+            </div>
+          ) : null}
+
+          {!registrationEmailSent ? <div className="space-y-3">
             {!isLogin ? (
               <Input
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 placeholder="Nombre completo"
                 autoComplete="name"
+                disabled={loading}
                 required
               />
             ) : null}
@@ -227,15 +455,20 @@ export function AuthCard({ mode }: AuthCardProps) {
                 autoComplete="username"
                 minLength={3}
                 maxLength={30}
+                disabled={loading}
                 required
               />
             ) : null}
             <Input
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setVerificationDetected(false);
+              }}
               placeholder={isLogin ? "Correo o usuario" : "Correo electrónico"}
               type={isLogin ? "text" : "email"}
               autoComplete={isLogin ? "username" : "email"}
+              disabled={loading}
               required
             />
             {!isLogin ? (
@@ -246,19 +479,20 @@ export function AuthCard({ mode }: AuthCardProps) {
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
+                disabled={loading}
                 required
               />
             ) : null}
-            <Input
+            <PasswordInput
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Contraseña"
-              type="password"
               minLength={6}
               autoComplete={isLogin ? "current-password" : "new-password"}
+              disabled={loading}
               required
             />
-          </div>
+          </div> : null}
 
           {isLogin ? (
             <div className="mt-3 text-right">
@@ -268,28 +502,40 @@ export function AuthCard({ mode }: AuthCardProps) {
             </div>
           ) : null}
 
-          {visibleMessage ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{visibleMessage}</p> : null}
+          {visibleMessage && !registrationEmailSent ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${messageClassName}`}>{visibleMessage}</p> : null}
 
           {isLogin && shouldShowConfirmationHelp ? (
             <div className="mt-4 rounded-md border border-black/10 bg-[#f4f4f5] p-3">
               <p className="text-sm text-black/65">
                 Revisa tu bandeja de entrada o spam. Si el enlace venció o no llegó, puedes solicitar uno nuevo.
               </p>
+              {isCheckEmailMode ? (
+                <p className="mt-2 text-sm text-black/65">
+                  Cuando confirmes tu correo, esta pantalla se actualizará automáticamente para iniciar sesión.
+                </p>
+              ) : null}
+              {autoPollingVerification ? (
+                <p className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#166534]">
+                  <Loader2 className="animate-spin" size={16} />
+                  Esperando confirmación del correo...
+                </p>
+              ) : null}
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
                   variant="secondary"
                   className="flex-1"
-                  disabled={resending || !email.trim()}
+                  disabled={resending || loading || !email.trim()}
                   onClick={handleResendConfirmation}
                 >
                   {resending ? <Loader2 className="animate-spin" size={17} /> : <MailCheck size={17} />}
-                  {resending ? "Enviando..." : "Reenviar confirmación"}
+                  {resending ? "Enviando..." : "Reenviar verificación"}
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   className="flex-1"
+                  disabled={resending || loading}
                   onClick={() => {
                     setEmail("");
                     setMessage("");
@@ -302,17 +548,17 @@ export function AuthCard({ mode }: AuthCardProps) {
             </div>
           ) : null}
 
-          <Button type="submit" variant="dark" className="mt-5 w-full py-3" disabled={loading}>
+          {!registrationEmailSent ? <Button type="submit" variant="dark" className="mt-5 w-full py-3" disabled={loading}>
             {loading ? <Loader2 className="animate-spin" size={18} /> : isLogin ? <LogIn size={18} /> : <UserPlus size={18} />}
             {loading ? "Procesando..." : isLogin ? "Ingresar" : "Crear cuenta"}
-          </Button>
+          </Button> : null}
 
-          <p className="mt-4 text-center text-sm text-black/55">
+          {!registrationEmailSent ? <p className="mt-4 text-center text-sm text-black/55">
             {isLogin ? "¿No tienes cuenta?" : "¿Ya tienes cuenta?"}{" "}
             <Link className="font-medium text-[#e4252c]" href={isLogin ? "/registro" : "/login"}>
               {isLogin ? "Regístrate" : "Inicia sesión"}
             </Link>
-          </p>
+          </p> : null}
         </form>
       </div>
     </section>

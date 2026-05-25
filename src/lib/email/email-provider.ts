@@ -82,7 +82,7 @@ async function sendWithResend(input: SendEmailInput): Promise<SendEmailResult> {
       status: "skipped",
       provider: "resend",
       providerMessageId: null,
-      errorMessage: "Resend no esta configurado. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
+      errorMessage: "Resend no está configurado. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
       technicalMessage: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL.",
     };
   }
@@ -135,7 +135,7 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
       status: "skipped",
       provider: "brevo",
       providerMessageId: null,
-      errorMessage: "Brevo no esta configurado. Define BREVO_API_KEY y BREVO_FROM_EMAIL.",
+      errorMessage: "Brevo no está configurado. Define BREVO_API_KEY y BREVO_FROM_EMAIL.",
       technicalMessage: "Missing BREVO_API_KEY or BREVO_FROM_EMAIL.",
     };
   }

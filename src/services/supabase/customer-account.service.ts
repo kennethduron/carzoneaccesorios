@@ -21,6 +21,35 @@ export type CustomerOrderRow = Omit<
   invoices: CustomerOrderInvoice[];
 };
 
+export type CustomerAccountSummary = {
+  phone: string | null;
+  registeredAt: string | null;
+  emailConfirmed: boolean;
+  orderCount: number;
+  totalPurchased: number;
+  issuedInvoiceCount: number;
+};
+
+export type CustomerOrdersPage = {
+  orders: CustomerOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type CustomerInvoicesPage = {
+  invoices: StoreInvoice[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+type CustomerAccountSummaryRow = {
+  order_count: number | null;
+  total_purchased: unknown;
+  issued_invoice_count: number | null;
+};
+
 type CustomerOrderQueryRow = Omit<
   CustomerOrderRow,
   "subtotal" | "tax" | "shipping_total" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices"
@@ -54,6 +83,21 @@ type CustomerInvoiceQueryRow = {
   rtn: string | null;
   cai: string | null;
   customer_rtn: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_address: string | null;
+  company_legal_name: string | null;
+  company_rtn: string | null;
+  company_address: string | null;
+  company_phone: string | null;
+  company_email: string | null;
+  company_logo_url: string | null;
+  fiscal_range_start: string | null;
+  fiscal_range_end: string | null;
+  due_at: string | null;
+  shipping_fee: unknown;
+  cash_on_delivery_fee: unknown;
   status: InvoiceStatus;
   price_mode: StoreInvoice["priceMode"];
   subtotal: unknown;
@@ -82,6 +126,20 @@ type CustomerInvoiceQueryRow = {
 
 function toNumber(value: unknown) {
   return Number(value ?? 0);
+}
+
+function normalizePage(value: unknown) {
+  const page = Number(value);
+  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+}
+
+function normalizePageSize(value: unknown) {
+  const pageSize = Number(value);
+  if (!Number.isFinite(pageSize) || pageSize <= 0) {
+    return 20;
+  }
+
+  return Math.min(Math.floor(pageSize), 50);
 }
 
 function paymentMethodLabel(value: string): StoreInvoice["paymentMethod"] {
@@ -135,8 +193,20 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     orderNumber: row.orders?.order_number ?? row.order_id,
     rtn: row.rtn ?? "",
     cai: row.cai ?? "",
-    customerName: row.orders?.customer_name ?? "Cliente",
+    companyLegalName: row.company_legal_name,
+    companyRtn: row.company_rtn,
+    companyAddress: row.company_address,
+    companyPhone: row.company_phone,
+    companyEmail: row.company_email,
+    companyLogoUrl: row.company_logo_url,
+    fiscalRangeStart: row.fiscal_range_start,
+    fiscalRangeEnd: row.fiscal_range_end,
+    fiscalDeadline: row.due_at,
+    customerName: row.customer_name ?? row.orders?.customer_name ?? "Cliente",
     customerRtn: row.customer_rtn,
+    customerEmail: row.customer_email,
+    customerPhone: row.customer_phone,
+    customerAddress: row.customer_address,
     items: (row.invoice_items ?? []).map((item) => ({
       productId: item.id,
       sku: item.sku,
@@ -149,6 +219,8 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     })),
     subtotal: toNumber(row.subtotal),
     isv: toNumber(row.tax),
+    shippingFee: toNumber(row.shipping_fee),
+    cashOnDeliveryFee: toNumber(row.cash_on_delivery_fee),
     total: toNumber(row.total),
     priceMode: row.price_mode,
     paymentMethod: paymentMethodLabel(row.orders?.payment_method ?? "cash"),
@@ -185,8 +257,7 @@ async function getCustomerIdsForAccount(userId: string, email: string | null) {
   return Array.from(ids);
 }
 
-export async function getCustomerOrders(userId: string, email: string | null) {
-  const admin = getSupabaseAdminClient();
+async function getCustomerOrderFilters(userId: string, email: string | null) {
   const customerIds = await getCustomerIdsForAccount(userId, email);
   const filters = [`user_id.eq.${userId}`];
 
@@ -198,7 +269,69 @@ export async function getCustomerOrders(userId: string, email: string | null) {
     filters.push(`customer_id.in.(${customerIds.join(",")})`);
   }
 
+  return filters;
+}
+
+async function getCustomerOrderIds(userId: string, email: string | null, limit = 500) {
+  const admin = getSupabaseAdminClient();
+  const filters = await getCustomerOrderFilters(userId, email);
   const { data, error } = await admin
+    .from("orders")
+    .select("id")
+    .or(filters.join(","))
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<Array<{ id: string }>>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((order) => order.id);
+}
+
+export async function getCustomerAccountSummary(userId: string, email: string | null): Promise<CustomerAccountSummary> {
+  const admin = getSupabaseAdminClient();
+  const [{ data: profile }, authResult, summaryResult] = await Promise.all([
+    admin
+      .from("users")
+      .select("phone, created_at")
+      .eq("id", userId)
+      .maybeSingle<{ phone: string | null; created_at: string | null }>(),
+    admin.auth.admin.getUserById(userId),
+    admin
+      .rpc("get_customer_account_summary", {
+        target_user_id: userId,
+        target_email: email,
+      })
+      .single<CustomerAccountSummaryRow>(),
+  ]);
+
+  const summary = summaryResult.data ?? null;
+
+  return {
+    phone: profile?.phone ?? null,
+    registeredAt: profile?.created_at ?? authResult.data.user?.created_at ?? null,
+    emailConfirmed: Boolean(authResult.data.user?.email_confirmed_at || authResult.data.user?.confirmed_at),
+    orderCount: summary?.order_count ?? 0,
+    totalPurchased: toNumber(summary?.total_purchased),
+    issuedInvoiceCount: summary?.issued_invoice_count ?? 0,
+  };
+}
+
+export async function getCustomerOrdersPage(
+  userId: string,
+  email: string | null,
+  { page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {},
+): Promise<CustomerOrdersPage> {
+  const admin = getSupabaseAdminClient();
+  const filters = await getCustomerOrderFilters(userId, email);
+  const page = normalizePage(rawPage);
+  const pageSize = normalizePageSize(rawPageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, error, count } = await admin
     .from("orders")
     .select(
       `
@@ -239,29 +372,52 @@ export async function getCustomerOrders(userId: string, email: string | null) {
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
       invoices(id, invoice_number, status, rtn, cai, customer_rtn, issued_at, cancelled_at)
     `,
+      { count: "exact" },
     )
     .or(filters.join(","))
     .order("created_at", { ascending: false })
-    .limit(100)
+    .range(from, to)
     .returns<CustomerOrderQueryRow[]>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map(normalizeOrder);
+  return {
+    orders: (data ?? []).map(normalizeOrder),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
 }
 
-export async function getCustomerIssuedInvoices(userId: string, email: string | null) {
+export async function getCustomerOrders(userId: string, email: string | null, limit = 20) {
+  const page = await getCustomerOrdersPage(userId, email, { page: 1, pageSize: limit });
+  return page.orders;
+}
+
+export async function getCustomerIssuedInvoicesPage(
+  userId: string,
+  email: string | null,
+  { page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {},
+): Promise<CustomerInvoicesPage> {
   const admin = getSupabaseAdminClient();
-  const orders = await getCustomerOrders(userId, email);
-  const orderIds = orders.map((order) => order.id);
+  const page = normalizePage(rawPage);
+  const pageSize = normalizePageSize(rawPageSize);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const orderIds = await getCustomerOrderIds(userId, email);
 
   if (orderIds.length === 0) {
-    return [];
+    return {
+      invoices: [],
+      total: 0,
+      page,
+      pageSize,
+    };
   }
 
-  const { data, error } = await admin
+  const { data, error, count } = await admin
     .from("invoices")
     .select(
       `
@@ -272,10 +428,25 @@ export async function getCustomerIssuedInvoices(userId: string, email: string | 
       rtn,
       cai,
       customer_rtn,
+      customer_name,
+      customer_phone,
+      customer_email,
+      customer_address,
+      company_legal_name,
+      company_rtn,
+      company_address,
+      company_phone,
+      company_email,
+      company_logo_url,
+      fiscal_range_start,
+      fiscal_range_end,
+      due_at,
       status,
       price_mode,
       subtotal,
       tax,
+      shipping_fee,
+      cash_on_delivery_fee,
       total,
       issued_at,
       cancelled_at,
@@ -292,15 +463,27 @@ export async function getCustomerIssuedInvoices(userId: string, email: string | 
         wholesale_price_snapshot
       )
     `,
+      { count: "exact" },
     )
     .in("order_id", orderIds)
     .in("status", ["emitida", "issued", "paid", "anulada"])
     .order("created_at", { ascending: false })
+    .range(from, to)
     .returns<CustomerInvoiceQueryRow[]>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map(normalizeInvoice);
+  return {
+    invoices: (data ?? []).map(normalizeInvoice),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+export async function getCustomerIssuedInvoices(userId: string, email: string | null, limit = 20) {
+  const page = await getCustomerIssuedInvoicesPage(userId, email, { page: 1, pageSize: limit });
+  return page.invoices;
 }

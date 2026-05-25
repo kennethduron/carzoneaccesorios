@@ -24,6 +24,10 @@ export type CrmCustomerOption = {
   notes: string | null;
   is_wholesale: boolean;
   wholesale_status: CrmWholesaleStatus;
+  wholesale_requested_at: string | null;
+  wholesale_request_source: "formulario_publico" | "cuenta_registrada" | "admin" | null;
+  wholesale_approved_at: string | null;
+  wholesale_approved_notice_seen: boolean;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
   lead_status: CrmLeadStatus;

@@ -1,7 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
-import { ResendVerificationForm } from "@/components/forms/resend-verification-form";
+import { VerificationEmailForm } from "@/components/forms/resend-verification-form";
+import { isAuthEmailConfirmed, isValidAuthEmail } from "@/lib/auth/email-confirmation";
+import { createVerificationSuccessToken } from "@/lib/auth/verification-token";
 
 const messages: Record<string, { title: string; body: string }> = {
   missing: {
@@ -12,11 +15,56 @@ const messages: Record<string, { title: string; body: string }> = {
     title: "El enlace de verificación no es válido o ha expirado.",
     body: "Por seguridad, los enlaces de verificación tienen vigencia limitada. Puedes solicitar uno nuevo.",
   },
+  recovery_expired: {
+    title: "El enlace no es válido o ha expirado.",
+    body: "Por seguridad, los enlaces de recuperación tienen vigencia limitada. Solicita un nuevo enlace para restablecer tu contraseña.",
+  },
   failed: {
     title: "No pudimos completar la verificación.",
     body: "Inténtalo nuevamente desde tu correo o solicita un nuevo enlace de verificación.",
   },
+  otp_expired: {
+    title: "El enlace ya fue usado o expiró.",
+    body: "Si ya abriste este correo antes, es posible que tu cuenta ya esté verificada. Intenta iniciar sesión o solicita un nuevo enlace.",
+  },
 };
+
+async function safeIsAuthEmailConfirmed(email: string) {
+  if (!isValidAuthEmail(email)) {
+    return false;
+  }
+
+  try {
+    return await isAuthEmailConfirmed(email);
+  } catch {
+    return false;
+  }
+}
+
+function firstString(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function getEmailFromParams(params: Record<string, string | string[] | undefined>) {
+  const directEmail = firstString(params.email)?.trim().toLowerCase() ?? "";
+  if (isValidAuthEmail(directEmail)) {
+    return directEmail;
+  }
+
+  const candidates = [firstString(params.next), firstString(params.redirect_to)].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      const nestedEmail = new URL(candidate, "https://carzoneaccesorios.vercel.app").searchParams.get("email")?.trim().toLowerCase() ?? "";
+      if (isValidAuthEmail(nestedEmail)) {
+        return nestedEmail;
+      }
+    } catch {
+      // Ignore malformed nested URLs and keep the invalid-link flow.
+    }
+  }
+
+  return "";
+}
 
 export default async function InvalidVerificationPage({
   searchParams,
@@ -24,9 +72,14 @@ export default async function InvalidVerificationPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = (await searchParams) ?? {};
-  const reason = typeof params.reason === "string" ? params.reason : "expired";
+  const errorCode = typeof params.error_code === "string" ? params.error_code : "";
+  const reason = errorCode === "otp_expired" ? "otp_expired" : typeof params.reason === "string" ? params.reason : "expired";
   const content = messages[reason] ?? messages.expired;
-  const email = typeof params.email === "string" ? params.email : "";
+  const email = getEmailFromParams(params);
+
+  if (reason === "already_confirmed" || (email && (await safeIsAuthEmailConfirmed(email)))) {
+    redirect(`/verificacion/cuenta-confirmada?status=already&verification_token=${encodeURIComponent(createVerificationSuccessToken("already"))}`);
+  }
 
   return (
     <section className="min-h-screen bg-[#f4f4f5] px-5 py-10 text-[#080808]">
@@ -49,11 +102,11 @@ export default async function InvalidVerificationPage({
           <div className="grid size-12 place-items-center rounded-md bg-[#fff7ed] text-[#9a3412]">
             <AlertTriangle size={24} />
           </div>
-          <h2 className="mt-4 text-2xl font-semibold">Enviar nuevo correo de verificación</h2>
+          <h2 className="mt-4 text-2xl font-semibold">Solicitar nuevo enlace</h2>
           <p className="mt-2 text-sm leading-6 text-black/60">
             Escribe el correo usado en el registro. Si está registrado, enviaremos un nuevo enlace de verificación.
           </p>
-          <ResendVerificationForm initialEmail={email} />
+          <VerificationEmailForm initialEmail={email} />
           <Link href="/login" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#080808] hover:text-[#e4252c]">
             <ArrowLeft size={16} />
             Volver a iniciar sesión

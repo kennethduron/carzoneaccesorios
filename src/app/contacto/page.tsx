@@ -2,12 +2,13 @@ import { Mail, MapPin, Phone } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ContactRequestSwitcher } from "@/components/store/contact-request-switcher";
 import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
+import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactoPage() {
-  const companySettings = await getPublicCompanySettings();
+  const [companySettings, wholesaleState] = await Promise.all([getPublicCompanySettings(), getWholesaleAccessStateAction()]);
 
   return (
     <PublicStoreShell>
@@ -41,7 +42,7 @@ export default async function ContactoPage() {
             </section>
           ) : null}
         </div>
-        <ContactRequestSwitcher />
+        <ContactRequestSwitcher initialWholesaleState={wholesaleState} />
       </section>
     </PublicStoreShell>
   );

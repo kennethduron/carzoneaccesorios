@@ -20,6 +20,7 @@ import {
   setUserActiveAction,
 } from "@/app/admin/seguridad/actions";
 import { Button } from "@/components/ui";
+import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/contexts/toast-context";
 import type { AppRole, AuthProfile } from "@/types/auth";
 import type { AdminSecurityData, AdminUserSummary, BackupType } from "@/types/security";
@@ -263,7 +264,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     required
                   />
                 </InputLabel>
-                <InputLabel label="Telefono">
+                <InputLabel label="Teléfono">
                   <input
                     value={createForm.phone}
                     onChange={(event) => updateCreateForm("phone", event.target.value)}
@@ -286,13 +287,12 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     ))}
                   </select>
                 </InputLabel>
-                <InputLabel label="Contrasena temporal">
-                  <input
+                <InputLabel label="Contraseña temporal">
+                  <PasswordInput
                     value={createForm.temporaryPassword}
                     onChange={(event) => updateCreateForm("temporaryPassword", event.target.value)}
-                    className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
-                    type="password"
                     minLength={8}
+                    autoComplete="new-password"
                     required
                   />
                 </InputLabel>
@@ -308,7 +308,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             <div className="flex flex-col gap-3 border-b border-black/10 p-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-center gap-2">
                 <UserCog size={19} />
-                <h2 className="font-semibold">Gestion de usuarios</h2>
+                <h2 className="font-semibold">Gestión de usuarios</h2>
               </div>
               <label className="relative block w-full lg:max-w-sm">
                 <Search className="pointer-events-none absolute left-3 top-2.5 text-black/40" size={17} />
@@ -327,8 +327,8 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     <th className="px-4 py-3">Usuario</th>
                     <th className="px-4 py-3">Rol</th>
                     <th className="px-4 py-3">Estado</th>
-                    <th className="px-4 py-3">Creacion</th>
-                    <th className="px-4 py-3">Ultimo acceso</th>
+                    <th className="px-4 py-3">Creación</th>
+                    <th className="px-4 py-3">Último acceso</th>
                     <th className="px-4 py-3">Correo</th>
                     <th className="px-4 py-3">Acciones</th>
                   </tr>
@@ -406,7 +406,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                               {user.active ? "Suspender" : "Reactivar"}
                             </Button>
                             <Button type="button" variant="ghost" onClick={() => setAuditUserId(user.id)}>
-                              Ver auditoria
+                              Ver auditoría
                             </Button>
                             {user.customer_id ? (
                               <Link
@@ -463,7 +463,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               </Button>
               {message ? <p className="text-sm text-black/60">{message}</p> : null}
               <div className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
-                <p className="font-medium text-[#080808]">Ultimo respaldo</p>
+                <p className="font-medium text-[#080808]">Último respaldo</p>
                 <p>{latestBackup ? `${backupTypeLabels[latestBackup.backup_type]} / ${latestBackup.status}` : "Sin registros"}</p>
                 <p>{latestBackup ? formatDateTime(latestBackup.created_at) : "-"}</p>
               </div>
@@ -477,10 +477,10 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             <h2 className="font-semibold">Controles activos</h2>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            <ControlItem title="Rutas protegidas" description="/admin pasa por proxy y cada pagina revalida permisos en servidor." />
-            <ControlItem title="Cambios de rol" description="Solo se ejecutan mediante RPC con auditoria y reglas de ultimo administrador." />
+            <ControlItem title="Rutas protegidas" description="/admin pasa por proxy y cada página revalida permisos en servidor." />
+            <ControlItem title="Cambios de rol" description="Solo se ejecutan mediante RPC con auditoría y reglas de último administrador." />
             <ControlItem title="Technical owner" description="Usuarios tecnicos no pueden ser modificados por roles operativos." />
-            <ControlItem title="Usuarios suspendidos" description="active=false invalida acceso al panel y al inicio de sesion." />
+            <ControlItem title="Usuarios suspendidos" description="active=false invalida acceso al panel y al inicio de sesión." />
             <ControlItem title="RLS Supabase" description="Las politicas limitan lectura y escritura por rol y propietario." />
             <ControlItem title="Secretos" description="La UI no muestra API keys, CRON_SECRET ni variables de integraciones." />
           </div>
@@ -524,7 +524,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         <DataTable
           title={selectedAuditUser ? `Auditoria de ${selectedAuditUser.email ?? selectedAuditUser.full_name}` : "Audit logs"}
           icon={<FileClock size={19} />}
-          columns={["Fecha", "Usuario", "Rol", "Tabla", "Accion", "Datos"]}
+          columns={["Fecha", "Usuario", "Rol", "Tabla", "Acción", "Datos"]}
           action={
             selectedAuditUser ? (
               <Button type="button" variant="ghost" onClick={() => setAuditUserId(null)}>
@@ -560,7 +560,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold">Cambiar rol de usuario</h2>
             <p className="mt-2 text-sm leading-6 text-black/60">
-              Esta accion modificara el acceso de este usuario al sistema. Verifica que el rol seleccionado sea correcto.
+              Esta acción modificará el acceso de este usuario al sistema. Verifica que el rol seleccionado sea correcto.
             </p>
             <div className="mt-4 rounded-md bg-[#f4f4f5] p-3 text-sm">
               <p className="font-semibold">{roleDraft.user.full_name || roleDraft.user.email}</p>

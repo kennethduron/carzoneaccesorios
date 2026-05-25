@@ -3,16 +3,21 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Download, ExternalLink, Eye, FileText, Printer } from "lucide-react";
-import { cancelInvoiceAction, logInvoiceReprintAction, updateInvoiceCustomerDataAction } from "@/app/admin/facturas/actions";
+import {
+  cancelInvoiceAction,
+  getInvoiceDetailAction,
+  logInvoiceReprintAction,
+  updateInvoiceCustomerDataAction,
+} from "@/app/admin/facturas/actions";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import type { FiscalAlert, FiscalSettings } from "@/types/fiscal";
-import type { AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
+import type { FiscalAlert } from "@/types/fiscal";
+import type { AdminInvoiceDetail, AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
+import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { formatHnDate } from "@/utils/format";
-import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminInvoicesManagerProps = {
@@ -20,7 +25,6 @@ type AdminInvoicesManagerProps = {
   total: number;
   page: number;
   pageSize: number;
-  fiscalSettings: FiscalSettings;
   fiscalAlerts: FiscalAlert[];
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
@@ -65,7 +69,6 @@ export function AdminInvoicesManager({
   total,
   page,
   pageSize,
-  fiscalSettings,
   fiscalAlerts,
   canCancelInvoices,
   canCorrectInvoices,
@@ -74,7 +77,9 @@ export function AdminInvoicesManager({
   const [status, setStatus] = useState<InvoiceStatus | "all">("all");
   const [paymentMethod, setPaymentMethod] = useState("all");
   const [query, setQuery] = useState("");
-  const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoiceRow | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<AdminInvoiceDetail | null>(null);
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [invoiceToCancel, setInvoiceToCancel] = useState<AdminInvoiceRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -151,6 +156,14 @@ export function AdminInvoicesManager({
   }
 
   async function exportInvoicePdf(invoice: AdminInvoiceRow) {
+    const detail = await getInvoiceDetailAction(invoice.id);
+    if (!detail.ok || !detail.invoice) {
+      showInvoiceMessage(detail.message || "No se pudo cargar el detalle de la factura.", false);
+      return;
+    }
+
+    await exportAdminInvoicePdf(detail.invoice);
+    /*
     const { doc, autoTable } = await createPdfDocument();
     doc.setFontSize(14);
     doc.text(fiscalSettings.legal_name || "Car Zone Accesorios", 14, 16);
@@ -191,6 +204,7 @@ export function AdminInvoicesManager({
     doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 34);
     doc.text("Validar tratamiento fiscal de envío y comisión con la contadora.", 14, finalY + 34);
     doc.save(`${invoice.invoice_number}.pdf`);
+    */
   }
 
   function reprintInvoice(invoice: AdminInvoiceRow) {
@@ -208,7 +222,22 @@ export function AdminInvoicesManager({
   }
 
   async function cancelInvoice(invoice: AdminInvoiceRow) {
-    const confirmed = await toast.confirm({
+    setInvoiceToCancel(invoice);
+  }
+
+  function cancelInvoiceWithReason(invoice: AdminInvoiceRow, cancellationReason: string) {
+    startTransition(async () => {
+      const result = await cancelInvoiceAction(invoice.id, cancellationReason);
+      showInvoiceMessage(result.message, result.ok);
+      if (result.ok) {
+        setInvoiceToCancel(null);
+        router.refresh();
+      }
+    });
+  }
+
+  /*
+
       title: "Confirmar anulación",
       message: `¿Anular la factura ${invoice.invoice_number}? Esta acción quedará registrada.`,
       confirmLabel: "Anular factura",
@@ -226,12 +255,16 @@ export function AdminInvoicesManager({
     });
   }
 
+  */
+
   function correctInvoiceCustomerData(input: {
     invoiceId: string;
     customerName: string;
     customerRtn: string;
     customerPhone: string;
+    customerEmail: string;
     customerAddress: string;
+    correctionReason: string;
   }) {
     startTransition(async () => {
       const result = await updateInvoiceCustomerDataAction(input);
@@ -239,6 +272,20 @@ export function AdminInvoicesManager({
       if (result.ok) {
         router.refresh();
       }
+    });
+  }
+
+  function openInvoiceDetail(invoiceId: string) {
+    setLoadingDetailId(invoiceId);
+    startTransition(async () => {
+      const result = await getInvoiceDetailAction(invoiceId);
+      setLoadingDetailId(null);
+      if (!result.ok || !result.invoice) {
+        showInvoiceMessage(result.message || "No se pudo cargar el detalle de la factura.", false);
+        return;
+      }
+
+      setSelectedInvoice(result.invoice);
     });
   }
 
@@ -376,7 +423,7 @@ export function AdminInvoicesManager({
                     <td className="px-4 py-3">{statusLabels[invoice.status]}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
-                        <IconButton label="Ver factura" onClick={() => setSelectedInvoice(invoice)}>
+                        <IconButton label="Ver detalle" onClick={() => openInvoiceDetail(invoice.id)} disabled={loadingDetailId === invoice.id}>
                           <Eye size={16} />
                         </IconButton>
         <IconButton label="Reimprimir factura" onClick={() => reprintInvoice(invoice)}>
@@ -404,12 +451,19 @@ export function AdminInvoicesManager({
       {selectedInvoice ? (
         <InvoiceModal
           invoice={selectedInvoice}
-          fiscalSettings={fiscalSettings}
           canCorrectInvoices={canCorrectInvoices}
           isPending={isPending}
           onCorrect={correctInvoiceCustomerData}
           onReprint={() => reprintInvoice(selectedInvoice)}
           onClose={() => setSelectedInvoice(null)}
+        />
+      ) : null}
+      {invoiceToCancel ? (
+        <CancelInvoiceModal
+          invoice={invoiceToCancel}
+          isPending={isPending}
+          onCancel={cancelInvoiceWithReason}
+          onClose={() => setInvoiceToCancel(null)}
         />
       ) : null}
     </div>
@@ -418,15 +472,13 @@ export function AdminInvoicesManager({
 
 function InvoiceModal({
   invoice,
-  fiscalSettings,
   canCorrectInvoices,
   isPending,
   onCorrect,
   onReprint,
   onClose,
 }: {
-  invoice: AdminInvoiceRow;
-  fiscalSettings: FiscalSettings;
+  invoice: AdminInvoiceDetail;
   canCorrectInvoices: boolean;
   isPending: boolean;
   onCorrect: (input: {
@@ -434,7 +486,9 @@ function InvoiceModal({
     customerName: string;
     customerRtn: string;
     customerPhone: string;
+    customerEmail: string;
     customerAddress: string;
+    correctionReason: string;
   }) => void;
   onReprint: () => void;
   onClose: () => void;
@@ -442,16 +496,18 @@ function InvoiceModal({
   const [customerName, setCustomerName] = useState(invoice.customer_name);
   const [customerRtn, setCustomerRtn] = useState(invoice.customer_rtn ?? "");
   const [customerPhone, setCustomerPhone] = useState(invoice.customer_phone ?? "");
+  const [customerEmail, setCustomerEmail] = useState(invoice.customer_email ?? "");
   const [customerAddress, setCustomerAddress] = useState(invoice.customer_address ?? "");
+  const [correctionReason, setCorrectionReason] = useState("");
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
       <section className="mx-auto my-8 max-w-4xl rounded-lg bg-white p-5 text-[#080808]">
         <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
           <div>
-            <p className="text-sm text-black/50">{fiscalSettings.legal_name || "Car Zone Accesorios"}</p>
+            <p className="text-sm text-black/50">{invoice.company_legal_name || "Car Zone Accesorios"}</p>
             <h2 className="text-2xl font-semibold">{invoice.invoice_number}</h2>
-            <p className="mt-1 text-sm text-black/55">CAI: {fiscalSettings.cai || invoice.cai || "-"}</p>
+            <p className="mt-1 text-sm text-black/55">CAI: {invoice.cai || "-"}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={onReprint} variant="dark">
@@ -463,12 +519,20 @@ function InvoiceModal({
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <Info label="Número fiscal" value={invoice.invoice_number} />
+          <Info label="CAI" value={invoice.cai ?? "-"} />
+          <Info label="Rango autorizado desde" value={invoice.fiscal_range_start ?? "-"} />
+          <Info label="Rango autorizado hasta" value={invoice.fiscal_range_end ?? "-"} />
+          <Info label="Fecha limite de emision" value={formatDate(invoice.due_at)} />
+          <Info label="Fecha de emision" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
           <Info label="Cliente" value={invoice.customer_name} />
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
+          <Info label="Correo" value={invoice.customer_email ?? "-"} />
           <Info label="Teléfono" value={invoice.customer_phone ?? "-"} />
           <Info label="Dirección" value={invoice.customer_address ?? "-"} />
           <Info label="Método de pago" value={paymentLabels[invoice.payment_method] ?? invoice.payment_method} />
           <Info label="Referencia bancaria" value={invoice.bank_reference_number ?? "-"} />
+          <Info label="Estado del pago" value={invoice.payment_status ?? "-"} />
           <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
             <p className="text-sm text-black/50">Comprobante interno</p>
             {invoice.transfer_receipt_url ? (
@@ -495,6 +559,9 @@ function InvoiceModal({
             <p className="mt-1 text-sm text-black/55">
               No cambia número fiscal, CAI, rango, fecha original, productos ni totales.
             </p>
+            <p className="mt-2 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              Correccion fiscal posterior a emision: registra un motivo verificable antes de guardar.
+            </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Nombre</span>
@@ -509,8 +576,16 @@ function InvoiceModal({
                 <Input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
               </label>
               <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
+                <Input value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
+              </label>
+              <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Dirección</span>
                 <Input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo obligatorio</span>
+                <Input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} />
               </label>
             </div>
             <Button
@@ -520,10 +595,12 @@ function InvoiceModal({
                   customerName,
                   customerRtn,
                   customerPhone,
+                  customerEmail,
                   customerAddress,
+                  correctionReason,
                 })
               }
-              disabled={isPending}
+              disabled={isPending || correctionReason.trim().length < 8}
               variant="primary"
               className="mt-4"
             >
@@ -540,6 +617,7 @@ function InvoiceModal({
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Cantidad</th>
                 <th className="px-4 py-3">Precio</th>
+                <th className="px-4 py-3">Subtotal linea</th>
                 <th className="px-4 py-3">Total</th>
               </tr>
             </thead>
@@ -550,6 +628,7 @@ function InvoiceModal({
                   <td className="px-4 py-3">{item.product_name}</td>
                   <td className="px-4 py-3">{item.quantity}</td>
                   <td className="px-4 py-3">{formatCurrency(item.unit_price)}</td>
+                  <td className="px-4 py-3">{formatCurrency(item.line_total)}</td>
                   <td className="px-4 py-3">{formatCurrency(item.line_total)}</td>
                 </tr>
               ))}
@@ -567,6 +646,59 @@ function InvoiceModal({
           <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
           <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CancelInvoiceModal({
+  invoice,
+  isPending,
+  onCancel,
+  onClose,
+}: {
+  invoice: AdminInvoiceRow;
+  isPending: boolean;
+  onCancel: (invoice: AdminInvoiceRow, cancellationReason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === invoice.invoice_number;
+
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
+      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+        <div className="border-b border-black/10 pb-4">
+          <p className="text-sm font-semibold text-[#9b341b]">Anular factura</p>
+          <h2 className="mt-1 text-2xl font-semibold">{invoice.invoice_number}</h2>
+          <p className="mt-2 text-sm text-black/60">
+            Esta acción queda auditada y requiere motivo formal. No elimina la factura ni libera el correlativo fiscal.
+          </p>
+        </div>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de anulacion</span>
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+          />
+        </label>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmación fuerte</span>
+          <Input
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            placeholder={`Escribe ${invoice.invoice_number}`}
+          />
+        </label>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button onClick={onClose} variant="ghost">Cerrar</Button>
+          <Button onClick={() => onCancel(invoice, reason)} disabled={isPending || !canSubmit} variant="secondary">
+            <Ban size={16} />
+            Anular factura
+          </Button>
         </div>
       </section>
     </div>

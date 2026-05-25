@@ -394,15 +394,12 @@ function normalizeCustomer(
           : row.is_wholesale && row.status === "inactive"
             ? "rejected"
             : "none");
-  const isOperationalWholesaleAccount = row.is_wholesale || wholesaleStatus === "approved" || wholesaleStatus === "suspended";
   const deleteBlockReason =
     relatedOrders.size > 0
       ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
       : (invoiceCountsByCustomerId.get(row.id) ?? 0) > 0
         ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
-        : isOperationalWholesaleAccount
-          ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
-          : (wholesaleCodeCountsByCustomerId.get(row.id) ?? 0) > 0
+        : (wholesaleCodeCountsByCustomerId.get(row.id) ?? 0) > 0
             ? "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla."
             : null;
 
@@ -491,7 +488,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     supabase
       .from("customers")
       .select(
-        "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+        "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
         { count: "exact" },
       )
       .order("created_at", { ascending: false })
@@ -718,7 +715,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();

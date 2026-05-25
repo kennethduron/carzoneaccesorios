@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogBrowser } from "@/components/store/catalog-browser";
+import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getCatalogProducts } from "@/services/supabase/products.service";
+import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +47,10 @@ export default async function CatalogoPage({
   }>;
 }) {
   const params = await searchParams;
+  const vehicleBrand = normalizeVehicleBrand(params.marca_carro);
+  const vehicleModel = normalizeVehicleModel(params.modelo_carro);
+  const wholesaleState = await getWholesaleAccessStateAction();
+  const priceMode = wholesaleState.account ? "wholesale" : "retail";
   const catalog = await getCatalogProducts({
     query: params.q,
     category: params.categoria,
@@ -52,10 +58,11 @@ export default async function CatalogoPage({
     pageSize: 24,
     minPrice: optionalNumberParam(params.precio_min),
     maxPrice: optionalNumberParam(params.precio_max),
-    vehicleBrand: params.marca_carro,
-    vehicleModel: params.modelo_carro,
+    vehicleBrand: vehicleBrand ?? undefined,
+    vehicleModel: vehicleModel ?? undefined,
     vehicleYear: optionalNumberParam(params.anio_carro),
     availability: params.disponibilidad,
+    priceMode,
   });
 
   return (
@@ -74,8 +81,8 @@ export default async function CatalogoPage({
         category={params.categoria ?? ""}
         minPrice={params.precio_min ?? ""}
         maxPrice={params.precio_max ?? ""}
-        vehicleBrand={params.marca_carro ?? ""}
-        vehicleModel={params.modelo_carro ?? ""}
+        vehicleBrand={vehicleBrand ?? ""}
+        vehicleModel={vehicleModel ?? ""}
         vehicleYear={params.anio_carro ?? ""}
         availability={params.disponibilidad ?? ""}
         filterOptions={catalog.filterOptions}

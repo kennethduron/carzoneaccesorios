@@ -16,6 +16,25 @@ export type LogRetentionMetric = {
   olderThan90Days: number;
 };
 
+export type OperationalErrorLog = {
+  id: string;
+  created_at: string;
+  module: string | null;
+  action: string;
+  route: string | null;
+  user_id: string | null;
+  user_email: string | null;
+  category: string | null;
+  severity: "info" | "warning" | "error" | "critical" | null;
+  status: "open" | "reviewing" | "resolved" | "ignored" | null;
+  admin_reason: string | null;
+  customer_message: string | null;
+  recommendation: string | null;
+  error_code: string | null;
+  http_status: number | null;
+  metadata: Record<string, unknown>;
+};
+
 export type StorageReferenceMetric = {
   label: string;
   value: number;
@@ -59,6 +78,7 @@ export type AdminUsageOverview = {
   } | null;
   cronSecretConfigured: boolean;
   latestCronRuns: CronRunMetric[];
+  recentErrors: OperationalErrorLog[];
   rateLimitRows: number;
   notificationStatus: {
     provider: EmailProviderName;
@@ -120,6 +140,7 @@ type NotificationStatusRow = {
 };
 
 type CronRunRow = CronRunMetric;
+type OperationalErrorLogRow = OperationalErrorLog;
 
 function getHealthStatus(databaseSizeBytes: number): UsageHealthStatus {
   const databaseSizeMb = databaseSizeBytes / 1024 / 1024;
@@ -321,6 +342,28 @@ async function getLatestCronRuns() {
   return data ?? [];
 }
 
+async function getRecentOperationalErrors() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("error_logs")
+    .select(
+      "id, created_at, module, action, route, user_id, user_email, category, severity, status, admin_reason, customer_message, recommendation, error_code, http_status, metadata",
+    )
+    .order("created_at", { ascending: false })
+    .limit(8)
+    .returns<OperationalErrorLogRow[]>();
+
+  if (error) {
+    if (error.code === "42703" || error.message.toLowerCase().includes("module")) {
+      return [];
+    }
+
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
 function daysAgo(days: number) {
   const date = new Date();
   date.setDate(date.getDate() - days);
@@ -353,6 +396,7 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     rateLimitRows,
     notificationCounts,
     latestCronRuns,
+    recentErrors,
   ] = await Promise.all([
     getMonitoringSnapshot(),
     countRows("orders"),
@@ -373,6 +417,7 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     countRateLimitRows(),
     getNotificationStatusSince(last24h),
     getLatestCronRuns(),
+    getRecentOperationalErrors(),
   ]);
   const healthStatus = getHealthStatus(monitoring.databaseSizeBytes);
 
@@ -435,6 +480,7 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     latestBackupCheck,
     cronSecretConfigured: Boolean(process.env.CRON_SECRET),
     latestCronRuns,
+    recentErrors,
     rateLimitRows,
     notificationStatus: {
       provider: emailProvider.provider,
@@ -495,7 +541,7 @@ export async function recordBackupReview() {
       cloudinary_manifest_checked: false,
       vercel_env_checked: false,
       restore_drill_checked: false,
-      notes: "Revision registrada desde /admin/uso. Completar evidencia externa segun docs/BACKUPS.md.",
+      notes: "Revisión registrada desde /admin/uso. Completar evidencia externa según docs/BACKUPS.md.",
     });
 
   if (error) {

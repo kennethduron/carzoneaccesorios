@@ -1,8 +1,12 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
+import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import { configureCloudinary } from "@/lib/cloudinary";
+import { writeErrorLog } from "@/lib/error-logging";
 import {
   getAdminCompanySettings,
   saveAdminCompanySettings,
@@ -15,6 +19,24 @@ import {
 } from "@/services/supabase/admin-notification-settings.service";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { NotificationSettings } from "@/types/notifications";
+import {
+  fiscalLogoFolder,
+  fiscalLogoInvalidFormatMessage,
+  fiscalLogoMaxBytes,
+  fiscalLogoMaxDisplayWidth,
+  fiscalLogoMaxPixels,
+  fiscalLogoSavedMessage,
+  fiscalLogoTooLargeMessage,
+  fiscalLogoTooManyPixelsMessage,
+  isAllowedFiscalLogoMimeType,
+} from "@/utils/fiscal-logo-rules";
+
+type FiscalLogoMutation = {
+  ok: boolean;
+  message?: string;
+  logoUrl?: string | null;
+  uploadedPublicId?: string | null;
+};
 
 function fiscalSettingsChanges(previous: FiscalSettings, next: FiscalSettings) {
   const fields: Array<keyof FiscalSettings> = [
@@ -155,15 +177,215 @@ function commerceSettingsChanges(previous: AdminCompanySettings, next: AdminComp
   }, {});
 }
 
-export async function saveFiscalSettingsAction(input: FiscalSettings) {
+function parseFiscalSettingsForm(formData: FormData, fallbackLogoUrl: string | null): FiscalSettings {
+  return {
+    legal_name: String(formData.get("legal_name") ?? ""),
+    rtn: String(formData.get("rtn") ?? ""),
+    cai: String(formData.get("cai") ?? ""),
+    invoice_range_start: String(formData.get("invoice_range_start") ?? ""),
+    invoice_range_end: String(formData.get("invoice_range_end") ?? ""),
+    current_invoice_number: String(formData.get("current_invoice_number") ?? ""),
+    emission_deadline: String(formData.get("emission_deadline") ?? "") || null,
+    fiscal_address: String(formData.get("fiscal_address") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    logo_url: fallbackLogoUrl,
+  };
+}
+
+function getCloudinaryLogoPublicId(url: string | null | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (!cloudName) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== "res.cloudinary.com") {
+      return null;
+    }
+
+    const marker = `/${cloudName}/image/upload/`;
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex < 0) {
+      return null;
+    }
+
+    const afterUpload = parsed.pathname.slice(markerIndex + marker.length);
+    const segments = afterUpload.split("/").filter(Boolean);
+    const withoutVersion = segments[0]?.startsWith("v") && /^v\d+$/.test(segments[0]) ? segments.slice(1) : segments;
+    const path = withoutVersion.join("/");
+    const withoutExtension = path.replace(/\.[^.]+$/, "");
+
+    return withoutExtension.startsWith(`${fiscalLogoFolder}/`) ? withoutExtension : null;
+  } catch {
+    return null;
+  }
+}
+
+async function deleteFiscalLogoIfOwned(url: string | null | undefined, context: Record<string, unknown>) {
+  const publicId = getCloudinaryLogoPublicId(url);
+  if (!publicId) {
+    return;
+  }
+
+  try {
+    const cloudinary = configureCloudinary();
+    await cloudinary.uploader.destroy(publicId, { resource_type: "image", invalidate: true });
+  } catch (error) {
+    await writeErrorLog({
+      route: "/admin/configuracion-fiscal",
+      action: "fiscal.logo_delete_failed",
+      errorMessage: error instanceof Error ? error.message : "No se pudo eliminar el logo fiscal anterior.",
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: { ...context, public_id: publicId },
+    });
+  }
+}
+
+async function uploadFiscalLogo(file: File): Promise<FiscalLogoMutation> {
+  if (!isAllowedFiscalLogoMimeType(file.type)) {
+    return { ok: false, message: fiscalLogoInvalidFormatMessage };
+  }
+
+  if (file.size > fiscalLogoMaxBytes) {
+    return { ok: false, message: fiscalLogoTooLargeMessage };
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  let optimizedBuffer: Buffer;
+  let width = 0;
+  let height = 0;
+
+  try {
+    const metadata = await sharp(buffer, { animated: false, limitInputPixels: fiscalLogoMaxPixels + 1 })
+      .rotate()
+      .metadata();
+    width = metadata.width ?? 0;
+    height = metadata.height ?? 0;
+    const format = metadata.format?.toLowerCase();
+
+    if (!format || !["jpeg", "jpg", "png", "webp"].includes(format)) {
+      return { ok: false, message: fiscalLogoInvalidFormatMessage };
+    }
+
+    if (!width || !height) {
+      return { ok: false, message: fiscalLogoInvalidFormatMessage };
+    }
+
+    if (width * height > fiscalLogoMaxPixels) {
+      return { ok: false, message: fiscalLogoTooManyPixelsMessage };
+    }
+
+    optimizedBuffer = await sharp(buffer, { animated: false })
+      .rotate()
+      .resize({
+        width: fiscalLogoMaxDisplayWidth,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 86, effort: 5 })
+      .toBuffer();
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message.toLowerCase().includes("pixel")
+        ? fiscalLogoTooManyPixelsMessage
+        : fiscalLogoInvalidFormatMessage;
+    return { ok: false, message };
+  }
+
+  const cloudinary = configureCloudinary();
+  const publicId = `fiscal-logo-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: fiscalLogoFolder,
+        public_id: publicId,
+        resource_type: "image",
+        format: "webp",
+        overwrite: false,
+        invalidate: true,
+        context: {
+          source: "fiscal_settings",
+          original_bytes: String(file.size),
+          original_mime: file.type,
+          original_pixels: String(width * height),
+          optimized_bytes: String(optimizedBuffer.length),
+        },
+      },
+      (error, uploadResult) => {
+        if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
+          reject(error ?? new Error("Cloudinary no devolvió una URL válida."));
+          return;
+        }
+
+        resolve({
+          secure_url: uploadResult.secure_url,
+          public_id: uploadResult.public_id,
+        });
+      },
+    );
+
+    stream.end(optimizedBuffer);
+  });
+
+  return {
+    ok: true,
+    logoUrl: result.secure_url,
+    uploadedPublicId: result.public_id,
+  };
+}
+
+async function resolveFiscalLogo(formData: FormData, previousLogoUrl: string | null): Promise<FiscalLogoMutation> {
+  const logoAction = String(formData.get("logo_action") ?? "keep");
+
+  if (logoAction === "remove") {
+    return { ok: true, logoUrl: null };
+  }
+
+  if (logoAction !== "replace") {
+    return { ok: true, logoUrl: previousLogoUrl };
+  }
+
+  const file = formData.get("logo_file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: "Selecciona un logo antes de guardar." };
+  }
+
+  return uploadFiscalLogo(file);
+}
+
+export async function saveFiscalSettingsAction(formData: FormData) {
   await requirePermission("settings:manage");
+  const previousSettings = await getFiscalSettings();
+  const logoResult = await resolveFiscalLogo(formData, previousSettings.logo_url);
+
+  if (!logoResult.ok) {
+    return { ok: false, message: logoResult.message ?? "No se pudo procesar el logo fiscal." };
+  }
+
+  const input = parseFiscalSettingsForm(formData, logoResult.logoUrl ?? null);
 
   if (!input.legal_name.trim()) {
+    if (logoResult.uploadedPublicId) {
+      await deleteFiscalLogoIfOwned(logoResult.logoUrl, { reason: "fiscal_settings_validation_failed" });
+    }
     return { ok: false, message: "El nombre legal de la empresa es obligatorio." };
   }
 
-  const previousSettings = await getFiscalSettings();
-  await saveFiscalSettings(input);
+  try {
+    await saveFiscalSettings(input);
+  } catch (error) {
+    if (logoResult.uploadedPublicId) {
+      await deleteFiscalLogoIfOwned(logoResult.logoUrl, { reason: "fiscal_settings_save_failed" });
+    }
+    throw error;
+  }
+
   const changes = fiscalSettingsChanges(previousSettings, input);
 
   await writeAuditLog({
@@ -176,11 +398,21 @@ export async function saveFiscalSettingsAction(input: FiscalSettings) {
     },
   });
 
+  if (previousSettings.logo_url !== input.logo_url && previousSettings.logo_url) {
+    await deleteFiscalLogoIfOwned(previousSettings.logo_url, {
+      reason: input.logo_url ? "fiscal_logo_replaced" : "fiscal_logo_removed",
+    });
+  }
+
   revalidatePath("/admin/configuracion-fiscal");
   revalidatePath("/admin/facturas");
   revalidatePath("/admin/reportes");
 
-  return { ok: true, message: "Configuración fiscal guardada correctamente." };
+  return {
+    ok: true,
+    message: previousSettings.logo_url !== input.logo_url ? fiscalLogoSavedMessage : "Configuración fiscal guardada correctamente.",
+    logoUrl: input.logo_url,
+  };
 }
 
 export async function saveNotificationSettingsAction(input: NotificationSettings) {

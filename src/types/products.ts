@@ -24,7 +24,11 @@ export type ProductAdminRow = {
   vehicle_model: string | null;
   vehicle_year_start: number | null;
   vehicle_year_end: number | null;
+  short_description: string | null;
   description: string;
+  features: string | null;
+  specifications: string | null;
+  compatibility_notes: string | null;
   stock: number;
   min_stock: number;
   cost_price: number;
@@ -50,7 +54,11 @@ export type ProductFormInput = {
   vehicle_model: string | null;
   vehicle_year_start: number | null;
   vehicle_year_end: number | null;
+  short_description: string | null;
   description: string;
+  features: string | null;
+  specifications: string | null;
+  compatibility_notes: string | null;
   stock: number;
   min_stock: number;
   cost_price: number;

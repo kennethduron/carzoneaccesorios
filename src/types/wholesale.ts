@@ -25,6 +25,7 @@ export type WholesaleAccessState = {
   message: string;
   canEnterCode: boolean;
   account: WholesaleAccount | null;
+  shouldShowApprovedNotice: boolean;
 };
 
 export type WholesaleCustomerOption = {

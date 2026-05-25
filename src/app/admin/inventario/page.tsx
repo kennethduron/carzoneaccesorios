@@ -7,9 +7,18 @@ import { getAdminInventory } from "@/services/supabase/admin-inventory.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminInventoryPage() {
+export default async function AdminInventoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; mov_page?: string }>;
+}) {
   await requirePermission("inventory:manage");
-  const { products, movements } = await getAdminInventory();
+  const params = await searchParams;
+  const { products, movements, summary } = await getAdminInventory({
+    query: params.q,
+    movementPage: Number(params.mov_page ?? 1),
+    movementPageSize: 50,
+  });
 
   return (
     <AdminShell title="Inventario">
@@ -22,7 +31,7 @@ export default async function AdminInventoryPage() {
           Panel administrativo
         </Link>
       </div>
-      <InventoryManager products={products} movements={movements} />
+      <InventoryManager products={products} movements={movements} summary={summary} productQuery={params.q ?? ""} />
     </AdminShell>
   );
 }

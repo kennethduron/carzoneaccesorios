@@ -19,7 +19,7 @@ export default async function AdminProductsPage({
 }) {
   await requirePermission("products:manage");
   const params = await searchParams;
-  const { products, categories, total, page, pageSize } = await getAdminProductCatalogPage({
+  const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
     query: params.q,
     status: params.status,
     categoryId: params.category,
@@ -41,6 +41,8 @@ export default async function AdminProductsPage({
       <ProductManager
         products={products}
         categories={categories}
+        vehicleBrands={vehicleBrands}
+        vehicleModels={vehicleModels}
         total={total}
         page={page}
         pageSize={pageSize}

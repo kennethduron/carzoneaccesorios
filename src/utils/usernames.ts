@@ -27,7 +27,7 @@ export function validateUsername(value: string) {
   }
 
   if (reservedUsernames.has(username)) {
-    return { ok: false as const, message: "Este nombre de usuario esta reservado. Elige otro." };
+    return { ok: false as const, message: "Este nombre de usuario está reservado. Elige otro." };
   }
 
   return { ok: true as const, username };

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Car, Search, SlidersHorizontal, X } from "lucide-react";
 import type { Product } from "@/types/commerce";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
@@ -26,8 +26,47 @@ type CatalogBrowserProps = {
     vehicleBrands: string[];
     vehicleModels: string[];
     vehicleYears: number[];
+    vehicleOptions: Array<{
+      vehicleBrand: string;
+      vehicleModel: string;
+      vehicleYearStart: number | null;
+      vehicleYearEnd: number | null;
+    }>;
   };
 };
+
+function uniqueSorted(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right, "es-HN"));
+}
+
+function normalizeComparable(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function yearsFromRange(start: number | null, end: number | null) {
+  if (!start && !end) {
+    return [];
+  }
+
+  const firstYear = start ?? end;
+  const lastYear = end ?? start;
+
+  if (!firstYear || !lastYear) {
+    return [];
+  }
+
+  const years: number[] = [];
+  for (let year = firstYear; year <= lastYear; year += 1) {
+    years.push(year);
+  }
+  return years;
+}
+
+const emptyVehicleOptions: NonNullable<CatalogBrowserProps["filterOptions"]["vehicleOptions"]> = [];
 
 export function CatalogBrowser({
   products,
@@ -58,6 +97,38 @@ export function CatalogBrowser({
   const hasNextPage = page * pageSize < total;
   const hasActiveFilters = Boolean(query || category || minPrice || maxPrice || vehicleBrand || vehicleModel || vehicleYear || availability);
   const isEmptyCatalog = total === 0 && !hasActiveFilters;
+  const vehicleOptions = useMemo(() => filterOptions.vehicleOptions ?? emptyVehicleOptions, [filterOptions.vehicleOptions]);
+
+  const availableVehicleBrands = useMemo(() => {
+    const brands = vehicleOptions.length > 0 ? vehicleOptions.map((option) => option.vehicleBrand) : filterOptions.vehicleBrands;
+    return uniqueSorted(brands);
+  }, [filterOptions.vehicleBrands, vehicleOptions]);
+
+  const availableVehicleModels = useMemo(() => {
+    const normalizedBrand = normalizeComparable(selectedVehicleBrand);
+    const models =
+      vehicleOptions.length > 0
+        ? vehicleOptions
+            .filter((option) => !normalizedBrand || normalizeComparable(option.vehicleBrand) === normalizedBrand)
+            .map((option) => option.vehicleModel)
+        : filterOptions.vehicleModels;
+
+    return uniqueSorted(models);
+  }, [filterOptions.vehicleModels, selectedVehicleBrand, vehicleOptions]);
+
+  const availableVehicleYears = useMemo(() => {
+    const normalizedBrand = normalizeComparable(selectedVehicleBrand);
+    const normalizedModel = normalizeComparable(selectedVehicleModel);
+    const years =
+      vehicleOptions.length > 0
+        ? vehicleOptions
+            .filter((option) => !normalizedBrand || normalizeComparable(option.vehicleBrand) === normalizedBrand)
+            .filter((option) => !normalizedModel || normalizeComparable(option.vehicleModel) === normalizedModel)
+            .flatMap((option) => yearsFromRange(option.vehicleYearStart, option.vehicleYearEnd))
+        : filterOptions.vehicleYears;
+
+    return Array.from(new Set(years)).sort((left, right) => right - left);
+  }, [filterOptions.vehicleYears, selectedVehicleBrand, selectedVehicleModel, vehicleOptions]);
 
   useEffect(() => {
     registerProducts(products);
@@ -88,7 +159,7 @@ export function CatalogBrowser({
             name="q"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Nombre, SKU o codigo"
+            placeholder="Nombre, SKU, código, categoría o vehículo"
             className="w-full bg-transparent text-sm outline-none placeholder:text-black/40"
           />
         </label>
@@ -98,7 +169,7 @@ export function CatalogBrowser({
           onChange={(event) => setSelectedCategory(event.target.value)}
           className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
         >
-          <option value="">Todas las categorias</option>
+          <option value="">Todas las categorías</option>
           {categories.map((item) => (
             <option key={item.slug} value={item.slug}>
               {item.name}
@@ -147,37 +218,44 @@ export function CatalogBrowser({
             <option value="agotado">Agotado</option>
           </select>
         </FilterField>
-        <FilterField label="Marca vehiculo">
+        <FilterField label="Marca del vehículo">
           <select
             name="marca_carro"
             value={selectedVehicleBrand}
-            onChange={(event) => setSelectedVehicleBrand(event.target.value)}
+            onChange={(event) => {
+              setSelectedVehicleBrand(event.target.value);
+              setSelectedVehicleModel("");
+              setSelectedVehicleYear("");
+            }}
             className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
           >
             <option value="">Todas</option>
-            {filterOptions.vehicleBrands.map((brand) => (
+            {availableVehicleBrands.map((brand) => (
               <option key={brand} value={brand}>
                 {brand}
               </option>
             ))}
           </select>
         </FilterField>
-        <FilterField label="Modelo vehiculo">
+        <FilterField label="Modelo del vehículo">
           <select
             name="modelo_carro"
             value={selectedVehicleModel}
-            onChange={(event) => setSelectedVehicleModel(event.target.value)}
+            onChange={(event) => {
+              setSelectedVehicleModel(event.target.value);
+              setSelectedVehicleYear("");
+            }}
             className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
           >
             <option value="">Todos</option>
-            {filterOptions.vehicleModels.map((model) => (
+            {availableVehicleModels.map((model) => (
               <option key={model} value={model}>
                 {model}
               </option>
             ))}
           </select>
         </FilterField>
-        <FilterField label="Anio vehiculo">
+        <FilterField label="Año del vehículo">
           <select
             name="anio_carro"
             value={selectedVehicleYear}
@@ -185,7 +263,7 @@ export function CatalogBrowser({
             className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
           >
             <option value="">Todos</option>
-            {filterOptions.vehicleYears.map((year) => (
+            {availableVehicleYears.map((year) => (
               <option key={year} value={year}>
                 {year}
               </option>
@@ -203,7 +281,7 @@ export function CatalogBrowser({
           <div className="mb-4 flex flex-col justify-between gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-center">
             <div>
               <h2 className="font-semibold">Buscar y filtrar productos</h2>
-              <p className="mt-1 text-sm text-black/55">Combina busqueda, categoria, precio, stock y compatibilidad.</p>
+              <p className="mt-1 text-sm text-black/55">Combina búsqueda, categoría, precio, stock y compatibilidad.</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -229,9 +307,9 @@ export function CatalogBrowser({
           <div className="hidden md:block">{filterControls}</div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/50">
             <SlidersHorizontal size={14} />
-            <span>El filtro de precio usa el precio al detalle.</span>
+            <span>El filtro de precio usa el precio disponible según tu acceso.</span>
             <Car size={14} />
-            <span>Compatibilidad por marca, modelo y anio del vehiculo.</span>
+            <span>Compatibilidad por marca, modelo y año del vehículo.</span>
           </div>
         </form>
 
@@ -270,12 +348,12 @@ export function CatalogBrowser({
         {products.length === 0 ? (
           <div className="rounded-lg border border-dashed border-black/15 bg-white p-8 text-center">
             <h2 className="text-xl font-semibold">
-              {isEmptyCatalog ? "Catalogo listo para cargar productos reales." : "No se encontraron resultados con estos filtros."}
+              {isEmptyCatalog ? "Pronto encontrarás productos disponibles." : "No se encontraron resultados con estos filtros."}
             </h2>
             <p className="mt-2 text-sm text-black/55">
               {isEmptyCatalog
-                ? "Aun no hay productos publicados. El equipo puede cargar el primer producto real desde el panel administrativo."
-                : "Prueba con otra busqueda, categoria, precio o compatibilidad."}
+                ? "Estamos preparando el catálogo. Vuelve pronto o contáctanos para consultar disponibilidad."
+                : "Prueba con otra búsqueda, categoría, precio o compatibilidad."}
             </p>
             {isEmptyCatalog ? null : (
               <Link
@@ -299,7 +377,7 @@ export function CatalogBrowser({
               href={buildHref(page + 1)}
               className="rounded-md border border-black/10 bg-white px-4 py-3 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
             >
-              Ver siguiente pagina
+              Ver siguiente página
             </Link>
           </div>
         ) : null}
@@ -308,9 +386,9 @@ export function CatalogBrowser({
       <aside className="space-y-4">
         <WholesaleCodePanel />
         <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-          <h2 className="font-semibold">Atencion comercial</h2>
+          <h2 className="font-semibold">Atención comercial</h2>
           <p className="mt-2 text-sm text-black/60">
-            Para pedidos de volumen, inicia sesion o solicita acceso mayorista. Los precios especiales se activan solo para cuentas aprobadas.
+            Para pedidos de volumen, inicia sesión o solicita acceso mayorista. Los precios especiales se activan solo para cuentas aprobadas.
           </p>
         </section>
       </aside>

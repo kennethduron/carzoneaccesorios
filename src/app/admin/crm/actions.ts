@@ -448,6 +448,10 @@ export async function setCrmFollowupStatusAction(
 export async function approveWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
   const profile = await requirePermission("customers:manage");
 
+  if (!["admin", "business_owner"].includes(profile.role)) {
+    return { ok: false, message: "Solo admin o business_owner puede aprobar solicitudes mayoristas." };
+  }
+
   const customer = uuidLike(customerId, "Cliente");
   if (!customer.ok) {
     return { ok: false, message: customer.message };
@@ -489,11 +493,12 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
 
   const hasActiveAccount = Boolean(userProfile?.id && userProfile.active !== false);
   const nextWholesaleStatus = "approved";
+  const approvedAt = new Date().toISOString();
   const nextNotes = [
     customerRow.notes,
     hasActiveAccount
       ? `Mayorista aprobado por ${profile.full_name || profile.email}.`
-      : "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesion.",
+      : "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesión.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -506,6 +511,8 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       company_name: customerRow.company_name ?? customerRow.business_name ?? customerRow.contact_name,
       is_wholesale: hasActiveAccount,
       wholesale_status: nextWholesaleStatus,
+      wholesale_approved_at: approvedAt,
+      wholesale_approved_notice_seen: false,
       status: hasActiveAccount ? "active" : "pending_account",
       active: true,
       lead_status: "cliente",
@@ -531,6 +538,8 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       user_id: userProfile?.id ?? null,
       is_wholesale: hasActiveAccount,
       wholesale_status: nextWholesaleStatus,
+      wholesale_approved_at: approvedAt,
+      wholesale_approved_notice_seen: false,
       status: hasActiveAccount ? "active" : "pending_account",
       active: true,
     },
@@ -549,8 +558,8 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   return {
     ok: true,
     message: hasActiveAccount
-      ? "Mayorista aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesion."
-      : "Solicitud aprobada, pero falta una cuenta activa vinculada para activar precios al iniciar sesion.",
+      ? "Mayorista aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesión."
+      : "Solicitud aprobada, pero falta una cuenta activa vinculada para activar precios al iniciar sesión.",
   };
 }
 
@@ -563,6 +572,10 @@ async function setWholesaleStatusAction(input: {
 }): Promise<CrmMutationResult> {
   const profile = await requirePermission("customers:manage");
   const customer = uuidLike(input.customerId, "Cliente");
+
+  if (!["admin", "business_owner"].includes(profile.role)) {
+    return { ok: false, message: "Solo admin o business_owner puede cambiar el estado mayorista." };
+  }
 
   if (!customer.ok) {
     return { ok: false, message: customer.message };
@@ -587,14 +600,17 @@ async function setWholesaleStatusAction(input: {
 
   const isApproved = input.status === "approved";
   const nextCustomerStatus = "active";
+  const changedAt = new Date().toISOString();
   const { error: updateError } = await admin
     .from("customers")
     .update({
       is_wholesale: isApproved,
       wholesale_status: input.status,
+      wholesale_approved_at: isApproved ? changedAt : null,
+      wholesale_approved_notice_seen: isApproved ? false : true,
       status: nextCustomerStatus,
       active: true,
-      updated_at: new Date().toISOString(),
+      updated_at: changedAt,
     })
     .eq("id", customer.value);
 
@@ -615,6 +631,8 @@ async function setWholesaleStatusAction(input: {
     newData: {
       is_wholesale: isApproved,
       wholesale_status: input.status,
+      wholesale_approved_at: isApproved ? changedAt : null,
+      wholesale_approved_notice_seen: isApproved ? false : true,
       status: nextCustomerStatus,
       active: true,
     },
@@ -1105,27 +1123,6 @@ export async function deleteCustomerAccountPermanentlyAction(input: PermanentAcc
     });
   }
 
-  const wholesaleAccount = customerRows.find(
-    (row) => row.is_wholesale || row.wholesale_status === "approved" || row.wholesale_status === "suspended",
-  );
-  if (wholesaleAccount) {
-    return blockedCustomerDeletion({
-      profileId: profile.id,
-      customerId: targetCustomer.id,
-      email,
-      block: {
-        table: "customers",
-        condition: "is_wholesale is true or wholesale_status in (approved, suspended)",
-        recordId: wholesaleAccount.id,
-        reason: commercialHistoryDeletionMessage,
-        record: {
-          is_wholesale: wholesaleAccount.is_wholesale,
-          wholesale_status: wholesaleAccount.wholesale_status,
-        },
-      },
-    });
-  }
-
   if (customerIds.length > 0) {
     const { data: orderByCustomer, error: orderByCustomerError } = await admin
       .from("orders")
@@ -1394,7 +1391,7 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
 
   const email = normalizeAccountEmail(input.email);
   if (!validateEmail(email)) {
-    return { ok: false, message: "Ingresa un correo valido para eliminar la cuenta TEST." };
+    return { ok: false, message: "Ingresa un correo válido para eliminar la cuenta TEST." };
   }
 
   if (!isSafeTestAccountEmail(email)) {

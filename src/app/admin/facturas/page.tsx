@@ -53,7 +53,6 @@ export default async function AdminInvoicesPage({
         total={invoicesPage.total}
         page={invoicesPage.page}
         pageSize={invoicesPage.pageSize}
-        fiscalSettings={fiscalSettings}
         fiscalAlerts={fiscalAlerts}
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
