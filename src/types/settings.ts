@@ -77,6 +77,11 @@ export type SocialSettings = {
   website_url: string;
 };
 
+export type BannerMediaType = "image" | "video";
+export type BannerResourceType = "image" | "video";
+export type BannerStatus = "active" | "scheduled" | "expired" | "disabled";
+export type BannerSlot = "main" | "secondary";
+
 export type BusinessContactSettings = {
   trade_name: string;
   legal_business_name: string;
@@ -115,21 +120,48 @@ export type HolidayBanner = {
   holiday_key: string | null;
   title: string;
   message: string;
+  banner_slot: BannerSlot;
   image_url: string | null;
+  media_type: BannerMediaType;
+  media_url: string | null;
+  media_public_id: string | null;
+  media_resource_type: BannerResourceType;
+  media_bytes: number;
+  media_created_at: string | null;
+  media_format: string | null;
+  media_width: number | null;
+  media_height: number | null;
+  media_duration_seconds: number | null;
+  media_thumbnail_url: string | null;
   start_date: string;
   end_date: string;
   is_active: boolean;
   priority: number;
   button_text: string | null;
   button_url: string | null;
+  created_by: string | null;
+  updated_by: string | null;
   created_at: string;
   updated_at: string;
+  status: BannerStatus;
 };
 
 export type HolidayBannerInput = {
   id?: string;
   title: string;
   message: string;
+  banner_slot: BannerSlot;
+  media_type: BannerMediaType;
+  media_url: string;
+  media_public_id: string;
+  media_resource_type: BannerResourceType;
+  media_bytes: number;
+  media_created_at: string;
+  media_format: string;
+  media_width: number | null;
+  media_height: number | null;
+  media_duration_seconds: number | null;
+  media_thumbnail_url: string;
   image_url: string;
   start_date: string;
   end_date: string;
@@ -137,4 +169,27 @@ export type HolidayBannerInput = {
   priority: number;
   button_text: string;
   button_url: string;
+};
+
+export type HolidayBannerAuditEntry = {
+  id: string;
+  banner_id: string | null;
+  banner_title: string | null;
+  action: string;
+  actor_name: string;
+  actor_role: string | null;
+  media_type: BannerMediaType | null;
+  created_at: string;
+};
+
+export type HolidayBannerStorageSummary = {
+  imageCount: number;
+  imageBytes: number;
+  videoCount: number;
+  videoBytes: number;
+  totalBytes: number;
+  cloudinaryUsedBytes: number | null;
+  cloudinaryLimitBytes: number | null;
+  cloudinaryFreeBytes: number | null;
+  source: "cloudinary" | "database";
 };

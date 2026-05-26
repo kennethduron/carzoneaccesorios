@@ -24,7 +24,7 @@ import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { WholesaleCodePanel } from "@/components/store/wholesale-code-panel";
 import { HolidayBannerPopup } from "@/components/store/holiday-banner-popup";
 import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
-import { getActiveHolidayBanner } from "@/services/supabase/holiday-banners.service";
+import { getActiveHolidayBanners } from "@/services/supabase/holiday-banners.service";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getCategorySummaries, getCompatibilityBrandSummaries, getFeaturedProducts } from "@/services/supabase/products.service";
 
@@ -55,9 +55,9 @@ const trustBlocks = [
 ] as const;
 
 export default async function HomePage() {
-  const [featuredProducts, holidayBanner, companySettings, categories, compatibilityBrands] = await Promise.all([
+  const [featuredProducts, holidayBanners, companySettings, categories, compatibilityBrands] = await Promise.all([
     getFeaturedProducts(6),
-    getActiveHolidayBanner(),
+    getActiveHolidayBanners(4),
     getPublicCompanySettings(),
     getCategorySummaries(),
     getCompatibilityBrandSummaries(9),
@@ -67,7 +67,7 @@ export default async function HomePage() {
 
   return (
     <PublicStoreShell>
-      <HolidayBannerPopup banner={holidayBanner} />
+      <HolidayBannerPopup banners={holidayBanners} />
       <section className="relative isolate min-h-[560px] overflow-hidden bg-[#080808] text-white sm:min-h-[590px] lg:min-h-[620px]">
         <Image
           src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=78"

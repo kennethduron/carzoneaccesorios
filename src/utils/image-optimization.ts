@@ -80,6 +80,14 @@ export function getProductGalleryThumbnailUrl(imageUrl: string) {
   return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_300,h_214,dpr_auto");
 }
 
+export function getBannerImageUrl(imageUrl: string) {
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:good,c_fill,g_auto,w_1400,h_760,dpr_auto");
+}
+
+export function getBannerPosterUrl(imageUrl: string) {
+  return cloudinaryImageUrl(imageUrl, "f_auto,q_auto:eco,c_fill,g_auto,w_900,h_500,dpr_auto");
+}
+
 export function productImageUrl(url: string, size: "catalog" | "detail" | "thumbnail" | "zoom") {
   if (size === "catalog") {
     return getProductThumbnailUrl(url);

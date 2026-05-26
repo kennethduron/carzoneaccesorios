@@ -5,6 +5,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "admin:access",
     "system:monitoring",
     "settings:manage",
+    "commercial_settings:manage",
     "users:manage",
     "roles:assign",
     "audit:read",

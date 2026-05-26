@@ -3,13 +3,21 @@ import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { HolidayBannersManager } from "@/components/admin/holiday-banners-manager";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminHolidayBanners } from "@/services/supabase/holiday-banners.service";
+import {
+  getAdminHolidayBanners,
+  getHolidayBannerAuditEntries,
+  getHolidayBannerStorageSummary,
+} from "@/services/supabase/holiday-banners.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminBannersPage() {
   await requirePermission("commercial_settings:manage");
-  const banners = await getAdminHolidayBanners();
+  const [banners, auditEntries, storageSummary] = await Promise.all([
+    getAdminHolidayBanners(),
+    getHolidayBannerAuditEntries(),
+    getHolidayBannerStorageSummary(),
+  ]);
 
   return (
     <AdminShell title="Promociones y dias festivos">
@@ -19,7 +27,7 @@ export default async function AdminBannersPage() {
           Panel administrativo
         </Link>
       </div>
-      <HolidayBannersManager banners={banners} />
+      <HolidayBannersManager banners={banners} auditEntries={auditEntries} storageSummary={storageSummary} />
     </AdminShell>
   );
 }

@@ -472,16 +472,16 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               </label>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1160px] text-left text-sm">
+              <table className="w-full min-w-[980px] table-fixed text-left text-sm">
                 <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                   <tr>
-                    <th className="px-4 py-3">Usuario</th>
-                    <th className="px-4 py-3">Rol</th>
-                    <th className="px-4 py-3">Estado</th>
+                    <th className="w-[23%] px-4 py-3">Usuario</th>
+                    <th className="w-[15%] px-4 py-3">Rol</th>
+                    <th className="w-[11%] px-4 py-3">Estado</th>
                     <th className="px-4 py-3">Creación</th>
                     <th className="px-4 py-3">Último acceso</th>
-                    <th className="px-4 py-3">Correo</th>
-                    <th className="px-4 py-3">Acciones</th>
+                    <th className="w-[11%] px-4 py-3">Correo</th>
+                    <th className="w-[16%] px-3 py-3 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
@@ -492,18 +492,18 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
                     return (
                       <tr key={user.id}>
-                        <td className="px-4 py-3">
-                          <p className="font-semibold">{user.full_name || user.email || "Sin nombre"}</p>
-                          <p className="text-xs text-black/50">{user.email ?? "-"}</p>
+                        <td className="px-4 py-3 align-top">
+                          <p className="truncate font-semibold">{user.full_name || user.email || "Sin nombre"}</p>
+                          <p className="truncate text-xs text-black/50">{user.email ?? "-"}</p>
                           <p className="text-xs text-black/40">{user.username ? `@${user.username}` : user.id.slice(0, 8)}</p>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 align-top">
                           <select
                             value={selectedRole}
                             onChange={(event) =>
                               setRoleSelections((current) => ({ ...current, [user.id]: event.target.value as AppRole }))
                             }
-                            className="w-44 rounded-md border border-black/10 bg-white px-2 py-2 text-sm outline-none"
+                            className="w-full rounded-md border border-black/10 bg-white px-2 py-2 text-sm outline-none"
                             disabled={!canModify}
                           >
                             {roleOptions.map((role) => (
@@ -516,7 +516,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                             ) : null}
                           </select>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 align-top">
                           <span
                             className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                               user.active ? "bg-[#edf7ed] text-[#2f6f3e]" : "bg-[#fdecec] text-[#a33a2d]"
@@ -525,9 +525,9 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                             {user.active ? "Activo" : "Suspendido"}
                           </span>
                         </td>
-                        <td className="px-4 py-3">{formatDateTime(user.created_at)}</td>
-                        <td className="px-4 py-3">{formatDateTime(user.last_sign_in_at)}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 align-top text-xs text-black/65">{formatDateTime(user.created_at)}</td>
+                        <td className="px-4 py-3 align-top text-xs text-black/65">{formatDateTime(user.last_sign_in_at)}</td>
+                        <td className="px-4 py-3 align-top">
                           {user.email_confirmed_at ? (
                             <span className="inline-flex items-center gap-1 text-[#2f6f3e]">
                               <CheckCircle2 size={15} />
@@ -537,33 +537,28 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                             <span className="text-black/45">Pendiente</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant="secondary"
+                        <td className="px-3 py-3 align-top">
+                          <div className="flex justify-end gap-1">
+                            <IconActionButton
+                              label="Asignar rol"
                               disabled={!canModify || !canChangeToSelected || selectedRole === user.role || isPending}
                               onClick={() => openRoleChange(user)}
                             >
-                              Asignar rol
-                            </Button>
-                            <Button
-                              type="button"
-                              variant={user.active ? "ghost" : "secondary"}
+                              <ShieldCheck size={15} />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={user.active ? "Suspender usuario" : "Reactivar usuario"}
                               disabled={!canModify || isPending}
                               onClick={() => setActive(user, !user.active)}
                             >
-                              {user.active ? <UserX size={16} /> : <CheckCircle2 size={16} />}
-                              {user.active ? "Suspender" : "Reactivar"}
-                            </Button>
-                            <Button type="button" variant="ghost" onClick={() => setAuditUserId(user.id)}>
-                              <FileClock size={16} />
-                              Ver actividad
-                            </Button>
-                            <Button type="button" variant="ghost" onClick={() => setProfileUserId(user.id)}>
-                              <Eye size={16} />
-                              Ver perfil del usuario
-                            </Button>
+                              {user.active ? <UserX size={15} /> : <CheckCircle2 size={15} />}
+                            </IconActionButton>
+                            <IconActionButton label="Ver actividad" onClick={() => setAuditUserId(user.id)}>
+                              <FileClock size={15} />
+                            </IconActionButton>
+                            <IconActionButton label="Ver perfil del usuario" onClick={() => setProfileUserId(user.id)}>
+                              <Eye size={15} />
+                            </IconActionButton>
                           </div>
                         </td>
                       </tr>
@@ -760,12 +755,12 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             </InputLabel>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-left text-sm">
+          <div className="max-h-[650px] overflow-auto">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                 <tr>
                   {["Fecha/hora", "Usuario", "Rol", "Módulo", "Acción", "Entidad", "Resultado", "IP", "Navegador", "Cambios"].map((column) => (
-                    <th key={column} className="px-4 py-3">
+                    <th key={column} className="sticky top-0 z-10 bg-[#e7e5e4] px-4 py-3">
                       {column}
                     </th>
                   ))}
@@ -891,6 +886,31 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function IconActionButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-grid size-7 place-items-center rounded-md border border-black/10 bg-white text-black/70 shadow-sm transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] hover:text-[#b91c25] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/5 disabled:text-black/25 disabled:hover:translate-y-0"
+    >
+      {children}
+    </button>
   );
 }
 
