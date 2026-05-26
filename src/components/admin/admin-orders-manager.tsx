@@ -106,8 +106,18 @@ export function AdminOrdersManager({
   }
 
   function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected") {
+    const rejectionReason =
+      status === "rejected"
+        ? window.prompt("Motivo para rechazar el pago. Se liberará la reserva del pedido.")?.trim() ?? ""
+        : "";
+
+    if (status === "rejected" && rejectionReason.length < 4) {
+      showAdminMessage("Ingresa un motivo para rechazar el pago.", false);
+      return;
+    }
+
     startTransition(async () => {
-      const result = await updateOrderPaymentStatusAction(order.id, status);
+      const result = await updateOrderPaymentStatusAction(order.id, status, rejectionReason);
       showAdminMessage(result.message, result.ok);
       if (result.ok) router.refresh();
     });
@@ -334,7 +344,10 @@ function OrderDetail({
             {order.invoice_number ? <InfoBlock label="Factura fiscal" value={order.invoice_number} /> : null}
             {isBankTransfer ? (
               <>
-                <InfoBlock label="Número de referencia" value={order.bank_reference_number ?? "Sin referencia"} />
+                <div className="rounded-lg border border-[#e4252c]/25 bg-[#fff1f2] p-4">
+                  <p className="text-sm text-[#7f1d1d]/70">Referencia bancaria</p>
+                  <p className="mt-1 font-semibold text-[#7f1d1d]">{order.bank_reference_number ?? "Sin referencia"}</p>
+                </div>
                 <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
                   <p className="text-sm text-black/50">Comprobante</p>
                   {order.transfer_receipt_url ? (
@@ -348,7 +361,7 @@ function OrderDetail({
                       Ver comprobante
                     </a>
                   ) : (
-                    <p className="mt-2 text-sm text-black/65">No fue subido.</p>
+                    <p className="mt-2 text-sm text-black/65">Sin comprobante adjunto.</p>
                   )}
                 </div>
               </>

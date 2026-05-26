@@ -44,6 +44,7 @@ const guestCheckoutAccount: CheckoutAccountInfo = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const bankReferencePattern = /^[A-Za-z0-9 -]+$/;
 
 function mergeCheckoutAccount(current: CheckoutData, account: CheckoutAccountInfo): CheckoutData {
   return {
@@ -55,6 +56,28 @@ function mergeCheckoutAccount(current: CheckoutData, account: CheckoutAccountInf
     address: current.address || account.address || "",
     city: current.city || account.city || "",
   };
+}
+
+function validateBankReference(value: string) {
+  const reference = value.trim().replace(/\s+/g, " ");
+
+  if (!reference) {
+    return "Ingresa el número de referencia bancaria.";
+  }
+
+  if (reference.length < 4) {
+    return "La referencia bancaria debe tener al menos 4 caracteres.";
+  }
+
+  if (reference.length > 80) {
+    return "La referencia bancaria no debe superar 80 caracteres.";
+  }
+
+  if (!bankReferencePattern.test(reference)) {
+    return "La referencia bancaria solo puede incluir letras, números, espacios y guiones.";
+  }
+
+  return "";
 }
 
 const hondurasDepartments = [
@@ -285,17 +308,13 @@ export function CheckoutView({
       return;
     }
 
-    if (isBankTransfer && settings.require_bank_reference && !bankTransferReference) {
-      showCheckoutError("bankTransferReference", "Ingresa el número de referencia de la transferencia.");
+    const bankReferenceError = isBankTransfer ? validateBankReference(bankTransferReference) : "";
+    if (bankReferenceError) {
+      showCheckoutError("bankTransferReference", bankReferenceError);
       return;
     }
 
-    if (isBankTransfer && settings.transfer_receipt_requirement === "required" && !proofFile) {
-      showCheckoutError("transferReceipt", "Sube el comprobante de transferencia para continuar.");
-      return;
-    }
-
-    if (isBankTransfer && settings.transfer_receipt_requirement !== "disabled" && proofMessage && !proofFile) {
+    if (isBankTransfer && proofMessage && !proofFile) {
       setCheckoutMessage(proofMessage);
       toast.error(proofMessage);
       return;
@@ -331,7 +350,7 @@ export function CheckoutView({
       formData.set("items", JSON.stringify(items));
       formData.set("priceMode", priceMode);
 
-      if (isBankTransfer && settings.transfer_receipt_requirement !== "disabled" && proofFile) {
+      if (isBankTransfer && proofFile) {
         formData.set("transferReceipt", proofFile);
       }
 
@@ -547,20 +566,20 @@ export function CheckoutView({
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Realiza la transferencia{settings.require_bank_reference ? " e ingresa la referencia bancaria" : ""} para confirmar tu pedido.
+                    Revisaremos tu pago con la referencia bancaria proporcionada. El comprobante es opcional, pero puede acelerar la validación.
                   </p>
                 </div>
               </div>
               <label className="mt-4 block">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">
-                  Número de referencia de la transferencia{settings.require_bank_reference ? "" : " (opcional)"}
+                  Número de referencia bancaria
                 </span>
                 <input
                   value={checkout.bankTransferReference}
                   onChange={(event) =>
                     updateCheckoutField("bankTransferReference", event.target.value)
                   }
-                  placeholder="Ej. 839201746"
+                  placeholder="Ej. 123456789"
                   className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
                     fieldErrors.bankTransferReference ? "border-[#e4252c]" : "border-black/10"
                   }`}
@@ -569,18 +588,17 @@ export function CheckoutView({
                   <span className="mt-1 block text-xs text-[#9b341b]">{fieldErrors.bankTransferReference}</span>
                 ) : null}
                 <span className="mt-1 block text-xs text-black/50">
-                  {settings.require_bank_reference
-                    ? "Ingresa el número de referencia que aparece en tu comprobante bancario."
-                    : "Puedes dejarlo vacío si todavía no tienes la referencia."}
+                  Ingresa el número de referencia de tu transferencia o depósito.
                 </span>
               </label>
-              {settings.transfer_receipt_requirement !== "disabled" ? (
-                <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-white px-4 py-4 text-sm font-medium">
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-medium uppercase text-black/50">Comprobante de transferencia (opcional)</p>
+                <p className="mb-2 text-xs text-black/50">
+                  Puedes subir una imagen o PDF para ayudarnos a validar más rápido tu pago.
+                </p>
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-white px-4 py-4 text-sm font-medium">
                   <Upload size={17} />
-                  {proofFileName ||
-                    (settings.transfer_receipt_requirement === "required"
-                      ? "Subir comprobante obligatorio"
-                      : "Subir comprobante si aplica")}
+                  {proofFileName || "Subir comprobante opcional"}
                   <input
                     type="file"
                     accept="image/*,.pdf"
@@ -620,7 +638,7 @@ export function CheckoutView({
                     }}
                   />
                 </label>
-              ) : null}
+              </div>
               {proofMessage ? (
                 <p
                   className={`mt-2 rounded-md px-3 py-2 text-xs ${

@@ -121,7 +121,14 @@ type CustomerProfileOrderRow = {
   created_at: string;
   status: string;
   payment_method: string;
-  payments: Array<{ payment_status: string | null; status: string | null }> | null;
+  payments: Array<{
+    payment_status: string | null;
+    status: string | null;
+    bank_reference_number: string | null;
+    reference: string | null;
+    transfer_receipt_url: string | null;
+    transfer_receipt_public_id: string | null;
+  }> | null;
   price_mode: "retail" | "wholesale";
   total: unknown;
   invoices: Array<{ invoice_number: string | null }> | { invoice_number: string | null } | null;
@@ -754,7 +761,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     async () =>
       admin
         .from("orders")
-        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false })
         .limit(30)
@@ -766,7 +773,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .eq("user_id", customerRow.user_id)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -779,7 +786,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .ilike("email", normalizedEmail)
           .is("user_id", null)
           .order("created_at", { ascending: false })
@@ -896,6 +903,8 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
         status: order.status,
         payment_method: order.payment_method,
         payment_status: payment?.payment_status ?? payment?.status ?? null,
+        bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
+        has_transfer_receipt: Boolean(payment?.transfer_receipt_public_id || payment?.transfer_receipt_url),
         price_mode: order.price_mode,
         total: toNumber(order.total),
         invoice_number: invoice?.invoice_number ?? null,

@@ -71,8 +71,14 @@ function safeAdminOrderMessage(message: string) {
   return message || "No se pudo actualizar el pedido.";
 }
 
-export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus) {
+export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
   await requirePermission("payments:manage");
+  const rejectionReason = reason.trim();
+
+  if (status === "rejected" && rejectionReason.length < 4) {
+    return { ok: false, message: "Ingresa un motivo para rechazar el pago." };
+  }
+
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -121,10 +127,6 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     transfer_receipt_public_id: payment.transfer_receipt_public_id,
     order_reservation_status: order.order_reservation_status,
   };
-
-  if (status === "approved" && order.payment_method === "bank_transfer" && !hasTransferReceipt(paymentContext)) {
-    return { ok: false, message: "No se puede confirmar pago por transferencia sin comprobante." };
-  }
 
   if (status === "approved" && order.payment_method === "card") {
     return { ok: false, message: "Los pagos con tarjeta solo deben confirmarse mediante pasarela o webhook autorizado." };
@@ -180,6 +182,7 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
       amount: payment.amount,
       bank_reference: payment.bank_reference_number ?? payment.reference,
       has_transfer_receipt: hasTransferReceipt(paymentContext),
+      rejection_reason: status === "rejected" ? rejectionReason : null,
     },
     newData: {
       order_id: order.id,
@@ -189,6 +192,7 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
       payment_id: payment.id,
       payment_status: status,
       paid_at: paidAt,
+      rejection_reason: status === "rejected" ? rejectionReason : null,
       changes: {
         payment_status: { from: payment.payment_status ?? payment.status, to: status },
         order_status: { from: order.status, to: nextOrderStatus },

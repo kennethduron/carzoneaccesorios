@@ -1,15 +1,39 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { formatCurrency, getProductPriceLabel } from "@/utils/pricing";
+import { calculateCheckoutFees } from "@/utils/commerce-settings";
+import { defaultPublicCompanySettings, getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
+import type { PublicCompanySettings } from "@/types/settings";
 
 export function CartView() {
-  const { rows, invalidItemCount, cartMessage, subtotal, tax, total, updateQuantity, removeFromCart, clearInvalidCartItems } =
+  const { rows, invalidItemCount, cartMessage, subtotal, updateQuantity, removeFromCart, clearInvalidCartItems } =
     useShoppingCart();
   const { priceMode, wholesaleAccount } = usePriceMode();
+  const [settings, setSettings] = useState<PublicCompanySettings>(defaultPublicCompanySettings);
+  const estimatedFees = useMemo(
+    () => calculateCheckoutFees({ subtotal, paymentMethod: "Transferencia bancaria", settings }),
+    [settings, subtotal],
+  );
+  const estimatedTransferTotal = Math.round((subtotal + estimatedFees.shippingFee) * 100) / 100;
+
+  useEffect(() => {
+    let active = true;
+
+    getPublicCompanySettingsClient().then((nextSettings) => {
+      if (active) {
+        setSettings(nextSettings);
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <section className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[1fr_360px]">
@@ -85,7 +109,7 @@ export function CartView() {
             Cuenta mayorista aprobada: {wholesaleAccount.businessName}
           </p>
         ) : null}
-        <Totals subtotal={subtotal} tax={tax} total={total} />
+        <Totals subtotal={subtotal} shippingFee={estimatedFees.shippingFee} total={estimatedTransferTotal} settings={settings} />
         <Link
           href="/checkout"
           className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
@@ -97,19 +121,34 @@ export function CartView() {
   );
 }
 
-export function Totals({ subtotal, tax, total }: { subtotal: number; tax: number; total: number }) {
+export function Totals({
+  subtotal,
+  shippingFee,
+  total,
+  settings,
+}: {
+  subtotal: number;
+  shippingFee: number;
+  total: number;
+  settings: PublicCompanySettings;
+}) {
+  const hasFreeShipping = shippingFee === 0 && subtotal >= settings.free_shipping_threshold;
+
   return (
     <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
       <div className="flex justify-between">
-        <span>Subtotal</span>
+        <span>Subtotal productos</span>
         <span>{formatCurrency(subtotal)}</span>
       </div>
       <div className="flex justify-between">
-        <span>ISV 15%</span>
-        <span>{formatCurrency(tax)}</span>
+        <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>
+        <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
+      </div>
+      <div className="rounded-md bg-[#f4f4f5] p-3 text-xs text-black/60">
+        <p>Estimado usando transferencia bancaria. En checkout verás el mismo subtotal de productos.</p>
       </div>
       <div className="flex justify-between text-lg font-semibold">
-        <span>Total</span>
+        <span>Total estimado</span>
         <span>{formatCurrency(total)}</span>
       </div>
     </div>

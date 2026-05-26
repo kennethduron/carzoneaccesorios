@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminSecurityPage() {
   const profile = await requirePermission("audit:read");
-  const security = await getAdminSecurity();
+  const security = await getAdminSecurity(profile);
 
   return (
     <AdminShell title="Seguridad">

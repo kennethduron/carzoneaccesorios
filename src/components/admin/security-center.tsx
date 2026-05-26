@@ -5,12 +5,14 @@ import Link from "next/link";
 import {
   CheckCircle2,
   DatabaseBackup,
+  Eye,
   FileClock,
   LockKeyhole,
   Search,
   ShieldCheck,
   UserCog,
   UserPlus,
+  UserRound,
   UserX,
 } from "lucide-react";
 import {
@@ -23,7 +25,7 @@ import { Button } from "@/components/ui";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/contexts/toast-context";
 import type { AppRole, AuthProfile } from "@/types/auth";
-import type { AdminSecurityData, AdminUserSummary, BackupType } from "@/types/security";
+import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupType } from "@/types/security";
 import { formatHnDateTime } from "@/utils/format";
 
 type SecurityCenterProps = {
@@ -45,6 +47,17 @@ type CreateUserForm = {
   temporaryPassword: string;
 };
 
+type AuditPeriod = "today" | "yesterday" | "7d" | "month" | "custom" | "all";
+
+type AuditFilters = {
+  period: AuditPeriod;
+  module: string;
+  action: string;
+  severity: string;
+  from: string;
+  to: string;
+};
+
 const backupTypeLabels: Record<BackupType, string> = {
   manual: "Manual",
   scheduled: "Programado",
@@ -62,6 +75,17 @@ const roleLabels: Record<AppRole, string> = {
 };
 
 const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora"];
+const sensitiveKeyPattern = /(password|token|secret|apikey|api_key|key|service_role|authorization|card|tarjeta|cron_secret)/i;
+
+const roleDescriptions: Record<AppRole, string> = {
+  technical_owner: "Administrador técnico. Mantiene infraestructura, monitoreo y recuperación técnica.",
+  admin: "Administrador técnico/avanzado. Puede operar el sistema y administrar configuración sensible.",
+  business_owner: "Dueño operativo. Administra ventas, equipo, pedidos, clientes, pagos, facturas y reportes sin secretos técnicos.",
+  vendedor: "Atiende clientes, pedidos y CRM operativo.",
+  bodega: "Gestiona inventario, preparación y envíos.",
+  contadora: "Revisa pagos, facturas, fiscal y reportes financieros.",
+  cliente: "Cuenta pública de compra y consulta de sus propios pedidos.",
+};
 
 function formatDateTime(value: string | null) {
   return formatHnDateTime(value);
@@ -72,7 +96,98 @@ function compactJson(value: Record<string, unknown> | null) {
     return "-";
   }
 
-  return JSON.stringify(value).slice(0, 140);
+  return JSON.stringify(maskSensitiveValue(value)).slice(0, 180);
+}
+
+function maskSensitiveValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(maskSensitiveValue);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        sensitiveKeyPattern.test(key) ? "[oculto]" : maskSensitiveValue(entry),
+      ]),
+    );
+  }
+
+  return value;
+}
+
+function auditModule(log: Pick<AuditLogRow, "table_name" | "action">) {
+  const action = log.action.toLowerCase();
+  const table = log.table_name;
+
+  if (action.includes("product") || table.includes("product")) return "Productos";
+  if (action.includes("inventory") || table.includes("inventory")) return "Inventario";
+  if (action.includes("payment") || table === "payments") return "Pagos";
+  if (action.includes("invoice") || action.includes("fiscal") || table.includes("invoice")) return "Facturación";
+  if (action.includes("crm") || table.includes("crm")) return "CRM";
+  if (action.includes("wholesale")) return "Mayoreo";
+  if (action.includes("user") || table === "users" || table === "roles") return "Usuarios y roles";
+  if (action.includes("settings") || table.includes("settings")) return "Configuración";
+  if (action.includes("order") || table === "orders") return "Pedidos";
+  return table;
+}
+
+function auditSeverity(log: Pick<AuditLogRow, "action">) {
+  const action = log.action.toLowerCase();
+  if (action.includes("failed") || action.includes("error") || action.includes("deleted") || action.includes("suspended")) return "warning";
+  if (action.includes("role_changed") || action.includes("settings") || action.includes("cancel") || action.includes("rejected")) return "review";
+  return "info";
+}
+
+function auditResult(log: Pick<AuditLogRow, "action" | "new_data">) {
+  const action = log.action.toLowerCase();
+  const status = String(log.new_data?.status ?? log.new_data?.result ?? "").toLowerCase();
+  if (action.includes("failed") || action.includes("error") || action.includes("blocked") || status.includes("failed")) {
+    return "Fallido";
+  }
+
+  return "Exitoso";
+}
+
+function isWithinPeriod(logDate: Date, filters: AuditFilters) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTomorrow = new Date(startOfToday);
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+
+  if (filters.period === "today") {
+    return logDate >= startOfToday && logDate < startOfTomorrow;
+  }
+
+  if (filters.period === "yesterday") {
+    const startOfYesterday = new Date(startOfToday);
+    startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+    return logDate >= startOfYesterday && logDate < startOfToday;
+  }
+
+  if (filters.period === "7d") {
+    const cutoff = new Date(now);
+    cutoff.setDate(cutoff.getDate() - 7);
+    return logDate >= cutoff;
+  }
+
+  if (filters.period === "month") {
+    return logDate >= new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  if (filters.period === "custom") {
+    const from = filters.from ? new Date(`${filters.from}T00:00:00`) : null;
+    const to = filters.to ? new Date(`${filters.to}T23:59:59`) : null;
+    return (!from || logDate >= from) && (!to || logDate <= to);
+  }
+
+  return true;
+}
+
+function deviceLabel(userAgent: string | null) {
+  if (!userAgent) return "-";
+  if (userAgent.length <= 80) return userAgent;
+  return `${userAgent.slice(0, 80)}...`;
 }
 
 function canAssignRole(actorRole: AppRole, role: AppRole) {
@@ -85,7 +200,7 @@ function canAssignRole(actorRole: AppRole, role: AppRole) {
   }
 
   if (actorRole === "technical_owner") {
-    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora"].includes(role);
+    return ["technical_owner", "admin", "business_owner", "cliente", "vendedor", "bodega", "contadora"].includes(role);
   }
 
   return false;
@@ -130,6 +245,15 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
   const [roleSelections, setRoleSelections] = useState<Record<string, AppRole>>({});
   const [roleDraft, setRoleDraft] = useState<RoleChangeDraft>(null);
   const [auditUserId, setAuditUserId] = useState<string | null>(null);
+  const [profileUserId, setProfileUserId] = useState<string | null>(null);
+  const [auditFilters, setAuditFilters] = useState<AuditFilters>({
+    period: "7d",
+    module: "all",
+    action: "all",
+    severity: "all",
+    from: "",
+    to: "",
+  });
   const [createForm, setCreateForm] = useState<CreateUserForm>(initialCreateForm);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -140,9 +264,21 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
   const canRequestBackups = currentUser.role === "admin" || currentUser.permissions.includes("settings:manage");
   const roleOptions = assignableRoles(currentUser.role);
   const selectedAuditUser = data.users.find((user) => user.id === auditUserId) ?? null;
-  const visibleAuditLogs = selectedAuditUser
+  const selectedProfileUser = data.users.find((user) => user.id === profileUserId) ?? null;
+  const auditModules = Array.from(new Set(data.auditLogs.map(auditModule))).sort((left, right) => left.localeCompare(right, "es-HN"));
+  const auditActions = Array.from(new Set(data.auditLogs.map((log) => log.action))).sort((left, right) => left.localeCompare(right, "es-HN"));
+  const visibleAuditLogs = (selectedAuditUser
     ? data.auditLogs.filter((log) => log.user_id === selectedAuditUser.id || log.record_id === selectedAuditUser.id)
-    : data.auditLogs;
+    : data.auditLogs
+  ).filter((log) => {
+    const logDate = new Date(log.created_at);
+    return (
+      isWithinPeriod(logDate, auditFilters) &&
+      (auditFilters.module === "all" || auditModule(log) === auditFilters.module) &&
+      (auditFilters.action === "all" || log.action === auditFilters.action) &&
+      (auditFilters.severity === "all" || auditSeverity(log) === auditFilters.severity)
+    );
+  });
 
   const filteredUsers = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -227,6 +363,21 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         <Metric label="Permisos" value={permissionCount.toLocaleString("es-HN")} />
         <Metric label="Logs recientes" value={data.auditLogs.length.toLocaleString("es-HN")} />
       </div>
+
+      <section className="grid gap-3 lg:grid-cols-3">
+        <ControlItem
+          title="Perfil de usuario"
+          description="Muestra datos de cuenta, rol, estado, módulos permitidos y relación comercial como cliente, pedidos y facturas."
+        />
+        <ControlItem
+          title="Actividad / auditoría"
+          description="Muestra acciones realizadas en el sistema, con filtros por fecha, módulo, acción y severidad."
+        />
+        <ControlItem
+          title="Separación técnica"
+          description="El dueño operativo no recibe secretos, errores crudos, backups ni módulos de infraestructura."
+        />
+      </section>
 
       {canManageUsers ? (
         <section className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
@@ -406,16 +557,13 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                               {user.active ? "Suspender" : "Reactivar"}
                             </Button>
                             <Button type="button" variant="ghost" onClick={() => setAuditUserId(user.id)}>
-                              Ver auditoría
+                              <FileClock size={16} />
+                              Ver actividad
                             </Button>
-                            {user.customer_id ? (
-                              <Link
-                                href={`/admin/clientes?customerId=${encodeURIComponent(user.customer_id)}`}
-                                className="inline-flex items-center rounded-md border border-black/10 px-3 py-2 text-sm font-semibold"
-                              >
-                                Ver perfil
-                              </Link>
-                            ) : null}
+                            <Button type="button" variant="ghost" onClick={() => setProfileUserId(user.id)}>
+                              <Eye size={16} />
+                              Ver perfil del usuario
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -520,7 +668,157 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
+      <section className={`grid gap-5 ${data.backupLogs.length > 0 || canRequestBackups ? "xl:grid-cols-2" : ""}`}>
+        <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
+          <div className="flex flex-col gap-3 border-b border-black/10 p-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileClock size={19} />
+                <h2 className="font-semibold">
+                  {selectedAuditUser ? `Actividad de ${selectedAuditUser.email ?? selectedAuditUser.full_name}` : "Actividad y auditoría"}
+                </h2>
+              </div>
+              <p className="mt-1 text-sm text-black/55">Consulta las acciones realizadas por este usuario en el sistema.</p>
+            </div>
+            {selectedAuditUser ? (
+              <Button type="button" variant="ghost" onClick={() => setAuditUserId(null)}>
+                Ver todo
+              </Button>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 border-b border-black/10 p-4 md:grid-cols-3 xl:grid-cols-6">
+            <InputLabel label="Fecha">
+              <select
+                value={auditFilters.period}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, period: event.target.value as AuditPeriod }))}
+                className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="today">Hoy</option>
+                <option value="yesterday">Ayer</option>
+                <option value="7d">Últimos 7 días</option>
+                <option value="month">Este mes</option>
+                <option value="custom">Rango personalizado</option>
+                <option value="all">Todo</option>
+              </select>
+            </InputLabel>
+            <InputLabel label="Módulo">
+              <select
+                value={auditFilters.module}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, module: event.target.value }))}
+                className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="all">Todos</option>
+                {auditModules.map((module) => (
+                  <option key={module} value={module}>
+                    {module}
+                  </option>
+                ))}
+              </select>
+            </InputLabel>
+            <InputLabel label="Acción">
+              <select
+                value={auditFilters.action}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, action: event.target.value }))}
+                className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="all">Todas</option>
+                {auditActions.map((action) => (
+                  <option key={action} value={action}>
+                    {action}
+                  </option>
+                ))}
+              </select>
+            </InputLabel>
+            <InputLabel label="Severidad">
+              <select
+                value={auditFilters.severity}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, severity: event.target.value }))}
+                className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="all">Todas</option>
+                <option value="info">Informativa</option>
+                <option value="review">Revisión</option>
+                <option value="warning">Alerta</option>
+              </select>
+            </InputLabel>
+            <InputLabel label="Desde">
+              <input
+                type="date"
+                value={auditFilters.from}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, period: "custom", from: event.target.value }))}
+                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+              />
+            </InputLabel>
+            <InputLabel label="Hasta">
+              <input
+                type="date"
+                value={auditFilters.to}
+                onChange={(event) => setAuditFilters((current) => ({ ...current, period: "custom", to: event.target.value }))}
+                className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
+              />
+            </InputLabel>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1180px] text-left text-sm">
+              <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
+                <tr>
+                  {["Fecha/hora", "Usuario", "Rol", "Módulo", "Acción", "Entidad", "Resultado", "IP", "Navegador", "Cambios"].map((column) => (
+                    <th key={column} className="px-4 py-3">
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {visibleAuditLogs.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-6 text-center text-black/50" colSpan={10}>
+                      Sin registros para los filtros seleccionados.
+                    </td>
+                  </tr>
+                ) : (
+                  visibleAuditLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="px-4 py-3">{formatDateTime(log.created_at)}</td>
+                      <td className="px-4 py-3">{log.user_name ?? log.user_email ?? "Sistema"}</td>
+                      <td className="px-4 py-3">{log.actor_role ?? "-"}</td>
+                      <td className="px-4 py-3">{auditModule(log)}</td>
+                      <td className="px-4 py-3">{log.action}</td>
+                      <td className="px-4 py-3">{log.record_id ? `${log.table_name}:${log.record_id.slice(0, 8)}` : log.table_name}</td>
+                      <td className="px-4 py-3">{auditResult(log)}</td>
+                      <td className="px-4 py-3">{log.ip_address ?? "-"}</td>
+                      <td className="px-4 py-3">{deviceLabel(log.user_agent)}</td>
+                      <td className="px-4 py-3">
+                        <span className="block text-xs text-black/50">Antes: {compactJson(log.old_data)}</span>
+                        <span className="block text-xs text-black/70">Nuevo: {compactJson(log.new_data)}</span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {data.backupLogs.length > 0 || canRequestBackups ? (
+          <DataTable
+            title="Historial de backups"
+            icon={<DatabaseBackup size={19} />}
+            columns={["Fecha", "Tipo", "Estado", "Solicitado por", "Notas"]}
+            rows={data.backupLogs.map((backup) => [
+              formatDateTime(backup.created_at),
+              backupTypeLabels[backup.backup_type],
+              backup.status,
+              backup.requested_by_email ?? "Sistema",
+              backup.notes ?? "-",
+            ])}
+          />
+        ) : null}
+      </section>
+
+      <section className="hidden">
         <DataTable
           title={selectedAuditUser ? `Auditoria de ${selectedAuditUser.email ?? selectedAuditUser.full_name}` : "Audit logs"}
           icon={<FileClock size={19} />}
@@ -555,6 +853,18 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         />
       </section>
 
+      {selectedProfileUser ? (
+        <UserProfileModal
+          user={selectedProfileUser}
+          rolePermissions={data.roles.find((role) => role.role === selectedProfileUser.role)?.permissions ?? []}
+          onClose={() => setProfileUserId(null)}
+          onViewActivity={() => {
+            setAuditUserId(selectedProfileUser.id);
+            setProfileUserId(null);
+          }}
+        />
+      ) : null}
+
       {roleDraft ? (
         <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
@@ -580,6 +890,128 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function UserProfileModal({
+  user,
+  rolePermissions,
+  onClose,
+  onViewActivity,
+}: {
+  user: AdminUserSummary;
+  rolePermissions: string[];
+  onClose: () => void;
+  onViewActivity: () => void;
+}) {
+  const isClient = user.role === "cliente";
+
+  return (
+    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
+      <section className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+        <div className="flex flex-col gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <UserRound size={20} />
+              <h2 className="text-lg font-semibold">Perfil del usuario</h2>
+            </div>
+            <p className="mt-1 text-sm text-black/55">
+              {isClient ? "Perfil de cliente: cuenta, pedidos, facturas e historial de compras." : "Perfil operativo: rol, estado, acceso y módulos permitidos."}
+            </p>
+          </div>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cerrar
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <InfoCard label="Nombre" value={user.full_name ?? "Sin nombre"} />
+          <InfoCard label="Usuario" value={user.username ? `@${user.username}` : "-"} />
+          <InfoCard label="Correo" value={user.email ?? "-"} />
+          <InfoCard label="Teléfono" value={user.phone ?? "-"} />
+          <InfoCard label="Rol actual" value={roleLabels[user.role]} />
+          <InfoCard label="Estado de cuenta" value={user.active ? "Activa" : "Suspendida"} />
+          <InfoCard label="Último acceso" value={formatDateTime(user.last_sign_in_at)} />
+          <InfoCard label="Fecha de creación" value={formatDateTime(user.created_at)} />
+        </div>
+
+        {isClient || user.customer_id ? (
+          <div className="mt-5 rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
+            <h3 className="font-semibold">Información de cliente</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-4">
+              <InfoCard label="Negocio/contacto" value={user.customer_business_name ?? user.full_name ?? "-"} compact />
+              <InfoCard label="Estado cliente" value={user.customer_status ?? "-"} compact />
+              <InfoCard label="Mayoreo" value={user.customer_wholesale_status ?? "Sin solicitud"} compact />
+              <InfoCard label="Solicitudes mayoristas" value={String(user.wholesale_request_count)} compact />
+              <InfoCard label="Pedidos" value={String(user.order_count)} compact />
+              <InfoCard label="Facturas" value={String(user.invoice_count)} compact />
+              <InfoCard label="Historial de compras" value={user.recent_orders.length > 0 ? "Con compras registradas" : "Sin compras"} compact />
+            </div>
+            {user.customer_id ? (
+              <Link
+                href={`/admin/clientes?customerId=${encodeURIComponent(user.customer_id)}`}
+                className="mt-4 inline-flex rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold"
+              >
+                Abrir perfil de cliente en CRM
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mt-5 rounded-lg border border-black/10 bg-white p-4">
+          <h3 className="font-semibold">Módulos permitidos</h3>
+          <p className="mt-1 text-sm text-black/55">{roleDescriptions[user.role]}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {rolePermissions.length === 0 ? (
+              <span className="text-sm text-black/50">Sin permisos operativos registrados.</span>
+            ) : (
+              rolePermissions.map((permission) => (
+                <span key={permission} className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">
+                  {permission}
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-lg border border-black/10 bg-white p-4">
+          <h3 className="font-semibold">Pedidos recientes</h3>
+          <div className="mt-3 space-y-2">
+            {user.recent_orders.length === 0 ? (
+              <p className="text-sm text-black/50">Sin pedidos recientes.</p>
+            ) : (
+              user.recent_orders.map((order) => (
+                <div key={order.id} className="flex flex-col gap-1 rounded-md bg-[#f4f4f5] p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <span className="font-semibold">{order.order_number}</span>
+                  <span>{order.status}</span>
+                  <span>{order.price_mode === "wholesale" ? "Mayorista" : "Detalle"}</span>
+                  <span>{formatDateTime(order.created_at)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onViewActivity}>
+            <FileClock size={16} />
+            Ver actividad
+          </Button>
+          <Button type="button" variant="dark" onClick={onClose}>
+            Listo
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoCard({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
+  return (
+    <div className={`rounded-md border border-black/10 bg-white ${compact ? "p-3" : "p-4"}`}>
+      <p className="text-xs font-medium uppercase text-black/45">{label}</p>
+      <p className="mt-1 text-sm font-semibold">{value}</p>
     </div>
   );
 }

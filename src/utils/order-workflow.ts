@@ -169,7 +169,7 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
   }
 
   if (order.payment_method === "bank_transfer") {
-    return hasTransferReceipt(order) ? "Comprobante en revision" : "Esperando comprobante";
+    return hasTransferReceipt(order) ? "Comprobante en revision" : "Pago en revision";
   }
 
   if (order.payment_method === "card") {
@@ -194,8 +194,8 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
   }
 
   if (order.payment_method === "bank_transfer") {
-    if (!hasTransferReceipt(order)) return "Esperar comprobante antes de confirmar pago.";
-    if (!paymentConfirmed) return "Revisar comprobante antes de confirmar o rechazar pago.";
+    if (!paymentConfirmed && hasTransferReceipt(order)) return "Revisar referencia y comprobante antes de confirmar o rechazar pago.";
+    if (!paymentConfirmed) return "Revisar la referencia bancaria en la cuenta antes de confirmar o rechazar pago.";
     return "Pago confirmado. El pedido puede prepararse o facturarse.";
   }
 

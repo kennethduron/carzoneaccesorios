@@ -125,6 +125,8 @@ export type CrmCustomerOrderProfileRow = {
   status: string;
   payment_method: string;
   payment_status: string | null;
+  bank_reference_number: string | null;
+  has_transfer_receipt: boolean;
   price_mode: "retail" | "wholesale";
   total: number;
   invoice_number: string | null;

@@ -231,9 +231,10 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
               onChange={(value) => update("send_order_status_update_email", value)}
             />
             <Switch
-              label="Requerir referencia bancaria"
-              checked={form.require_bank_reference}
-              onChange={(value) => update("require_bank_reference", value)}
+              label="Referencia bancaria obligatoria"
+              help="Siempre obligatoria para transferencias nuevas."
+              checked
+              onChange={() => update("require_bank_reference", true)}
             />
             <Switch
               label="Comisión pago al recibir"
@@ -255,16 +256,13 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
             </Field>
             <Field label="Comprobante de transferencia">
               <select
-                value={form.transfer_receipt_requirement}
-                onChange={(event) =>
-                  update("transfer_receipt_requirement", event.target.value as BusinessSettings["transfer_receipt_requirement"])
-                }
+                value="optional"
+                onChange={() => update("transfer_receipt_requirement", "optional")}
                 className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
               >
-                <option value="disabled">No solicitar</option>
                 <option value="optional">Opcional</option>
-                <option value="required">Obligatorio</option>
               </select>
+              <p className="mt-1 text-xs text-black/50">El comprobante ya no puede ser obligatorio; la referencia bancaria valida el pedido.</p>
             </Field>
           </div>
         </SettingsPanel>

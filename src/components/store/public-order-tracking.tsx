@@ -21,8 +21,7 @@ const cashProgressSteps = [
 
 const transferProgressSteps = [
   { key: "recibido", label: "Pedido recibido" },
-  { key: "esperando_comprobante", label: "Esperando comprobante" },
-  { key: "revision", label: "Comprobante en revisión" },
+  { key: "revision", label: "Pago en revisión" },
   { key: "pago_confirmado", label: "Pago confirmado" },
   { key: "preparacion", label: "En preparación" },
   { key: "empacado", label: "Empacado" },
@@ -76,7 +75,7 @@ function customerPaymentLabel(order: PublicTrackingOrder) {
     return "Pago confirmado";
   }
   if (order.paymentMethod === "bank_transfer") {
-    return order.hasTransferReceipt ? "Comprobante en revisión" : "Esperando comprobante";
+    return "Pago en revisión";
   }
   if (order.paymentMethod === "card") return "Pendiente de pasarela";
   return "Pendiente de confirmación";
@@ -98,13 +97,12 @@ function activeProgressIndex(order: PublicTrackingOrder) {
   }
 
   if (order.paymentMethod === "bank_transfer") {
-    if (status === "entregado") return 8;
-    if (status === "en_ruta") return 7;
-    if (status === "enviado") return 6;
-    if (status === "empacado") return 5;
-    if (status === "preparacion") return 4;
-    if (isPaymentConfirmed(order.paymentStatus)) return 3;
-    if (order.hasTransferReceipt) return 2;
+    if (status === "entregado") return 7;
+    if (status === "en_ruta") return 6;
+    if (status === "enviado") return 5;
+    if (status === "empacado") return 4;
+    if (status === "preparacion") return 3;
+    if (isPaymentConfirmed(order.paymentStatus)) return 2;
     return 1;
   }
 
@@ -208,6 +206,21 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             <InfoBlock label="Estado del pedido" value={customerOrderLabel(order)} />
             <InfoBlock label="Estado del pago" value={customerPaymentLabel(order)} />
           </div>
+
+          {order.paymentMethod === "bank_transfer" && !isPaymentConfirmed(order.paymentStatus) ? (
+            <div className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              <p>
+                {order.hasBankReference
+                  ? "Pago en revisión. Estamos validando tu transferencia con la referencia proporcionada."
+                  : "Pago en revisión. Contacta a servicio al cliente si no ingresaste referencia bancaria."}
+              </p>
+              <p className="mt-1">
+                {order.hasTransferReceipt
+                  ? "Comprobante recibido."
+                  : "Comprobante no adjuntado. Revisaremos el pago con la referencia bancaria."}
+              </p>
+            </div>
+          ) : null}
 
           <div className="mt-5 space-y-3">
             {progressSteps.map((step, index) => (

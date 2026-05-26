@@ -69,7 +69,11 @@ export async function saveBusinessSettingsAction(input: BusinessSettings) {
     return { ok: false, message: "No tienes autorización para cambiar configuración empresarial." };
   }
 
-  const sanitized = sanitizeBusinessSettings(input);
+  const sanitized = {
+    ...sanitizeBusinessSettings(input),
+    require_bank_reference: true,
+    transfer_receipt_requirement: "optional" as const,
+  };
   const emailError = validateEmailList(sanitized.notification_emails);
   if (emailError) {
     return { ok: false, message: emailError };

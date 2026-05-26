@@ -11,6 +11,8 @@ export type AuditLogRow = {
   action: string;
   old_data: Record<string, unknown> | null;
   new_data: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
   created_at: string;
 };
 
@@ -48,6 +50,20 @@ export type AdminUserSummary = {
   last_sign_in_at: string | null;
   email_confirmed_at: string | null;
   customer_id: string | null;
+  customer_status: string | null;
+  customer_wholesale_status: string | null;
+  customer_business_name: string | null;
+  order_count: number;
+  invoice_count: number;
+  wholesale_request_count: number;
+  recent_orders: Array<{
+    id: string;
+    order_number: string;
+    status: string;
+    price_mode: string;
+    total: number;
+    created_at: string;
+  }>;
 };
 
 export type AdminSecurityData = {

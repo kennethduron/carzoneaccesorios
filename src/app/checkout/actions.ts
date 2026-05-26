@@ -10,6 +10,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import { getAuthorizedProductPrice } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
 
 type CheckoutOrderItemInput = {
@@ -63,6 +64,12 @@ type CustomerAuthorizationRow = {
   active: boolean;
 };
 
+type CheckoutProductPriceRow = {
+  id: string;
+  retail_price: number | null;
+  wholesale_price: number | null;
+};
+
 const wholesaleMessages = {
   loginRequired: "Inicia sesión con tu cuenta mayorista aprobada para activar precios.",
   accountNotAuthorized: "Tu cuenta no está autorizada para compras mayoristas.",
@@ -70,6 +77,7 @@ const wholesaleMessages = {
 const hondurasOnlyMessage = "Actualmente solo realizamos entregas dentro de Honduras.";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const bankReferencePattern = /^[A-Za-z0-9 -]+$/;
 
 function isUuid(value: string) {
   return uuidPattern.test(value);
@@ -141,6 +149,28 @@ function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
 
 function normalizeEmail(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function validateBankReference(value: string) {
+  const reference = value.trim().replace(/\s+/g, " ");
+
+  if (!reference) {
+    return { ok: false as const, message: "Ingresa el número de referencia bancaria." };
+  }
+
+  if (reference.length < 4) {
+    return { ok: false as const, message: "La referencia bancaria debe tener al menos 4 caracteres." };
+  }
+
+  if (reference.length > 80) {
+    return { ok: false as const, message: "La referencia bancaria no debe superar 80 caracteres." };
+  }
+
+  if (!bankReferencePattern.test(reference)) {
+    return { ok: false as const, message: "La referencia bancaria solo puede incluir letras, números, espacios y guiones." };
+  }
+
+  return { ok: true as const, value: reference };
 }
 
 export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
@@ -327,7 +357,11 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const deliveryAddress = String(input.checkout.address ?? "").trim();
   const email = user ? accountEmail : submittedEmail;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
-  const bankReference = String(input.checkout.bankTransferReference ?? "").trim();
+  const bankReferenceResult =
+    paymentMethod === "bank_transfer"
+      ? validateBankReference(String(input.checkout.bankTransferReference ?? ""))
+      : { ok: true as const, value: "" };
+  const bankReference = bankReferenceResult.ok ? bankReferenceResult.value : "";
   const rawItems = Array.isArray(input.items) ? input.items : [];
   const settings = await getPublicCompanySettings();
 
@@ -365,8 +399,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "El pago con tarjeta no está disponible en este momento." };
   }
 
-  if (paymentMethod === "bank_transfer" && settings.require_bank_reference && !bankReference) {
-    return { ok: false, message: "Debes ingresar el número de referencia de la transferencia." };
+  if (!bankReferenceResult.ok) {
+    return { ok: false, message: bankReferenceResult.message };
   }
 
   const normalizedItems = rawItems
@@ -399,11 +433,11 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
   const { data: availableProducts, error: productsError } = await supabase
     .from("products")
-    .select("id, wholesale_price")
+    .select("id, retail_price, wholesale_price")
     .in("id", productIds)
     .eq("active", true)
     .eq("status", "active")
-    .returns<Array<{ id: string; wholesale_price: number | null }>>();
+    .returns<CheckoutProductPriceRow[]>();
 
   if (productsError) {
     await writeErrorLog({
@@ -466,11 +500,17 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       }
 
       if (!Boolean(hasCompletedWholesaleOrder)) {
-        const wholesalePriceByProductId = new Map(
-          (availableProducts ?? []).map((product) => [product.id, Number(product.wholesale_price ?? 0)]),
+        const authorizedPriceByProductId = new Map(
+          (availableProducts ?? []).map((product) => [
+            product.id,
+            getAuthorizedProductPrice(
+              { retail_price: Number(product.retail_price ?? 0), wholesale_price: Number(product.wholesale_price ?? 0) },
+              "wholesale",
+            ),
+          ]),
         );
         const wholesaleSubtotal = normalizedItems.reduce(
-          (total, item) => total + (wholesalePriceByProductId.get(item.productId) ?? 0) * item.quantity,
+          (total, item) => total + (authorizedPriceByProductId.get(item.productId) ?? 0) * item.quantity,
           0,
         );
         const missing = Math.max(0, settings.first_wholesale_minimum - wholesaleSubtotal);
@@ -489,14 +529,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   try {
     const receiptFile = formData.get("transferReceipt");
-    transferReceipt =
-      paymentMethod === "bank_transfer" && settings.transfer_receipt_requirement !== "disabled" && receiptFile instanceof File
-        ? await uploadTransferReceipt(receiptFile, bankReference)
-        : null;
-
-    if (paymentMethod === "bank_transfer" && settings.transfer_receipt_requirement === "required" && !transferReceipt) {
-      return { ok: false, message: "Debes subir el comprobante de transferencia." };
-    }
+    transferReceipt = paymentMethod === "bank_transfer" && receiptFile instanceof File ? await uploadTransferReceipt(receiptFile, bankReference) : null;
   } catch (error) {
     await writeErrorLog({
       route: "/checkout",

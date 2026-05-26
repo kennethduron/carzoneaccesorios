@@ -2314,6 +2314,12 @@ function CustomerProfilePurchases({ orders, compact = false }: { orders: CrmCust
           <div className="text-sm">
             <p>{paymentMethodLabels[order.payment_method] ?? order.payment_method}</p>
             <p className="text-xs text-black/45">{paymentStatusLabel(order.payment_status)}</p>
+            {order.payment_method === "bank_transfer" ? (
+              <p className="text-xs text-black/45">
+                Ref: {order.bank_reference_number ?? "Sin referencia"} /{" "}
+                {order.has_transfer_receipt ? "Con comprobante" : "Sin comprobante adjunto"}
+              </p>
+            ) : null}
           </div>
           <p className="text-sm font-semibold">{formatCurrency(order.total)}</p>
           <p className="text-sm">{order.invoice_number ?? "Sin factura"}</p>

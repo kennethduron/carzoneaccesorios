@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { CartItem, Product } from "@/types/commerce";
 import { getProductPrice } from "@/utils/pricing";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -74,12 +74,50 @@ function writeStoredCart(cart: CartItem[]) {
   window.sessionStorage.setItem(storageKey, JSON.stringify(cart));
 }
 
+function productSnapshotChanged(current: Product | undefined, next: Product) {
+  return (
+    !current ||
+    current.name !== next.name ||
+    current.sku !== next.sku ||
+    current.stock !== next.stock ||
+    current.retail_price !== next.retail_price ||
+    current.wholesale_price !== next.wholesale_price
+  );
+}
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>(readStoredCart);
   const [cartMessage, setCartMessage] = useState("");
   const { priceMode } = usePriceMode();
   const { findProduct } = useProductRegistry();
   const toast = useToast();
+
+  useEffect(() => {
+    let changed = false;
+    const nextCart = cart.map((item) => {
+      const product = isUuid(item.productId) ? findProduct(item.productId) : null;
+      if (!product || !productSnapshotChanged(item.productSnapshot, product)) {
+        return item;
+      }
+
+      changed = true;
+      return { ...item, productSnapshot: product };
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      writeStoredCart(nextCart);
+      setCart(nextCart);
+      const message = "Actualizamos los precios según tu cuenta actual.";
+      setCartMessage(message);
+      toast.info(message);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [cart, findProduct, toast]);
 
   const rows = useMemo(() => {
     return cart
@@ -105,8 +143,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [cart, findProduct, priceMode]);
 
   const subtotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
-  const tax = subtotal * 0.15;
-  const total = subtotal + tax;
+  const tax = 0;
+  const total = subtotal;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const invalidItemCount = Math.max(0, cart.length - rows.length);
 

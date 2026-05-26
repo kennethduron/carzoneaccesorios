@@ -8,7 +8,7 @@ import {
   normalizeCommerceSettings,
 } from "@/utils/commerce-settings";
 
-const defaultPublicCompanySettings: PublicCompanySettings = {
+export const defaultPublicCompanySettings: PublicCompanySettings = {
   company_name: "Car Zone Accesorios",
   currency: "HNL",
   tax_rate: 0.15,
