@@ -4,11 +4,25 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
 import { getPublicOrderTrackingAction, type PublicTrackingOrder } from "@/app/rastreo/actions";
 import { useToast } from "@/contexts/toast-context";
+import { canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 import { formatCurrency } from "@/utils/pricing";
 
-const progressSteps = [
+const cashProgressSteps = [
   { key: "recibido", label: "Pedido recibido" },
-  { key: "pago_pendiente", label: "Pago pendiente" },
+  { key: "pendiente_confirmacion", label: "Pendiente de confirmación" },
+  { key: "aceptado", label: "Pedido aceptado" },
+  { key: "preparacion", label: "En preparación" },
+  { key: "empacado", label: "Empacado" },
+  { key: "enviado", label: "Enviado" },
+  { key: "en_ruta", label: "En ruta" },
+  { key: "entregado", label: "Entregado" },
+  { key: "pago_recibido", label: "Pago recibido" },
+];
+
+const transferProgressSteps = [
+  { key: "recibido", label: "Pedido recibido" },
+  { key: "esperando_comprobante", label: "Esperando comprobante" },
+  { key: "revision", label: "Comprobante en revisión" },
   { key: "pago_confirmado", label: "Pago confirmado" },
   { key: "preparacion", label: "En preparación" },
   { key: "empacado", label: "Empacado" },
@@ -17,30 +31,15 @@ const progressSteps = [
   { key: "entregado", label: "Entregado" },
 ];
 
-const orderStatusLabels: Record<string, string> = {
-  recibido: "Recibido",
-  confirmado: "Confirmado",
-  preparacion: "En preparación",
-  empacado: "Empacado",
-  enviado: "Enviado",
-  en_ruta: "En ruta",
-  entregado: "Entregado",
-  cancelado: "Cancelado",
-  pending: "Recibido",
-  confirmed: "Confirmado",
-  paid: "Pago confirmado",
-  preparing: "En preparación",
-  shipped: "Enviado",
-  delivered: "Entregado",
-  cancelled: "Cancelado",
-};
-
-const paymentStatusLabels: Record<string, string> = {
-  pending: "Pendiente",
-  approved: "Confirmado",
-  rejected: "Rechazado",
-  refunded: "Reembolsado",
-};
+const cardProgressSteps = [
+  { key: "recibido", label: "Pedido recibido" },
+  { key: "pago_aprobado", label: "Pago aprobado" },
+  { key: "preparacion", label: "En preparación" },
+  { key: "empacado", label: "Empacado" },
+  { key: "enviado", label: "Enviado" },
+  { key: "en_ruta", label: "En ruta" },
+  { key: "entregado", label: "Entregado" },
+];
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
@@ -48,36 +47,74 @@ const paymentMethodLabels: Record<string, string> = {
   cash: "Efectivo",
 };
 
+function trackingSteps(order: PublicTrackingOrder) {
+  if (order.paymentMethod === "cash") return cashProgressSteps;
+  if (order.paymentMethod === "bank_transfer") return transferProgressSteps;
+  return cardProgressSteps;
+}
+
+function customerOrderLabel(order: PublicTrackingOrder) {
+  const status = canonicalOrderStatus(order.orderStatus);
+  const labels: Record<string, string> = {
+    recibido: "Pedido recibido",
+    confirmado: "Pedido aceptado",
+    preparacion: "En preparación",
+    empacado: "Empacado",
+    enviado: "Enviado",
+    en_ruta: "En ruta",
+    entregado: "Entregado",
+    cancelado: "Cancelado",
+  };
+  return labels[status] ?? order.orderStatus;
+}
+
+function customerPaymentLabel(order: PublicTrackingOrder) {
+  if (order.paymentStatus === "rejected") return "Pago rechazado";
+  if (isPaymentConfirmed(order.paymentStatus)) {
+    if (order.paymentMethod === "cash") return "Pago recibido";
+    if (order.paymentMethod === "card") return "Pago aprobado";
+    return "Pago confirmado";
+  }
+  if (order.paymentMethod === "bank_transfer") {
+    return order.hasTransferReceipt ? "Comprobante en revisión" : "Esperando comprobante";
+  }
+  if (order.paymentMethod === "card") return "Pendiente de pasarela";
+  return "Pendiente de confirmación";
+}
+
 function activeProgressIndex(order: PublicTrackingOrder) {
-  if (order.orderStatus === "cancelado" || order.orderStatus === "cancelled") {
-    return 0;
+  const status = canonicalOrderStatus(order.orderStatus);
+  if (status === "cancelado") return 0;
+
+  if (order.paymentMethod === "cash") {
+    if (isPaymentConfirmed(order.paymentStatus) && status === "entregado") return 8;
+    if (status === "entregado") return 7;
+    if (status === "en_ruta") return 6;
+    if (status === "enviado") return 5;
+    if (status === "empacado") return 4;
+    if (status === "preparacion") return 3;
+    if (status === "confirmado") return 2;
+    return 1;
   }
 
-  if (order.orderStatus === "entregado" || order.orderStatus === "delivered") {
-    return 7;
+  if (order.paymentMethod === "bank_transfer") {
+    if (status === "entregado") return 8;
+    if (status === "en_ruta") return 7;
+    if (status === "enviado") return 6;
+    if (status === "empacado") return 5;
+    if (status === "preparacion") return 4;
+    if (isPaymentConfirmed(order.paymentStatus)) return 3;
+    if (order.hasTransferReceipt) return 2;
+    return 1;
   }
 
-  if (order.orderStatus === "en_ruta") {
-    return 6;
-  }
-
-  if (order.orderStatus === "enviado" || order.orderStatus === "shipped") {
-    return 5;
-  }
-
-  if (order.orderStatus === "empacado") {
-    return 4;
-  }
-
-  if (order.orderStatus === "preparacion" || order.orderStatus === "preparing") {
-    return 3;
-  }
-
-  if (order.paymentStatus === "approved" || order.orderStatus === "paid") {
-    return 2;
-  }
-
-  return 1;
+  if (status === "entregado") return 6;
+  if (status === "en_ruta") return 5;
+  if (status === "enviado") return 4;
+  if (status === "empacado") return 3;
+  if (status === "preparacion") return 2;
+  if (isPaymentConfirmed(order.paymentStatus)) return 1;
+  return 0;
 }
 
 export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string }) {
@@ -88,6 +125,7 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
   const toast = useToast();
 
   const progressIndex = useMemo(() => (order ? activeProgressIndex(order) : -1), [order]);
+  const progressSteps = useMemo(() => (order ? trackingSteps(order) : []), [order]);
 
   function searchOrder(nextCode = code) {
     const normalizedCode = nextCode.trim().toUpperCase();
@@ -167,8 +205,8 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <InfoBlock label="Estado del pedido" value={orderStatusLabels[order.orderStatus] ?? order.orderStatus} />
-            <InfoBlock label="Estado del pago" value={paymentStatusLabels[order.paymentStatus] ?? order.paymentStatus} />
+            <InfoBlock label="Estado del pedido" value={customerOrderLabel(order)} />
+            <InfoBlock label="Estado del pago" value={customerPaymentLabel(order)} />
           </div>
 
           <div className="mt-5 space-y-3">
@@ -207,5 +245,3 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
-

@@ -81,6 +81,7 @@ type CatalogProductRow = {
   available_stock?: number | null;
   retail_price: unknown;
   wholesale_price: unknown;
+  is_new?: boolean | null;
   categories: {
     name: string;
     slug: string;
@@ -176,6 +177,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     stock: toNumber(row.available_stock ?? row.stock),
     retail_price: toNumber(row.retail_price),
     wholesale_price: toNumber(row.wholesale_price),
+    is_new: Boolean(row.is_new),
     short_description: row.short_description,
     description: row.description,
     features: row.features,
@@ -407,6 +409,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         available_stock,
         retail_price,
         wholesale_price,
+        is_new,
         categories(name, slug)
       `,
         { count: "exact" },
@@ -560,6 +563,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         available_stock,
         retail_price,
         wholesale_price,
+        is_new,
         categories(name, slug)
       `,
       )
@@ -609,6 +613,7 @@ export async function getProductBySlug(slug: string) {
         available_stock,
         retail_price,
         wholesale_price,
+        is_new,
         categories(name, slug),
         product_images(
           id,
@@ -668,6 +673,7 @@ export async function getRelatedProducts(product: Product, limit = 4) {
         available_stock,
         retail_price,
         wholesale_price,
+        is_new,
         categories(name, slug)
       `,
       )

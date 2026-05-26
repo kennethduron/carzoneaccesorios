@@ -99,9 +99,9 @@ export default async function CuentaPage({
   const profile = await requireSession();
   const [wholesaleState, accountSummary, recentOrders, issuedInvoices] = await Promise.all([
     getWholesaleAccessStateAction(),
-    getCustomerAccountSummary(profile.id, profile.email),
-    getCustomerOrders(profile.id, profile.email, 5),
-    getCustomerIssuedInvoices(profile.id, profile.email, 5),
+    getCustomerAccountSummary(profile.id),
+    getCustomerOrders(profile.id, 5),
+    getCustomerIssuedInvoices(profile.id, 5),
   ]);
   const params = (await searchParams) ?? {};
   const confirmed = params.confirmed === "1";

@@ -5,7 +5,7 @@ import { ImageOff, Plus } from "lucide-react";
 import { useState } from "react";
 import type { PriceMode, Product } from "@/types/commerce";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
-import { formatCurrency, getProductPrice } from "@/utils/pricing";
+import { formatCurrency, getProductPrice, getProductPriceLabel } from "@/utils/pricing";
 import { getProductCardDescription } from "@/utils/product-content";
 import { Button } from "@/components/ui/button";
 
@@ -57,7 +57,7 @@ export function ProductCard({ product, priceMode, onAdd, onOpen }: ProductCardPr
           <div className="flex items-end justify-between">
             <div>
               <p className="text-xs text-black/45">
-                {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
+                {getProductPriceLabel(product, priceMode)}
               </p>
               <p className="text-2xl font-semibold">
                 {formatCurrency(getProductPrice(product, priceMode))}

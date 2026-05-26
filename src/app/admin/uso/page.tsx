@@ -120,7 +120,7 @@ export default async function AdminUsagePage() {
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
-            <p className="text-sm text-black/55">CRON_SECRET</p>
+            <p className="text-sm text-black/55">Secreto de cron</p>
             <p className="mt-1 text-xl font-semibold">{usage.cronSecretConfigured ? "Configurado" : "No configurado"}</p>
             <p className="mt-2 text-xs leading-5 text-black/50">No se muestra el valor real del secreto.</p>
           </div>
@@ -413,7 +413,7 @@ export default async function AdminUsagePage() {
             <p className="text-sm text-[#7c2d12]">Reservas vencidas pendientes de liberar</p>
             <p className="mt-1 text-2xl font-semibold text-[#7c2d12]">{formatNumber(usage.expiredReservationCount)}</p>
             <p className="mt-2 text-xs leading-5 text-[#7c2d12]">
-              Endpoint cron: POST /api/cron/release-expired-reservations con Authorization Bearer CRON_SECRET.
+              Endpoint cron: POST /api/cron/release-expired-reservations con Authorization Bearer del secreto configurado.
             </p>
           </div>
         </div>

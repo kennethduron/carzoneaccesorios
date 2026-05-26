@@ -83,7 +83,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
         <p className="text-sm text-black/50">Centro de Configuración Empresarial</p>
         <h1 className="mt-1 text-2xl font-semibold">Reglas operativas del negocio</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-          Controla ajustes cotidianos sin tocar secretos, API keys, CRON_SECRET ni configuración técnica sensible.
+          Controla ajustes cotidianos sin tocar secretos, API keys ni configuración técnica sensible.
         </p>
       </div>
 
@@ -380,7 +380,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
             <TechnicalLink href="/admin/revision-bac" title="BAC" text="Checklist técnico/comercial de pasarela sin credenciales visibles." />
           </div>
           <div className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
-            Las variables de Vercel, Supabase, Cloudinary, Resend, Brevo y CRON_SECRET no se exponen ni se editan desde
+            Las variables de Vercel, Supabase, Cloudinary, Resend, Brevo y cron no se exponen ni se editan desde
             esta UI.
           </div>
         </SettingsPanel>

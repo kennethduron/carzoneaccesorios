@@ -482,7 +482,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             <ControlItem title="Technical owner" description="Usuarios tecnicos no pueden ser modificados por roles operativos." />
             <ControlItem title="Usuarios suspendidos" description="active=false invalida acceso al panel y al inicio de sesión." />
             <ControlItem title="RLS Supabase" description="Las politicas limitan lectura y escritura por rol y propietario." />
-            <ControlItem title="Secretos" description="La UI no muestra API keys, CRON_SECRET ni variables de integraciones." />
+            <ControlItem title="Secretos" description="La UI no muestra API keys, secretos de cron ni variables de integraciones." />
           </div>
         </div>
       </section>

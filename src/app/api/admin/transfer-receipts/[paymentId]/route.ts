@@ -64,11 +64,17 @@ export async function GET(
       },
     );
 
-    return NextResponse.redirect(signedUrl, { status: 302 });
+    const response = NextResponse.redirect(signedUrl, { status: 302 });
+    response.headers.set("Cache-Control", "no-store, max-age=0");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
   }
 
   if (payment.transfer_receipt_url) {
-    return NextResponse.redirect(payment.transfer_receipt_url, { status: 302 });
+    const response = NextResponse.redirect(payment.transfer_receipt_url, { status: 302 });
+    response.headers.set("Cache-Control", "no-store, max-age=0");
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    return response;
   }
 
   return NextResponse.json({ message: "Este pago no tiene comprobante." }, { status: 404 });

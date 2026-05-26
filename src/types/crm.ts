@@ -52,6 +52,9 @@ export type CrmCustomerOption = {
     | "Correo pendiente de confirmar"
     | "Correo confirmado"
     | "Cliente activo"
+    | "Cliente invitado"
+    | "Compra sin cuenta"
+    | "Prospecto"
     | "Mayorista pendiente"
     | "Mayorista aprobado"
     | "Cuenta suspendida";

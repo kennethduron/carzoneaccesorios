@@ -18,6 +18,7 @@ export type PublicTrackingOrder = {
   trackingStatus: string;
   orderStatus: string;
   paymentStatus: string;
+  hasTransferReceipt: boolean;
   createdAt: string;
   paymentMethod: string;
   total: number;
@@ -32,6 +33,7 @@ type PublicTrackingRpcRow = {
   tracking_status: string;
   order_status: string;
   payment_status: string;
+  has_transfer_receipt: boolean | null;
   created_at: string;
   payment_method: string;
   total: unknown;
@@ -98,6 +100,7 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
         trackingStatus: row.tracking_status,
         orderStatus: row.order_status,
         paymentStatus: row.payment_status,
+        hasTransferReceipt: Boolean(row.has_transfer_receipt),
         createdAt: row.created_at,
         paymentMethod: row.payment_method,
         total: Number(row.total ?? 0),

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { usePriceMode } from "@/contexts/price-mode-context";
-import { formatCurrency } from "@/utils/pricing";
+import { formatCurrency, getProductPriceLabel } from "@/utils/pricing";
 
 export function CartView() {
   const { rows, invalidItemCount, cartMessage, subtotal, tax, total, updateQuantity, removeFromCart, clearInvalidCartItems } =
@@ -56,7 +56,7 @@ export function CartView() {
                     {item.product.sku} / {formatCurrency(item.unitPrice)} por unidad
                   </p>
                   <p className="mt-1 text-xs text-black/45">
-                    Fuente: {priceMode === "wholesale" ? "precio mayorista" : "precio al detalle"}
+                    Fuente: {getProductPriceLabel(item.product, priceMode).toLowerCase()}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

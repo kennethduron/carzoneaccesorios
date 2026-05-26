@@ -233,10 +233,10 @@ function uniqueCustomers(customers: CrmCustomerOption[]) {
     const email = customer.account_email ?? customer.email;
     const phoneKey = normalizePhoneKey(customer.account_phone ?? customer.phone);
 
-    if (email) {
+    if (!customer.user_id && email) {
       keys.add(`email:${normalizeAccountEmail(email)}`);
     }
-    if (phoneKey) {
+    if (!customer.user_id && phoneKey) {
       keys.add(`phone:${phoneKey}`);
     }
 
@@ -325,6 +325,8 @@ function getAccountState(input: {
   emailConfirmedAt: string | null;
   isWholesale: boolean;
   hasWholesaleRequest: boolean;
+  hasOrders: boolean;
+  leadStatus: CrmCustomerOption["lead_status"];
 }) {
   if (!input.active || input.status === "disabled" || input.accountActive === false) {
     return "Cuenta suspendida" as const;
@@ -354,7 +356,11 @@ function getAccountState(input: {
     return "Correo pendiente de confirmar" as const;
   }
 
-  return "Cuenta creada" as const;
+  if (input.hasOrders) {
+    return "Compra sin cuenta" as const;
+  }
+
+  return input.leadStatus === "cliente" ? ("Cliente invitado" as const) : ("Prospecto" as const);
 }
 
 function normalizeCustomer(
@@ -371,7 +377,7 @@ function normalizeCustomer(
   const relatedOrders = new Map<string, OrderActivityRow>();
   const byCustomer = ordersByCustomerId.get(row.id) ?? [];
   const byUser = row.user_id ? ordersByUserId.get(row.user_id) ?? [] : [];
-  const byEmail = normalizedEmail ? ordersByEmail.get(normalizedEmail) ?? [] : [];
+  const byEmail = !row.user_id && normalizedEmail ? ordersByEmail.get(normalizedEmail) ?? [] : [];
 
   for (const order of [...byCustomer, ...byUser, ...byEmail]) {
     relatedOrders.set(order.id, order);
@@ -429,6 +435,8 @@ function normalizeCustomer(
       emailConfirmedAt,
       isWholesale: row.is_wholesale,
       hasWholesaleRequest,
+      hasOrders: relatedOrders.size > 0,
+      leadStatus: row.lead_status,
     }),
     customer_type: wholesaleStatus === "approved" ? "Mayorista" : "Retail",
     has_wholesale_request: wholesaleStatus === "pending" || hasWholesaleRequest,
@@ -610,7 +618,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       if (order.user_id) {
         ordersByUserId.set(order.user_id, [...(ordersByUserId.get(order.user_id) ?? []), order]);
       }
-      if (order.email) {
+      if (!order.user_id && order.email) {
         const normalizedEmail = normalizeAccountEmail(order.email);
         ordersByEmail.set(normalizedEmail, [...(ordersByEmail.get(normalizedEmail) ?? []), order]);
       }
@@ -766,13 +774,14 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     );
   }
 
-  if (normalizedEmail) {
+  if (!customerRow.user_id && normalizedEmail) {
     orderQueries.push(
       async () =>
         admin
           .from("orders")
           .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status)")
           .ilike("email", normalizedEmail)
+          .is("user_id", null)
           .order("created_at", { ascending: false })
           .limit(30)
           .returns<CustomerProfileOrderRow[]>(),

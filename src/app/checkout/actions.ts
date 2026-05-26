@@ -45,6 +45,16 @@ export type WholesalePurchaseStatusResult = {
   message?: string;
 };
 
+export type CheckoutAccountInfo = {
+  isAuthenticated: boolean;
+  email: string | null;
+  customerName: string | null;
+  phone: string | null;
+  rtn: string | null;
+  address: string | null;
+  city: string | null;
+};
+
 type CustomerAuthorizationRow = {
   id: string;
   is_wholesale: boolean;
@@ -59,6 +69,7 @@ const wholesaleMessages = {
 };
 const hondurasOnlyMessage = "Actualmente solo realizamos entregas dentro de Honduras.";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isUuid(value: string) {
   return uuidPattern.test(value);
@@ -113,11 +124,79 @@ function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   return "bank_transfer";
 }
 
+function formatMoney(value: number) {
+  return `L ${Number(value || 0).toLocaleString("es-HN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
   return {
     checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
     items: JSON.parse(String(formData.get("items") ?? "[]")) as CheckoutOrderItemInput[],
     priceMode: String(formData.get("priceMode") ?? "retail") as PriceMode,
+  };
+}
+
+function normalizeEmail(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
+  const guestAccount: CheckoutAccountInfo = {
+    isAuthenticated: false,
+    email: null,
+    customerName: null,
+    phone: null,
+    rtn: null,
+    address: null,
+    city: null,
+  };
+
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return guestAccount;
+  }
+
+  const admin = getSupabaseAdminClient();
+  const [{ data: profile }, { data: customer }] = await Promise.all([
+    admin
+      .from("users")
+      .select("email, full_name, phone")
+      .eq("id", user.id)
+      .maybeSingle<{ email: string | null; full_name: string | null; phone: string | null }>(),
+    admin
+      .from("customers")
+      .select("contact_name, email, phone, tax_id, address, city")
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        contact_name: string | null;
+        email: string | null;
+        phone: string | null;
+        tax_id: string | null;
+        address: string | null;
+        city: string | null;
+      }>(),
+  ]);
+
+  const accountEmail = normalizeEmail(user.email || profile?.email || customer?.email);
+
+  return {
+    isAuthenticated: true,
+    email: accountEmail || null,
+    customerName: customer?.contact_name || profile?.full_name || null,
+    phone: customer?.phone || profile?.phone || null,
+    rtn: customer?.tax_id || null,
+    address: customer?.address || null,
+    city: customer?.city || null,
   };
 }
 
@@ -221,11 +300,18 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "No se pudo leer la información del checkout." };
   }
 
+  const supabase = await getSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const accountEmail = normalizeEmail(user?.email);
+  const submittedEmail = normalizeEmail(input.checkout.email);
+
   const checkoutLimit = await checkRateLimit({
     route: "/checkout",
     limit: 6,
     windowSeconds: 10 * 60,
-    key: String(input.checkout.email || input.checkout.phone || "").trim().toLowerCase(),
+    key: user?.id ? `user:${user.id}` : submittedEmail || String(input.checkout.phone || "").trim().toLowerCase(),
   });
 
   if (!checkoutLimit.ok) {
@@ -239,7 +325,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const phoneResult = validateHondurasPhone(input.checkout.phone);
   const customerRtn = String(input.checkout.rtn ?? "").trim() || null;
   const deliveryAddress = String(input.checkout.address ?? "").trim();
-  const email = String(input.checkout.email ?? "").trim() || null;
+  const email = user ? accountEmail : submittedEmail;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
   const bankReference = String(input.checkout.bankTransferReference ?? "").trim();
   const rawItems = Array.isArray(input.items) ? input.items : [];
@@ -254,6 +340,14 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const phone = phoneResult.value;
+
+  if (user && !email) {
+    return { ok: false, message: "No pudimos validar el correo de tu cuenta. Cierra sesión e inicia sesión nuevamente." };
+  }
+
+  if (!user && (!email || !emailPattern.test(email))) {
+    return { ok: false, message: "Ingresa un correo válido para el pedido." };
+  }
 
   if (!customerName || !department || !city || !deliveryAddress || rawItems.length === 0) {
     return { ok: false, message: "Completa tus datos y agrega productos para crear el pedido." };
@@ -302,16 +396,14 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     };
   }
 
-  const supabase = await getSupabaseServerClient();
-
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
   const { data: availableProducts, error: productsError } = await supabase
     .from("products")
-    .select("id")
+    .select("id, wholesale_price")
     .in("id", productIds)
     .eq("active", true)
     .eq("status", "active")
-    .returns<Array<{ id: string }>>();
+    .returns<Array<{ id: string; wholesale_price: number | null }>>();
 
   if (productsError) {
     await writeErrorLog({
@@ -339,10 +431,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       return { ok: false, message: "Las compras mayoristas están desactivadas temporalmente." };
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
     if (!user) {
       return { ok: false, message: wholesaleMessages.loginRequired };
     }
@@ -357,15 +445,43 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       return { ok: false, message: wholesaleMessages.accountNotAuthorized };
     }
 
-    const hasAuthorizedWholesaleAccount = (customerRows ?? []).some(
+    const authorizedWholesaleAccount = (customerRows ?? []).find(
       (customer) =>
         customer.active &&
         (customer.wholesale_status === "approved" ||
           (customer.wholesale_status === null && customer.is_wholesale && customer.status === "active")),
     );
 
-    if (!hasAuthorizedWholesaleAccount) {
+    if (!authorizedWholesaleAccount) {
       return { ok: false, message: wholesaleMessages.accountNotAuthorized };
+    }
+
+    if (settings.first_wholesale_minimum > 0) {
+      const { data: hasCompletedWholesaleOrder, error: historyError } = await supabase.rpc("has_completed_wholesale_order", {
+        target_customer_id: authorizedWholesaleAccount.id,
+      });
+
+      if (historyError) {
+        return { ok: false, message: "No se pudo validar historial mayorista." };
+      }
+
+      if (!Boolean(hasCompletedWholesaleOrder)) {
+        const wholesalePriceByProductId = new Map(
+          (availableProducts ?? []).map((product) => [product.id, Number(product.wholesale_price ?? 0)]),
+        );
+        const wholesaleSubtotal = normalizedItems.reduce(
+          (total, item) => total + (wholesalePriceByProductId.get(item.productId) ?? 0) * item.quantity,
+          0,
+        );
+        const missing = Math.max(0, settings.first_wholesale_minimum - wholesaleSubtotal);
+
+        if (missing > 0) {
+          return {
+            ok: false,
+            message: `Tu primera compra como mayorista debe ser de ${formatMoney(settings.first_wholesale_minimum)} o más. Agrega más productos para completar el mínimo. Te faltan ${formatMoney(missing)} para completar el mínimo mayorista.`,
+          };
+        }
+      }
     }
   }
 

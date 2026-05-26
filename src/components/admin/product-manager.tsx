@@ -120,6 +120,7 @@ const emptyProduct: ProductFormInput = {
   retail_price: 0,
   wholesale_price: 0,
   wholesale_min_quantity: 1,
+  is_new: false,
   status: "active",
   active: true,
   images: [emptyImage],
@@ -149,6 +150,7 @@ function toFormProduct(product: ProductAdminRow): ProductFormInput {
     retail_price: product.retail_price,
     wholesale_price: product.wholesale_price,
     wholesale_min_quantity: product.wholesale_min_quantity,
+    is_new: product.is_new,
     status: product.status,
     active: product.active,
     images: product.images.length > 0 ? product.images : [emptyImage],
@@ -234,6 +236,7 @@ const productCsvHeaders = [
   "precio_detalle",
   "precio_mayorista",
   "cantidad_minima_mayorista",
+  "producto_nuevo",
   "estado",
   "activo",
   "url_imagen",
@@ -803,6 +806,7 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
       product.retail_price,
       product.wholesale_price,
       product.wholesale_min_quantity,
+      product.is_new,
       product.status,
       product.active,
       product.images[0]?.public_url ?? "",
@@ -841,6 +845,7 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
       "100.00",
       "80.00",
       "1",
+      "false",
       "active",
       "true",
       "https://res.cloudinary.com/tu-cloud/image/upload/ejemplo.png",
@@ -913,6 +918,7 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
           retail_price: numberValue(row.retail_price ?? row.precio_detalle ?? "0"),
           wholesale_price: numberValue(row.wholesale_price ?? row.precio_mayorista ?? "0"),
           wholesale_min_quantity: numberValue(row.wholesale_min_quantity ?? row.cantidad_minima_mayorista ?? row["cantidad_mínima_mayorista"] ?? "1"),
+          is_new: ["true", "1", "si", "sí", "yes"].includes(String(row.is_new ?? row.producto_nuevo ?? "false").trim().toLowerCase()),
           status: (row.status as ProductStatus) || (row.estado as ProductStatus) || "active",
           active: row.active !== "false" && row.activo !== "false",
           images: row.image_url || row.url_imagen
@@ -1059,6 +1065,7 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
                 <th className="px-4 py-3">Costo</th>
                 <th className="px-4 py-3">Precio al detalle</th>
                 <th className="px-4 py-3">Precio mayorista</th>
+                <th className="px-4 py-3">Etiqueta</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3 text-right">Acciones</th>
               </tr>
@@ -1092,6 +1099,9 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
                   <td className="px-4 py-3">{formatCurrency(product.cost_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.retail_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.wholesale_price)}</td>
+                  <td className="px-4 py-3">
+                    {product.is_new ? <span className="rounded-md bg-black px-2 py-1 text-xs font-semibold text-white">Nuevo</span> : "-"}
+                  </td>
                   <td className="px-4 py-3">
                     <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{statusLabels[product.status]}</span>
                   </td>
@@ -1344,6 +1354,18 @@ function ProductEditor({
                   </label>
                 </div>
               </div>
+              <label className="flex items-start gap-3 rounded-md border border-black/10 bg-[#f8f8f8] px-3 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={product.is_new}
+                  onChange={(event) => onField("is_new", event.target.checked)}
+                  className="mt-0.5 size-4"
+                />
+                <span>
+                  <span className="block font-semibold">Producto nuevo</span>
+                  <span className="mt-1 block text-xs text-black/50">Mostrar etiqueta Nuevo en el catálogo.</span>
+                </span>
+              </label>
             </FormSection>
 
             <FormSection title="Identificación interna" description="Códigos para inventario, búsquedas internas y referencias de proveedor.">

@@ -66,3 +66,6 @@
 \i ./migrations/202605220004_operational_error_logging.sql
 \i ./migrations/202605240001_fiscal_invoice_controls.sql
 \i ./migrations/202605240002_product_content_fields.sql
+\i ./migrations/202605250006_guest_checkout_account_isolation.sql
+\i ./migrations/202605250007_order_payment_tracking_workflow.sql
+\i ./migrations/202605250008_customer_price_visibility.sql

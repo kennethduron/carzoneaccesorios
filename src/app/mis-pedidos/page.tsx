@@ -12,7 +12,7 @@ export default async function MisPedidosPage({
 }) {
   const profile = await requireSession();
   const params = await searchParams;
-  const ordersPage = await getCustomerOrdersPage(profile.id, profile.email, {
+  const ordersPage = await getCustomerOrdersPage(profile.id, {
     page: Number(params.page ?? 1),
     pageSize: 20,
   });

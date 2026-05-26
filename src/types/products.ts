@@ -35,6 +35,7 @@ export type ProductAdminRow = {
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;
+  is_new: boolean;
   status: ProductStatus;
   active: boolean;
   created_at: string;
@@ -65,6 +66,7 @@ export type ProductFormInput = {
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;
+  is_new: boolean;
   status: ProductStatus;
   active: boolean;
   images: ProductImageInput[];

@@ -231,39 +231,20 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
   };
 }
 
-async function getCustomerIdsForAccount(userId: string, email: string | null) {
+async function getCustomerIdsForAccount(userId: string) {
   const admin = getSupabaseAdminClient();
-  const queries = [
-    admin.from("customers").select("id").eq("user_id", userId).returns<Array<{ id: string }>>(),
-  ];
+  const { data, error } = await admin.from("customers").select("id").eq("user_id", userId).returns<Array<{ id: string }>>();
 
-  if (email) {
-    queries.push(admin.from("customers").select("id").ilike("email", email).returns<Array<{ id: string }>>());
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const results = await Promise.all(queries);
-  const ids = new Set<string>();
-
-  for (const result of results) {
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
-    for (const row of result.data ?? []) {
-      ids.add(row.id);
-    }
-  }
-
-  return Array.from(ids);
+  return (data ?? []).map((row) => row.id);
 }
 
-async function getCustomerOrderFilters(userId: string, email: string | null) {
-  const customerIds = await getCustomerIdsForAccount(userId, email);
+async function getCustomerOrderFilters(userId: string) {
+  const customerIds = await getCustomerIdsForAccount(userId);
   const filters = [`user_id.eq.${userId}`];
-
-  if (email) {
-    filters.push(`email.eq.${email}`);
-  }
 
   if (customerIds.length > 0) {
     filters.push(`customer_id.in.(${customerIds.join(",")})`);
@@ -272,9 +253,9 @@ async function getCustomerOrderFilters(userId: string, email: string | null) {
   return filters;
 }
 
-async function getCustomerOrderIds(userId: string, email: string | null, limit = 500) {
+async function getCustomerOrderIds(userId: string, limit = 500) {
   const admin = getSupabaseAdminClient();
-  const filters = await getCustomerOrderFilters(userId, email);
+  const filters = await getCustomerOrderFilters(userId);
   const { data, error } = await admin
     .from("orders")
     .select("id")
@@ -290,7 +271,7 @@ async function getCustomerOrderIds(userId: string, email: string | null, limit =
   return (data ?? []).map((order) => order.id);
 }
 
-export async function getCustomerAccountSummary(userId: string, email: string | null): Promise<CustomerAccountSummary> {
+export async function getCustomerAccountSummary(userId: string): Promise<CustomerAccountSummary> {
   const admin = getSupabaseAdminClient();
   const [{ data: profile }, authResult, summaryResult] = await Promise.all([
     admin
@@ -302,7 +283,7 @@ export async function getCustomerAccountSummary(userId: string, email: string | 
     admin
       .rpc("get_customer_account_summary", {
         target_user_id: userId,
-        target_email: email,
+        target_email: null,
       })
       .single<CustomerAccountSummaryRow>(),
   ]);
@@ -321,11 +302,10 @@ export async function getCustomerAccountSummary(userId: string, email: string | 
 
 export async function getCustomerOrdersPage(
   userId: string,
-  email: string | null,
   { page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {},
 ): Promise<CustomerOrdersPage> {
   const admin = getSupabaseAdminClient();
-  const filters = await getCustomerOrderFilters(userId, email);
+  const filters = await getCustomerOrderFilters(userId);
   const page = normalizePage(rawPage);
   const pageSize = normalizePageSize(rawPageSize);
   const from = (page - 1) * pageSize;
@@ -391,14 +371,13 @@ export async function getCustomerOrdersPage(
   };
 }
 
-export async function getCustomerOrders(userId: string, email: string | null, limit = 20) {
-  const page = await getCustomerOrdersPage(userId, email, { page: 1, pageSize: limit });
+export async function getCustomerOrders(userId: string, limit = 20) {
+  const page = await getCustomerOrdersPage(userId, { page: 1, pageSize: limit });
   return page.orders;
 }
 
 export async function getCustomerIssuedInvoicesPage(
   userId: string,
-  email: string | null,
   { page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {},
 ): Promise<CustomerInvoicesPage> {
   const admin = getSupabaseAdminClient();
@@ -406,7 +385,7 @@ export async function getCustomerIssuedInvoicesPage(
   const pageSize = normalizePageSize(rawPageSize);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const orderIds = await getCustomerOrderIds(userId, email);
+  const orderIds = await getCustomerOrderIds(userId);
 
   if (orderIds.length === 0) {
     return {
@@ -483,7 +462,7 @@ export async function getCustomerIssuedInvoicesPage(
   };
 }
 
-export async function getCustomerIssuedInvoices(userId: string, email: string | null, limit = 20) {
-  const page = await getCustomerIssuedInvoicesPage(userId, email, { page: 1, pageSize: limit });
+export async function getCustomerIssuedInvoices(userId: string, limit = 20) {
+  const page = await getCustomerIssuedInvoicesPage(userId, { page: 1, pageSize: limit });
   return page.invoices;
 }

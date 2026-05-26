@@ -8,7 +8,7 @@ import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
-import { formatCurrency, getProductPrice } from "@/utils/pricing";
+import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription } from "@/utils/product-content";
 
 export function CatalogProductCard({ product }: { product: Product }) {
@@ -17,7 +17,9 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const primaryImage = product.images.find((image) => image.angle === "frontal") ?? product.images[0];
   const imageUrl = getProductThumbnailUrl(primaryImage?.url ?? product.image);
   const [imageFailed, setImageFailed] = useState(false);
-  const hasWholesalePrice = product.wholesale_price > 0 && product.wholesale_price < product.retail_price;
+  const hasWholesalePrice = hasValidWholesalePrice(product);
+  const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const displayPrice = getProductPrice(product, priceMode);
   const isLowStock = product.stock > 0 && product.stock <= 3;
   const cardDescription = getProductCardDescription(product);
 
@@ -28,13 +30,13 @@ export function CatalogProductCard({ product }: { product: Product }) {
           <div className="absolute left-2 top-2 z-10 flex flex-wrap gap-1">
             {product.stock <= 0 ? (
               <span className="rounded-md bg-black/80 px-2 py-1 text-[10px] font-semibold uppercase text-white">Agotado</span>
+            ) : product.is_new ? (
+              <span className="rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold uppercase text-[#080808]">Nuevo</span>
             ) : isLowStock ? (
               <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-[10px] font-semibold uppercase text-[#b91c25]">Ultimos</span>
-            ) : (
-              <span className="rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold uppercase text-[#080808]">Nuevo</span>
-            )}
-            {hasWholesalePrice ? (
-              <span className="rounded-md bg-[#e4252c] px-2 py-1 text-[10px] font-semibold uppercase text-white">Mayoreo</span>
+            ) : null}
+            {isWholesalePriceVisible ? (
+              <span className="rounded-md bg-[#e4252c] px-2 py-1 text-[10px] font-semibold uppercase text-white">Precio mayorista</span>
             ) : null}
           </div>
           {imageFailed ? (
@@ -70,10 +72,10 @@ export function CatalogProductCard({ product }: { product: Product }) {
           {cardDescription ? <p className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-black/60">{cardDescription}</p> : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs text-black/45">precio al detalle</p>
-              <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(product.retail_price)}</p>
-              {priceMode === "wholesale" && hasWholesalePrice ? (
-                <p className="text-xs font-semibold text-[#b91c25]">Mayoreo {formatCurrency(getProductPrice(product, priceMode))}</p>
+              <p className="text-xs text-black/45">{getProductPriceLabel(product, priceMode)}</p>
+              <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(displayPrice)}</p>
+              {isWholesalePriceVisible ? (
+                <p className="text-xs text-black/45">Precio al detalle: {formatCurrency(product.retail_price)}</p>
               ) : null}
             </div>
             <p className="text-xs font-medium text-black/50">

@@ -7,7 +7,7 @@ import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
-import { formatCurrency, getProductPrice } from "@/utils/pricing";
+import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription, parseProductLines } from "@/utils/product-content";
 import { ProductImageGallery } from "@/components/store/product-image-gallery";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
@@ -22,6 +22,9 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
   const specificationLines = parseProductLines(product.specifications);
   const compatibilityNotes = product.compatibility_notes?.trim();
   const whatsappText = encodeURIComponent(`Hola, quiero información sobre ${product.name} (${product.sku}).`);
+  const hasWholesalePrice = hasValidWholesalePrice(product);
+  const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const displayPrice = getProductPrice(product, priceMode);
 
   useEffect(() => {
     registerProducts([product, ...relatedProducts]);
@@ -39,8 +42,11 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
             <div className="flex flex-wrap gap-2">
               <span className="rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold uppercase text-black/55">{product.sku}</span>
               <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold uppercase text-[#b91c25]">{product.category}</span>
-              {product.wholesale_price > 0 && product.wholesale_price < product.retail_price ? (
-                <span className="rounded-md bg-[#080808] px-2 py-1 text-xs font-semibold uppercase text-white">Mayoreo</span>
+              {product.is_new ? (
+                <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold uppercase text-black/70">Nuevo</span>
+              ) : null}
+              {isWholesalePriceVisible ? (
+                <span className="rounded-md bg-[#080808] px-2 py-1 text-xs font-semibold uppercase text-white">Precio mayorista</span>
               ) : null}
             </div>
             <h1 className="mt-3 text-3xl font-semibold leading-tight md:text-5xl">{product.name}</h1>
@@ -49,23 +55,33 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-black/10 bg-white p-4">
-              <p className="text-sm text-black/45">Precio al detalle</p>
-              <p className="mt-1 text-3xl font-semibold">{formatCurrency(product.retail_price)}</p>
-              <p className="mt-1 text-sm text-black/55">Precio público del catálogo</p>
+              <p className="text-sm text-black/45">{getProductPriceLabel(product, priceMode)}</p>
+              <p className="mt-1 text-3xl font-semibold">{formatCurrency(displayPrice)}</p>
+              {isWholesalePriceVisible ? (
+                <p className="mt-1 text-sm text-black/55">Precio al detalle: {formatCurrency(product.retail_price)}</p>
+              ) : (
+                <p className="mt-1 text-sm text-black/55">Precio público del catálogo</p>
+              )}
             </div>
-            {priceMode === "wholesale" ? (
+            {isWholesalePriceVisible ? (
               <div className="rounded-lg border border-black/10 bg-white p-4">
-                <p className="text-sm text-black/45">Precio mayorista</p>
-                <p className="mt-1 text-3xl font-semibold">{formatCurrency(product.wholesale_price)}</p>
-                <p className="mt-1 text-sm text-black/55">Aplicado ahora</p>
+                <p className="text-sm text-black/45">Mayoreo activo</p>
+                <p className="mt-1 text-lg font-semibold">Precio especial aplicado</p>
+                <p className="mt-2 text-sm text-black/55">El carrito y checkout usarán este mismo precio.</p>
               </div>
-            ) : (
+            ) : priceMode === "retail" ? (
               <div className="rounded-lg border border-black/10 bg-white p-4">
-                <p className="text-sm text-black/45">Mayoreo</p>
+                <p className="text-sm text-black/45">Acceso mayorista</p>
                 <p className="mt-1 text-lg font-semibold">Disponible para cuentas aprobadas</p>
                 <Link href="/contacto#mayoreo" className="mt-2 inline-flex text-sm font-medium text-[#e4252c]">
                   Solicitar acceso mayorista
                 </Link>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-black/10 bg-white p-4">
+                <p className="text-sm text-black/45">Precio al detalle</p>
+                <p className="mt-1 text-lg font-semibold">Este producto no tiene precio mayorista activo.</p>
+                <p className="mt-2 text-sm text-black/55">Se aplicará el precio normal.</p>
               </div>
             )}
           </div>
@@ -90,7 +106,7 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
               className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-semibold text-white hover:bg-[#e4252c] disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/45"
             >
               <ShoppingCart size={18} />
-              {product.stock <= 0 ? "Sin stock" : `Agregar - ${formatCurrency(getProductPrice(product, priceMode))}`}
+              {product.stock <= 0 ? "Sin stock" : `Agregar - ${formatCurrency(displayPrice)}`}
             </button>
             <Link
               href={`https://wa.me/?text=${whatsappText}`}

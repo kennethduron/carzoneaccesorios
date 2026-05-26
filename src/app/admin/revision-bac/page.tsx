@@ -136,7 +136,7 @@ export default async function RevisionBacPage() {
 
         <div className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-5 text-sm leading-6 text-[#7f1d1d]">
           Las credenciales BAC, llaves privadas y secretos deben vivir solo en variables seguras de Vercel. Ningún usuario
-          operativo debe ver o modificar API keys, CRON_SECRET ni configuración técnica sensible.
+          operativo debe ver o modificar API keys, secretos de cron ni configuración técnica sensible.
         </div>
       </section>
     </AdminShell>

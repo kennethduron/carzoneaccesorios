@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
-import { createCheckoutOrderAction, getWholesalePurchaseStatusAction } from "@/app/checkout/actions";
+import {
+  createCheckoutOrderAction,
+  getCheckoutAccountAction,
+  getWholesalePurchaseStatusAction,
+  type CheckoutAccountInfo,
+} from "@/app/checkout/actions";
 import { CardBrandList } from "@/components/store/card-brand-list";
 import type { CheckoutData } from "@/types/commerce";
 import type { PublicCompanySettings } from "@/types/settings";
@@ -27,6 +32,30 @@ const emptyCheckout: CheckoutData = {
   paymentMethod: "Transferencia bancaria",
   bankTransferReference: "",
 };
+
+const guestCheckoutAccount: CheckoutAccountInfo = {
+  isAuthenticated: false,
+  email: null,
+  customerName: null,
+  phone: null,
+  rtn: null,
+  address: null,
+  city: null,
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function mergeCheckoutAccount(current: CheckoutData, account: CheckoutAccountInfo): CheckoutData {
+  return {
+    ...current,
+    email: account.isAuthenticated ? account.email ?? "" : current.email,
+    customerName: current.customerName || account.customerName || "",
+    phone: current.phone || account.phone || "",
+    rtn: current.rtn || account.rtn || "",
+    address: current.address || account.address || "",
+    city: current.city || account.city || "",
+  };
+}
 
 const hondurasDepartments = [
   "Atlántida",
@@ -57,8 +86,15 @@ type OrderConfirmation = {
   currentStatus: string;
 };
 
-export function CheckoutView({ settings }: { settings: PublicCompanySettings }) {
-  const [checkout, setCheckout] = useState<CheckoutData>(emptyCheckout);
+export function CheckoutView({
+  settings,
+  initialAccount = guestCheckoutAccount,
+}: {
+  settings: PublicCompanySettings;
+  initialAccount?: CheckoutAccountInfo;
+}) {
+  const [checkout, setCheckout] = useState<CheckoutData>(() => mergeCheckoutAccount(emptyCheckout, initialAccount));
+  const [accountInfo, setAccountInfo] = useState<CheckoutAccountInfo>(initialAccount);
   const [proofFileName, setProofFileName] = useState("");
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofMessage, setProofMessage] = useState("");
@@ -94,9 +130,29 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
   const wholesaleMinimumMissing = Math.max(0, settings.first_wholesale_minimum - subtotal);
   const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
   const wholesaleMinimumApplies =
-    priceMode === "wholesale" && (!settings.wholesale_allow_repeat_without_minimum || effectiveIsFirstWholesalePurchase);
+    priceMode === "wholesale" &&
+    Boolean(wholesaleAccount) &&
+    effectiveIsFirstWholesalePurchase &&
+    settings.first_wholesale_minimum > 0;
   const blocksFirstWholesaleOrder = wholesaleMinimumApplies && wholesaleMinimumMissing > 0;
   const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
+
+  const wholesaleMinimumBlockMessage = `Tu primera compra como mayorista debe ser de ${formatCurrency(settings.first_wholesale_minimum)} o más. Agrega más productos para completar el mínimo. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`;
+
+  useEffect(() => {
+    let active = true;
+
+    getCheckoutAccountAction().then((account) => {
+      if (active) {
+        setAccountInfo(account);
+        setCheckout((current) => mergeCheckoutAccount(current, account));
+      }
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (paymentMethods.length === 0) {
@@ -152,6 +208,16 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
 
     if (!checkout.customerName.trim()) {
       showCheckoutError("customerName", "Ingresa tu nombre para continuar.");
+      return;
+    }
+
+    if (accountInfo.isAuthenticated) {
+      if (!accountInfo.email) {
+        showCheckoutError("email", "No pudimos validar el correo de tu cuenta. Cierra sesión e inicia sesión nuevamente.");
+        return;
+      }
+    } else if (!emailPattern.test(checkout.email.trim())) {
+      showCheckoutError("email", "Ingresa un correo válido para el pedido.");
       return;
     }
 
@@ -243,9 +309,8 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
     }
 
     if (blocksFirstWholesaleOrder) {
-      const message = `Para la primera compra mayorista, el monto mínimo es de ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)}.`;
-      setCheckoutMessage(message);
-      toast.error(message);
+      setCheckoutMessage(wholesaleMinimumBlockMessage);
+      toast.error(wholesaleMinimumBlockMessage);
       return;
     }
 
@@ -256,8 +321,13 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
         quantity: item.quantity,
       }));
       const formData = new FormData();
+      const checkoutForOrder = {
+        ...checkout,
+        email: accountInfo.isAuthenticated ? accountInfo.email ?? "" : checkout.email.trim(),
+        phone: phone.value,
+      };
 
-      formData.set("checkout", JSON.stringify({ ...checkout, phone: phone.value }));
+      formData.set("checkout", JSON.stringify(checkoutForOrder));
       formData.set("items", JSON.stringify(items));
       formData.set("priceMode", priceMode);
 
@@ -276,7 +346,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
       createOrder({
         orderNumber: result.orderNumber,
         trackingCode: result.trackingCode,
-        customer: { ...checkout, phone: phone.value },
+        customer: checkoutForOrder,
         items: rows.map((item) => ({
           productId: item.product.id,
           sku: item.product.sku,
@@ -344,7 +414,6 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
         <div className="mt-5 grid gap-3">
           {([
             ["customerName", "Nombre del cliente", "Nombre del cliente"],
-            ["email", "Correo", "Correo"],
             ["phone", "Teléfono / WhatsApp", "Ej. 31986284"],
             ["rtn", "RTN para factura", "Opcional"],
           ] as const).map(([field, label, placeholder]) => (
@@ -361,6 +430,33 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
               {fieldErrors[field] ? <span className="text-xs text-[#9b341b]">{fieldErrors[field]}</span> : null}
             </label>
           ))}
+          {accountInfo.isAuthenticated ? (
+            <label className="grid gap-1">
+              <span className="text-xs font-medium uppercase text-black/50">Correo de la cuenta</span>
+              <input
+                value={accountInfo.email ?? ""}
+                disabled
+                className="w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm text-black/70 outline-none"
+              />
+              <span className="text-xs text-black/50">El pedido usará el correo verificado de tu cuenta.</span>
+              {fieldErrors.email ? <span className="text-xs text-[#9b341b]">{fieldErrors.email}</span> : null}
+            </label>
+          ) : (
+            <label className="grid gap-1">
+              <span className="text-xs font-medium uppercase text-black/50">Correo</span>
+              <input
+                type="email"
+                value={checkout.email}
+                onChange={(event) => updateCheckoutField("email", event.target.value)}
+                placeholder="Correo"
+                autoComplete="email"
+                className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
+                  fieldErrors.email ? "border-[#e4252c]" : "border-black/10"
+                }`}
+              />
+              {fieldErrors.email ? <span className="text-xs text-[#9b341b]">{fieldErrors.email}</span> : null}
+            </label>
+          )}
           <label className="block">
             <span className="mb-1 block text-xs font-medium uppercase text-black/50">País de entrega</span>
             <input
@@ -588,7 +684,7 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
 
           <button
             onClick={submitOrder}
-            disabled={!sellsInHonduras || isPending || blocksFirstWholesaleOrder || blocksWholesalePurchases || paymentMethods.length === 0}
+            disabled={!sellsInHonduras || isPending || paymentMethods.length === 0}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
@@ -636,15 +732,20 @@ export function CheckoutView({ settings }: { settings: PublicCompanySettings }) 
           </p>
         ) : null}
         {wholesaleAccount && wholesaleMinimumApplies ? (
-          <p
+          <div
             className={`mt-3 rounded-md p-3 text-sm ${
               blocksFirstWholesaleOrder ? "bg-[#fff0ea] text-[#9b341b]" : "bg-[#fff1f2] text-[#b91c25]"
             }`}
           >
-            {blocksFirstWholesaleOrder
-              ? `Primera compra mayorista: mínimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`
-              : "Cumples con el mínimo para primera compra mayorista."}
-          </p>
+            <p>
+              {blocksFirstWholesaleOrder
+                ? `Primera compra mayorista: mínimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`
+                : "Cumples con el mínimo para primera compra mayorista."}
+            </p>
+            <p className="mt-1 text-xs opacity-80">
+              El mínimo se calcula con el subtotal de productos, sin envío ni comisión contra entrega.
+            </p>
+          </div>
         ) : null}
         <CheckoutTotals
           subtotal={subtotal}

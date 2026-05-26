@@ -27,6 +27,7 @@ export type Product = {
   stock: number;
   retail_price: number;
   wholesale_price: number;
+  is_new: boolean;
   short_description: string | null;
   description: string;
   features: string | null;

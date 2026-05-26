@@ -12,7 +12,7 @@ export default async function FacturasPage({
 }) {
   const profile = await requireSession();
   const params = await searchParams;
-  const invoicesPage = await getCustomerIssuedInvoicesPage(profile.id, profile.email, {
+  const invoicesPage = await getCustomerIssuedInvoicesPage(profile.id, {
     page: Number(params.page ?? 1),
     pageSize: 20,
   });
