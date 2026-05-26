@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { CheckCircle2, Clock, Loader2, Send, ShieldAlert, Store, X } from "lucide-react";
 import { submitRegisteredWholesaleRequestAction } from "@/app/actions/wholesale";
+import { WholesaleProgramConditionsCard, WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { WholesaleAccessState } from "@/types/wholesale";
@@ -86,6 +88,8 @@ export function WholesaleAccountRequestCard({ initialState, context = "contact" 
   const copy = context === "account" ? accountStatusCopy[state.kind] : contactStatusCopy[state.kind];
   const Icon = copy.Icon;
   const isApprovedAccount = context === "account" && state.kind === "approved";
+  const requirement = state.firstPurchaseRequirement ?? state.account?.firstPurchaseRequirement ?? null;
+  const showPendingFirstPurchase = state.kind === "approved" && requirement && !requirement.completed && requirement.minimum > 0;
 
   function submitRequest() {
     startTransition(async () => {
@@ -132,6 +136,26 @@ export function WholesaleAccountRequestCard({ initialState, context = "contact" 
             <p className="mt-3 rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
               Cuenta aprobada: {state.account.businessName}
             </p>
+          ) : null}
+
+          {showPendingFirstPurchase && requirement ? (
+            <div className="mt-3">
+              <WholesaleRequirementSummary requirement={requirement} />
+              {context === "account" ? (
+                <Link
+                  href="/catalogo"
+                  className="mt-3 inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Comprar ahora
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
+
+          {state.kind !== "approved" ? (
+            <div className="mt-4">
+              <WholesaleProgramConditionsCard compact />
+            </div>
           ) : null}
 
           {state.kind === "regular" ? (

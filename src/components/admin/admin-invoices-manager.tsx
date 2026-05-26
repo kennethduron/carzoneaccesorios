@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Download, ExternalLink, Eye, FileText, Printer } from "lucide-react";
+import { Ban, Download, ExternalLink, Eye, FilePenLine, FileText, Printer } from "lucide-react";
 import {
   cancelInvoiceAction,
   getInvoiceDetailAction,
@@ -553,23 +553,27 @@ function InvoiceModal({
           <Info label="Fecha" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
         </div>
 
-        {canCorrectInvoices ? (
+        {canCorrectInvoices && invoice.status !== "anulada" && invoice.status !== "cancelled" ? (
           <section className="mt-5 rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-            <h3 className="font-semibold">Corregir datos del cliente</h3>
+            <h3 className="flex items-center gap-2 font-semibold">
+              <FilePenLine size={18} />
+              Corregir datos fiscales
+            </h3>
             <p className="mt-1 text-sm text-black/55">
               No cambia número fiscal, CAI, rango, fecha original, productos ni totales.
             </p>
             <p className="mt-2 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-              Correccion fiscal posterior a emision: registra un motivo verificable antes de guardar.
+              Esta accion actualizara los datos fiscales del cliente en la factura, manteniendo el mismo numero fiscal.
+              Quedara registrada en auditoria.
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Nombre</span>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cliente / razon social</span>
                 <Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN</span>
-                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} />
+                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Teléfono</span>
@@ -579,34 +583,45 @@ function InvoiceModal({
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
                 <Input value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
               </label>
-              <label>
+              <label className="md:col-span-2">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Dirección</span>
                 <Input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
               </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo obligatorio</span>
-                <Input value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} />
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de correccion</span>
+                <textarea
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                  placeholder="Ej. El cliente solicito corregir RTN."
+                />
               </label>
             </div>
-            <Button
-              onClick={() =>
-                onCorrect({
-                  invoiceId: invoice.id,
-                  customerName,
-                  customerRtn,
-                  customerPhone,
-                  customerEmail,
-                  customerAddress,
-                  correctionReason,
-                })
-              }
-              disabled={isPending || correctionReason.trim().length < 8}
-              variant="primary"
-              className="mt-4"
-            >
-              {isPending ? "Guardando..." : "Guardar corrección"}
-            </Button>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <Button onClick={onClose} variant="ghost">Cancelar</Button>
+              <Button
+                onClick={() =>
+                  onCorrect({
+                    invoiceId: invoice.id,
+                    customerName,
+                    customerRtn,
+                    customerPhone,
+                    customerEmail,
+                    customerAddress,
+                    correctionReason,
+                  })
+                }
+                disabled={isPending || customerName.trim().length === 0 || correctionReason.trim().length < 8}
+                variant="primary"
+              >
+                {isPending ? "Guardando..." : "Guardar correccion"}
+              </Button>
+            </div>
           </section>
+        ) : invoice.status === "anulada" || invoice.status === "cancelled" ? (
+          <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+            No se puede corregir una factura anulada.
+          </p>
         ) : null}
 
         <div className="mt-5 overflow-hidden rounded-lg border border-black/10">

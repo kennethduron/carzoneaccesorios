@@ -60,6 +60,8 @@ export type CrmCustomerOption = {
     | "Cuenta suspendida";
   customer_type: "Retail" | "Mayorista";
   has_wholesale_request: boolean;
+  wholesale_first_purchase_completed: boolean;
+  wholesale_lifecycle_status: "Sin acceso mayorista" | "Pendiente de primera compra" | "Primera compra completada" | "Mayorista activo";
   is_test_account: boolean;
   can_delete_permanently: boolean;
   delete_block_reason: string | null;

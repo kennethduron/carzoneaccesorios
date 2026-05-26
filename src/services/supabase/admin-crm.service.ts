@@ -94,6 +94,9 @@ type OrderActivityRow = {
   email: string | null;
   created_at: string;
   total: unknown;
+  subtotal: unknown;
+  status: string | null;
+  price_mode: "retail" | "wholesale" | null;
 };
 
 type DuplicateCustomerQueryRow = {
@@ -392,6 +395,10 @@ function normalizeCustomer(
 
   const latestOrderAt = latestDate(...Array.from(relatedOrders.values()).map((order) => order.created_at));
   const totalSpent = Array.from(relatedOrders.values()).reduce((sum, order) => sum + toNumber(order.total), 0);
+  const hasWholesalePurchase = Array.from(relatedOrders.values()).some((order) => {
+    const status = String(order.status ?? "").trim().toLowerCase();
+    return order.price_mode === "wholesale" && status !== "cancelado" && status !== "cancelled";
+  });
   const authMeta = row.user_id ? authByUserId.get(row.user_id) : null;
   const emailConfirmedAt = authMeta?.email_confirmed_at ?? null;
   const confirmedAt = authMeta?.confirmed_at ?? null;
@@ -447,6 +454,17 @@ function normalizeCustomer(
     }),
     customer_type: wholesaleStatus === "approved" ? "Mayorista" : "Retail",
     has_wholesale_request: wholesaleStatus === "pending" || hasWholesaleRequest,
+    wholesale_first_purchase_completed: hasWholesalePurchase,
+    wholesale_lifecycle_status:
+      wholesaleStatus === "approved"
+        ? hasWholesalePurchase
+          ? "Mayorista activo"
+          : "Pendiente de primera compra"
+        : wholesaleStatus === "pending"
+          ? "Sin acceso mayorista"
+          : wholesaleStatus === "suspended" || wholesaleStatus === "rejected"
+            ? "Sin acceso mayorista"
+            : "Sin acceso mayorista",
     is_test_account: accountEmail ? isSafeTestAccountEmail(accountEmail) : false,
     can_delete_permanently: !deleteBlockReason,
     delete_block_reason: deleteBlockReason,
@@ -594,17 +612,17 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   const orderQueries: Array<() => Promise<{ data: OrderActivityRow[] | null; error: { message: string } | null }>> = [];
   if (customerIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, total").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
     );
   }
   if (userIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, total").in("user_id", userIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("user_id", userIds).returns<OrderActivityRow[]>(),
     );
   }
   if (emails.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, total").in("email", emails).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("email", emails).returns<OrderActivityRow[]>(),
     );
   }
 
@@ -873,9 +891,20 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   }
 
   const orders = Array.from(ordersById.values()).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  const ordersByCustomerId = new Map([[customerId, orders]]);
-  const ordersByUserId = customerRow.user_id ? new Map([[customerRow.user_id, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
-  const ordersByEmail = normalizedEmail ? new Map([[normalizedEmail, orders]]) : new Map<string, CustomerProfileOrderRow[]>();
+  const activityOrders: OrderActivityRow[] = orders.map((order) => ({
+    id: order.id,
+    customer_id: order.customer_id,
+    user_id: order.user_id,
+    email: order.email,
+    created_at: order.created_at,
+    subtotal: null,
+    total: order.total,
+    status: order.status,
+    price_mode: order.price_mode,
+  }));
+  const ordersByCustomerId = new Map([[customerId, activityOrders]]);
+  const ordersByUserId = customerRow.user_id ? new Map([[customerRow.user_id, activityOrders]]) : new Map<string, OrderActivityRow[]>();
+  const ordersByEmail = normalizedEmail ? new Map([[normalizedEmail, activityOrders]]) : new Map<string, OrderActivityRow[]>();
   const invoiceCountsByCustomerId = new Map([[customerId, invoices?.length ?? 0]]);
   const wholesaleCodeCountsByCustomerId = new Map([
     [customerId, (wholesaleCodes ?? []).filter((code) => Number(code.used_count ?? 0) > 0 || code.last_used_at).length],

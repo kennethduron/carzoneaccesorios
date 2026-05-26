@@ -6,6 +6,7 @@ import { Building2, CheckCircle2, Loader2, LogIn, Send, X } from "lucide-react";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { submitWholesaleRequestAction } from "@/app/contacto/actions";
 import { WholesaleAccountRequestCard } from "@/components/store/wholesale-account-request-card";
+import { WholesaleProgramConditionsCard } from "@/components/store/wholesale-program-info";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { WholesaleAccessState } from "@/types/wholesale";
@@ -113,6 +114,10 @@ export function WholesaleRequestForm({ initialAccessState = null }: { initialAcc
             </Link>
           </div>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <WholesaleProgramConditionsCard />
       </div>
 
       <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-2">

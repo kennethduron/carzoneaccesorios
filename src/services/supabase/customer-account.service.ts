@@ -9,8 +9,34 @@ export type CustomerOrderInvoice = {
   rtn: string | null;
   cai: string | null;
   customer_rtn: string | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_address: string | null;
+  company_legal_name: string | null;
+  company_rtn: string | null;
+  company_address: string | null;
+  company_phone: string | null;
+  company_email: string | null;
+  company_logo_url: string | null;
+  fiscal_range_start: string | null;
+  fiscal_range_end: string | null;
+  due_at: string | null;
+  subtotal: number;
+  tax: number;
+  shipping_fee: number;
+  cash_on_delivery_fee: number;
+  total: number;
+  price_mode: StoreInvoice["priceMode"];
   issued_at: string | null;
   cancelled_at: string | null;
+  invoice_items: Array<Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
+    quantity: unknown;
+    unit_price: unknown;
+    line_total: unknown;
+    retail_price_snapshot: unknown;
+    wholesale_price_snapshot: unknown;
+  }> | null;
 };
 
 export type CustomerOrderRow = Omit<
@@ -172,7 +198,22 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
     payment_status: normalizePaymentStatus(row.payments),
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
     transfer_receipt_url: payment?.transfer_receipt_url ?? null,
-    invoices,
+    invoices: invoices.map((invoice) => ({
+      ...invoice,
+      subtotal: toNumber(invoice.subtotal),
+      tax: toNumber(invoice.tax),
+      shipping_fee: toNumber(invoice.shipping_fee),
+      cash_on_delivery_fee: toNumber(invoice.cash_on_delivery_fee),
+      total: toNumber(invoice.total),
+      invoice_items: (invoice.invoice_items ?? []).map((item) => ({
+        ...item,
+        quantity: toNumber(item.quantity),
+        unit_price: toNumber(item.unit_price),
+        line_total: toNumber(item.line_total),
+        retail_price_snapshot: toNumber(item.retail_price_snapshot),
+        wholesale_price_snapshot: toNumber(item.wholesale_price_snapshot),
+      })),
+    })),
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -350,7 +391,45 @@ export async function getCustomerOrdersPage(
         wholesale_price_snapshot
       ),
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
-      invoices(id, invoice_number, status, rtn, cai, customer_rtn, issued_at, cancelled_at)
+      invoices(
+        id,
+        invoice_number,
+        status,
+        rtn,
+        cai,
+        customer_rtn,
+        customer_name,
+        customer_phone,
+        customer_email,
+        customer_address,
+        company_legal_name,
+        company_rtn,
+        company_address,
+        company_phone,
+        company_email,
+        company_logo_url,
+        fiscal_range_start,
+        fiscal_range_end,
+        due_at,
+        subtotal,
+        tax,
+        shipping_fee,
+        cash_on_delivery_fee,
+        total,
+        price_mode,
+        issued_at,
+        cancelled_at,
+        invoice_items(
+          id,
+          sku,
+          product_name,
+          quantity,
+          unit_price,
+          line_total,
+          retail_price_snapshot,
+          wholesale_price_snapshot
+        )
+      )
     `,
       { count: "exact" },
     )

@@ -2469,17 +2469,9 @@ function CustomerProfileWholesale({
   onReactivateWholesale: (customer: CrmCustomerOption) => void;
 }) {
   const { customer, wholesaleHistory } = profile;
-  const firstWholesalePurchase = profile.orders.find((order) => order.price_mode === "wholesale");
-  const statusLabel =
-    customer.wholesale_status === "approved"
-      ? "Aprobado"
-      : customer.wholesale_status === "pending"
-        ? "Pendiente"
-        : customer.wholesale_status === "rejected"
-          ? "Rechazado"
-          : customer.wholesale_status === "suspended"
-            ? "Suspendido"
-            : "Sin solicitud";
+  const firstWholesalePurchase = profile.orders.find(
+    (order) => order.price_mode === "wholesale" && !["cancelado", "cancelled"].includes(order.status),
+  );
 
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
@@ -2490,11 +2482,11 @@ function CustomerProfileWholesale({
             {customer.is_wholesale ? "Cliente con acceso mayorista." : customer.has_wholesale_request ? "Solicitud mayorista pendiente." : "Cliente sin acceso mayorista."}
           </p>
         </div>
-        <InfoPill>{statusLabel}</InfoPill>
+        <InfoPill>{customer.wholesale_lifecycle_status}</InfoPill>
       </div>
       <div className="mt-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-3">
-          <InfoLine label="Estado" value={statusLabel} />
+          <InfoLine label="Estado" value={customer.wholesale_lifecycle_status} />
           <InfoLine label="Primera compra mínima" value="Según configuración mayorista" />
           <InfoLine label="Primera compra mayorista" value={firstWholesalePurchase ? "Realizada" : "Pendiente"} />
         </div>
@@ -2711,7 +2703,7 @@ function CustomerDetailCard({
           <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} />
           <InfoLine label="Pedidos" value={customer.order_count.toLocaleString("es-HN")} />
           <InfoLine label="Facturas" value={customer.invoice_count.toLocaleString("es-HN")} />
-          <InfoLine label="Estado mayorista" value={customer.wholesale_status} />
+          <InfoLine label="Estado mayorista" value={customer.wholesale_lifecycle_status} />
           <InfoLine label="Total comprado" value={formatCurrency(customer.total_spent)} />
           <InfoLine label="Registro" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
           <InfoLine label="Última actividad" value={formatDateTime(customer.last_activity_at)} />

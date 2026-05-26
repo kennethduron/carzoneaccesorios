@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogBrowser } from "@/components/store/catalog-browser";
+import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getCatalogProducts } from "@/services/supabase/products.service";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
@@ -51,6 +52,7 @@ export default async function CatalogoPage({
   const vehicleModel = normalizeVehicleModel(params.modelo_carro);
   const wholesaleState = await getWholesaleAccessStateAction();
   const priceMode = wholesaleState.account ? "wholesale" : "retail";
+  const firstPurchaseRequirement = wholesaleState.firstPurchaseRequirement;
   const catalog = await getCatalogProducts({
     query: params.q,
     category: params.categoria,
@@ -70,6 +72,17 @@ export default async function CatalogoPage({
       <section className="mx-auto max-w-7xl px-5 pt-8">
         <p className="text-sm text-black/50">Tienda pública</p>
         <h1 className="mt-2 text-4xl font-semibold">Catálogo</h1>
+        {wholesaleState.kind === "approved" &&
+        firstPurchaseRequirement &&
+        !firstPurchaseRequirement.completed &&
+        firstPurchaseRequirement.minimum > 0 ? (
+          <div className="mt-5">
+            <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
+            <p className="mt-2 text-sm text-black/55">
+              Recuerda: tu primera compra mayorista debe ser de L 10,000 o mas para activar permanentemente tu cuenta mayorista.
+            </p>
+          </div>
+        ) : null}
       </section>
       <CatalogBrowser
         products={catalog.products}

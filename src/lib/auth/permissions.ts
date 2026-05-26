@@ -1,7 +1,17 @@
 import type { AppRole, Permission } from "@/types/auth";
 
 export const rolePermissions: Record<AppRole, Permission[]> = {
-  technical_owner: ["admin:access", "system:monitoring", "settings:manage", "users:manage", "roles:assign", "audit:read"],
+  technical_owner: [
+    "admin:access",
+    "system:monitoring",
+    "settings:manage",
+    "users:manage",
+    "roles:assign",
+    "audit:read",
+    "invoices:read",
+    "invoices:correct",
+    "invoices:manage",
+  ],
   admin: [
     "admin:access",
     "products:manage",
@@ -12,6 +22,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "payments:manage",
     "invoices:read",
     "invoices:create",
+    "invoices:correct",
     "invoices:manage",
     "fiscal:read",
     "crm:manage",
@@ -35,6 +46,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "payments:manage",
     "invoices:read",
     "invoices:create",
+    "invoices:correct",
     "invoices:manage",
     "fiscal:read",
     "crm:manage",
@@ -54,6 +66,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "payments:read",
     "invoices:read",
     "invoices:create",
+    "invoices:correct",
     "fiscal:read",
     "reports:read",
     "reports:export",

@@ -3,6 +3,7 @@ import { FileText, PackageCheck, Route, ShoppingBag, UserRound } from "lucide-re
 import { LogoutButton } from "@/components/auth";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import { WholesaleAccountRequestCard } from "@/components/store/wholesale-account-request-card";
+import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { requireSession } from "@/lib/auth/session";
@@ -106,6 +107,13 @@ export default async function CuentaPage({
   const params = (await searchParams) ?? {};
   const confirmed = params.confirmed === "1";
   const visibleRole = wholesaleState.kind === "approved" ? "Mayorista" : "Cliente";
+  const firstPurchaseRequirement = wholesaleState.firstPurchaseRequirement;
+  const wholesaleLifecycleStatus =
+    wholesaleState.kind === "approved"
+      ? firstPurchaseRequirement?.completed
+        ? "Mayorista activo"
+        : "Pendiente de primera compra"
+      : wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado";
   const pendingInvoiceOrders = recentOrders.filter((order) => !orderHasIssuedInvoice(order)).slice(0, 3);
 
   return (
@@ -148,12 +156,43 @@ export default async function CuentaPage({
               <Info label="Total de pedidos" value={accountSummary.orderCount.toLocaleString("es-HN")} />
               <Info label="Total comprado" value={formatCurrency(accountSummary.totalPurchased)} />
               <Info label="Facturas disponibles" value={accountSummary.issuedInvoiceCount.toLocaleString("es-HN")} />
-              <Info label="Estado mayorista" value={wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado"} />
+              <Info label="Estado mayorista" value={wholesaleLifecycleStatus} />
             </div>
           </section>
 
           <WholesaleAccountRequestCard initialState={wholesaleState} context="account" />
         </div>
+
+        {wholesaleState.kind === "approved" && firstPurchaseRequirement && firstPurchaseRequirement.minimum > 0 ? (
+          <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-sm text-black/50">Estado mayorista</p>
+                <h2 className="mt-1 text-xl font-semibold">{wholesaleLifecycleStatus}</h2>
+                <p className="mt-2 text-sm text-black/60">
+                  La primera compra mayorista usa el subtotal de productos, sin envio ni comision contra entrega.
+                </p>
+              </div>
+              <Link href="/catalogo" className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white">
+                Comprar ahora
+              </Link>
+            </div>
+            {!firstPurchaseRequirement.completed ? (
+              <div className="mt-4">
+                <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <Info label="Monto minimo" value={formatCurrency(firstPurchaseRequirement.minimum)} />
+                  <Info label="Monto acumulado" value={formatCurrency(firstPurchaseRequirement.accumulated)} />
+                  <Info label="Monto faltante" value={formatCurrency(firstPurchaseRequirement.missing)} />
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
+                Primera compra completada. Tus compras mayoristas posteriores no tienen monto minimo.
+              </p>
+            )}
+          </section>
+        ) : null}
 
         <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">

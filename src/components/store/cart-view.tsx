@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { formatCurrency, getProductPriceLabel } from "@/utils/pricing";
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { defaultPublicCompanySettings, getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
@@ -14,6 +15,7 @@ export function CartView() {
   const { rows, invalidItemCount, cartMessage, subtotal, updateQuantity, removeFromCart, clearInvalidCartItems } =
     useShoppingCart();
   const { priceMode, wholesaleAccount } = usePriceMode();
+  const firstPurchaseRequirement = wholesaleAccount?.firstPurchaseRequirement ?? null;
   const [settings, setSettings] = useState<PublicCompanySettings>(defaultPublicCompanySettings);
   const estimatedFees = useMemo(
     () => calculateCheckoutFees({ subtotal, paymentMethod: "Transferencia bancaria", settings }),
@@ -110,6 +112,12 @@ export function CartView() {
           </p>
         ) : null}
         <Totals subtotal={subtotal} shippingFee={estimatedFees.shippingFee} total={estimatedTransferTotal} settings={settings} />
+        {priceMode === "wholesale" &&
+        firstPurchaseRequirement &&
+        !firstPurchaseRequirement.completed &&
+        firstPurchaseRequirement.minimum > 0 ? (
+          <WholesaleRequirementSummary requirement={firstPurchaseRequirement} currentSubtotal={subtotal} className="mt-4" />
+        ) : null}
         <Link
           href="/checkout"
           className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"

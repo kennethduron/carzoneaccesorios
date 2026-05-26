@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Copy, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import { getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
@@ -388,6 +389,15 @@ function OrderDetail({
             <Printer size={17} />
             Reimprimir factura
           </Button>
+        ) : null}
+        {canViewFinancialData && order.invoice_number ? (
+          <Link
+            href="/admin/facturas"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
+          >
+            <FileText size={17} />
+            Corregir datos fiscales
+          </Link>
         ) : null}
         {canManagePayments ? (
           <>

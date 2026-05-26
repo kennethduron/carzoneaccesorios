@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { SystemLoadingScreen } from "@/components/system-loading-screen";
+import { WholesaleSignupInfo } from "@/components/store/wholesale-program-info";
 import { useToast } from "@/contexts/toast-context";
 
 type AuthCardProps = {
@@ -492,6 +493,7 @@ export function AuthCard({ mode }: AuthCardProps) {
               disabled={loading}
               required
             />
+            {!isLogin ? <WholesaleSignupInfo /> : null}
           </div> : null}
 
           {isLogin ? (

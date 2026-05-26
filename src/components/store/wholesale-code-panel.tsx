@@ -14,6 +14,7 @@ const loadingState: WholesaleAccessState = {
   canEnterCode: false,
   account: null,
   shouldShowApprovedNotice: false,
+  firstPurchaseRequirement: null,
 };
 
 const stateIcon = {

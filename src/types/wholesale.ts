@@ -7,6 +7,14 @@ export type WholesaleAccount = {
   customerName: string;
   businessName: string;
   status: WholesaleAccountStatus;
+  firstPurchaseRequirement: WholesaleFirstPurchaseRequirement | null;
+};
+
+export type WholesaleFirstPurchaseRequirement = {
+  minimum: number;
+  accumulated: number;
+  missing: number;
+  completed: boolean;
 };
 
 export type WholesaleValidationResult = {
@@ -26,6 +34,7 @@ export type WholesaleAccessState = {
   canEnterCode: boolean;
   account: WholesaleAccount | null;
   shouldShowApprovedNotice: boolean;
+  firstPurchaseRequirement: WholesaleFirstPurchaseRequirement | null;
 };
 
 export type WholesaleCustomerOption = {

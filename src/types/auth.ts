@@ -13,6 +13,7 @@ export type Permission =
   | "payments:manage"
   | "invoices:read"
   | "invoices:create"
+  | "invoices:correct"
   | "invoices:manage"
   | "fiscal:read"
   | "reports:export"
