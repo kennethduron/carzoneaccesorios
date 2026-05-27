@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminOrdersPage } from "@/services/supabase/admin-orders.service";
+import { adminOrderTaskLabels, getAdminOrdersPage, normalizeAdminOrderTask } from "@/services/supabase/admin-orders.service";
 import type { AdminOrderRow } from "@/types/orders";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,9 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     shipping_fee: 0,
     shipping_total: 0,
     cash_on_delivery_fee: 0,
+    small_order_fee: 0,
+    discount_total: 0,
+    additional_fees: [],
     total: 0,
     payment_status: null,
     bank_reference_number: null,
@@ -30,7 +33,11 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     invoice_id: null,
     invoice_number: null,
     invoice_issued_at: null,
+    invoice_status: null,
+    invoice_cancelled_at: null,
+    invoice_cancellation_reason: null,
     customer_rtn: null,
+    fiscal_customer_rtn: null,
     order_items: order.order_items.map((item) => ({
       ...item,
       unit_price: 0,
@@ -44,7 +51,7 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; task?: string }>;
 }) {
   const profile = await requirePermission("admin:access");
   const canReadOrders =
@@ -55,14 +62,17 @@ export default async function AdminOrdersPage({
   }
 
   const params = await searchParams;
+  const task = normalizeAdminOrderTask(params.task);
   const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
   const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");
+  const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
+  const canCorrectInvoices = profile.role === "admin" || profile.permissions.includes("invoices:correct");
   const canViewFinancialData =
     profile.role === "admin" ||
     profile.permissions.some((permission) =>
       ["payments:read", "payments:manage", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),
     );
-  const ordersPage = await getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50 });
+  const ordersPage = await getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50, task });
   const visibleOrders = canViewFinancialData ? ordersPage.orders : ordersPage.orders.map(stripFinancialOrderData);
 
   return (
@@ -83,7 +93,10 @@ export default async function AdminOrdersPage({
         pageSize={ordersPage.pageSize}
         canManagePayments={canManagePayments}
         canGenerateInvoices={canGenerateInvoices}
+        canCancelInvoices={canCancelInvoices}
+        canCorrectInvoices={canCorrectInvoices}
         canViewFinancialData={canViewFinancialData}
+        activeTask={task ? { id: task, label: adminOrderTaskLabels[task] } : null}
       />
     </AdminShell>
   );

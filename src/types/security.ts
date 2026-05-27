@@ -44,6 +44,8 @@ export type AdminUserSummary = {
   username: string | null;
   phone: string | null;
   role: AppRole;
+  profile_kind: "customer" | "internal";
+  profile_label: string;
   active: boolean;
   created_at: string;
   updated_at: string;

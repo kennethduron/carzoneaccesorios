@@ -44,7 +44,7 @@ Comparacion revisada el 21 de mayo de 2026:
 - Un visitante no autenticado no debe activar precio mayorista.
 - Un cliente regular puede solicitar acceso mayorista, pero no debe ver ni forzar precio mayorista.
 - Un mayorista aprobado debe tener cliente activo, usuario activo y `customers.wholesale_status = 'approved'`. La cuenta aprobada es la credencial mayorista; no se usan codigos.
-- La primera compra minima se valida en backend. Las compras posteriores dependen del historial registrado del cliente mayorista.
+- La primera compra minima se valida en backend contra el total final a pagar. Las compras posteriores dependen del historial registrado del cliente mayorista.
 
 ## Inventario
 

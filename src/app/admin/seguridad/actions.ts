@@ -24,9 +24,9 @@ type CreateOperationalUserInput = {
   temporaryPassword: string;
 };
 
-const ownerAssignableRoles: AppRole[] = ["vendedor", "bodega", "contadora", "cliente"];
-const adminAssignableRoles: AppRole[] = ["admin", "business_owner", "vendedor", "bodega", "contadora", "cliente"];
-const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora"];
+const ownerAssignableRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte", "cliente"];
+const adminAssignableRoles: AppRole[] = ["admin", "business_owner", "vendedor", "bodega", "contadora", "soporte", "cliente"];
+const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte"];
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -166,7 +166,7 @@ export async function createOperationalUserAction(input: CreateOperationalUserIn
   const profile = await requirePermission("users:manage");
 
   if (!operationalCreateRoles.includes(input.role)) {
-    return { ok: false, message: "Solo se pueden crear usuarios operativos: vendedor, bodega o contadora." };
+    return { ok: false, message: "Solo se pueden crear usuarios operativos: vendedor, bodega, contadora o soporte." };
   }
 
   if (!canAssignRole(profile.role, input.role)) {

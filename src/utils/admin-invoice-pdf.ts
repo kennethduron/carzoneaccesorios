@@ -34,6 +34,9 @@ export async function exportAdminInvoicePdf(invoice: AdminInvoiceDetail) {
     tax: invoice.tax,
     shippingFee: invoice.shipping_fee,
     cashOnDeliveryFee: invoice.cash_on_delivery_fee,
+    smallOrderFee: invoice.small_order_fee,
+    discountTotal: invoice.discount_total,
+    additionalFees: invoice.additional_fees,
     total: invoice.total,
     items: invoice.items.map((item) => ({
       sku: item.sku,

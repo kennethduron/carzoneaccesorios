@@ -4,6 +4,7 @@ import type { InventoryMovementRow, InventoryProductOption } from "@/types/inven
 
 export type AdminInventoryFilters = {
   query?: string;
+  filter?: "low_stock" | null;
   movementPage?: number;
   movementPageSize?: number;
 };
@@ -80,9 +81,19 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
     productsQuery = productsQuery.or(`sku.ilike.%${query}%,internal_code.ilike.%${query}%,name.ilike.%${query}%,brand.ilike.%${query}%`);
   }
 
+  const productsRequest =
+    filters.filter === "low_stock"
+      ? supabase
+          .rpc("get_admin_low_stock_products", {
+            result_limit: 50,
+            search_query: query || null,
+          })
+          .returns<InventoryProductOption[]>()
+      : productsQuery.returns<InventoryProductOption[]>();
+
   const [{ data: products, error: productsError, count }, { data: movements, error: movementsError, count: movementsTotal }, overview] =
     await Promise.all([
-      productsQuery.returns<InventoryProductOption[]>(),
+      productsRequest,
       supabase
         .from("inventory_movements")
         .select(
@@ -116,7 +127,8 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
     throw new Error(movementsError.message);
   }
 
-  const normalizedProducts = (products ?? []).map((product) => ({
+  const productRows: InventoryProductOption[] = Array.isArray(products) ? products : [];
+  const normalizedProducts = productRows.map((product) => ({
       ...product,
       stock: toNumber(product.stock),
       reserved_stock: toNumber(product.reserved_stock),

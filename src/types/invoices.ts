@@ -1,4 +1,5 @@
 import type { StoreOrder } from "@/types/orders";
+import type { AdditionalFee } from "@/types/financial";
 
 export type InvoiceStatus = "emitida" | "anulada" | "pendiente" | "draft" | "issued" | "paid" | "cancelled";
 
@@ -27,6 +28,9 @@ export type StoreInvoice = {
   isv: number;
   shippingFee: number;
   cashOnDeliveryFee: number;
+  smallOrderFee: number;
+  discountTotal: number;
+  additionalFees: AdditionalFee[];
   total: number;
   priceMode: StoreOrder["priceMode"];
   paymentMethod: StoreOrder["paymentMethod"];
@@ -76,6 +80,9 @@ export type AdminInvoiceRow = {
   tax: number;
   shipping_fee: number;
   cash_on_delivery_fee: number;
+  small_order_fee: number;
+  discount_total: number;
+  additional_fees: AdditionalFee[];
   total: number;
   issued_at: string | null;
   cancelled_at: string | null;

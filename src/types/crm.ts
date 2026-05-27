@@ -10,6 +10,7 @@ export type CrmPriority = "baja" | "media" | "alta" | "urgente";
 export type CrmFollowupStatus = "pending" | "completed" | "cancelled";
 export type CrmLeadStatus = "prospecto" | "contactado" | "calificado" | "cliente" | "perdido";
 export type CrmWholesaleStatus = "none" | "pending" | "approved" | "rejected" | "suspended";
+export type CrmProfileKind = "customer" | "internal";
 
 export type CrmCustomerOption = {
   id: string;
@@ -40,6 +41,10 @@ export type CrmCustomerOption = {
   account_phone: string | null;
   account_active: boolean | null;
   account_created_at: string | null;
+  account_role: import("@/types/auth").AppRole | null;
+  profile_kind: CrmProfileKind;
+  profile_label: string;
+  primary_badges: string[];
   email_confirmed_at: string | null;
   confirmed_at: string | null;
   order_count: number;
@@ -57,7 +62,10 @@ export type CrmCustomerOption = {
     | "Prospecto"
     | "Mayorista pendiente"
     | "Mayorista aprobado"
-    | "Cuenta suspendida";
+    | "Cuenta suspendida"
+    | "Usuario interno"
+    | "Dueño operativo"
+    | "Admin técnico";
   customer_type: "Retail" | "Mayorista";
   has_wholesale_request: boolean;
   wholesale_first_purchase_completed: boolean;
@@ -86,6 +94,9 @@ export type CrmFollowupRow = {
   status: CrmFollowupStatus;
   completed_at: string | null;
   created_at: string;
+  customer_account_role: import("@/types/auth").AppRole | null;
+  customer_profile_kind: CrmProfileKind;
+  customer_profile_label: string;
 };
 
 export type CrmNoteRow = {
@@ -130,8 +141,16 @@ export type CrmCustomerOrderProfileRow = {
   bank_reference_number: string | null;
   has_transfer_receipt: boolean;
   price_mode: "retail" | "wholesale";
+  subtotal: number;
+  tax: number;
+  shipping_fee: number;
+  cash_on_delivery_fee: number;
+  small_order_fee: number;
+  discount_total: number;
+  additional_fees_total: number;
   total: number;
   invoice_number: string | null;
+  invoice_status: string | null;
 };
 
 export type CrmCustomerInvoiceProfileRow = {
@@ -140,6 +159,13 @@ export type CrmCustomerInvoiceProfileRow = {
   order_id: string;
   order_number: string | null;
   status: string;
+  subtotal: number;
+  tax: number;
+  shipping_fee: number;
+  cash_on_delivery_fee: number;
+  small_order_fee: number;
+  discount_total: number;
+  additional_fees_total: number;
   total: number;
   issued_at: string | null;
   created_at: string;

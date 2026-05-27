@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
+import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
 export type AdminOrdersPage = {
   orders: AdminOrderRow[];
@@ -7,6 +8,20 @@ export type AdminOrdersPage = {
   page: number;
   pageSize: number;
 };
+
+export type AdminOrderTask = "new_orders" | "pending_payments" | "to_prepare";
+
+export const adminOrderTaskLabels: Record<AdminOrderTask, string> = {
+  new_orders: "Pedidos nuevos por revisar",
+  pending_payments: "Pagos pendientes de confirmar",
+  to_prepare: "Pedidos listos para preparar",
+};
+
+const adminOrderTasks = new Set<AdminOrderTask>(["new_orders", "pending_payments", "to_prepare"]);
+
+export function normalizeAdminOrderTask(value: string | null | undefined): AdminOrderTask | null {
+  return adminOrderTasks.has(value as AdminOrderTask) ? (value as AdminOrderTask) : null;
+}
 
 function toNumber(value: unknown) {
   return Number(value ?? 0);
@@ -19,6 +34,9 @@ type OrderQueryRow = Omit<
   | "shipping_fee"
   | "shipping_total"
   | "cash_on_delivery_fee"
+  | "small_order_fee"
+  | "discount_total"
+  | "additional_fees"
   | "total"
   | "order_items"
   | "payment_id"
@@ -29,14 +47,30 @@ type OrderQueryRow = Omit<
   | "invoice_id"
   | "invoice_number"
   | "invoice_issued_at"
+  | "invoice_status"
+  | "invoice_cancelled_at"
+  | "invoice_cancellation_reason"
   | "customer_rtn"
+  | "fiscal_customer_name"
+  | "fiscal_customer_rtn"
+  | "fiscal_customer_phone"
+  | "fiscal_customer_email"
+  | "fiscal_customer_address"
 > & {
   subtotal: unknown;
   tax: unknown;
   shipping_fee: unknown;
   shipping_total: unknown;
   cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   total: unknown;
+  fiscal_customer_name: string | null;
+  fiscal_customer_rtn: string | null;
+  fiscal_customer_phone: string | null;
+  fiscal_customer_email: string | null;
+  fiscal_customer_address: string | null;
   order_items: Array<Omit<AdminOrderItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
     quantity: unknown;
     unit_price: unknown;
@@ -57,10 +91,26 @@ type OrderQueryRow = Omit<
     id: string;
     invoice_number: string;
     issued_at: string | null;
+    status: string | null;
+    cancelled_at: string | null;
+    cancellation_reason: string | null;
+    customer_name: string | null;
+    customer_rtn: string | null;
+    customer_phone: string | null;
+    customer_email: string | null;
+    customer_address: string | null;
   }> | {
     id: string;
     invoice_number: string;
     issued_at: string | null;
+    status: string | null;
+    cancelled_at: string | null;
+    cancellation_reason: string | null;
+    customer_name: string | null;
+    customer_rtn: string | null;
+    customer_phone: string | null;
+    customer_email: string | null;
+    customer_address: string | null;
   } | null;
   customers: {
     tax_id: string | null;
@@ -78,8 +128,16 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     shipping_fee: toNumber(row.shipping_fee),
     shipping_total: toNumber(row.shipping_total),
     cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
+    small_order_fee: toNumber(row.small_order_fee),
+    discount_total: toNumber(row.discount_total),
+    additional_fees: normalizeAdditionalFees(row.additional_fees),
     total: toNumber(row.total),
-    customer_rtn: row.customers?.tax_id ?? null,
+    customer_rtn: invoice?.customer_rtn ?? row.fiscal_customer_rtn ?? row.customers?.tax_id ?? null,
+    fiscal_customer_name: invoice?.customer_name ?? row.fiscal_customer_name ?? row.customer_name,
+    fiscal_customer_rtn: invoice?.customer_rtn ?? row.fiscal_customer_rtn ?? row.customers?.tax_id ?? null,
+    fiscal_customer_phone: invoice?.customer_phone ?? row.fiscal_customer_phone ?? row.customer_phone ?? row.phone,
+    fiscal_customer_email: invoice?.customer_email ?? row.fiscal_customer_email ?? row.email ?? null,
+    fiscal_customer_address: invoice?.customer_address ?? row.fiscal_customer_address ?? row.delivery_address,
     payment_id: payment?.id ?? null,
     payment_status: payment?.payment_status ?? payment?.status ?? null,
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
@@ -90,6 +148,9 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     invoice_id: invoice?.id ?? null,
     invoice_number: invoice?.invoice_number ?? null,
     invoice_issued_at: invoice?.issued_at ?? null,
+    invoice_status: invoice?.status ?? null,
+    invoice_cancelled_at: invoice?.cancelled_at ?? null,
+    invoice_cancellation_reason: invoice?.cancellation_reason ?? null,
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -115,13 +176,23 @@ function normalizePageSize(value: unknown) {
   return Math.min(Math.floor(pageSize), 100);
 }
 
-export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {}): Promise<AdminOrdersPage> {
+export async function getAdminOrdersPage({
+  page: rawPage,
+  pageSize: rawPageSize,
+  task,
+}: {
+  page?: number;
+  pageSize?: number;
+  task?: AdminOrderTask | null;
+} = {}): Promise<AdminOrdersPage> {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(rawPage);
   const pageSize = normalizePageSize(rawPageSize);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  const paymentRelation = task === "pending_payments" || task === "to_prepare" ? "payments!inner" : "payments";
+
+  let ordersQuery = supabase
     .from("orders")
     .select(
       `
@@ -132,6 +203,12 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
       public_tracking_enabled,
       customer_id,
       customer_name,
+      customer_phone,
+      fiscal_customer_name,
+      fiscal_customer_rtn,
+      fiscal_customer_phone,
+      fiscal_customer_email,
+      fiscal_customer_address,
       email,
       phone,
       delivery_address,
@@ -146,6 +223,9 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
       shipping_fee,
       shipping_total,
       cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
       total,
       status,
       order_reservation_status,
@@ -163,12 +243,31 @@ export async function getAdminOrdersPage({ page: rawPage, pageSize: rawPageSize 
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      payments(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
-      invoices(id, invoice_number, issued_at),
+      ${paymentRelation}(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
+      invoices(id, invoice_number, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
       customers(tax_id)
     `,
       { count: "exact" },
-    )
+    );
+
+  if (task === "new_orders") {
+    ordersQuery = ordersQuery.in("status", ["pending", "recibido"]);
+  }
+
+  if (task === "pending_payments") {
+    ordersQuery = ordersQuery
+      .in("payment_method", ["bank_transfer", "cash"])
+      .eq("payments.payment_status", "pending")
+      .not("status", "in", "(cancelado,cancelled)");
+  }
+
+  if (task === "to_prepare") {
+    ordersQuery = ordersQuery
+      .in("status", ["confirmado", "confirmed", "paid", "preparacion", "preparing"])
+      .eq("payments.payment_status", "approved");
+  }
+
+  const { data, error, count } = await ordersQuery
     .order("created_at", { ascending: false })
     .range(from, to)
     .returns<OrderQueryRow[]>();

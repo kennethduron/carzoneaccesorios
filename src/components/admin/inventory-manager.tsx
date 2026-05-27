@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { AlertTriangle, History, PackagePlus, Save } from "lucide-react";
 import { createInventoryMovementAction } from "@/app/admin/inventario/actions";
+import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
@@ -20,6 +21,7 @@ type InventoryManagerProps = {
   movements: InventoryMovementRow[];
   summary: AdminInventorySummary;
   productQuery: string;
+  activeFilter?: { id: string; label: string } | null;
 };
 
 const movementLabels: Record<InventoryMovementType, string> = {
@@ -43,7 +45,7 @@ const emptyMovement: InventoryMovementInput = {
   notes: "",
 };
 
-export function InventoryManager({ products, movements, summary, productQuery }: InventoryManagerProps) {
+export function InventoryManager({ products, movements, summary, productQuery, activeFilter = null }: InventoryManagerProps) {
   const [movement, setMovement] = useState<InventoryMovementInput>(emptyMovement);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -66,6 +68,8 @@ export function InventoryManager({ products, movements, summary, productQuery }:
 
   return (
     <div className="space-y-5">
+      {activeFilter ? <ActiveFilterBanner label={activeFilter.label} clearHref="/admin/inventario" /> : null}
+
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Productos encontrados" value={summary.productsTotal.toLocaleString("es-HN")} />
         <Metric label="Opciones cargadas" value={summary.productOptionsLoaded.toLocaleString("es-HN")} />
@@ -81,6 +85,7 @@ export function InventoryManager({ products, movements, summary, productQuery }:
           </div>
           <div className="grid gap-3">
             <form action="/admin/inventario" className="grid gap-2 rounded-md border border-black/10 bg-[#f4f4f5] p-3">
+              {activeFilter ? <input type="hidden" name="filter" value={activeFilter.id} /> : null}
               <label className="block">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Buscar producto</span>
                 <Input name="q" defaultValue={productQuery} placeholder="SKU, código, nombre o marca" />
@@ -296,7 +301,7 @@ export function InventoryManager({ products, movements, summary, productQuery }:
             pageSize={summary.movementPageSize}
             total={summary.movementsTotal}
             label="movimientos"
-            params={{ q: productQuery }}
+            params={{ q: productQuery, filter: activeFilter?.id }}
             pageParam="mov_page"
           />
         </div>

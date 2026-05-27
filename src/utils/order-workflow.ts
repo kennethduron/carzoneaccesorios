@@ -29,6 +29,17 @@ export type OrderStatusOption = {
   label: string;
 };
 
+export type ContextualOrderAction =
+  | "accept_order"
+  | "mark_preparing"
+  | "mark_packed"
+  | "mark_shipped"
+  | "mark_in_route"
+  | "mark_delivered"
+  | "confirm_payment"
+  | "reject_payment"
+  | "cancel_order";
+
 const canonicalStatusMap: Record<string, OrderWorkflowStatus> = {
   pending: "recibido",
   recibido: "recibido",
@@ -104,7 +115,7 @@ function nextFulfillmentStatuses(current: OrderWorkflowStatus): OrderWorkflowSta
   if (current === "confirmado") return ["preparacion"];
   if (current === "preparacion") return ["empacado"];
   if (current === "empacado") return ["enviado"];
-  if (current === "enviado") return ["en_ruta", "entregado"];
+  if (current === "enviado") return ["en_ruta"];
   if (current === "en_ruta") return ["entregado"];
   return [];
 }
@@ -154,8 +165,42 @@ export function canMoveOrderToStatus(order: OrderWorkflowInput, targetStatus: st
   return {
     ok: false,
     status: target,
-    message: "No puedes avanzar este pedido porque el pago aun no ha sido confirmado o el pedido no ha sido aceptado.",
+    message: "No puedes avanzar este pedido porque el flujo requiere aceptar el pedido, confirmar el pago o seguir el siguiente paso operativo.",
   };
+}
+
+export function canConfirmPayment(order: OrderWorkflowInput) {
+  if (canonicalOrderStatus(order.status) === "cancelado") return false;
+  if (isPaymentConfirmed(order.payment_status) || order.payment_status === "rejected") return false;
+  if (order.payment_method === "card") return false;
+  if (order.payment_method === "cash") return canonicalOrderStatus(order.status) === "entregado";
+  return order.payment_method === "bank_transfer";
+}
+
+export function getContextualOrderActions(order: OrderWorkflowInput): ContextualOrderAction[] {
+  const current = canonicalOrderStatus(order.status);
+  const paymentConfirmed = isPaymentConfirmed(order.payment_status);
+
+  if (current === "cancelado") return [];
+
+  const actions: ContextualOrderAction[] = [];
+  if (current === "recibido" && (order.payment_method === "cash" || paymentConfirmed)) {
+    actions.push("accept_order");
+  }
+
+  if (current === "confirmado") actions.push("mark_preparing");
+  if (current === "preparacion") actions.push("mark_packed");
+  if (current === "empacado") actions.push("mark_shipped");
+  if (current === "enviado") actions.push("mark_in_route");
+  if (current === "en_ruta") actions.push("mark_delivered");
+
+  if (canConfirmPayment(order)) actions.push("confirm_payment");
+  if (order.payment_method === "bank_transfer" && !paymentConfirmed && order.payment_status !== "rejected") {
+    actions.push("reject_payment");
+  }
+  if (canCancelOrder(order)) actions.push("cancel_order");
+
+  return actions;
 }
 
 export function paymentDisplayLabel(order: OrderWorkflowInput) {

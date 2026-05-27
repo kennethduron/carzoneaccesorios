@@ -24,7 +24,7 @@ export function WholesaleProgramConditionsCard({ compact = false }: { compact?: 
         <div className="min-w-0">
           <h3 className="font-semibold">Condiciones del programa mayorista</h3>
           <p className="mt-1 text-sm leading-6 text-black/60">
-            La primera compra como cliente mayorista debe ser de L 10,000 o mas. Despues de completar esa compra, puedes
+            Tu primera compra mayorista debe alcanzar un total final de L 10,000 o mas. Despues de completar esa compra, puedes
             realizar pedidos sin monto minimo.
           </p>
         </div>
@@ -56,7 +56,7 @@ export function WholesaleSignupInfo() {
         </div>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <InfoItem icon={<BadgePercent size={15} />} text="Primera compra mayorista minima: L 10,000." />
+        <InfoItem icon={<BadgePercent size={15} />} text="Primera compra mayorista con total final minimo: L 10,000." />
         <InfoItem icon={<Repeat size={15} />} text="Compras posteriores sin monto minimo." />
       </div>
       <Link href="/contacto#mayoreo" className="mt-3 inline-flex text-sm font-semibold text-[#b91c25]">
@@ -68,14 +68,14 @@ export function WholesaleSignupInfo() {
 
 export function WholesaleRequirementSummary({
   requirement,
-  currentSubtotal,
+  currentFinalTotal,
   className = "",
 }: {
   requirement: WholesaleFirstPurchaseRequirement;
-  currentSubtotal?: number;
+  currentFinalTotal?: number;
   className?: string;
 }) {
-  const baseAmount = typeof currentSubtotal === "number" ? currentSubtotal : requirement.accumulated;
+  const baseAmount = typeof currentFinalTotal === "number" ? currentFinalTotal : requirement.accumulated;
   const missing = requirement.completed ? 0 : Math.max(0, requirement.minimum - baseAmount);
   const reached = requirement.completed || missing <= 0;
 
@@ -87,8 +87,8 @@ export function WholesaleRequirementSummary({
           <p className="font-semibold">Primera compra mayorista requerida: {formatCurrency(requirement.minimum)}</p>
           <p className="mt-1">
             {reached
-              ? "Has cumplido el monto minimo requerido."
-              : `Te faltan ${formatCurrency(missing)} para completar el monto minimo.`}
+              ? "Has alcanzado el mínimo requerido para tu primera compra mayorista."
+              : `Te faltan ${formatCurrency(missing)} para completar el mínimo de primera compra mayorista.`}
           </p>
         </div>
       </div>

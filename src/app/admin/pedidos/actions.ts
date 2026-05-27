@@ -71,6 +71,33 @@ function safeAdminOrderMessage(message: string) {
   return message || "No se pudo actualizar el pedido.";
 }
 
+function normalizeOptionalRtn(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const digits = trimmed.replace(/[\s-]/g, "");
+  if (!/^\d{14}$/.test(digits)) {
+    return { error: "El RTN debe contener 14 digitos." };
+  }
+
+  return digits;
+}
+
+function revalidateOperationalPaths() {
+  [
+    "/admin/pedidos",
+    "/admin/facturas",
+    "/admin/reportes",
+    "/admin/crm",
+    "/rastreo",
+    "/mis-pedidos",
+    "/cuenta",
+    "/facturas",
+  ].forEach((path) => revalidatePath(path));
+}
+
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
   await requirePermission("payments:manage");
   const rejectionReason = reason.trim();
@@ -130,6 +157,10 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
 
   if (status === "approved" && order.payment_method === "card") {
     return { ok: false, message: "Los pagos con tarjeta solo deben confirmarse mediante pasarela o webhook autorizado." };
+  }
+
+  if (status === "approved" && order.payment_method === "cash" && canonicalOrderStatus(order.status) !== "entregado") {
+    return { ok: false, message: "El pago en efectivo solo se confirma cuando el pedido fue entregado." };
   }
 
   const paidAt = status === "approved" ? new Date().toISOString() : null;
@@ -201,9 +232,7 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     },
   });
 
-  revalidatePath("/admin/pedidos");
-  revalidatePath("/admin/reportes");
-  revalidatePath("/rastreo");
+  revalidateOperationalPaths();
 
   return {
     ok: true,
@@ -216,8 +245,13 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
   };
 }
 
-export async function updateOrderStatusAction(orderId: string, status: OrderStatus) {
+export async function updateOrderStatusAction(orderId: string, status: OrderStatus, reason = "") {
   await requirePermission("orders:manage");
+  const statusReason = reason.trim();
+
+  if (canonicalOrderStatus(status) === "cancelado" && statusReason.length < 8) {
+    return { ok: false, message: "Ingresa un motivo de cancelacion de al menos 8 caracteres." };
+  }
 
   if (!allowedOrderStatuses.has(status)) {
     return { ok: false, message: "Estado de pedido inválido." };
@@ -255,6 +289,10 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
 
   if (previousError) {
     return { ok: false, message: safeAdminOrderMessage(previousError.message) };
+  }
+
+  if (canonicalOrderStatus(previousOrder.status) === "cancelado" && canonicalOrderStatus(status) !== "cancelado") {
+    return { ok: false, message: "Este pedido esta cancelado. No requiere avance operativo." };
   }
 
   const payment = previousOrder.payments?.[0] ?? null;
@@ -298,6 +336,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       payment_method: previousOrder.payment_method,
       payment_status: payment?.payment_status ?? payment?.status ?? null,
       order_reservation_status: previousOrder.order_reservation_status,
+      reason: transition.status === "cancelado" ? statusReason : null,
     },
     newData: {
       order_number: previousOrder.order_number,
@@ -305,12 +344,11 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       tracking_status: transition.status,
       payment_method: previousOrder.payment_method,
       payment_status: payment?.payment_status ?? payment?.status ?? null,
+      reason: transition.status === "cancelado" ? statusReason : null,
     },
   });
 
-  revalidatePath("/admin/pedidos");
-  revalidatePath("/admin/reportes");
-  revalidatePath("/rastreo");
+  revalidateOperationalPaths();
 
   return { ok: true, message: "Estado del pedido actualizado." };
 }
@@ -320,15 +358,38 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, payments(payment_status, status)")
+    .select("id, status, order_reservation_status, payments(payment_status, status), invoices(id, status)")
     .eq("id", orderId)
-    .maybeSingle<{ id: string; payments: Array<{ payment_status: string | null; status: string | null }> | null }>();
+    .maybeSingle<{
+      id: string;
+      status: string;
+      order_reservation_status: string | null;
+      payments: Array<{ payment_status: string | null; status: string | null }> | null;
+      invoices: Array<{ id: string; status: string | null }> | null;
+    }>();
 
   if (orderError) {
     return { ok: false, message: orderError.message || "No se pudo validar el estado del pago." };
   }
 
-  const payment = order?.payments?.[0] ?? null;
+  if (!order) {
+    return { ok: false, message: "Pedido no encontrado." };
+  }
+
+  if (canonicalOrderStatus(order.status) === "cancelado") {
+    return { ok: false, message: "No se puede emitir factura de un pedido cancelado." };
+  }
+
+  if (["released", "expired", "canceled"].includes(String(order.order_reservation_status ?? ""))) {
+    return { ok: false, message: "No se puede emitir factura porque la reserva de inventario fue liberada." };
+  }
+
+  const activeInvoice = (order.invoices ?? []).find((invoice) => !["anulada", "cancelled"].includes(String(invoice.status ?? "")));
+  if (activeInvoice) {
+    return { ok: false, message: "Este pedido ya tiene una factura fiscal activa." };
+  }
+
+  const payment = order.payments?.[0] ?? null;
   if (!isPaymentConfirmed(payment?.payment_status ?? payment?.status ?? null)) {
     return { ok: false, message: "No se puede emitir factura porque el pago aún no ha sido confirmado." };
   }
@@ -350,9 +411,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     return { ok: false, message: "Error fiscal: no se pudo crear la factura." };
   }
 
-  revalidatePath("/admin/pedidos");
-  revalidatePath("/admin/facturas");
-  revalidatePath("/admin/reportes");
+  revalidateOperationalPaths();
   revalidatePath("/admin/configuracion-fiscal");
 
   return {
@@ -362,6 +421,58 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     invoiceNumber: invoice.invoice_number,
     invoice: await getAdminInvoiceDetail(invoice.invoice_id),
     bankReference: null,
+  };
+}
+
+export async function correctOrderFiscalCustomerDataAction(input: {
+  orderId: string;
+  customerName: string;
+  customerRtn: string;
+  customerPhone: string;
+  customerEmail: string;
+  customerAddress: string;
+  correctionReason: string;
+}) {
+  await requirePermission("invoices:correct");
+  const customerName = input.customerName.trim();
+  const customerPhone = input.customerPhone.trim();
+  const customerEmail = input.customerEmail.trim().toLowerCase();
+  const customerAddress = input.customerAddress.trim();
+  const correctionReason = input.correctionReason.trim();
+  const customerRtn = normalizeOptionalRtn(input.customerRtn);
+
+  if (!customerName) {
+    return { ok: false, message: "El nombre o razon social es obligatorio." };
+  }
+
+  if (typeof customerRtn === "object" && customerRtn?.error) {
+    return { ok: false, message: customerRtn.error };
+  }
+
+  if (correctionReason.length < 8) {
+    return { ok: false, message: "El motivo de correccion es obligatorio." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("correct_order_fiscal_customer_data", {
+    target_order_id: input.orderId,
+    corrected_customer_name: customerName,
+    corrected_customer_rtn: customerRtn,
+    corrected_customer_phone: customerPhone || null,
+    corrected_customer_email: customerEmail || null,
+    corrected_customer_address: customerAddress || null,
+    correction_reason: correctionReason,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "No se pudieron corregir los datos fiscales del pedido." };
+  }
+
+  revalidateOperationalPaths();
+
+  return {
+    ok: true,
+    message: "Datos fiscales corregidos. Si la factura ya existia, conserva el mismo numero fiscal.",
   };
 }
 

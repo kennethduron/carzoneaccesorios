@@ -1,4 +1,12 @@
-export type AppRole = "technical_owner" | "admin" | "business_owner" | "vendedor" | "bodega" | "contadora" | "cliente";
+export type AppRole =
+  | "technical_owner"
+  | "admin"
+  | "business_owner"
+  | "vendedor"
+  | "bodega"
+  | "contadora"
+  | "soporte"
+  | "cliente";
 
 export type Permission =
   | "admin:access"

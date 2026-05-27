@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AdminInvoiceDetail, AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
+import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
 export type AdminInvoicesPage = {
   invoices: AdminInvoiceRow[];
@@ -8,15 +9,28 @@ export type AdminInvoicesPage = {
   pageSize: number;
 };
 
+export type AdminInvoiceTask = "pending_invoices";
+
+export const adminInvoiceTaskLabels: Record<AdminInvoiceTask, string> = {
+  pending_invoices: "Facturas pendientes de emisión",
+};
+
+export function normalizeAdminInvoiceTask(value: string | null | undefined): AdminInvoiceTask | null {
+  return value === "pending_invoices" ? value : null;
+}
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "payment_status" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "payment_status" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total"> & {
   subtotal: unknown;
   tax: unknown;
   shipping_fee: unknown;
   cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   total: unknown;
   orders: {
     order_number: string;
@@ -93,6 +107,9 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     tax: toNumber(row.tax),
     shipping_fee: toNumber(row.shipping_fee),
     cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
+    small_order_fee: toNumber(row.small_order_fee),
+    discount_total: toNumber(row.discount_total),
+    additional_fees: normalizeAdditionalFees(row.additional_fees),
     total: toNumber(row.total),
     issued_at: row.issued_at,
     cancelled_at: row.cancelled_at,
@@ -144,14 +161,22 @@ function normalizePageSize(value: unknown) {
   return Math.min(Math.floor(pageSize), 100);
 }
 
-export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSize }: { page?: number; pageSize?: number } = {}): Promise<AdminInvoicesPage> {
+export async function getAdminInvoicesPage({
+  page: rawPage,
+  pageSize: rawPageSize,
+  task,
+}: {
+  page?: number;
+  pageSize?: number;
+  task?: AdminInvoiceTask | null;
+} = {}): Promise<AdminInvoicesPage> {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(rawPage);
   const pageSize = normalizePageSize(rawPageSize);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  const { data: invoices, error: invoicesError, count } = await supabase
+  let invoicesQuery = supabase
     .from("invoices")
     .select(
       `
@@ -171,6 +196,9 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       tax,
       shipping_fee,
       cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
       total,
       issued_at,
       cancelled_at,
@@ -178,9 +206,15 @@ export async function getAdminInvoicesPage({ page: rawPage, pageSize: rawPageSiz
       cancellation_reason,
       created_at,
       orders(order_number, customer_name, phone, delivery_address, payment_method)
-    `,
+      `,
       { count: "exact" },
-    )
+    );
+
+  if (task === "pending_invoices") {
+    invoicesQuery = invoicesQuery.in("status", ["pendiente", "draft"]);
+  }
+
+  const { data: invoices, error: invoicesError, count } = await invoicesQuery
     .order("created_at", { ascending: false })
     .range(from, to)
     .returns<InvoiceQueryRow[]>();
@@ -250,6 +284,9 @@ export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInv
       tax,
       shipping_fee,
       cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
       total,
       issued_at,
       cancelled_at,

@@ -28,7 +28,7 @@ const adminModules = [
   ["Configuración fiscal", "/admin/configuracion-fiscal", "RTN, CAI, rango fiscal, fecha límite y datos legales.", ["fiscal:read", "settings:manage"]],
   ["Revisión BAC", "/admin/revision-bac", "Checklist de requisitos web para pasarela BAC Credomatic.", ["commercial_settings:manage", "settings:manage"]],
   ["Guía rápida", "/admin/guia", "Pasos diarios resumidos para operar productos, pedidos, CRM, facturas y BAC.", ["admin:access"]],
-  ["Ayuda interna", "/admin/ayuda", "Manual operativo por rol para productos, pedidos, facturas, CRM, BAC, cron y backups.", ["admin:access"]],
+  ["Ayuda interna", "/admin/ayuda", "Manual operativo por rol para productos, pedidos, facturas, CRM y BAC.", ["admin:access"]],
   ["Banners festivos", "/admin/banners", "Flyers, promociones y mensajes por días festivos de Honduras.", ["settings:manage", "commercial_settings:manage"]],
 ] satisfies Array<[string, string, string, Permission[]]>;
 
@@ -73,6 +73,7 @@ function statusTone(status: string | null) {
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
   const canViewFiscalAlerts =
     profile.role === "admin" ||
     profile.permissions.includes("fiscal:read") ||
@@ -90,7 +91,7 @@ export default async function AdminPage() {
     {
       label: "Revisar pedidos nuevos",
       value: overview.newOrders,
-      href: "/admin/pedidos",
+      href: "/admin/pedidos?task=new_orders",
       empty: "Todavía no hay pedidos. Cuando un cliente compre, aparecerán aquí.",
       permissions: ["orders:read", "orders:manage"],
       card: "pending_orders",
@@ -98,7 +99,7 @@ export default async function AdminPage() {
     {
       label: "Preparar pedidos confirmados",
       value: overview.ordersToPrepare,
-      href: "/admin/pedidos",
+      href: "/admin/pedidos?task=to_prepare",
       empty: "No hay pedidos confirmados esperando preparación.",
       permissions: ["orders:read", "orders:manage"],
       card: "pending_orders",
@@ -106,7 +107,7 @@ export default async function AdminPage() {
     {
       label: "Confirmar pagos pendientes",
       value: overview.pendingPayments,
-      href: "/admin/pedidos",
+      href: "/admin/pedidos?task=pending_payments",
       empty: "No hay pagos esperando revisión.",
       permissions: ["orders:manage"],
       card: "pending_payments",
@@ -114,7 +115,7 @@ export default async function AdminPage() {
     {
       label: "Revisar inventario bajo",
       value: overview.lowStockProducts,
-      href: "/admin/inventario",
+      href: "/admin/inventario?filter=low_stock",
       empty: "Inventario sin alertas críticas.",
       permissions: ["inventory:manage"],
       card: "low_inventory",
@@ -122,7 +123,7 @@ export default async function AdminPage() {
     {
       label: "Atender CRM vencido",
       value: overview.pendingFollowups,
-      href: "/admin/clientes",
+      href: "/admin/crm?task=overdue",
       empty: "No hay seguimientos vencidos.",
       permissions: ["crm:manage", "customers:manage"],
       card: "customers_attention",
@@ -130,7 +131,7 @@ export default async function AdminPage() {
     {
       label: "Revisar solicitudes mayoristas",
       value: overview.pendingWholesaleRequests,
-      href: "/admin/clientes-mayoristas",
+      href: "/admin/clientes-mayoristas?status=pending",
       empty: "No hay solicitudes mayoristas pendientes.",
       permissions: ["customers:manage"],
       card: "wholesale_requests",
@@ -138,7 +139,7 @@ export default async function AdminPage() {
     {
       label: "Revisar facturas pendientes",
       value: overview.pendingInvoices,
-      href: "/admin/facturas",
+      href: "/admin/facturas?task=pending_invoices",
       empty: "No hay facturas pendientes.",
       permissions: ["invoices:read", "invoices:manage"],
       card: "pending_invoices",
@@ -167,8 +168,8 @@ export default async function AdminPage() {
     { label: "Clientes nuevos mes", value: overview.newCustomersMonth.toLocaleString("es-HN"), visible: visibleCards.customers_attention },
     { label: "Mayoristas pendientes", value: overview.pendingWholesaleRequests.toLocaleString("es-HN"), visible: visibleCards.wholesale_requests },
     { label: "CRM vencido", value: overview.pendingFollowups.toLocaleString("es-HN"), visible: visibleCards.customers_attention },
-    { label: "Reservas activas", value: overview.activeReservations.toLocaleString("es-HN"), visible: visibleCards.backup_cron_status },
-    { label: "Reservas vencidas", value: overview.expiredReservations.toLocaleString("es-HN"), visible: visibleCards.backup_cron_status },
+    { label: "Reservas activas", value: overview.activeReservations.toLocaleString("es-HN"), visible: canViewTechnical && visibleCards.backup_cron_status },
+    { label: "Reservas vencidas", value: overview.expiredReservations.toLocaleString("es-HN"), visible: canViewTechnical && visibleCards.backup_cron_status },
   ].filter((metric) => metric.visible);
 
   return (
@@ -242,7 +243,7 @@ export default async function AdminPage() {
               </p>
             </div>
           ) : null}
-          {visibleCards.backup_cron_status ? (
+          {canViewTechnical && visibleCards.backup_cron_status ? (
             <div className="mt-3 grid gap-2 text-sm">
               <OperationalStatus
                 label="Cron"

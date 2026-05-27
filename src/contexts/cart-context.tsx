@@ -3,6 +3,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { CartItem, Product } from "@/types/commerce";
 import { getProductPrice } from "@/utils/pricing";
+import {
+  getWholesaleMinimumQuantity,
+  requiresWholesaleMinimumQuantity,
+  wholesaleMinimumQuantityMessage,
+} from "@/utils/wholesale-quantity";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
 import { useToast } from "@/contexts/toast-context";
@@ -14,9 +19,17 @@ type CartRow = {
   lineTotal: number;
 };
 
+export type WholesaleQuantityIssue = {
+  productId: string;
+  productName: string;
+  currentQuantity: number;
+  minimumQuantity: number;
+};
+
 type CartContextValue = {
   cart: CartItem[];
   rows: CartRow[];
+  wholesaleQuantityIssues: WholesaleQuantityIssue[];
   invalidItemCount: number;
   cartMessage: string;
   subtotal: number;
@@ -81,7 +94,8 @@ function productSnapshotChanged(current: Product | undefined, next: Product) {
     current.sku !== next.sku ||
     current.stock !== next.stock ||
     current.retail_price !== next.retail_price ||
-    current.wholesale_price !== next.wholesale_price
+    current.wholesale_price !== next.wholesale_price ||
+    current.wholesale_min_quantity !== next.wholesale_min_quantity
   );
 }
 
@@ -143,15 +157,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [cart, findProduct, priceMode]);
 
   const subtotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
-  const tax = 0;
-  const total = subtotal;
+  const tax = Math.round(subtotal * 0.15 * 100) / 100;
+  const total = Math.round((subtotal + tax) * 100) / 100;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const invalidItemCount = Math.max(0, cart.length - rows.length);
+  const wholesaleQuantityIssues = rows
+    .filter((item) => requiresWholesaleMinimumQuantity(item.product, priceMode))
+    .map((item) => ({
+      productId: item.product.id,
+      productName: item.product.name,
+      currentQuantity: item.quantity,
+      minimumQuantity: getWholesaleMinimumQuantity(item.product),
+    }))
+    .filter((item) => item.currentQuantity < item.minimumQuantity);
 
   const value = useMemo<CartContextValue>(
     () => ({
       cart,
       rows,
+      wholesaleQuantityIssues,
       invalidItemCount,
       cartMessage,
       subtotal,
@@ -178,8 +202,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCart((current) => {
           const existing = current.find((item) => item.productId === productId);
           const currentQuantity = existing?.quantity ?? 0;
+          const minimumQuantity = getWholesaleMinimumQuantity(product);
+          const shouldApplyWholesaleMinimum = requiresWholesaleMinimumQuantity(product, priceMode);
+          const nextQuantity = shouldApplyWholesaleMinimum
+            ? Math.max(currentQuantity + 1, minimumQuantity)
+            : currentQuantity + 1;
 
-          if (currentQuantity + 1 > product.stock) {
+          if (nextQuantity > product.stock) {
             const message = `Solo hay ${product.stock} unidades disponibles.`;
             setCartMessage(message);
             toast.warning(message);
@@ -188,18 +217,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
           if (existing) {
             const nextCart = current.map((item) =>
-              item.productId === productId ? { ...item, quantity: item.quantity + 1, productSnapshot: product } : item,
+              item.productId === productId ? { ...item, quantity: nextQuantity, productSnapshot: product } : item,
             );
             writeStoredCart(nextCart);
-            const message = "Cantidad actualizada en el carrito.";
+            const message = shouldApplyWholesaleMinimum && nextQuantity === minimumQuantity
+              ? wholesaleMinimumQuantityMessage(minimumQuantity)
+              : "Cantidad actualizada en el carrito.";
             setCartMessage(message);
             toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
             added = true;
             return nextCart;
           }
-          const nextCart = [...current, { productId, quantity: 1, productSnapshot: product }];
+          const nextCart = [...current, { productId, quantity: shouldApplyWholesaleMinimum ? minimumQuantity : 1, productSnapshot: product }];
           writeStoredCart(nextCart);
-          const message = "Producto agregado al carrito.";
+          const message = shouldApplyWholesaleMinimum
+            ? wholesaleMinimumQuantityMessage(minimumQuantity)
+            : "Producto agregado al carrito.";
           setCartMessage(message);
           toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
           added = true;
@@ -227,6 +260,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               }
 
               const nextQuantity = Math.max(0, item.quantity + delta);
+              const minimumQuantity = getWholesaleMinimumQuantity(product);
+              if (
+                requiresWholesaleMinimumQuantity(product, priceMode) &&
+                nextQuantity > 0 &&
+                nextQuantity < minimumQuantity
+              ) {
+                const message = wholesaleMinimumQuantityMessage(minimumQuantity);
+                setCartMessage(message);
+                toast.warning(message);
+                return item;
+              }
+
               if (nextQuantity > product.stock) {
                 const message = `Solo hay ${product.stock} unidades disponibles.`;
                 setCartMessage(message);
@@ -270,7 +315,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCartMessage("");
       },
     }),
-    [cart, cartCount, cartMessage, findProduct, invalidItemCount, rows, subtotal, tax, toast, total],
+    [cart, cartCount, cartMessage, findProduct, invalidItemCount, priceMode, rows, subtotal, tax, toast, total, wholesaleQuantityIssues],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

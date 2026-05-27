@@ -8,6 +8,7 @@ import {
   rejectWholesaleRequestAction,
   suspendWholesaleAccessAction,
 } from "@/app/admin/crm/actions";
+import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { CrmCustomerOption, CrmWholesaleStatus } from "@/types/crm";
@@ -15,6 +16,7 @@ import { formatHnDateTime } from "@/utils/format";
 
 type WholesaleCustomersManagerProps = {
   customers: CrmCustomerOption[];
+  activeFilter?: { id: Filter; label: string } | null;
 };
 
 type Filter = "all" | CrmWholesaleStatus;
@@ -45,9 +47,9 @@ function customerName(customer: CrmCustomerOption) {
   return customer.business_name || customer.company_name || customer.contact_name;
 }
 
-export function WholesaleCustomersManager({ customers }: WholesaleCustomersManagerProps) {
+export function WholesaleCustomersManager({ customers, activeFilter = null }: WholesaleCustomersManagerProps) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(activeFilter?.id ?? "all");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -100,6 +102,8 @@ export function WholesaleCustomersManager({ customers }: WholesaleCustomersManag
 
   return (
     <div className="space-y-5">
+      {activeFilter ? <ActiveFilterBanner label={activeFilter.label} clearHref="/admin/clientes-mayoristas" /> : null}
+
       <section className="grid gap-3 md:grid-cols-4">
         {(["pending", "approved", "rejected", "suspended"] as const).map((status) => (
           <article key={status} className="rounded-lg border border-black/10 bg-white p-4">

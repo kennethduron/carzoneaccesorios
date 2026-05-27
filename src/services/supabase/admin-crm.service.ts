@@ -1,5 +1,7 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
+import type { AppRole } from "@/types/auth";
 import type {
   AdminCrmData,
   CrmCustomerOption,
@@ -8,12 +10,16 @@ import type {
   CrmFollowupRow,
   CrmNoteRow,
 } from "@/types/crm";
+import { additionalFeesTotal } from "@/utils/financial-summary";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 
 export type AdminCrmPageFilters = {
   customerPage?: number;
   followupPage?: number;
   pageSize?: number;
+  followupTask?: "overdue" | null;
+  wholesaleStatus?: "pending" | null;
+  viewerRole?: AppRole;
 };
 
 export type AdminCrmPageData = AdminCrmData & {
@@ -37,6 +43,8 @@ type FollowupQueryRow = Omit<
   customers: {
     contact_name: string;
     business_name: string | null;
+    user_id: string | null;
+    users: { roles: { name: AppRole } | null } | null;
   } | null;
 };
 
@@ -56,6 +64,10 @@ type CustomerQueryRow = Omit<
   | "account_phone"
   | "account_active"
   | "account_created_at"
+  | "account_role"
+  | "profile_kind"
+  | "profile_label"
+  | "primary_badges"
   | "email_confirmed_at"
   | "confirmed_at"
   | "order_count"
@@ -79,6 +91,9 @@ type CustomerQueryRow = Omit<
     active: boolean;
     created_at: string;
     updated_at: string;
+    roles: {
+      name: AppRole;
+    } | null;
   } | null;
 };
 
@@ -95,6 +110,12 @@ type OrderActivityRow = {
   created_at: string;
   total: unknown;
   subtotal: unknown;
+  tax: unknown;
+  shipping_fee: unknown;
+  cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   status: string | null;
   price_mode: "retail" | "wholesale" | null;
 };
@@ -133,8 +154,15 @@ type CustomerProfileOrderRow = {
     transfer_receipt_public_id: string | null;
   }> | null;
   price_mode: "retail" | "wholesale";
+  subtotal: unknown;
+  tax: unknown;
+  shipping_fee: unknown;
+  cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   total: unknown;
-  invoices: Array<{ invoice_number: string | null }> | { invoice_number: string | null } | null;
+  invoices: Array<{ invoice_number: string | null; status: string | null }> | { invoice_number: string | null; status: string | null } | null;
 };
 
 type CustomerProfileInvoiceRow = {
@@ -143,6 +171,13 @@ type CustomerProfileInvoiceRow = {
   order_id: string;
   customer_id: string | null;
   status: string;
+  subtotal: unknown;
+  tax: unknown;
+  shipping_fee: unknown;
+  cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   total: unknown;
   issued_at: string | null;
   created_at: string;
@@ -337,7 +372,20 @@ function getAccountState(input: {
   hasWholesaleRequest: boolean;
   hasOrders: boolean;
   leadStatus: CrmCustomerOption["lead_status"];
+  role: AppRole | null;
 }) {
+  if (input.role === "business_owner") {
+    return "Dueño operativo" as const;
+  }
+
+  if (input.role === "technical_owner") {
+    return "Admin técnico" as const;
+  }
+
+  if (isInternalRole(input.role)) {
+    return "Usuario interno" as const;
+  }
+
   if (!input.active || input.status === "disabled" || input.accountActive === false) {
     return "Cuenta suspendida" as const;
   }
@@ -383,6 +431,9 @@ function normalizeCustomer(
   wholesaleCodeCountsByCustomerId: Map<string, number>,
 ): CrmCustomerOption {
   const accountEmail = row.users?.email ?? row.email;
+  const accountRole = row.users?.roles?.name ?? null;
+  const internal = isInternalRole(accountRole);
+  const profileLabel = internal ? internalRoleLabel(accountRole) : row.is_wholesale ? "Cliente mayorista" : "Cliente al detalle";
   const normalizedEmail = accountEmail ? normalizeAccountEmail(accountEmail) : null;
   const relatedOrders = new Map<string, OrderActivityRow>();
   const byCustomer = ordersByCustomerId.get(row.id) ?? [];
@@ -433,6 +484,18 @@ function normalizeCustomer(
     account_phone: row.users?.phone ?? null,
     account_active: row.users?.active ?? null,
     account_created_at: row.users?.created_at ?? null,
+    account_role: accountRole,
+    profile_kind: internal ? "internal" : "customer",
+    profile_label: profileLabel,
+    primary_badges: internal
+      ? accountRole === "business_owner"
+        ? ["Dueño operativo", "Usuario interno"]
+        : [profileLabel, "Usuario interno"]
+      : row.is_wholesale
+        ? ["Cliente mayorista"]
+        : row.user_id
+          ? ["Cliente al detalle"]
+          : ["Prospecto"],
     email_confirmed_at: emailConfirmedAt,
     confirmed_at: confirmedAt,
     order_count: relatedOrders.size,
@@ -451,9 +514,10 @@ function normalizeCustomer(
       hasWholesaleRequest,
       hasOrders: relatedOrders.size > 0,
       leadStatus: row.lead_status,
+      role: accountRole,
     }),
-    customer_type: wholesaleStatus === "approved" ? "Mayorista" : "Retail",
-    has_wholesale_request: wholesaleStatus === "pending" || hasWholesaleRequest,
+    customer_type: !internal && wholesaleStatus === "approved" ? "Mayorista" : "Retail",
+    has_wholesale_request: !internal && (wholesaleStatus === "pending" || hasWholesaleRequest),
     wholesale_first_purchase_completed: hasWholesalePurchase,
     wholesale_lifecycle_status:
       wholesaleStatus === "approved"
@@ -472,10 +536,16 @@ function normalizeCustomer(
 }
 
 function normalizeFollowup(row: FollowupQueryRow): CrmFollowupRow {
+  const role = row.customers?.users?.roles?.name ?? null;
+  const internal = isInternalRole(role);
+
   return {
     ...row,
     customer_name: row.customers?.contact_name ?? null,
     business_name: row.customers?.business_name ?? null,
+    customer_account_role: role,
+    customer_profile_kind: internal ? "internal" : "customer",
+    customer_profile_label: internal ? internalRoleLabel(role) : "Cliente",
     estimated_value: toNumber(row.estimated_value),
     monthly_amount: toNumber(row.monthly_amount),
   };
@@ -503,6 +573,10 @@ function normalizePageSize(value: unknown) {
   return Math.min(Math.floor(pageSize), 100);
 }
 
+function canViewInternalProfiles(role: AppRole | undefined) {
+  return role === "technical_owner" || role === "admin" || role === "business_owner";
+}
+
 export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<AdminCrmPageData> {
   const supabase = await getSupabaseServerClient();
   const admin = getSupabaseAdminClient();
@@ -512,25 +586,21 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   const customerFrom = (customerPage - 1) * pageSize;
   const followupFrom = (followupPage - 1) * pageSize;
 
-  const [
-    { data: customers, error: customersError, count: customersTotal },
-    { data: followups, error: followupsError, count: followupsTotal },
-    { data: notes, error: notesError },
-    { data: duplicateCustomers, error: duplicateCustomersError },
-  ] = await Promise.all([
-    supabase
-      .from("customers")
-      .select(
-        "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
-        { count: "exact" },
-      )
-      .order("created_at", { ascending: false })
-      .range(customerFrom, customerFrom + pageSize - 1)
-      .returns<CustomerQueryRow[]>(),
-    supabase
-      .from("crm_followups")
-      .select(
-        `
+  let customersQuery = supabase
+    .from("customers")
+    .select(
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      { count: "exact" },
+    );
+
+  if (filters.wholesaleStatus === "pending") {
+    customersQuery = customersQuery.eq("wholesale_status", "pending");
+  }
+
+  let followupsQuery = supabase
+    .from("crm_followups")
+    .select(
+      `
         id,
         customer_id,
         order_id,
@@ -547,10 +617,26 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
         status,
         completed_at,
         created_at,
-        customers(contact_name, business_name)
+        customers(contact_name, business_name, user_id, users(roles(name)))
       `,
-        { count: "exact" },
-      )
+      { count: "exact" },
+    );
+
+  if (filters.followupTask === "overdue") {
+    followupsQuery = followupsQuery.eq("status", "pending").not("due_at", "is", null).lt("due_at", new Date().toISOString());
+  }
+
+  const [
+    { data: customers, error: customersError, count: customersTotal },
+    { data: followups, error: followupsError, count: followupsTotal },
+    { data: notes, error: notesError },
+    { data: duplicateCustomers, error: duplicateCustomersError },
+  ] = await Promise.all([
+    customersQuery
+      .order("created_at", { ascending: false })
+      .range(customerFrom, customerFrom + pageSize - 1)
+      .returns<CustomerQueryRow[]>(),
+    followupsQuery
       .order("due_at", { ascending: true, nullsFirst: false })
       .range(followupFrom, followupFrom + pageSize - 1)
       .returns<FollowupQueryRow[]>(),
@@ -612,17 +698,17 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   const orderQueries: Array<() => Promise<{ data: OrderActivityRow[] | null; error: { message: string } | null }>> = [];
   if (customerIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
     );
   }
   if (userIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("user_id", userIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("user_id", userIds).returns<OrderActivityRow[]>(),
     );
   }
   if (emails.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, total, status, price_mode").in("email", emails).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("email", emails).returns<OrderActivityRow[]>(),
     );
   }
 
@@ -729,10 +815,17 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       wholesaleCodeCountsByCustomerId,
     ),
   );
+  const visibleCustomers = canViewInternalProfiles(filters.viewerRole)
+    ? uniqueCustomers(normalizedCustomers)
+    : uniqueCustomers(normalizedCustomers).filter((customer) => customer.profile_kind === "customer");
+  const visibleCustomerIds = new Set(visibleCustomers.map((customer) => customer.id));
+  const normalizedFollowups = (followups ?? []).map(normalizeFollowup);
 
   return {
-    customers: uniqueCustomers(normalizedCustomers),
-    followups: (followups ?? []).map(normalizeFollowup),
+    customers: visibleCustomers,
+    followups: canViewInternalProfiles(filters.viewerRole)
+      ? normalizedFollowups
+      : normalizedFollowups.filter((followup) => followup.customer_profile_kind === "customer" || visibleCustomerIds.has(followup.customer_id)),
     notes: (notes ?? []).map(normalizeNote),
     duplicateGroups: buildDuplicateGroups(duplicateRows, duplicateOrderCounts, duplicateInvoiceCounts),
     customersTotal: customersTotal ?? 0,
@@ -748,7 +841,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at)",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();
@@ -779,7 +872,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     async () =>
       admin
         .from("orders")
-        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false })
         .limit(30)
@@ -791,7 +884,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .eq("user_id", customerRow.user_id)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -804,7 +897,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, total, invoices(invoice_number), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .ilike("email", normalizedEmail)
           .is("user_id", null)
           .order("created_at", { ascending: false })
@@ -824,7 +917,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     Promise.all(orderQueries.map((query) => query())),
     admin
       .from("invoices")
-      .select("id, invoice_number, order_id, customer_id, status, total, issued_at, created_at, orders(order_number)")
+      .select("id, invoice_number, order_id, customer_id, status, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, issued_at, created_at, orders(order_number)")
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
       .limit(30)
@@ -839,7 +932,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     admin
       .from("crm_followups")
       .select(
-        "id, customer_id, order_id, assigned_user_id, title, interaction_type, next_action, due_at, priority, phone, notes, estimated_value, monthly_amount, status, completed_at, created_at, customers(contact_name, business_name)",
+        "id, customer_id, order_id, assigned_user_id, title, interaction_type, next_action, due_at, priority, phone, notes, estimated_value, monthly_amount, status, completed_at, created_at, customers(contact_name, business_name, user_id, users(roles(name)))",
       )
       .eq("customer_id", customerId)
       .order("created_at", { ascending: false })
@@ -897,7 +990,13 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     user_id: order.user_id,
     email: order.email,
     created_at: order.created_at,
-    subtotal: null,
+    subtotal: order.subtotal,
+    tax: order.tax,
+    shipping_fee: order.shipping_fee,
+    cash_on_delivery_fee: order.cash_on_delivery_fee,
+    small_order_fee: order.small_order_fee,
+    discount_total: order.discount_total,
+    additional_fees: order.additional_fees,
     total: order.total,
     status: order.status,
     price_mode: order.price_mode,
@@ -935,8 +1034,16 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
         bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
         has_transfer_receipt: Boolean(payment?.transfer_receipt_public_id || payment?.transfer_receipt_url),
         price_mode: order.price_mode,
+        subtotal: toNumber(order.subtotal),
+        tax: toNumber(order.tax),
+        shipping_fee: toNumber(order.shipping_fee),
+        cash_on_delivery_fee: toNumber(order.cash_on_delivery_fee),
+        small_order_fee: toNumber(order.small_order_fee),
+        discount_total: toNumber(order.discount_total),
+        additional_fees_total: additionalFeesTotal(order.additional_fees),
         total: toNumber(order.total),
         invoice_number: invoice?.invoice_number ?? null,
+        invoice_status: invoice?.status ?? null,
       };
     }),
     invoices: (invoices ?? []).map((invoice) => ({
@@ -945,6 +1052,13 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       order_id: invoice.order_id,
       order_number: invoice.orders?.order_number ?? null,
       status: invoice.status,
+      subtotal: toNumber(invoice.subtotal),
+      tax: toNumber(invoice.tax),
+      shipping_fee: toNumber(invoice.shipping_fee),
+      cash_on_delivery_fee: toNumber(invoice.cash_on_delivery_fee),
+      small_order_fee: toNumber(invoice.small_order_fee),
+      discount_total: toNumber(invoice.discount_total),
+      additional_fees_total: additionalFeesTotal(invoice.additional_fees),
       total: toNumber(invoice.total),
       issued_at: invoice.issued_at,
       created_at: invoice.created_at,

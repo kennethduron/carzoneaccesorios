@@ -9,6 +9,7 @@ import { useShoppingCart } from "@/contexts/cart-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
 import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription, parseProductLines } from "@/utils/product-content";
+import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
 import { ProductImageGallery } from "@/components/store/product-image-gallery";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 
@@ -24,6 +25,7 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
   const whatsappText = encodeURIComponent(`Hola, quiero información sobre ${product.name} (${product.sku}).`);
   const hasWholesalePrice = hasValidWholesalePrice(product);
   const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
   const displayPrice = getProductPrice(product, priceMode);
 
   useEffect(() => {
@@ -62,12 +64,19 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
               ) : (
                 <p className="mt-1 text-sm text-black/55">Precio público del catálogo</p>
               )}
+              {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
+                <p className="mt-2 text-sm font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
+              ) : null}
             </div>
             {isWholesalePriceVisible ? (
               <div className="rounded-lg border border-black/10 bg-white p-4">
                 <p className="text-sm text-black/45">Mayoreo activo</p>
                 <p className="mt-1 text-lg font-semibold">Precio especial aplicado</p>
-                <p className="mt-2 text-sm text-black/55">El carrito y checkout usarán este mismo precio.</p>
+                <p className="mt-2 text-sm text-black/55">
+                  {wholesaleMinimumQuantity > 1
+                    ? `Este producto requiere mínimo ${wholesaleMinimumQuantity} unidades para precio mayorista.`
+                    : "El carrito y checkout usarán este mismo precio."}
+                </p>
               </div>
             ) : priceMode === "retail" ? (
               <div className="rounded-lg border border-black/10 bg-white p-4">

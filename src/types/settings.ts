@@ -162,6 +162,7 @@ export type HolidayBannerInput = {
   media_height: number | null;
   media_duration_seconds: number | null;
   media_thumbnail_url: string;
+  media_asset_token?: string;
   image_url: string;
   start_date: string;
   end_date: string;
@@ -192,4 +193,12 @@ export type HolidayBannerStorageSummary = {
   cloudinaryLimitBytes: number | null;
   cloudinaryFreeBytes: number | null;
   source: "cloudinary" | "database";
+};
+
+export type TechnicalAlertSettings = {
+  enabled: boolean;
+  email: string;
+  cloudinaryStorageThresholdPercent: number;
+  lastAlertSentAt: string | null;
+  lastCheckedAt: string | null;
 };

@@ -10,6 +10,7 @@ import { useShoppingCart } from "@/contexts/cart-context";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription } from "@/utils/product-content";
+import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
 
 export function CatalogProductCard({ product }: { product: Product }) {
   const { priceMode } = usePriceMode();
@@ -19,6 +20,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const [imageFailed, setImageFailed] = useState(false);
   const hasWholesalePrice = hasValidWholesalePrice(product);
   const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
   const displayPrice = getProductPrice(product, priceMode);
   const isLowStock = product.stock > 0 && product.stock <= 3;
   const cardDescription = getProductCardDescription(product);
@@ -76,6 +78,9 @@ export function CatalogProductCard({ product }: { product: Product }) {
               <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(displayPrice)}</p>
               {isWholesalePriceVisible ? (
                 <p className="text-xs text-black/45">Precio al detalle: {formatCurrency(product.retail_price)}</p>
+              ) : null}
+              {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
+                <p className="mt-1 text-xs font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
               ) : null}
             </div>
             <p className="text-xs font-medium text-black/50">

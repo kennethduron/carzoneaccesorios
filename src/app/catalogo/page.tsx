@@ -79,7 +79,7 @@ export default async function CatalogoPage({
           <div className="mt-5">
             <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
             <p className="mt-2 text-sm text-black/55">
-              Recuerda: tu primera compra mayorista debe ser de L 10,000 o mas para activar permanentemente tu cuenta mayorista.
+              Recuerda: tu primera compra mayorista debe alcanzar un total final de L 10,000.00 o más.
             </p>
           </div>
         ) : null}

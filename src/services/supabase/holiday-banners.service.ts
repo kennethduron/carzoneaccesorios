@@ -1,4 +1,8 @@
 import { configureCloudinary } from "@/lib/cloudinary";
+import { writeAuditLog } from "@/lib/audit";
+import { requireStrictPermission } from "@/lib/auth/session";
+import { sendTransactionalEmail } from "@/lib/email/email-provider";
+import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   BannerMediaType,
@@ -8,6 +12,7 @@ import type {
   HolidayBanner,
   HolidayBannerAuditEntry,
   HolidayBannerStorageSummary,
+  TechnicalAlertSettings,
 } from "@/types/settings";
 
 type BannerAuditRow = {
@@ -24,6 +29,31 @@ type BannerAuditRow = {
 type UsageValue = {
   usage?: unknown;
   limit?: unknown;
+};
+
+type TechnicalAlertSettingsRow = {
+  enabled: boolean | null;
+  email: string | null;
+  cloudinary_storage_threshold_percent: number | null;
+  last_alert_sent_at: string | null;
+  last_checked_at: string | null;
+};
+
+const technicalAuditActions = new Set([
+  "holiday_banner.integrity_review",
+  "holiday_banner.integrity_cleanup",
+  "holiday_banner.cloudinary_asset_deleted",
+  "technical_alert.cloudinary_storage_sent",
+  "technical_alert.cloudinary_storage_failed",
+  "technical_alert_settings.updated",
+]);
+
+const defaultTechnicalAlertSettings: TechnicalAlertSettings = {
+  enabled: true,
+  email: "kennethduron.paz@gmail.com",
+  cloudinaryStorageThresholdPercent: 70,
+  lastAlertSentAt: null,
+  lastCheckedAt: null,
 };
 
 function bannerStatus(row: Pick<HolidayBanner, "is_active" | "start_date" | "end_date">, today = new Date().toISOString().slice(0, 10)): BannerStatus {
@@ -129,7 +159,7 @@ export async function getAdminHolidayBanners(): Promise<HolidayBanner[]> {
   return (data ?? []).map(normalizeBanner);
 }
 
-export async function getHolidayBannerAuditEntries(): Promise<HolidayBannerAuditEntry[]> {
+export async function getHolidayBannerAuditEntries(includeTechnical = false): Promise<HolidayBannerAuditEntry[]> {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("audit_logs")
@@ -143,7 +173,9 @@ export async function getHolidayBannerAuditEntries(): Promise<HolidayBannerAudit
     return [];
   }
 
-  return (data ?? []).map((entry) => {
+  return (data ?? [])
+    .filter((entry) => includeTechnical || !technicalAuditActions.has(entry.action))
+    .map((entry) => {
     const nextData = entry.new_data ?? {};
     const oldData = entry.old_data ?? {};
     const title = String(nextData.title ?? oldData.title ?? "").trim();
@@ -162,6 +194,18 @@ export async function getHolidayBannerAuditEntries(): Promise<HolidayBannerAudit
   });
 }
 
+export function sanitizeHolidayBannersForOperationalOwner(banners: HolidayBanner[]): HolidayBanner[] {
+  return banners.map((banner) => ({
+    ...banner,
+    media_public_id: null,
+    media_created_at: null,
+    media_format: null,
+    media_width: null,
+    media_height: null,
+    media_duration_seconds: banner.media_duration_seconds,
+  }));
+}
+
 function numberOrNull(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
@@ -176,6 +220,8 @@ function usageLimitBytes(value: UsageValue | undefined) {
 }
 
 export async function getHolidayBannerStorageSummary(): Promise<HolidayBannerStorageSummary> {
+  await requireStrictPermission("system:monitoring");
+
   const supabase = await getSupabaseServerClient();
   const { data } = await supabase
     .from("holiday_banners")
@@ -195,7 +241,7 @@ export async function getHolidayBannerStorageSummary(): Promise<HolidayBannerSto
     const cloudinaryUsedBytes = usageBytes(usage.storage);
     const cloudinaryLimitBytes = usageLimitBytes(usage.storage);
 
-    return {
+    const summary: HolidayBannerStorageSummary = {
       imageCount: imageRows.length,
       imageBytes,
       videoCount: videoRows.length,
@@ -207,8 +253,10 @@ export async function getHolidayBannerStorageSummary(): Promise<HolidayBannerSto
         cloudinaryUsedBytes !== null && cloudinaryLimitBytes !== null ? Math.max(cloudinaryLimitBytes - cloudinaryUsedBytes, 0) : null,
       source: cloudinaryUsedBytes !== null ? "cloudinary" : "database",
     };
+    await maybeSendCloudinaryStorageAlert(summary);
+    return summary;
   } catch {
-    return {
+    const summary: HolidayBannerStorageSummary = {
       imageCount: imageRows.length,
       imageBytes,
       videoCount: videoRows.length,
@@ -219,5 +267,153 @@ export async function getHolidayBannerStorageSummary(): Promise<HolidayBannerSto
       cloudinaryFreeBytes: null,
       source: "database",
     };
+    await updateTechnicalAlertLastChecked();
+    return summary;
+  }
+}
+
+function normalizeTechnicalAlertSettings(row: TechnicalAlertSettingsRow | null | undefined): TechnicalAlertSettings {
+  return {
+    enabled: row?.enabled ?? defaultTechnicalAlertSettings.enabled,
+    email: row?.email?.trim() || defaultTechnicalAlertSettings.email,
+    cloudinaryStorageThresholdPercent:
+      Math.min(100, Math.max(1, Math.trunc(Number(row?.cloudinary_storage_threshold_percent ?? defaultTechnicalAlertSettings.cloudinaryStorageThresholdPercent)))),
+    lastAlertSentAt: row?.last_alert_sent_at ?? null,
+    lastCheckedAt: row?.last_checked_at ?? null,
+  };
+}
+
+export async function getTechnicalAlertSettings(): Promise<TechnicalAlertSettings> {
+  await requireStrictPermission("system:monitoring");
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("technical_alert_settings")
+    .select("enabled, email, cloudinary_storage_threshold_percent, last_alert_sent_at, last_checked_at")
+    .eq("id", true)
+    .maybeSingle<TechnicalAlertSettingsRow>();
+
+  if (error) {
+    return defaultTechnicalAlertSettings;
+  }
+
+  return normalizeTechnicalAlertSettings(data);
+}
+
+export async function saveTechnicalAlertSettings(input: Pick<TechnicalAlertSettings, "enabled" | "email" | "cloudinaryStorageThresholdPercent">) {
+  await requireStrictPermission("system:monitoring");
+
+  const email = input.email.trim().toLowerCase();
+  const threshold = Math.min(100, Math.max(1, Math.trunc(Number(input.cloudinaryStorageThresholdPercent) || 70)));
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.from("technical_alert_settings").upsert({
+    id: true,
+    enabled: Boolean(input.enabled),
+    email,
+    cloudinary_storage_threshold_percent: threshold,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await writeAuditLog({
+    tableName: "technical_alert_settings",
+    recordId: "true",
+    action: "technical_alert_settings.updated",
+    newData: {
+      enabled: Boolean(input.enabled),
+      email,
+      cloudinary_storage_threshold_percent: threshold,
+    },
+  });
+}
+
+async function updateTechnicalAlertLastChecked(lastAlertSentAt?: string) {
+  const supabase = await getSupabaseServerClient();
+  const updatePayload: Record<string, string> = {
+    last_checked_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (lastAlertSentAt) {
+    updatePayload.last_alert_sent_at = lastAlertSentAt;
+  }
+
+  await supabase.from("technical_alert_settings").update(updatePayload).eq("id", true);
+}
+
+function shouldThrottleAlert(lastAlertSentAt: string | null) {
+  if (!lastAlertSentAt) {
+    return false;
+  }
+
+  const last = new Date(lastAlertSentAt).getTime();
+  return Number.isFinite(last) && Date.now() - last < 24 * 60 * 60 * 1000;
+}
+
+async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSummary) {
+  const settings = await getTechnicalAlertSettings();
+  const used = summary.cloudinaryUsedBytes;
+  const limit = summary.cloudinaryLimitBytes;
+
+  if (!settings.enabled || used === null || !limit) {
+    await updateTechnicalAlertLastChecked();
+    return;
+  }
+
+  const usedPercent = Math.round((used / limit) * 100);
+  if (usedPercent < settings.cloudinaryStorageThresholdPercent || shouldThrottleAlert(settings.lastAlertSentAt)) {
+    await updateTechnicalAlertLastChecked();
+    return;
+  }
+
+  const sentAt = new Date().toISOString();
+  const result = await sendTransactionalEmail({
+    to: settings.email,
+    subject: `Alerta tecnica Car Zone: almacenamiento al ${usedPercent}%`,
+    idempotencyKey: `cloudinary-storage-${usedPercent}-${sentAt.slice(0, 10)}`,
+    metadata: {
+      event_type: "technical.cloudinary_storage_threshold",
+      used_percent: usedPercent,
+    },
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#111827;padding:24px;">
+        <h1 style="font-size:22px;margin:0 0 12px;">Alerta tecnica de almacenamiento</h1>
+        <p>El uso reportado de almacenamiento esta en ${usedPercent}%.</p>
+        <p>Uso: ${(used / 1024 / 1024).toFixed(2)} MB / Limite: ${(limit / 1024 / 1024).toFixed(2)} MB.</p>
+        <p>Umbral configurado: ${settings.cloudinaryStorageThresholdPercent}%.</p>
+      </div>
+    `,
+  });
+
+  await updateTechnicalAlertLastChecked(result.ok ? sentAt : undefined);
+
+  await writeAuditLog({
+    tableName: "technical_alert_settings",
+    recordId: "true",
+    action: result.ok ? "technical_alert.cloudinary_storage_sent" : "technical_alert.cloudinary_storage_failed",
+    newData: {
+      status: result.status,
+      provider: result.provider,
+      recipient_email: settings.email,
+      used_percent: usedPercent,
+      threshold_percent: settings.cloudinaryStorageThresholdPercent,
+      error_message: result.errorMessage,
+    },
+  });
+
+  if (!result.ok) {
+    await writeErrorLog({
+      route: "/admin/banners",
+      action: "technical_alert.cloudinary_storage_failed",
+      errorMessage: result.errorMessage ?? "No se pudo enviar la alerta tecnica.",
+      metadata: {
+        provider: result.provider,
+        technical_message: result.technicalMessage,
+        used_percent: usedPercent,
+      },
+    });
   }
 }

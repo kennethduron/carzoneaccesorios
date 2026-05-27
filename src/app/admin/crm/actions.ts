@@ -263,7 +263,7 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
 }
 
 export async function getCustomerProfileAction(customerId: string): Promise<CustomerProfileResult> {
-  await requirePermission("crm:manage");
+  const viewer = await requirePermission("crm:manage");
 
   const customer = uuidLike(customerId, "Cliente");
   if (!customer.ok) {
@@ -274,6 +274,13 @@ export async function getCustomerProfileAction(customerId: string): Promise<Cust
     const profile = await getAdminCustomerProfile(customer.value);
     if (!profile) {
       return { ok: false, message: "No encontramos el perfil del cliente.", profile: null };
+    }
+
+    if (
+      profile.customer.profile_kind === "internal" &&
+      !["technical_owner", "admin", "business_owner"].includes(viewer.role)
+    ) {
+      return { ok: false, message: "No tienes autorizacion para ver perfiles internos completos.", profile: null };
     }
 
     return { ok: true, message: "Perfil cargado.", profile };

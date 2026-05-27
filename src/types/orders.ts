@@ -1,4 +1,5 @@
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import type { AdditionalFee } from "@/types/financial";
 
 export type OrderStatus =
   | "recibido"
@@ -40,6 +41,11 @@ export type StoreOrder = {
   wholesaleCode: string | null;
   subtotal: number;
   tax: number;
+  shippingFee: number;
+  cashOnDeliveryFee: number;
+  smallOrderFee: number;
+  discountTotal: number;
+  additionalFees: AdditionalFee[];
   total: number;
   paymentMethod: CheckoutData["paymentMethod"];
   paymentReference: string | null;
@@ -79,7 +85,13 @@ export type AdminOrderRow = {
   public_tracking_enabled: boolean;
   customer_id: string | null;
   customer_name: string;
+  customer_phone: string | null;
   customer_rtn: string | null;
+  fiscal_customer_name: string;
+  fiscal_customer_rtn: string | null;
+  fiscal_customer_phone: string | null;
+  fiscal_customer_email: string | null;
+  fiscal_customer_address: string | null;
   email: string | null;
   phone: string;
   delivery_address: string;
@@ -94,6 +106,9 @@ export type AdminOrderRow = {
   shipping_fee: number;
   shipping_total: number;
   cash_on_delivery_fee: number;
+  small_order_fee: number;
+  discount_total: number;
+  additional_fees: AdditionalFee[];
   total: number;
   status: OrderStatus;
   order_reservation_status: "not_required" | "reserved" | "confirmed" | "released" | "expired" | "canceled";
@@ -108,4 +123,7 @@ export type AdminOrderRow = {
   invoice_id: string | null;
   invoice_number: string | null;
   invoice_issued_at: string | null;
+  invoice_status: string | null;
+  invoice_cancelled_at: string | null;
+  invoice_cancellation_reason: string | null;
 };

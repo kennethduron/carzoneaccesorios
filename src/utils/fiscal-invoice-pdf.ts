@@ -2,8 +2,10 @@
 
 import type jsPDF from "jspdf";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
+import { additionalFeesTotal } from "@/utils/financial-summary";
 import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
+import type { AdditionalFee } from "@/types/financial";
 
 export type FiscalInvoicePdfItem = {
   sku: string | null;
@@ -43,6 +45,9 @@ export type FiscalInvoicePdfInput = {
   tax: number;
   shippingFee: number;
   cashOnDeliveryFee: number;
+  smallOrderFee?: number;
+  discountTotal?: number;
+  additionalFees?: AdditionalFee[];
   total: number;
   items: FiscalInvoicePdfItem[];
   notes?: string | null;
@@ -366,21 +371,22 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
     obsY += wrapped.length * 4.2;
   });
 
-  const taxable15 = invoice.tax > 0 ? invoice.subtotal : 0;
   const totalsX = 126;
   const totalsY = finalY;
+  const otherFees = additionalFeesTotal(invoice.additionalFees ?? []);
   const totalRows = [
-    ["Subtotal", invoice.subtotal],
-    ["Importe exonerado", 0],
-    ["Importe exento", 0],
-    ["Importe gravado 15% ISV", taxable15],
-    ["Importe gravado 18% ISV", 0],
-    ["Total 15% ISV", invoice.tax],
-    ["Total 18% ISV", 0],
-    ["Descuentos y rebajas otorgados", 0],
-    ["Envio", invoice.shippingFee],
-    ["Comision contra entrega", invoice.cashOnDeliveryFee],
+    ["Subtotal productos", invoice.subtotal],
+    ["ISV", invoice.tax],
+    ["Costo de envio", invoice.shippingFee],
+    ["Cargo contra entrega", invoice.cashOnDeliveryFee],
+    ["Recargo pedido minimo", invoice.smallOrderFee ?? 0],
+    ["Descuentos", -(invoice.discountTotal ?? 0)],
+    ["Otros cargos", otherFees],
   ];
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("RESUMEN FINANCIERO", totalsX, totalsY - 2);
+  doc.setFont("helvetica", "normal");
   doc.setFontSize(7.8);
   totalRows.forEach(([label, amount], index) => {
     const y = totalsY + 4 + index * 4.6;
@@ -388,11 +394,11 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
     doc.text(formatCurrency(Number(amount)), pageWidth - marginX, y, { align: "right" });
   });
   doc.setDrawColor(...black);
-  doc.line(totalsX, totalsY + 51, pageWidth - marginX, totalsY + 51);
+  doc.line(totalsX, totalsY + 38, pageWidth - marginX, totalsY + 38);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
-  doc.text("TOTAL", totalsX, totalsY + 58);
-  doc.text(formatCurrency(invoice.total), pageWidth - marginX, totalsY + 58, { align: "right" });
+  doc.text("TOTAL", totalsX, totalsY + 45);
+  doc.text(formatCurrency(invoice.total), pageWidth - marginX, totalsY + 45, { align: "right" });
   doc.setFont("helvetica", "normal");
 
   const fiscalY = finalY + 55;

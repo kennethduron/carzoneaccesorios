@@ -7,17 +7,22 @@ import {
   getAdminHolidayBanners,
   getHolidayBannerAuditEntries,
   getHolidayBannerStorageSummary,
+  getTechnicalAlertSettings,
+  sanitizeHolidayBannersForOperationalOwner,
 } from "@/services/supabase/holiday-banners.service";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminBannersPage() {
-  await requirePermission("commercial_settings:manage");
-  const [banners, auditEntries, storageSummary] = await Promise.all([
+  const profile = await requirePermission("commercial_settings:manage");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const [banners, auditEntries, storageSummary, technicalAlertSettings] = await Promise.all([
     getAdminHolidayBanners(),
-    getHolidayBannerAuditEntries(),
-    getHolidayBannerStorageSummary(),
+    getHolidayBannerAuditEntries(canViewTechnical),
+    canViewTechnical ? getHolidayBannerStorageSummary() : Promise.resolve(null),
+    canViewTechnical ? getTechnicalAlertSettings() : Promise.resolve(null),
   ]);
+  const visibleBanners = canViewTechnical ? banners : sanitizeHolidayBannersForOperationalOwner(banners);
 
   return (
     <AdminShell title="Promociones y dias festivos">
@@ -27,7 +32,13 @@ export default async function AdminBannersPage() {
           Panel administrativo
         </Link>
       </div>
-      <HolidayBannersManager banners={banners} auditEntries={auditEntries} storageSummary={storageSummary} />
+      <HolidayBannersManager
+        banners={visibleBanners}
+        auditEntries={auditEntries}
+        storageSummary={storageSummary}
+        technicalAlertSettings={technicalAlertSettings}
+        canViewTechnical={canViewTechnical}
+      />
     </AdminShell>
   );
 }

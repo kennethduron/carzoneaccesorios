@@ -32,10 +32,16 @@ export async function getInvoiceDetailAction(invoiceId: string) {
 
 export async function cancelInvoiceAction(invoiceId: string, cancellationReason: string) {
   await requirePermission("invoices:manage");
+  const reason = cancellationReason.trim();
+
+  if (reason.length < 8) {
+    return { ok: false, message: "El motivo de anulacion es obligatorio." };
+  }
+
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase.rpc("cancel_fiscal_invoice", {
     target_invoice_id: invoiceId,
-    cancellation_reason: cancellationReason,
+    cancellation_reason: reason,
   });
 
   if (error) {
@@ -43,7 +49,13 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
   }
 
   revalidatePath("/admin/facturas");
+  revalidatePath("/admin/pedidos");
   revalidatePath("/admin/reportes");
+  revalidatePath("/admin/crm");
+  revalidatePath("/facturas");
+  revalidatePath("/mis-pedidos");
+  revalidatePath("/cuenta");
+  revalidatePath("/rastreo");
   return { ok: true, message: "Factura anulada correctamente." };
 }
 

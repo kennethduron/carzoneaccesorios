@@ -10,7 +10,8 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
-import { getAuthorizedProductPrice } from "@/utils/pricing";
+import { calculateCheckoutFees } from "@/utils/commerce-settings";
+import { getAuthorizedProductPrice, hasValidWholesalePrice } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
 
 type CheckoutOrderItemInput = {
@@ -66,8 +67,10 @@ type CustomerAuthorizationRow = {
 
 type CheckoutProductPriceRow = {
   id: string;
+  name: string;
   retail_price: number | null;
   wholesale_price: number | null;
+  wholesale_min_quantity: number | null;
 };
 
 const wholesaleMessages = {
@@ -109,7 +112,14 @@ function safeCheckoutErrorMessage(message: string) {
     return "Ya existe un registro con esos datos. Revisa la información e intenta nuevamente.";
   }
 
-  if (normalized.includes("primera compra mayorista") || normalized.includes("minimo requerido")) {
+  if (
+    normalized.includes("primera compra mayorista") ||
+    normalized.includes("minimo requerido") ||
+    normalized.includes("compra minima") ||
+    normalized.includes("compra mínima") ||
+    normalized.includes("cantidad minima mayorista") ||
+    normalized.includes("cantidad mínima mayorista")
+  ) {
     return message;
   }
 
@@ -137,6 +147,10 @@ function formatMoney(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function roundMoney(value: number) {
+  return Math.round(Number(value || 0) * 100) / 100;
 }
 
 function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
@@ -395,8 +409,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "El pago contra entrega no está disponible en este momento." };
   }
 
-  if (paymentMethod === "card" && settings.bac_card_status === "hidden") {
-    return { ok: false, message: "El pago con tarjeta no está disponible en este momento." };
+  if (paymentMethod === "card" && settings.bac_card_status !== "active") {
+    return { ok: false, message: "El pago con tarjeta no está disponible hasta activar la pasarela BAC." };
   }
 
   if (!bankReferenceResult.ok) {
@@ -433,7 +447,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
   const { data: availableProducts, error: productsError } = await supabase
     .from("products")
-    .select("id, retail_price, wholesale_price")
+    .select("id, name, retail_price, wholesale_price, wholesale_min_quantity")
     .in("id", productIds)
     .eq("active", true)
     .eq("status", "active")
@@ -490,6 +504,44 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       return { ok: false, message: wholesaleMessages.accountNotAuthorized };
     }
 
+    const wholesaleQuantityIssues = normalizedItems
+      .map((item) => {
+        const product = (availableProducts ?? []).find((entry) => entry.id === item.productId);
+        const minimumQuantity = Math.max(1, Math.trunc(Number(product?.wholesale_min_quantity ?? 1)));
+
+        if (
+          !product ||
+          minimumQuantity <= 1 ||
+          !hasValidWholesalePrice({
+            retail_price: Number(product.retail_price ?? 0),
+            wholesale_price: Number(product.wholesale_price ?? 0),
+          }) ||
+          item.quantity >= minimumQuantity
+        ) {
+          return null;
+        }
+
+        return {
+          name: product.name,
+          quantity: item.quantity,
+          minimumQuantity,
+        };
+      })
+      .filter(Boolean) as Array<{ name: string; quantity: number; minimumQuantity: number }>;
+
+    if (wholesaleQuantityIssues.length > 0) {
+      const detail = wholesaleQuantityIssues
+        .map((item) => `${item.name} requiere mínimo ${item.minimumQuantity} unidades; tienes ${item.quantity}`)
+        .join("; ");
+      return {
+        ok: false,
+        message:
+          wholesaleQuantityIssues.length === 1
+            ? `No se puede crear el pedido. El producto ${wholesaleQuantityIssues[0].name} requiere mínimo ${wholesaleQuantityIssues[0].minimumQuantity} unidades para compra mayorista.`
+            : `No se puede crear el pedido. Corrige las cantidades mínimas mayoristas antes de crear el pedido: ${detail}.`,
+      };
+    }
+
     if (settings.first_wholesale_minimum > 0) {
       const { data: hasCompletedWholesaleOrder, error: historyError } = await supabase.rpc("has_completed_wholesale_order", {
         target_customer_id: authorizedWholesaleAccount.id,
@@ -513,12 +565,15 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
           (total, item) => total + (authorizedPriceByProductId.get(item.productId) ?? 0) * item.quantity,
           0,
         );
-        const missing = Math.max(0, settings.first_wholesale_minimum - wholesaleSubtotal);
+        const wholesaleTax = roundMoney(wholesaleSubtotal * Number(settings.tax_rate ?? 0.15));
+        const checkoutFees = calculateCheckoutFees({ subtotal: wholesaleSubtotal, paymentMethod, settings });
+        const wholesaleFinalTotal = roundMoney(wholesaleSubtotal + wholesaleTax + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee);
+        const missing = Math.max(0, roundMoney(settings.first_wholesale_minimum - wholesaleFinalTotal));
 
         if (missing > 0) {
           return {
             ok: false,
-            message: `Tu primera compra como mayorista debe ser de ${formatMoney(settings.first_wholesale_minimum)} o más. Agrega más productos para completar el mínimo. Te faltan ${formatMoney(missing)} para completar el mínimo mayorista.`,
+            message: `Tu primera compra mayorista debe alcanzar un total final de ${formatMoney(settings.first_wholesale_minimum)} o más. Te faltan ${formatMoney(missing)} para completar el mínimo de primera compra mayorista.`,
           };
         }
       }

@@ -1,14 +1,15 @@
 "use server";
 
-import { randomUUID } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/session";
+import { requirePermission, requireStrictPermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { BannerMediaType, BannerResourceType, BannerSlot, HolidayBanner, HolidayBannerInput } from "@/types/settings";
+import { saveTechnicalAlertSettings } from "@/services/supabase/holiday-banners.service";
+import type { BannerMediaType, BannerResourceType, BannerSlot, HolidayBanner, HolidayBannerInput, TechnicalAlertSettings } from "@/types/settings";
 
 type BannerMutationResult = {
   ok: boolean;
@@ -17,8 +18,7 @@ type BannerMutationResult = {
 
 type BannerMediaUploadResult = BannerMutationResult & {
   mediaUrl?: string;
-  publicId?: string;
-  resourceType?: BannerResourceType;
+  assetToken?: string;
   mediaType?: BannerMediaType;
   bytes?: number;
   createdAt?: string;
@@ -61,6 +61,22 @@ type BannerMediaRecord = Pick<
   | "media_bytes"
 >;
 
+type BannerAssetTokenPayload = {
+  publicId: string;
+  resourceType: BannerResourceType;
+  mediaType: BannerMediaType;
+  mediaUrl: string;
+  imageUrl: string;
+  bytes: number;
+  createdAt: string;
+  format: string;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  thumbnailUrl: string;
+  expiresAt: number;
+};
+
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const allowedImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 const allowedVideoTypes = new Set(["video/mp4", "video/webm"]);
@@ -72,6 +88,7 @@ const bannerSlotLimits: Record<BannerSlot, number> = {
   main: 1,
   secondary: 3,
 };
+const assetTokenTtlMs = 24 * 60 * 60 * 1000;
 
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
@@ -142,6 +159,55 @@ function cloudinaryVideoPosterUrl(secureUrl: string) {
   return secureUrl.replace("/video/upload/", "/video/upload/so_0,w_900,h_500,c_fill,g_auto,q_auto,f_jpg/").replace(/\.(mp4|webm)(\?.*)?$/i, ".jpg$2");
 }
 
+function getAssetTokenKey() {
+  const material = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.CRON_SECRET || process.env.NEXTAUTH_SECRET || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!material) {
+    throw new Error("No hay llave interna configurada para proteger los archivos de banners.");
+  }
+
+  return createHash("sha256").update(material).digest();
+}
+
+function createAssetToken(payload: Omit<BannerAssetTokenPayload, "expiresAt">) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", getAssetTokenKey(), iv);
+  const body = Buffer.from(JSON.stringify({ ...payload, expiresAt: Date.now() + assetTokenTtlMs }), "utf8");
+  const encrypted = Buffer.concat([cipher.update(body), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return [iv.toString("base64url"), tag.toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+
+function readAssetToken(token: string | null | undefined): BannerAssetTokenPayload | null {
+  const cleanToken = cleanOptional(token);
+  if (!cleanToken || !cleanToken.includes(".")) {
+    return null;
+  }
+
+  try {
+    const [ivValue, tagValue, encryptedValue] = cleanToken.split(".");
+    if (!ivValue || !tagValue || !encryptedValue) {
+      return null;
+    }
+
+    const decipher = createDecipheriv("aes-256-gcm", getAssetTokenKey(), Buffer.from(ivValue, "base64url"));
+    decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64url")), decipher.final()]);
+    const payload = JSON.parse(decrypted.toString("utf8")) as BannerAssetTokenPayload;
+
+    if (!payload.publicId || !payload.mediaUrl || payload.expiresAt < Date.now()) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      mediaType: normalizeMediaType(payload.mediaType),
+      resourceType: normalizeResourceType(payload.resourceType),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function destroyBannerMedia(publicId: string | null | undefined, resourceType: BannerResourceType | null | undefined, context: Record<string, unknown>) {
   const cleanPublicId = cleanOptional(publicId);
   if (!cleanPublicId) {
@@ -159,6 +225,18 @@ async function destroyBannerMedia(publicId: string | null | undefined, resourceT
     if (resultValue && !["ok", "not found"].includes(resultValue)) {
       throw new Error(`Cloudinary respondio: ${resultValue}`);
     }
+
+    await writeAuditLog({
+      tableName: "holiday_banners",
+      recordId: typeof context.banner_id === "string" ? context.banner_id : null,
+      action: "holiday_banner.cloudinary_asset_deleted",
+      newData: {
+        ...context,
+        public_id: cleanPublicId,
+        resource_type: normalizeResourceType(resourceType),
+        cloudinary_result: resultValue || "ok",
+      },
+    });
   } catch (error) {
     await writeErrorLog({
       route: "/admin/banners",
@@ -171,15 +249,16 @@ async function destroyBannerMedia(publicId: string | null | undefined, resourceT
   }
 }
 
-function normalizeBanner(input: HolidayBannerInput, actorId: string) {
+function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: HolidayBanner | null) {
   const title = cleanText(input.title);
   const message = cleanText(input.message);
   const startDate = cleanText(input.start_date);
   const endDate = cleanText(input.end_date);
-  const mediaType = normalizeMediaType(input.media_type);
-  const mediaUrl = cleanOptional(input.media_url || input.image_url);
-  const mediaPublicId = cleanOptional(input.media_public_id);
-  const resourceType = normalizeResourceType(input.media_resource_type || mediaType);
+  const tokenPayload = readAssetToken(input.media_asset_token);
+  const mediaType = normalizeMediaType(tokenPayload?.mediaType ?? input.media_type);
+  const mediaUrl = cleanOptional(tokenPayload?.mediaUrl ?? input.media_url ?? input.image_url) ?? existing?.media_url ?? existing?.image_url ?? null;
+  const mediaPublicId = cleanOptional(tokenPayload?.publicId ?? input.media_public_id) ?? existing?.media_public_id ?? null;
+  const resourceType = normalizeResourceType(tokenPayload?.resourceType ?? input.media_resource_type ?? existing?.media_resource_type ?? mediaType);
   const bannerSlot = normalizeBannerSlot(input.banner_slot);
 
   if (!title || !message || !startDate || !endDate) {
@@ -207,13 +286,13 @@ function normalizeBanner(input: HolidayBannerInput, actorId: string) {
     media_url: mediaUrl,
     media_public_id: mediaPublicId,
     media_resource_type: resourceType,
-    media_bytes: Math.max(0, Math.trunc(Number(input.media_bytes) || 0)),
-    media_created_at: cleanOptional(input.media_created_at),
-    media_format: cleanOptional(input.media_format),
-    media_width: input.media_width ? Math.trunc(Number(input.media_width)) : null,
-    media_height: input.media_height ? Math.trunc(Number(input.media_height)) : null,
-    media_duration_seconds: input.media_duration_seconds ? Number(input.media_duration_seconds) : null,
-    media_thumbnail_url: cleanOptional(input.media_thumbnail_url),
+    media_bytes: Math.max(0, Math.trunc(Number(tokenPayload?.bytes ?? input.media_bytes ?? existing?.media_bytes) || 0)),
+    media_created_at: cleanOptional(tokenPayload?.createdAt ?? input.media_created_at) ?? existing?.media_created_at ?? null,
+    media_format: cleanOptional(tokenPayload?.format ?? input.media_format) ?? existing?.media_format ?? null,
+    media_width: tokenPayload?.width ?? (input.media_width ? Math.trunc(Number(input.media_width)) : existing?.media_width ?? null),
+    media_height: tokenPayload?.height ?? (input.media_height ? Math.trunc(Number(input.media_height)) : existing?.media_height ?? null),
+    media_duration_seconds: tokenPayload?.durationSeconds ?? (input.media_duration_seconds ? Number(input.media_duration_seconds) : existing?.media_duration_seconds ?? null),
+    media_thumbnail_url: cleanOptional(tokenPayload?.thumbnailUrl ?? input.media_thumbnail_url) ?? existing?.media_thumbnail_url ?? null,
     start_date: startDate,
     end_date: endDate,
     is_active: Boolean(input.is_active),
@@ -281,11 +360,16 @@ async function getExistingBanner(id: string) {
 
 export async function saveHolidayBannerAction(input: HolidayBannerInput): Promise<BannerMutationResult> {
   const profile = await requirePermission("commercial_settings:manage");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
 
   try {
-    const payload = normalizeBanner(input, profile.id);
     const supabase = await getSupabaseServerClient();
     const existing = input.id ? await getExistingBanner(input.id) : null;
+    if (!canViewTechnical && input.media_public_id && input.media_public_id !== (existing?.media_public_id ?? "")) {
+      return { ok: false, message: "El archivo debe venir de una carga valida del panel." };
+    }
+
+    const payload = normalizeBanner(input, profile.id, existing);
     await assertBannerSlotCapacity({
       id: input.id,
       bannerSlot: payload.banner_slot,
@@ -410,6 +494,7 @@ export async function updateHolidayBannerPriorityAction(id: string, priority: nu
 
 export async function deleteHolidayBannerAction(id: string): Promise<BannerMutationResult> {
   const profile = await requirePermission("commercial_settings:manage");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
   const supabase = await getSupabaseServerClient();
   const { data: banner, error: bannerError } = await supabase
     .from("holiday_banners")
@@ -427,7 +512,12 @@ export async function deleteHolidayBannerAction(id: string): Promise<BannerMutat
       reason: "holiday_banner_deleted",
     });
   } catch {
-    return { ok: false, message: "No se elimino el banner porque Cloudinary no confirmo la eliminacion del archivo." };
+    return {
+      ok: false,
+      message: canViewTechnical
+        ? "No se elimino el banner porque Cloudinary no confirmo la eliminacion del archivo."
+        : "No se elimino el banner porque el proveedor de archivos no confirmo la eliminacion.",
+    };
   }
 
   const { error } = await supabase.from("holiday_banners").delete().eq("id", id);
@@ -450,7 +540,10 @@ export async function deleteHolidayBannerAction(id: string): Promise<BannerMutat
   });
 
   revalidateBanners();
-  return { ok: true, message: "Banner, archivo y derivados de Cloudinary eliminados correctamente." };
+  return {
+    ok: true,
+    message: canViewTechnical ? "Banner, archivo y derivados de Cloudinary eliminados correctamente." : "Banner y archivo eliminados correctamente.",
+  };
 }
 
 export async function uploadHolidayBannerMediaAction(formData: FormData): Promise<BannerMediaUploadResult> {
@@ -471,6 +564,7 @@ export async function uploadHolidayBannerMediaAction(formData: FormData): Promis
       : await uploadBannerImage(file, profile.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
+    const publicMessage = profile.permissions.includes("system:monitoring") ? message : message.replaceAll("Cloudinary", "el proveedor de archivos");
     await writeErrorLog({
       route: "/admin/banners",
       action: "holiday_banner.media_upload_failed",
@@ -482,7 +576,7 @@ export async function uploadHolidayBannerMediaAction(formData: FormData): Promis
         media_type: String(formData.get("mediaType") ?? ""),
       },
     });
-    return { ok: false, message };
+    return { ok: false, message: publicMessage };
   }
 }
 
@@ -540,12 +634,30 @@ async function uploadBannerImage(file: File, actorId: string): Promise<BannerMed
     stream.end(optimizedBuffer);
   });
 
+  const publicId = result.public_id;
+  const secureUrl = result.secure_url;
+  if (!publicId || !secureUrl) {
+    return { ok: false, message: "El proveedor de archivos no devolvio los datos completos." };
+  }
+
   return {
     ok: true,
     message: "Imagen optimizada y subida correctamente.",
-    mediaUrl: result.secure_url,
-    publicId: result.public_id,
-    resourceType: "image",
+    mediaUrl: secureUrl,
+    assetToken: createAssetToken({
+      publicId,
+      resourceType: "image",
+      mediaType: "image",
+      mediaUrl: secureUrl,
+      imageUrl: secureUrl,
+      bytes: Number(result.bytes ?? optimizedBuffer.length),
+      createdAt: result.created_at ?? new Date().toISOString(),
+      format: result.format ?? "webp",
+      width: result.width ?? width,
+      height: result.height ?? height,
+      durationSeconds: null,
+      thumbnailUrl: secureUrl,
+    }),
     mediaType: "image",
     bytes: Number(result.bytes ?? optimizedBuffer.length),
     createdAt: result.created_at ?? new Date().toISOString(),
@@ -553,7 +665,7 @@ async function uploadBannerImage(file: File, actorId: string): Promise<BannerMed
     width: result.width ?? width,
     height: result.height ?? height,
     durationSeconds: null,
-    thumbnailUrl: result.secure_url,
+    thumbnailUrl: secureUrl,
   };
 }
 
@@ -593,8 +705,13 @@ async function uploadBannerVideo(file: File, actorId: string): Promise<BannerMed
   });
 
   const duration = Number(result.duration ?? 0);
+  const publicId = result.public_id;
+  if (!publicId || !result.secure_url) {
+    return { ok: false, message: "El proveedor de archivos no devolvio los datos completos del video." };
+  }
+
   if (duration > videoMaxDurationSeconds) {
-    await destroyBannerMedia(result.public_id, "video", { reason: "holiday_banner_video_duration_rejected" });
+    await destroyBannerMedia(publicId, "video", { reason: "holiday_banner_video_duration_rejected" });
     return { ok: false, message: "El video no puede durar mas de 60 segundos." };
   }
 
@@ -605,8 +722,20 @@ async function uploadBannerVideo(file: File, actorId: string): Promise<BannerMed
     ok: true,
     message: "Video subido y optimizado correctamente.",
     mediaUrl: optimizedVideo,
-    publicId: result.public_id,
-    resourceType: "video",
+    assetToken: createAssetToken({
+      publicId,
+      resourceType: "video",
+      mediaType: "video",
+      mediaUrl: optimizedVideo,
+      imageUrl: "",
+      bytes: Number(result.bytes ?? file.size),
+      createdAt: result.created_at ?? new Date().toISOString(),
+      format: result.format ?? fileExtension(file),
+      width: result.width ?? null,
+      height: result.height ?? null,
+      durationSeconds: duration || null,
+      thumbnailUrl: thumbnail ?? "",
+    }),
     mediaType: "video",
     bytes: Number(result.bytes ?? file.size),
     createdAt: result.created_at ?? new Date().toISOString(),
@@ -618,11 +747,18 @@ async function uploadBannerVideo(file: File, actorId: string): Promise<BannerMed
   };
 }
 
-export async function deleteUploadedHolidayBannerMediaAction(publicId: string, resourceType: BannerResourceType): Promise<BannerMutationResult> {
-  await requirePermission("commercial_settings:manage");
+export async function deleteUploadedHolidayBannerMediaAction(mediaReference: string, resourceType?: BannerResourceType): Promise<BannerMutationResult> {
+  const profile = await requirePermission("commercial_settings:manage");
 
   try {
-    await destroyBannerMedia(publicId, resourceType, { reason: "unsaved_holiday_banner_media_removed" });
+    const tokenPayload = readAssetToken(mediaReference);
+    if (!tokenPayload && !profile.permissions.includes("system:monitoring")) {
+      return { ok: false, message: "El archivo debe venir de una carga valida del panel." };
+    }
+
+    const publicId = tokenPayload?.publicId ?? mediaReference;
+    const resolvedResourceType = tokenPayload?.resourceType ?? normalizeResourceType(resourceType);
+    await destroyBannerMedia(publicId, resolvedResourceType, { reason: "unsaved_holiday_banner_media_removed" });
     return { ok: true, message: "Archivo eliminado correctamente." };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo eliminar el archivo." };
@@ -630,7 +766,7 @@ export async function deleteUploadedHolidayBannerMediaAction(publicId: string, r
 }
 
 export async function reviewHolidayBannerIntegrityAction(deleteOrphans = false): Promise<BannerIntegrityResult> {
-  await requirePermission("commercial_settings:manage");
+  await requireStrictPermission("system:monitoring");
 
   try {
     const supabase = await getSupabaseServerClient();
@@ -686,5 +822,28 @@ export async function reviewHolidayBannerIntegrityAction(deleteOrphans = false):
     };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo revisar la integridad de banners." };
+  }
+}
+
+export async function saveTechnicalAlertSettingsAction(
+  input: Pick<TechnicalAlertSettings, "enabled" | "email" | "cloudinaryStorageThresholdPercent">,
+): Promise<BannerMutationResult> {
+  await requireStrictPermission("system:monitoring");
+
+  try {
+    const email = cleanText(input.email).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { ok: false, message: "Ingresa un correo tecnico valido." };
+    }
+
+    await saveTechnicalAlertSettings({
+      enabled: Boolean(input.enabled),
+      email,
+      cloudinaryStorageThresholdPercent: Math.min(100, Math.max(1, Math.trunc(Number(input.cloudinaryStorageThresholdPercent) || 70))),
+    });
+    revalidatePath("/admin/banners");
+    return { ok: true, message: "Configuracion tecnica de alertas actualizada." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la configuracion tecnica." };
   }
 }

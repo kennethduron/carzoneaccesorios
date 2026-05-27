@@ -4,6 +4,7 @@ import { PaginationControls } from "@/components/admin/pagination-controls";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import type { CustomerOrderRow } from "@/services/supabase/customer-account.service";
 import type { StoreInvoice } from "@/types/invoices";
+import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatCurrency } from "@/utils/pricing";
 
 const orderStatusLabels: Record<string, string> = {
@@ -60,7 +61,7 @@ function invoiceStatusMessage(order: CustomerOrderRow) {
 }
 
 function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
-  const invoice = order.invoices.find((item) => ["emitida", "issued", "paid"].includes(item.status)) ?? null;
+  const invoice = order.invoices.find((item) => ["emitida", "issued", "paid", "anulada", "cancelled"].includes(item.status)) ?? null;
   if (!invoice) {
     return null;
   }
@@ -111,6 +112,9 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     isv: invoice.tax,
     shippingFee: invoice.shipping_fee,
     cashOnDeliveryFee: invoice.cash_on_delivery_fee,
+    smallOrderFee: invoice.small_order_fee,
+    discountTotal: invoice.discount_total,
+    additionalFees: invoice.additional_fees,
     total: invoice.total,
     priceMode: invoice.price_mode ?? order.price_mode,
     paymentMethod:
@@ -177,6 +181,17 @@ export function OrdersList({
               <Info label="Modo" value={order.price_mode === "wholesale" ? "Mayorista" : "Al detalle"} />
             </div>
 
+            <FinancialSummary
+              subtotal={order.subtotal}
+              tax={order.tax}
+              shippingFee={order.shipping_fee || order.shipping_total}
+              cashOnDeliveryFee={order.cash_on_delivery_fee}
+              smallOrderFee={order.small_order_fee}
+              discountTotal={order.discount_total}
+              additionalFeesValue={additionalFeesTotal(order.additional_fees)}
+              total={order.total}
+            />
+
             <div className="mt-4 divide-y divide-black/10 rounded-md border border-black/10">
               {order.order_items.map((item) => (
                 <div key={`${order.id}-${item.id}`} className="flex justify-between gap-3 p-3 text-sm">
@@ -228,6 +243,42 @@ function Info({ label, value, strong = false }: { label: string; value: string; 
     <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
       <p className="text-xs uppercase text-black/45">{label}</p>
       <p className={`mt-1 ${strong ? "font-semibold" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function FinancialSummary({
+  subtotal,
+  tax,
+  shippingFee,
+  cashOnDeliveryFee,
+  smallOrderFee,
+  discountTotal,
+  additionalFeesValue,
+  total,
+}: {
+  subtotal: number;
+  tax: number;
+  shippingFee: number;
+  cashOnDeliveryFee: number;
+  smallOrderFee: number;
+  discountTotal: number;
+  additionalFeesValue: number;
+  total: number;
+}) {
+  return (
+    <div className="mt-4 rounded-md border border-black/10 bg-white p-3 text-sm">
+      <p className="font-semibold">Resumen financiero</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Info label="Subtotal" value={formatCurrency(subtotal)} />
+        <Info label="ISV" value={formatCurrency(tax)} />
+        <Info label="Envio" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
+        <Info label="Contra entrega" value={formatCurrency(cashOnDeliveryFee)} />
+        <Info label="Recargo minimo" value={formatCurrency(smallOrderFee)} />
+        <Info label="Descuentos" value={discountTotal > 0 ? `-${formatCurrency(discountTotal)}` : formatCurrency(0)} />
+        <Info label="Otros cargos" value={formatCurrency(additionalFeesValue)} />
+        <Info label="Total final" value={formatCurrency(total)} strong />
+      </div>
     </div>
   );
 }

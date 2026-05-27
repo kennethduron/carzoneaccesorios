@@ -10,12 +10,14 @@ export const dynamic = "force-dynamic";
 export default async function AdminInventoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; mov_page?: string }>;
+  searchParams: Promise<{ q?: string; filter?: string; mov_page?: string }>;
 }) {
   await requirePermission("inventory:manage");
   const params = await searchParams;
+  const activeFilter = params.filter === "low_stock" ? { id: "low_stock" as const, label: "Productos con bajo stock o sin stock" } : null;
   const { products, movements, summary } = await getAdminInventory({
     query: params.q,
+    filter: activeFilter?.id ?? null,
     movementPage: Number(params.mov_page ?? 1),
     movementPageSize: 50,
   });
@@ -31,7 +33,13 @@ export default async function AdminInventoryPage({
           Panel administrativo
         </Link>
       </div>
-      <InventoryManager products={products} movements={movements} summary={summary} productQuery={params.q ?? ""} />
+      <InventoryManager
+        products={products}
+        movements={movements}
+        summary={summary}
+        productQuery={params.q ?? ""}
+        activeFilter={activeFilter}
+      />
     </AdminShell>
   );
 }

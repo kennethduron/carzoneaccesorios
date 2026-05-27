@@ -62,7 +62,7 @@ function customerOrderLabel(order: PublicTrackingOrder) {
     enviado: "Enviado",
     en_ruta: "En ruta",
     entregado: "Entregado",
-    cancelado: "Cancelado",
+    cancelado: "Pedido cancelado",
   };
   return labels[status] ?? order.orderStatus;
 }
@@ -124,6 +124,7 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
 
   const progressIndex = useMemo(() => (order ? activeProgressIndex(order) : -1), [order]);
   const progressSteps = useMemo(() => (order ? trackingSteps(order) : []), [order]);
+  const orderIsCancelled = order ? canonicalOrderStatus(order.orderStatus) === "cancelado" : false;
 
   function searchOrder(nextCode = code) {
     const normalizedCode = nextCode.trim().toUpperCase();
@@ -222,14 +223,20 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             </div>
           ) : null}
 
-          <div className="mt-5 space-y-3">
-            {progressSteps.map((step, index) => (
-              <div key={step.key} className="flex items-center gap-3">
-                <span className={`size-3 rounded-full ${index <= progressIndex ? "bg-[#e4252c]" : "bg-black/15"}`} />
-                <span className={index <= progressIndex ? "font-medium" : "text-black/45"}>{step.label}</span>
-              </div>
-            ))}
-          </div>
+          {orderIsCancelled ? (
+            <div className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              Pedido cancelado. Los pasos futuros quedan desactivados.
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {progressSteps.map((step, index) => (
+                <div key={step.key} className="flex items-center gap-3">
+                  <span className={`size-3 rounded-full ${index <= progressIndex ? "bg-[#e4252c]" : "bg-black/15"}`} />
+                  <span className={index <= progressIndex ? "font-medium" : "text-black/45"}>{step.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
             <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos comprados</div>

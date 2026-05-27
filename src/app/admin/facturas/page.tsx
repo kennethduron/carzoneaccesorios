@@ -4,7 +4,7 @@ import { ArrowLeft, Settings } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
-import { getAdminInvoicesPage } from "@/services/supabase/admin-invoices.service";
+import { adminInvoiceTaskLabels, getAdminInvoicesPage, normalizeAdminInvoiceTask } from "@/services/supabase/admin-invoices.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
@@ -17,15 +17,16 @@ const AdminInvoicesManager = nextDynamic(
 export default async function AdminInvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; task?: string }>;
 }) {
   const profile = await requirePermission("invoices:read");
   const params = await searchParams;
+  const task = normalizeAdminInvoiceTask(params.task);
   const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
   const canCorrectInvoices =
     profile.role === "admin" || profile.permissions.includes("invoices:correct") || profile.permissions.includes("invoices:manage");
   const [invoicesPage, fiscalSettings] = await Promise.all([
-    getAdminInvoicesPage({ page: Number(params.page ?? 1), pageSize: 50 }),
+    getAdminInvoicesPage({ page: Number(params.page ?? 1), pageSize: 50, task }),
     getFiscalSettings(),
   ]);
   const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoicesPage.invoices);
@@ -56,6 +57,7 @@ export default async function AdminInvoicesPage({
         fiscalAlerts={fiscalAlerts}
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
+        activeTask={task ? { id: task, label: adminInvoiceTaskLabels[task] } : null}
       />
     </AdminShell>
   );

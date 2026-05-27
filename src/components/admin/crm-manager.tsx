@@ -34,11 +34,13 @@ import {
   suspendCustomerAccountAction,
   suspendWholesaleAccessAction,
 } from "@/app/admin/crm/actions";
+import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { roleLabels } from "@/lib/auth/roles";
 import type {
   AdminCrmData,
   CrmCustomerOption,
@@ -61,9 +63,10 @@ type CrmManagerProps = {
   data: AdminCrmData;
   basePath?: string;
   focus?: "customers" | "followups";
+  activeTask?: { id: string; label: string } | null;
 };
 
-type CustomerFilter = "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
+type CustomerFilter = "clients" | "internal" | "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
 
 type DuplicateMergeRequest = {
   source: CrmDuplicateCandidate;
@@ -104,6 +107,8 @@ const leadStatusLabels: Record<CrmLeadStatus, string> = {
 };
 
 const customerFilterLabels: Record<CustomerFilter, string> = {
+  clients: "Clientes",
+  internal: "Usuarios internos",
   all: "Todos",
   active: "Clientes activos",
   prospects: "Prospectos",
@@ -198,15 +203,17 @@ function followupStatusLabel(followup: CrmFollowupRow) {
   return "Pendiente";
 }
 
-export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" }: CrmManagerProps) {
+export function CrmManager({ data, basePath = "/admin/crm", focus = "followups", activeTask = null }: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
   const [followup, setFollowup] = useState<CrmFollowupInput>(emptyFollowup);
   const [note, setNote] = useState<CrmNoteInput>(emptyNote);
   const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
-  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>("all");
-  const [followupStatusFilter, setFollowupStatusFilter] = useState<"all" | "pending" | "completed" | "cancelled" | "overdue">("all");
+  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>("clients");
+  const [followupStatusFilter, setFollowupStatusFilter] = useState<"all" | "pending" | "completed" | "cancelled" | "overdue">(
+    activeTask?.id === "overdue" ? "overdue" : "all",
+  );
   const [followupPriorityFilter, setFollowupPriorityFilter] = useState<"all" | CrmPriority>("all");
   const [followupTypeFilter, setFollowupTypeFilter] = useState<"all" | CrmInteractionType>("all");
   const [openLeadForm] = useState(false);
@@ -237,10 +244,16 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         (followupStatusFilter === "overdue" ? isOverdue(item) : item.status === followupStatusFilter);
       const matchesPriority = followupPriorityFilter === "all" || item.priority === followupPriorityFilter;
       const matchesType = followupTypeFilter === "all" || item.interaction_type === followupTypeFilter;
+      const matchesAudience =
+        customerFilter === "internal"
+          ? item.customer_profile_kind === "internal"
+          : customerFilter === "all"
+            ? true
+            : item.customer_profile_kind === "customer";
 
-      return matchesQuery && matchesStatus && matchesPriority && matchesType;
+      return matchesQuery && matchesStatus && matchesPriority && matchesType && matchesAudience;
     });
-  }, [data.followups, debouncedQuery, followupPriorityFilter, followupStatusFilter, followupTypeFilter]);
+  }, [customerFilter, data.followups, debouncedQuery, followupPriorityFilter, followupStatusFilter, followupTypeFilter]);
 
   const searchedCustomers = useMemo(() => {
     const normalized = debouncedQuery.trim().toLowerCase();
@@ -249,7 +262,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
         return true;
       }
 
-      return `${customer.contact_name} ${customer.business_name ?? ""} ${customer.email ?? ""} ${customer.phone}`
+      return `${customer.contact_name} ${customer.business_name ?? ""} ${customer.email ?? ""} ${customer.phone} ${customer.profile_label} ${customer.account_role ?? ""}`
         .toLowerCase()
         .includes(normalized);
     });
@@ -258,17 +271,23 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
   const filteredCustomers = useMemo(
     () =>
       searchedCustomers.filter((customer) => {
+        if (customerFilter === "clients") {
+          return customer.profile_kind === "customer";
+        }
+        if (customerFilter === "internal") {
+          return customer.profile_kind === "internal";
+        }
         if (customerFilter === "active") {
-          return customer.account_state === "Cliente activo" || (customer.active && customer.status === "active");
+          return customer.profile_kind === "customer" && (customer.account_state === "Cliente activo" || (customer.active && customer.status === "active"));
         }
         if (customerFilter === "prospects") {
-          return customer.lead_status !== "cliente" && !customer.has_wholesale_request;
+          return customer.profile_kind === "customer" && customer.lead_status !== "cliente" && !customer.has_wholesale_request;
         }
         if (customerFilter === "wholesale") {
-          return customer.is_wholesale;
+          return customer.profile_kind === "customer" && customer.is_wholesale;
         }
         if (customerFilter === "wholesale_requests") {
-          return customer.has_wholesale_request && !customer.is_wholesale;
+          return customer.profile_kind === "customer" && customer.has_wholesale_request && !customer.is_wholesale;
         }
         if (customerFilter === "suspended") {
           return customer.account_state === "Cuenta suspendida" || !customer.active || customer.status === "disabled";
@@ -281,8 +300,9 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
 
   const pendingFollowups = data.followups.filter((item) => item.status === "pending");
   const overdueCount = data.followups.filter(isOverdue).length;
-  const prospects = data.customers.filter((customer) => customer.lead_status !== "cliente");
-  const wholesaleRequests = data.customers.filter((customer) => customer.notes?.includes("[SOLICITUD_MAYOREO]") && !customer.is_wholesale);
+  const realCustomers = data.customers.filter((customer) => customer.profile_kind === "customer");
+  const prospects = realCustomers.filter((customer) => customer.lead_status !== "cliente");
+  const wholesaleRequests = realCustomers.filter((customer) => customer.notes?.includes("[SOLICITUD_MAYOREO]") && !customer.is_wholesale);
   const estimatedPipeline = prospects.reduce((sum, customer) => sum + customer.estimated_value, 0);
   const selectedCustomer = filteredCustomers.find((customer) => customer.id === selectedCustomerId) ?? filteredCustomers[0] ?? data.customers[0] ?? null;
   const selectedFollowup =
@@ -759,12 +779,15 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
 
   return (
     <div className="space-y-5">
+      {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref={basePath} /> : null}
+
       <PaginationControls
         basePath={basePath}
         page={focus === "customers" ? data.customerPage : data.followupPage}
         pageSize={data.pageSize}
         total={focus === "customers" ? data.customersTotal : data.followupsTotal}
         label={focus === "customers" ? "clientes" : "seguimientos"}
+        params={activeTask ? { task: activeTask.id } : undefined}
       />
 
       <div className="grid gap-3 md:grid-cols-5">
@@ -1076,6 +1099,8 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
       ) : null}
 
       {focus !== "customers" ? (
+      <div className="space-y-4">
+      <CustomerFilterTabs value={customerFilter} onChange={setCustomerFilter} />
       <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
         <div className="overflow-hidden rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-5">
@@ -1109,7 +1134,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
                   <tr key={item.id}>
                     <td className="px-4 py-3">
                       <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
-                      <p className="text-xs text-black/45">{item.customer_name}</p>
+                      <p className="text-xs text-black/45">{item.customer_profile_kind === "internal" ? item.customer_profile_label : item.customer_name}</p>
                       <ContactActions
                         phone={item.phone}
                         customerName={item.business_name ?? item.customer_name}
@@ -1249,6 +1274,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups" 
           </div>
         </div>
       </section>
+      </div>
       ) : null}
       {focus !== "customers" ? (
         <RecentNotesCard notes={data.notes} onEdit={openNoteDrawer} onArchive={archiveNote} />
@@ -2013,6 +2039,14 @@ const customerProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
   { id: "acciones", label: "Acciones" },
 ];
 
+const internalProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
+  { id: "resumen", label: "Resumen operativo" },
+  { id: "informacion", label: "Informacion" },
+  { id: "compras", label: "Compras personales" },
+  { id: "facturas", label: "Facturas vinculadas" },
+  { id: "acciones", label: "Seguridad" },
+];
+
 function CustomerProfileDrawer({
   open,
   profile,
@@ -2054,6 +2088,8 @@ function CustomerProfileDrawer({
 }) {
   const [activeTab, setActiveTab] = useState<CustomerProfileTab>("resumen");
   const customer = profile?.customer ?? fallbackCustomer;
+  const profileTabs = customer?.profile_kind === "internal" ? internalProfileTabs : customerProfileTabs;
+  const visibleActiveTab = profileTabs.some((tab) => tab.id === activeTab) ? activeTab : "resumen";
   const isWholesaleRequest = Boolean(customer?.notes?.includes("[SOLICITUD_MAYOREO]") || customer?.has_wholesale_request);
   const isSuspended = customer?.account_state === "Cuenta suspendida" || customer?.status === "disabled" || customer?.active === false;
 
@@ -2085,23 +2121,27 @@ function CustomerProfileDrawer({
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label="Perfil completo del cliente"
+        aria-label={customer?.profile_kind === "internal" ? "Perfil de usuario interno" : "Perfil completo del cliente"}
         className="ml-auto flex h-full w-full flex-col bg-[#f4f4f5] text-[#080808] shadow-2xl md:max-w-[min(1180px,96vw)]"
         onClick={(event) => event.stopPropagation()}
       >
         <header className="shrink-0 border-b border-black/10 bg-white px-4 py-4 sm:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase text-[#e4252c]">Perfil completo</p>
+              <p className="text-xs font-semibold uppercase text-[#e4252c]">
+                {customer?.profile_kind === "internal" ? "Perfil operativo" : "Perfil completo"}
+              </p>
               <h2 className="mt-1 truncate text-xl font-semibold">{customer ? customerDisplayName(customer) : "Cargando cliente"}</h2>
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 {customer ? (
                   <>
-                    <span className="rounded-md bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c25]">
-                      {customer.customer_type === "Retail" ? "Cliente al detalle" : "Mayorista"}
-                    </span>
+                    {customer.primary_badges.map((badge) => (
+                      <span key={badge} className="rounded-md bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c25]">
+                        {badge}
+                      </span>
+                    ))}
                     <span className="rounded-md bg-[#f4f4f5] px-2 py-1 text-black/60">{customer.account_state}</span>
-                    {isWholesaleRequest && !customer.is_wholesale ? (
+                    {customer.profile_kind === "customer" && isWholesaleRequest && !customer.is_wholesale ? (
                       <span className="rounded-md bg-[#fff7ed] px-2 py-1 text-[#7c2d12]">Solicitud mayorista</span>
                     ) : null}
                   </>
@@ -2116,10 +2156,12 @@ function CustomerProfileDrawer({
                     <MessageSquarePlus size={16} />
                     Agregar nota
                   </Button>
-                  <Button type="button" variant="ghost" disabled={pending} onClick={() => onCreateFollowup(customer)}>
-                    <Clock size={16} />
-                    Crear seguimiento
-                  </Button>
+                  {customer.profile_kind === "customer" ? (
+                    <Button type="button" variant="ghost" disabled={pending} onClick={() => onCreateFollowup(customer)}>
+                      <Clock size={16} />
+                      Crear seguimiento
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
               <button
@@ -2133,8 +2175,8 @@ function CustomerProfileDrawer({
             </div>
           </div>
           <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">
-            {customerProfileTabs.map((tab) => {
-              const active = activeTab === tab.id;
+            {profileTabs.map((tab) => {
+              const active = visibleActiveTab === tab.id;
               return (
                 <button
                   key={tab.id}
@@ -2162,11 +2204,11 @@ function CustomerProfileDrawer({
             <div className="rounded-lg border border-[#e4252c]/25 bg-white p-5 text-sm text-[#b91c25]">{error}</div>
           ) : customer && profile ? (
             <>
-              {activeTab === "resumen" ? <CustomerProfileSummary profile={profile} /> : null}
-              {activeTab === "informacion" ? <CustomerProfileInfo customer={customer} /> : null}
-              {activeTab === "compras" ? <CustomerProfilePurchases orders={profile.orders} /> : null}
-              {activeTab === "facturas" ? <CustomerProfileInvoices invoices={profile.invoices} /> : null}
-              {activeTab === "crm" ? (
+              {visibleActiveTab === "resumen" ? <CustomerProfileSummary profile={profile} /> : null}
+              {visibleActiveTab === "informacion" ? <CustomerProfileInfo customer={customer} /> : null}
+              {visibleActiveTab === "compras" ? <CustomerProfilePurchases orders={profile.orders} /> : null}
+              {visibleActiveTab === "facturas" ? <CustomerProfileInvoices invoices={profile.invoices} /> : null}
+              {customer.profile_kind === "customer" && visibleActiveTab === "crm" ? (
                 <CustomerProfileCrm
                   customer={customer}
                   notes={profile.notes}
@@ -2177,7 +2219,7 @@ function CustomerProfileDrawer({
                   onCompleteFollowup={onCompleteFollowup}
                 />
               ) : null}
-              {activeTab === "mayorista" ? (
+              {customer.profile_kind === "customer" && visibleActiveTab === "mayorista" ? (
                 <CustomerProfileWholesale
                   profile={profile}
                   pending={pending}
@@ -2187,7 +2229,7 @@ function CustomerProfileDrawer({
                   onReactivateWholesale={onReactivateWholesale}
                 />
               ) : null}
-              {activeTab === "acciones" ? (
+              {visibleActiveTab === "acciones" ? (
                 <CustomerProfileActions
                   customer={customer}
                   pending={pending}
@@ -2218,6 +2260,35 @@ function CustomerProfileSummary({ profile }: { profile: CrmCustomerProfile }) {
   const { customer } = profile;
   const pendingFollowups = profile.followups.filter((followup) => followup.status === "pending").slice(0, 3);
   const recentNotes = profile.notes.slice(0, 3);
+
+  if (customer.profile_kind === "internal") {
+    const roleLabel = customer.account_role ? roleLabels[customer.account_role] : customer.profile_label;
+    const managedOrders = profile.orders.slice(0, 5);
+
+    return (
+      <div className="space-y-4">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric label="Rol" value={roleLabel} />
+          <Metric label="Estado" value={customer.account_active === false || !customer.active ? "Suspendido" : "Activo"} />
+          <Metric label="Permisos" value={customer.account_role === "business_owner" ? "Acceso empresarial" : "Acceso operativo"} />
+          <Metric label="Auditoria" value={customer.last_activity_at ? "Con actividad" : "Sin actividad"} />
+        </section>
+        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          <CustomerProfileInfo customer={customer} compact />
+          <section className="rounded-lg border border-black/10 bg-white p-5">
+            <h3 className="font-semibold">{customer.account_role === "business_owner" ? "Dashboard empresarial" : "Actividad reciente"}</h3>
+            <div className="mt-4 space-y-3">
+              <InfoLine label="Identidad principal" value={customer.account_role === "business_owner" ? "Dueno operativo" : "Usuario interno"} />
+              <InfoLine label="Actividad administrativa" value={recentNotes.length > 0 ? "Con registros vinculados" : "Sin registros recientes"} />
+              <InfoLine label="Pedidos gestionados" value={customer.order_count.toLocaleString("es-HN")} />
+              <InfoLine label="Facturas vinculadas" value={customer.invoice_count.toLocaleString("es-HN")} />
+            </div>
+          </section>
+        </div>
+        <CustomerProfilePurchases orders={managedOrders} compact title="Compras personales vinculadas" empty="Este usuario interno no tiene compras personales vinculadas." />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -2259,6 +2330,31 @@ function CustomerProfileSummary({ profile }: { profile: CrmCustomerProfile }) {
 }
 
 function CustomerProfileInfo({ customer, compact = false }: { customer: CrmCustomerOption; compact?: boolean }) {
+  if (customer.profile_kind === "internal") {
+    return (
+      <section className="rounded-lg border border-black/10 bg-white p-5">
+        <h3 className="font-semibold">Informacion operativa</h3>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <InfoLine label="Nombre" value={customerDisplayName(customer)} />
+          <InfoLine label="Usuario" value={customer.account_full_name ?? customerDisplayName(customer)} />
+          <InfoLine label="Correo" value={customer.account_email ?? customer.email ?? "Sin correo"} />
+          <InfoLine label="Telefono" value={customer.account_phone ?? customer.phone ?? "Sin telefono"} />
+          <InfoLine label="Rol" value={customer.account_role ? roleLabels[customer.account_role] : customer.profile_label} />
+          <InfoLine label="Estado" value={customer.account_active === false || !customer.active ? "Suspendido" : "Activo"} />
+          <InfoLine label="Fecha de creacion" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
+          <InfoLine label="Ultimo acceso" value={formatDateTime(customer.last_activity_at)} />
+          {!compact ? (
+            <InfoLine
+              label="Acceso"
+              value={customer.account_role === "business_owner" ? "Gestion completa del negocio" : "Permisos operativos por rol"}
+            />
+          ) : null}
+          {!compact ? <InfoLine label="Compras" value="Compras personales vinculadas en seccion secundaria" /> : null}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
       <h3 className="font-semibold">Información general</h3>
@@ -2301,9 +2397,19 @@ function paymentStatusLabel(value: string | null | undefined) {
   return labels[value] ?? value;
 }
 
-function CustomerProfilePurchases({ orders, compact = false }: { orders: CrmCustomerProfile["orders"]; compact?: boolean }) {
+function CustomerProfilePurchases({
+  orders,
+  compact = false,
+  title = "Historial de compras",
+  empty = "Este cliente todavia no tiene compras.",
+}: {
+  orders: CrmCustomerProfile["orders"];
+  compact?: boolean;
+  title?: string;
+  empty?: string;
+}) {
   return (
-    <ProfileTableCard title="Historial de compras" empty="Este cliente todavía no tiene compras.">
+    <ProfileTableCard title={title} empty={empty}>
       {orders.map((order) => (
         <ProfileRow key={order.id} columns="purchase">
           <div>
@@ -2321,8 +2427,25 @@ function CustomerProfilePurchases({ orders, compact = false }: { orders: CrmCust
               </p>
             ) : null}
           </div>
-          <p className="text-sm font-semibold">{formatCurrency(order.total)}</p>
-          <p className="text-sm">{order.invoice_number ?? "Sin factura"}</p>
+          <div className="text-sm">
+            <p className="font-semibold">{formatCurrency(order.total)}</p>
+            <p className="text-xs text-black/45">
+              Sub {formatCurrency(order.subtotal)} / ISV {formatCurrency(order.tax)}
+            </p>
+            <p className="text-xs text-black/45">
+              Env {formatCurrency(order.shipping_fee)} / CE {formatCurrency(order.cash_on_delivery_fee)}
+            </p>
+            <p className="text-xs text-black/45">
+              Rec {formatCurrency(order.small_order_fee + order.additional_fees_total)} / Desc {formatCurrency(order.discount_total)}
+            </p>
+          </div>
+          <p className="text-sm">
+            {order.invoice_number
+              ? order.invoice_status === "anulada" || order.invoice_status === "cancelled"
+                ? `${order.invoice_number} anulada`
+                : order.invoice_number
+              : "Sin factura"}
+          </p>
           <Link href="/admin/pedidos" className="text-sm font-semibold text-[#e4252c] hover:text-[#b91c25]">
             Ver pedido
           </Link>
@@ -2351,9 +2474,20 @@ function CustomerProfileInvoices({ invoices, compact = false }: { invoices: CrmC
             <p className="font-semibold">{invoice.invoice_number}</p>
             <p className="text-xs text-black/45">{formatDateTime(invoice.issued_at ?? invoice.created_at)}</p>
           </div>
-          <InfoPill>{invoice.status}</InfoPill>
+          <InfoPill>{invoice.status === "anulada" || invoice.status === "cancelled" ? "Anulada" : invoice.status}</InfoPill>
           <p className="text-sm">{invoice.order_number ?? "Sin pedido"}</p>
-          <p className="text-sm font-semibold">{formatCurrency(invoice.total)}</p>
+          <div className="text-sm">
+            <p className="font-semibold">{formatCurrency(invoice.total)}</p>
+            <p className="text-xs text-black/45">
+              Sub {formatCurrency(invoice.subtotal)} / ISV {formatCurrency(invoice.tax)}
+            </p>
+            <p className="text-xs text-black/45">
+              Env {formatCurrency(invoice.shipping_fee)} / CE {formatCurrency(invoice.cash_on_delivery_fee)}
+            </p>
+            <p className="text-xs text-black/45">
+              Rec {formatCurrency(invoice.small_order_fee + invoice.additional_fees_total)} / Desc {formatCurrency(invoice.discount_total)}
+            </p>
+          </div>
           <Link href="/admin/facturas" className="text-sm font-semibold text-[#e4252c] hover:text-[#b91c25]">
             Ver factura
           </Link>
@@ -2487,7 +2621,7 @@ function CustomerProfileWholesale({
       <div className="mt-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-3">
           <InfoLine label="Estado" value={customer.wholesale_lifecycle_status} />
-          <InfoLine label="Primera compra mínima" value="Según configuración mayorista" />
+          <InfoLine label="Mínimo primera compra" value="Total final según configuración mayorista" />
           <InfoLine label="Primera compra mayorista" value={firstWholesalePurchase ? "Realizada" : "Pendiente"} />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2559,6 +2693,31 @@ function CustomerProfileActions({
   onDeleteTest: (customer: CrmCustomerOption) => void;
   onDeleteCustomer: (customer: CrmCustomerOption) => void;
 }) {
+  if (customer.profile_kind === "internal") {
+    return (
+      <section className="rounded-lg border border-black/10 bg-white p-5">
+        <h3 className="font-semibold">Seguridad del usuario</h3>
+        <p className="mt-1 text-sm text-black/55">Las compras personales se conservan, pero la identidad principal es operativa.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/admin/seguridad" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold hover:bg-[#f4f4f5]">
+            Abrir seguridad
+          </Link>
+          {isSuspended ? (
+            <Button onClick={() => onReactivate(customer)} disabled={pending} variant="dark">
+              <CheckCircle2 size={16} />
+              Reactivar usuario
+            </Button>
+          ) : (
+            <Button onClick={() => onSuspend(customer)} disabled={pending} variant="ghost">
+              <Ban size={16} />
+              Suspender usuario
+            </Button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
       <h3 className="font-semibold">Acciones del cliente</h3>
@@ -2841,7 +3000,7 @@ function CustomerAccountsTable({
             <tr>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Contacto</th>
-              <th className="px-4 py-3">Tipo</th>
+              <th className="px-4 py-3">Clasificacion</th>
               <th className="px-4 py-3">Estado de cuenta</th>
               <th className="px-4 py-3">Pedidos</th>
               <th className="px-4 py-3">Última actividad</th>
@@ -2871,7 +3030,15 @@ function CustomerAccountsTable({
                       <p className="text-xs text-black/45">{customer.account_phone ?? customer.phone ?? "Sin teléfono"}</p>
                       <p className="mt-1 text-xs text-black/45">Correo: {customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"}</p>
                     </td>
-                    <td className="px-4 py-3">{customer.customer_type}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {customer.primary_badges.map((badge) => (
+                          <span key={badge} className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-medium text-[#b91c25]">
+                            {badge}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-medium">{customer.account_state}</span>
                     </td>
@@ -3022,7 +3189,7 @@ function CustomerSelect({
       className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
     >
       <option value="">Seleccionar cliente</option>
-      {customers.map((customer) => (
+      {customers.filter((customer) => customer.profile_kind === "customer").map((customer) => (
         <option key={customer.id} value={customer.id}>
           {customerDisplayName(customer)} - {customer.phone}
         </option>

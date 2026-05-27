@@ -15,11 +15,18 @@ const CrmManager = nextDynamic(
 export default async function AdminCrmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; task?: string }>;
 }) {
-  await requirePermission("crm:manage");
+  const profile = await requirePermission("crm:manage");
   const params = await searchParams;
-  const crm = await getAdminCrm({ customerPage: 1, followupPage: Number(params.page ?? 1), pageSize: 50 });
+  const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
+  const crm = await getAdminCrm({
+    customerPage: 1,
+    followupPage: Number(params.page ?? 1),
+    pageSize: 50,
+    followupTask: activeTask?.id ?? null,
+    viewerRole: profile.role,
+  });
 
   return (
     <AdminShell title="CRM">
@@ -32,7 +39,7 @@ export default async function AdminCrmPage({
           Panel administrativo
         </Link>
       </div>
-      <CrmManager data={crm} basePath="/admin/crm" focus="followups" />
+      <CrmManager data={crm} basePath="/admin/crm" focus="followups" activeTask={activeTask} />
     </AdminShell>
   );
 }

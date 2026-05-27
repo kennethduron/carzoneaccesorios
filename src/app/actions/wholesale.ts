@@ -64,7 +64,7 @@ async function getFirstPurchaseRequirement(customerId: string): Promise<Wholesal
   const minimum = Math.max(0, Number(settings.first_wholesale_minimum ?? 0));
   const accumulated = (ordersResult.data ?? [])
     .filter((order) => !isCancelledOrder(order.status))
-    .reduce((sum, order) => sum + Number(order.subtotal ?? order.total ?? 0), 0);
+    .reduce((sum, order) => sum + Number(order.total ?? order.subtotal ?? 0), 0);
   const completed = Boolean(historyResult.data);
 
   return {

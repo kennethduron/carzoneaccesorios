@@ -35,6 +35,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const canSeeTechnical = currentRole === "technical_owner";
+  const visibleDashboardCards = canSeeTechnical ? dashboardCards : dashboardCards.filter(([key]) => key !== "backup_cron_status");
   const tabs = useMemo(
     () =>
       [
@@ -319,7 +320,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
       {activeTab === "dashboard" ? (
         <SettingsPanel title="Dashboard" description="Elige qué tarjetas operativas ve el dueño al entrar al panel.">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {dashboardCards.map(([key, label, help]) => (
+            {visibleDashboardCards.map(([key, label, help]) => (
               <Switch
                 key={key}
                 label={label}

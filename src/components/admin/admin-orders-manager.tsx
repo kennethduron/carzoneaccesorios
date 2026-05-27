@@ -1,14 +1,19 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Copy, ExternalLink, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
-import { getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
-import { generateInvoiceFromOrderAction, updateOrderPaymentStatusAction, updateOrderStatusAction } from "@/app/admin/pedidos/actions";
+import { Ban, CheckCircle2, Copy, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { cancelInvoiceAction, getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
+import {
+  correctOrderFiscalCustomerDataAction,
+  generateInvoiceFromOrderAction,
+  updateOrderPaymentStatusAction,
+  updateOrderStatusAction,
+} from "@/app/admin/pedidos/actions";
+import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { AdminOrderRow } from "@/types/orders";
@@ -31,7 +36,10 @@ type AdminOrdersManagerProps = {
   pageSize: number;
   canManagePayments: boolean;
   canGenerateInvoices: boolean;
+  canCancelInvoices: boolean;
+  canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
+  activeTask?: { id: string; label: string } | null;
 };
 
 const paymentLabels: Record<string, string> = {
@@ -56,11 +64,18 @@ export function AdminOrdersManager({
   pageSize,
   canManagePayments,
   canGenerateInvoices,
+  canCancelInvoices,
+  canCorrectInvoices,
   canViewFinancialData,
+  activeTask = null,
 }: AdminOrdersManagerProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id ?? "");
+  const [orderToCancel, setOrderToCancel] = useState<AdminOrderRow | null>(null);
+  const [paymentToReject, setPaymentToReject] = useState<AdminOrderRow | null>(null);
+  const [invoiceToCancel, setInvoiceToCancel] = useState<AdminOrderRow | null>(null);
+  const [orderToCorrectFiscalData, setOrderToCorrectFiscalData] = useState<AdminOrderRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -79,7 +94,9 @@ export function AdminOrdersManager({
     const normalizedQuery = debouncedQuery.trim().toLowerCase();
     return orders.filter((order) => {
       if (!normalizedQuery) return true;
-      return `${order.order_number} ${order.tracking_code ?? ""} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${order.bank_reference_number ?? ""} ${order.invoice_number ?? ""}`
+      return `${order.order_number} ${order.tracking_code ?? ""} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${
+        order.bank_reference_number ?? ""
+      } ${order.invoice_number ?? ""}`
         .toLowerCase()
         .includes(normalizedQuery);
     });
@@ -92,7 +109,7 @@ export function AdminOrdersManager({
 
   function generateInvoice(order: AdminOrderRow) {
     if (!canIssueInvoice(order)) {
-      showAdminMessage("No se puede emitir factura porque el pago aún no ha sido confirmado.", false);
+      showAdminMessage("No se puede emitir factura: valida pago confirmado, pedido activo e inventario no liberado.", false);
       return;
     }
 
@@ -106,12 +123,8 @@ export function AdminOrdersManager({
     });
   }
 
-  function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected") {
-    const rejectionReason =
-      status === "rejected"
-        ? window.prompt("Motivo para rechazar el pago. Se liberará la reserva del pedido.")?.trim() ?? ""
-        : "";
-
+  function updatePaymentStatus(order: AdminOrderRow, status: "approved" | "rejected", reason = "") {
+    const rejectionReason = reason.trim();
     if (status === "rejected" && rejectionReason.length < 4) {
       showAdminMessage("Ingresa un motivo para rechazar el pago.", false);
       return;
@@ -124,9 +137,9 @@ export function AdminOrdersManager({
     });
   }
 
-  function updateOrderStatus(order: AdminOrderRow, status: AdminOrderRow["status"]) {
+  function updateOrderStatus(order: AdminOrderRow, status: AdminOrderRow["status"], reason = "") {
     startTransition(async () => {
-      const result = await updateOrderStatusAction(order.id, status);
+      const result = await updateOrderStatusAction(order.id, status, reason);
       showAdminMessage(result.message ?? "Estado del pedido actualizado.", result.ok);
       if (result.ok) router.refresh();
     });
@@ -151,13 +164,68 @@ export function AdminOrdersManager({
     });
   }
 
+  function cancelInvoice(order: AdminOrderRow, reason: string) {
+    if (!order.invoice_id) return;
+
+    startTransition(async () => {
+      const result = await cancelInvoiceAction(order.invoice_id ?? "", reason);
+      showAdminMessage(result.message, result.ok);
+      if (result.ok) {
+        setInvoiceToCancel(null);
+        router.refresh();
+      }
+    });
+  }
+
+  function correctFiscalCustomerData(input: {
+    orderId: string;
+    customerName: string;
+    customerRtn: string;
+    customerPhone: string;
+    customerEmail: string;
+    customerAddress: string;
+    correctionReason: string;
+  }) {
+    startTransition(async () => {
+      const result = await correctOrderFiscalCustomerDataAction(input);
+      showAdminMessage(result.message, result.ok);
+      if (result.ok) {
+        setOrderToCorrectFiscalData(null);
+        router.refresh();
+      }
+    });
+  }
+
   if (orders.length === 0) {
-    return <section className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">No hay pedidos registrados.</section>;
+    return (
+      <div className="space-y-5">
+        {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
+        <PaginationControls
+          basePath="/admin/pedidos"
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          label="pedidos"
+          params={activeTask ? { task: activeTask.id } : undefined}
+        />
+        <section className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
+          {activeTask ? "No hay resultados para este filtro operativo." : "No hay pedidos registrados."}
+        </section>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-5">
-      <PaginationControls basePath="/admin/pedidos" page={page} pageSize={pageSize} total={total} label="pedidos" />
+      {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
+      <PaginationControls
+        basePath="/admin/pedidos"
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        label="pedidos"
+        params={activeTask ? { task: activeTask.id } : undefined}
+      />
       <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:shadow-md">
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 transition-colors focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15">
@@ -165,7 +233,7 @@ export function AdminOrdersManager({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por pedido, cliente, teléfono, referencia o factura"
+              placeholder="Buscar por pedido, cliente, telefono, referencia o factura"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -183,7 +251,7 @@ export function AdminOrdersManager({
         <div className="rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-4">
             <h2 className="font-semibold">Pedidos</h2>
-            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta página</p>
+            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta pagina</p>
           </div>
           <div className="divide-y divide-black/10">
             {filteredOrders.length === 0 ? <p className="p-4 text-sm text-black/55">No se encontraron resultados.</p> : null}
@@ -201,7 +269,10 @@ export function AdminOrdersManager({
                 <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
                 {canViewFinancialData ? <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p> : null}
                 {canViewFinancialData && order.invoice_number ? (
-                  <p className="mt-1 text-xs font-medium text-[#b91c25]">Factura {order.invoice_number}</p>
+                  <p className="mt-1 text-xs font-medium text-[#b91c25]">
+                    Factura {order.invoice_number}
+                    {order.invoice_status === "anulada" || order.invoice_status === "cancelled" ? " anulada" : ""}
+                  </p>
                 ) : null}
               </button>
             ))}
@@ -213,51 +284,106 @@ export function AdminOrdersManager({
             order={selectedOrder}
             canManagePayments={canManagePayments}
             canGenerateInvoices={canGenerateInvoices}
+            canCancelInvoices={canCancelInvoices}
+            canCorrectInvoices={canCorrectInvoices}
             canViewFinancialData={canViewFinancialData}
             isPending={isPending}
             message={message}
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
             onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
-            onRejectPayment={() => updatePaymentStatus(selectedOrder, "rejected")}
+            onRejectPayment={() => setPaymentToReject(selectedOrder)}
+            onCancelOrder={() => setOrderToCancel(selectedOrder)}
+            onCancelInvoice={() => setInvoiceToCancel(selectedOrder)}
+            onCorrectFiscalData={() => setOrderToCorrectFiscalData(selectedOrder)}
             onUpdateOrderStatus={(status) => updateOrderStatus(selectedOrder, status)}
             onReprintInvoice={() => reprintInvoice(selectedOrder)}
           />
         ) : null}
       </section>
+
+      {orderToCancel ? (
+        <CancelOrderModal
+          order={orderToCancel}
+          isPending={isPending}
+          onClose={() => setOrderToCancel(null)}
+          onCancel={(reason) => {
+            updateOrderStatus(orderToCancel, "cancelado", reason);
+            setOrderToCancel(null);
+          }}
+        />
+      ) : null}
+      {paymentToReject ? (
+        <RejectPaymentModal
+          order={paymentToReject}
+          isPending={isPending}
+          onClose={() => setPaymentToReject(null)}
+          onReject={(reason) => {
+            updatePaymentStatus(paymentToReject, "rejected", reason);
+            setPaymentToReject(null);
+          }}
+        />
+      ) : null}
+      {invoiceToCancel ? (
+        <CancelOrderInvoiceModal
+          order={invoiceToCancel}
+          isPending={isPending}
+          onClose={() => setInvoiceToCancel(null)}
+          onCancel={(reason) => cancelInvoice(invoiceToCancel, reason)}
+        />
+      ) : null}
+      {orderToCorrectFiscalData ? (
+        <CorrectOrderFiscalDataModal
+          order={orderToCorrectFiscalData}
+          isPending={isPending}
+          onClose={() => setOrderToCorrectFiscalData(null)}
+          onCorrect={correctFiscalCustomerData}
+        />
+      ) : null}
     </div>
   );
 }
 
 function canIssueInvoice(order: AdminOrderRow) {
   const paymentConfirmed = isPaymentConfirmed(order.payment_status);
-  const orderReady = ["confirmado", "preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(
-    canonicalOrderStatus(order.status),
-  );
-  return paymentConfirmed && orderReady;
+  const normalizedStatus = canonicalOrderStatus(order.status);
+  const orderReady = ["confirmado", "preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(normalizedStatus);
+  const reservationReleased = ["released", "expired", "canceled"].includes(order.order_reservation_status);
+  const activeInvoice = Boolean(order.invoice_number && !["anulada", "cancelled"].includes(String(order.invoice_status ?? "")));
+  return paymentConfirmed && orderReady && normalizedStatus !== "cancelado" && !reservationReleased && !activeInvoice;
 }
 
 function OrderDetail({
   order,
   canManagePayments,
   canGenerateInvoices,
+  canCancelInvoices,
+  canCorrectInvoices,
   canViewFinancialData,
   isPending,
   message,
   onGenerateInvoice,
   onApprovePayment,
   onRejectPayment,
+  onCancelOrder,
+  onCancelInvoice,
+  onCorrectFiscalData,
   onUpdateOrderStatus,
   onReprintInvoice,
 }: {
   order: AdminOrderRow;
   canManagePayments: boolean;
   canGenerateInvoices: boolean;
+  canCancelInvoices: boolean;
+  canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
   isPending: boolean;
   message: string;
   onGenerateInvoice: () => void;
   onApprovePayment: () => void;
   onRejectPayment: () => void;
+  onCancelOrder: () => void;
+  onCancelInvoice: () => void;
+  onCorrectFiscalData: () => void;
   onUpdateOrderStatus: (status: AdminOrderRow["status"]) => void;
   onReprintInvoice: () => void;
 }) {
@@ -266,91 +392,194 @@ function OrderDetail({
   const isCash = order.payment_method === "cash";
   const isCard = order.payment_method === "card";
   const allowedStatuses = getAllowedOrderStatusOptions(order);
-  const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
-  const canCancelOrder = normalizedStatus !== "cancelado" && allowedStatuses.some((option) => option.value === "cancelado");
+  const manualStatuses = allowedStatuses.filter((option) => option.value !== "cancelado");
   const paymentIsApproved = isPaymentConfirmed(order.payment_status);
   const paymentIsRejected = order.payment_status === "rejected";
   const invoiceCanBeIssued = canIssueInvoice(order);
+  const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
+  const hasActiveInvoice = Boolean(order.invoice_number && !invoiceIsCancelled);
+  const canCancelOrder = normalizedStatus !== "cancelado" && allowedStatuses.some((option) => option.value === "cancelado");
+  const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
+  const canConfirmPayment =
+    canManagePayments &&
+    !paymentIsApproved &&
+    !paymentIsRejected &&
+    !isCard &&
+    normalizedStatus !== "cancelado" &&
+    (isBankTransfer || (isCash && normalizedStatus === "entregado"));
   const paymentActionLabel = isCash ? "Confirmar pago recibido" : isBankTransfer ? "Confirmar pago" : "Confirmar por pasarela";
+  const safeManualStatuses =
+    manualStatuses.length > 0
+      ? manualStatuses
+      : [{ value: normalizedStatus, label: orderStatusLabels[normalizedStatus] ?? String(normalizedStatus) }];
+  const nextStatusActionOptions = [
+    { status: "preparacion", label: "Marcar en preparacion" },
+    { status: "empacado", label: "Marcar empacado" },
+    { status: "enviado", label: "Marcar enviado" },
+    { status: "en_ruta", label: "Marcar en ruta" },
+    { status: "entregado", label: "Marcar entregado" },
+  ] satisfies Array<{ status: AdminOrderRow["status"]; label: string }>;
+  const nextStatusActions = nextStatusActionOptions.filter((action) => allowedStatuses.some((option) => option.value === action.status));
 
   return (
-    <article className="rounded-lg border border-black/10 bg-white p-5">
-      <div className="flex flex-col justify-between gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start">
+    <article className="rounded-lg border border-black/10 bg-white">
+      <div className="flex flex-col justify-between gap-3 border-b border-black/10 p-4 sm:flex-row sm:items-start">
         <div>
           <p className="text-sm text-black/50">{formatHnDateTime(order.created_at)}</p>
-          <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold">
+          <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
             <PackageCheck size={22} />
             {order.order_number}
           </h2>
-          <p className="mt-2 text-sm text-black/60">
+          <p className="mt-1 text-sm text-black/60">
             {order.customer_name} / {order.phone}
           </p>
-          <ContactActions phone={order.phone} customerName={order.customer_name} className="mt-3" />
         </div>
-        <span className="w-fit rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
-          {orderStatusLabels[normalizedStatus] ?? order.status}
-        </span>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          <Badge tone={normalizedStatus === "cancelado" ? "danger" : "default"}>{orderStatusLabels[normalizedStatus] ?? order.status}</Badge>
+          <Badge tone={paymentIsApproved ? "success" : paymentIsRejected ? "danger" : "warning"}>{paymentDisplayLabel(order)}</Badge>
+          {canViewFinancialData ? <Badge tone="neutral">{formatCurrency(order.total)}</Badge> : null}
+        </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <InfoBlock label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
-        <InfoBlock label="Estado del pago" value={paymentDisplayLabel(order)} />
-        <InfoBlock label="Estado del pedido" value={orderStatusLabels[normalizedStatus] ?? order.status} />
-        <InfoBlock label="Inventario" value={reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
-        <div className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 md:col-span-2">
-          <p className="text-sm font-semibold text-[#7c2d12]">Acción recomendada</p>
+      <div className="grid gap-3 border-b border-black/10 p-4 md:grid-cols-2 xl:grid-cols-4">
+        <CompactInfo label="Metodo de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
+        <CompactInfo label="Inventario" value={reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
+        <CompactInfo label="Tracking" value={order.tracking_code ?? "Sin codigo"} />
+        <CompactInfo label="Factura" value={order.invoice_number ? `${order.invoice_number}${invoiceIsCancelled ? " (anulada)" : ""}` : "Sin factura"} />
+      </div>
+
+      <div className="space-y-4 p-4">
+        {normalizedStatus === "cancelado" ? (
+          <div className="rounded-md border border-[#9b341b]/25 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+            Este pedido esta cancelado. No requiere avance operativo.
+          </div>
+        ) : null}
+
+        <div className="rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-3">
+          <p className="text-sm font-semibold text-[#7c2d12]">Accion recomendada</p>
           <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
         </div>
 
-        <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-          <p className="text-sm text-black/50">Código de seguimiento</p>
-          <div className="mt-2 flex items-center gap-2">
-            <p className="font-semibold">{order.tracking_code ?? "Sin código"}</p>
-            {order.tracking_code ? (
-              <button
-                type="button"
-                onClick={async () => navigator.clipboard.writeText(order.tracking_code ?? "")}
-                className="grid size-8 place-items-center rounded-md border border-black/10 bg-white"
-                title="Copiar código"
-                aria-label="Copiar código de seguimiento"
-              >
-                <Copy size={15} />
-              </button>
-            ) : null}
-          </div>
+        <div className="flex flex-wrap gap-2">
+          <ContactActions phone={order.phone} customerName={order.customer_name} />
+          {order.tracking_code ? (
+            <button
+              type="button"
+              onClick={async () => navigator.clipboard.writeText(order.tracking_code ?? "")}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
+            >
+              <Copy size={15} />
+              Copiar tracking
+            </button>
+          ) : null}
         </div>
 
-        <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-          <label>
-            <span className="text-sm text-black/50">Estado del pedido</span>
+        <div className="flex flex-wrap gap-2">
+          {canAcceptOrder ? (
+            <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary">
+              <CheckCircle2 size={17} />
+              Aceptar pedido
+            </Button>
+          ) : null}
+          {nextStatusActions.map((action) => (
+            <Button key={action.status} onClick={() => onUpdateOrderStatus(action.status)} disabled={isPending} variant="ghost">
+              <CheckCircle2 size={17} />
+              {action.label}
+            </Button>
+          ))}
+          {canConfirmPayment ? (
+            <Button onClick={onApprovePayment} disabled={isPending} variant="primary">
+              <CheckCircle2 size={17} />
+              {isPending ? "Procesando..." : paymentActionLabel}
+            </Button>
+          ) : null}
+          {canManagePayments && isBankTransfer && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
+            <Button onClick={onRejectPayment} disabled={isPending} variant="secondary">
+              <XCircle size={17} />
+              Rechazar pago
+            </Button>
+          ) : null}
+          {canGenerateInvoices && !order.invoice_number ? (
+            <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark">
+              <FileText size={17} />
+              {isPending ? "Generando..." : "Generar factura"}
+            </Button>
+          ) : null}
+          {canViewFinancialData && order.invoice_number ? (
+            <Button onClick={onReprintInvoice} variant="ghost">
+              <Printer size={17} />
+              {invoiceIsCancelled ? "Reimprimir anulada" : "Reimprimir factura"}
+            </Button>
+          ) : null}
+          {canCancelInvoices && hasActiveInvoice ? (
+            <Button onClick={onCancelInvoice} disabled={isPending} variant="secondary">
+              <Ban size={17} />
+              Anular factura
+            </Button>
+          ) : null}
+          {canCorrectInvoices && canViewFinancialData ? (
+            <Button onClick={onCorrectFiscalData} disabled={isPending} variant="ghost">
+              <FilePenLine size={17} />
+              Editar datos fiscales
+            </Button>
+          ) : null}
+          {canManagePayments && canCancelOrder ? (
+            <Button onClick={onCancelOrder} disabled={isPending} variant="secondary">
+              <XCircle size={17} />
+              Cancelar pedido
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+          <label className="rounded-md border border-black/10 bg-[#f4f4f5] p-3">
+            <span className="text-xs font-medium uppercase text-black/50">Avance manual seguro</span>
             <select
               value={normalizedStatus}
               onChange={(event) => onUpdateOrderStatus(event.target.value as AdminOrderRow["status"])}
-              disabled={isPending}
+              disabled={isPending || safeManualStatuses.length <= 1}
               className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
-              {allowedStatuses.map((option) => (
+              {safeManualStatuses.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
           </label>
+
+          <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <CompactInfo label="Cliente" value={order.customer_name} />
+            <CompactInfo label="Telefono" value={order.phone} />
+            {order.tracking_code ? <CompactInfo label="Codigo" value={order.tracking_code} /> : null}
+            {canViewFinancialData ? <CompactInfo label="RTN" value={order.fiscal_customer_rtn ?? "Sin RTN"} /> : null}
+          </div>
         </div>
 
         {canViewFinancialData ? (
-          <>
-            <InfoBlock label="Precio usado" value={order.price_mode === "wholesale" ? "Precio mayorista" : "Precio al detalle"} />
-            <InfoBlock label="RTN del cliente" value={order.customer_rtn ?? "Sin RTN"} />
-            {order.invoice_number ? <InfoBlock label="Factura fiscal" value={order.invoice_number} /> : null}
+          <details className="rounded-md border border-black/10 bg-white p-3" open={isBankTransfer || Boolean(order.invoice_number)}>
+            <summary className="cursor-pointer text-sm font-semibold">Detalles operativos y fiscales</summary>
+            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+              <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
+              <CompactInfo label="Subtotal" value={formatCurrency(order.subtotal)} />
+              <CompactInfo label="ISV" value={formatCurrency(order.tax)} />
+              <CompactInfo label="Total" value={formatCurrency(order.total)} />
+              <CompactInfo label="Envio" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
+              <CompactInfo label="Contra entrega" value={formatCurrency(order.cash_on_delivery_fee)} />
+              <CompactInfo label="Recargo minimo" value={formatCurrency(order.small_order_fee)} />
+              <CompactInfo label="Descuentos" value={order.discount_total > 0 ? `-${formatCurrency(order.discount_total)}` : formatCurrency(0)} />
+              <CompactInfo label="Otros cargos" value={formatCurrency(order.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))} />
+              <CompactInfo label="Nombre fiscal" value={order.fiscal_customer_name} />
+              <CompactInfo label="RTN fiscal" value={order.fiscal_customer_rtn ?? "Sin RTN"} />
+              <CompactInfo label="Direccion fiscal" value={order.fiscal_customer_address ?? "Sin direccion"} />
+              <CompactInfo label="Factura fiscal" value={order.invoice_number ?? "Sin factura"} />
+              <CompactInfo label="Estado factura" value={invoiceIsCancelled ? "Factura anulada" : order.invoice_number ? "Factura emitida" : "Sin factura"} />
+            </div>
             {isBankTransfer ? (
-              <>
-                <div className="rounded-lg border border-[#e4252c]/25 bg-[#fff1f2] p-4">
-                  <p className="text-sm text-[#7f1d1d]/70">Referencia bancaria</p>
-                  <p className="mt-1 font-semibold text-[#7f1d1d]">{order.bank_reference_number ?? "Sin referencia"}</p>
-                </div>
-                <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-                  <p className="text-sm text-black/50">Comprobante</p>
+              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                <CompactInfo label="Referencia bancaria" value={order.bank_reference_number ?? "Sin referencia"} />
+                <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
+                  <p className="text-xs uppercase text-black/45">Comprobante</p>
                   {order.transfer_receipt_url ? (
                     <a
                       href={order.transfer_receipt_url}
@@ -365,114 +594,392 @@ function OrderDetail({
                     <p className="mt-2 text-sm text-black/65">Sin comprobante adjunto.</p>
                   )}
                 </div>
-              </>
+              </div>
             ) : null}
-          </>
-        ) : null}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        {canAcceptOrder ? (
-          <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary">
-            <CheckCircle2 size={17} />
-            Aceptar pedido
-          </Button>
-        ) : null}
-        {canGenerateInvoices && !order.invoice_number ? (
-          <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark">
-            <FileText size={17} />
-            {isPending ? "Generando..." : "Generar factura"}
-          </Button>
-        ) : null}
-        {canViewFinancialData && order.invoice_number ? (
-          <Button onClick={onReprintInvoice} variant="ghost">
-            <Printer size={17} />
-            Reimprimir factura
-          </Button>
-        ) : null}
-        {canViewFinancialData && order.invoice_number ? (
-          <Link
-            href="/admin/facturas"
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
-          >
-            <FileText size={17} />
-            Corregir datos fiscales
-          </Link>
-        ) : null}
-        {canManagePayments ? (
-          <>
-            <Button onClick={onApprovePayment} disabled={isPending || paymentIsApproved || isCard} variant="primary">
-              <CheckCircle2 size={17} />
-              {isPending ? "Procesando..." : paymentActionLabel}
-            </Button>
-            {isBankTransfer ? (
-              <Button onClick={onRejectPayment} disabled={isPending || paymentIsRejected} variant="secondary">
-                <XCircle size={17} />
-                {isPending ? "Procesando..." : "Rechazar pago"}
-              </Button>
+            {invoiceIsCancelled ? (
+              <p className="mt-3 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+                Factura anulada. Motivo: {order.invoice_cancellation_reason ?? "motivo registrado en auditoria"}.
+              </p>
             ) : null}
-            {canCancelOrder ? (
-              <Button onClick={() => onUpdateOrderStatus("cancelado")} disabled={isPending} variant="secondary">
-                <XCircle size={17} />
-                Cancelar pedido
-              </Button>
-            ) : null}
-          </>
+          </details>
         ) : null}
-      </div>
 
-      {isCard && !paymentIsApproved ? (
-        <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-          Los pagos con tarjeta se confirman únicamente mediante pasarela o webhook autorizado.
-        </p>
-      ) : null}
-      {canGenerateInvoices && !order.invoice_number && !invoiceCanBeIssued ? (
-        <p className="mt-3 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-          No se puede emitir factura porque el pago aún no ha sido confirmado.
-        </p>
-      ) : null}
-      {message ? <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
-
-      <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
-        <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos</div>
-        <div className="divide-y divide-black/10">
-          {order.order_items.map((item) => (
-            <div key={`${order.id}-${item.id}`} className="flex justify-between gap-3 p-4 text-sm">
-              <span>
-                {item.quantity} x {item.product_name}
-                {canViewFinancialData ? (
-                  <span className="ml-2 text-black/45">({item.applied_price_mode === "wholesale" ? "mayorista" : "detalle"})</span>
-                ) : null}
-              </span>
-              {canViewFinancialData ? <span className="font-medium">{formatCurrency(item.line_total)}</span> : null}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {canViewFinancialData ? (
-        <>
-          <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            Validar tratamiento fiscal de envío y comisión con la contadora.
+        {isCard && !paymentIsApproved ? (
+          <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+            Los pagos con tarjeta quedan pendientes hasta integrar una pasarela real; no se confirman manualmente.
           </p>
-          <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
-            <p>Subtotal: {formatCurrency(order.subtotal)}</p>
-            <p>ISV: {formatCurrency(order.tax)}</p>
-            <p>Envío: {order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)}</p>
-            <p>Pago al recibir: {formatCurrency(order.cash_on_delivery_fee)}</p>
-            <p className="font-semibold">Total: {formatCurrency(order.total)}</p>
+        ) : null}
+        {isCash && !paymentIsApproved && normalizedStatus !== "entregado" && normalizedStatus !== "cancelado" ? (
+          <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+            El pago en efectivo se confirma despues de marcar el pedido como entregado.
+          </p>
+        ) : null}
+        {canGenerateInvoices && !order.invoice_number && !invoiceCanBeIssued ? (
+          <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+            La factura se habilita solo con pago confirmado, pedido activo e inventario no liberado.
+          </p>
+        ) : null}
+        {message ? <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
+
+        <div className="overflow-hidden rounded-lg border border-black/10">
+          <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos</div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left text-sm">
+              <thead className="text-xs uppercase text-black/50">
+                <tr>
+                  <th className="px-3 py-2">Producto</th>
+                  <th className="px-3 py-2">SKU</th>
+                  <th className="px-3 py-2">Cant.</th>
+                  {canViewFinancialData ? <th className="px-3 py-2 text-right">Total</th> : null}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {order.order_items.map((item) => (
+                  <tr key={`${order.id}-${item.id}`}>
+                    <td className="px-3 py-2">{item.product_name}</td>
+                    <td className="px-3 py-2 text-black/55">{item.sku}</td>
+                    <td className="px-3 py-2">{item.quantity}</td>
+                    {canViewFinancialData ? <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.line_total)}</td> : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </>
-      ) : null}
+        </div>
+
+        {canViewFinancialData ? (
+          <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+            Validar tratamiento fiscal de envio y comision con la contadora.
+          </p>
+        ) : null}
+      </div>
     </article>
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
+function CancelOrderModal({
+  order,
+  isPending,
+  onCancel,
+  onClose,
+}: {
+  order: AdminOrderRow;
+  isPending: boolean;
+  onCancel: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === order.order_number;
+
   return (
-    <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-      <p className="text-sm text-black/50">{label}</p>
-      <p className="mt-1 font-semibold">{value}</p>
+    <ConfirmReasonModal
+      title="Cancelar pedido"
+      identifier={order.order_number}
+      reasonLabel="Motivo de cancelacion"
+      description="El pedido quedara como estado final y la reserva se liberara si aplica."
+      icon={<XCircle size={18} />}
+      reason={reason}
+      confirmation={confirmation}
+      isPending={isPending}
+      canSubmit={canSubmit}
+      submitLabel="Cancelar pedido"
+      onReasonChange={setReason}
+      onConfirmationChange={setConfirmation}
+      onSubmit={() => onCancel(reason)}
+      onClose={onClose}
+    />
+  );
+}
+
+function CorrectOrderFiscalDataModal({
+  order,
+  isPending,
+  onCorrect,
+  onClose,
+}: {
+  order: AdminOrderRow;
+  isPending: boolean;
+  onCorrect: (input: {
+    orderId: string;
+    customerName: string;
+    customerRtn: string;
+    customerPhone: string;
+    customerEmail: string;
+    customerAddress: string;
+    correctionReason: string;
+  }) => void;
+  onClose: () => void;
+}) {
+  const [customerName, setCustomerName] = useState(order.fiscal_customer_name);
+  const [customerRtn, setCustomerRtn] = useState(order.fiscal_customer_rtn ?? "");
+  const [customerPhone, setCustomerPhone] = useState(order.fiscal_customer_phone ?? order.phone ?? "");
+  const [customerEmail, setCustomerEmail] = useState(order.fiscal_customer_email ?? order.email ?? "");
+  const [customerAddress, setCustomerAddress] = useState(order.fiscal_customer_address ?? order.delivery_address ?? "");
+  const [correctionReason, setCorrectionReason] = useState("");
+  const normalizedRtn = customerRtn.trim().replace(/[\s-]/g, "");
+  const rtnIsValid = normalizedRtn.length === 0 || /^\d{14}$/.test(normalizedRtn);
+  const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
+  const canSubmit = customerName.trim().length > 0 && correctionReason.trim().length >= 8 && rtnIsValid && !invoiceIsCancelled;
+
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
+      <section className="mx-auto my-8 max-w-3xl rounded-lg bg-white p-5 text-[#080808]">
+        <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#b91c25]">
+              <FilePenLine size={18} />
+              Corregir datos fiscales
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold">{order.order_number}</h2>
+            <p className="mt-1 text-sm text-black/55">
+              {order.invoice_number ? `Factura ${order.invoice_number}` : "Pedido sin factura emitida"}
+            </p>
+          </div>
+          <Button onClick={onClose} variant="ghost">
+            Cerrar
+          </Button>
+        </div>
+
+        {invoiceIsCancelled ? (
+          <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+            No se pueden corregir datos de una factura anulada.
+          </p>
+        ) : (
+          <>
+            <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              Esta accion actualizara los datos fiscales del cliente. Si la factura ya fue emitida, se mantendra el mismo
+              numero fiscal y quedara registrada en auditoria.
+            </p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Nombre / Razon social</span>
+                <Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN del cliente</span>
+                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
+                {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 digitos.</p> : null}
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Telefono</span>
+                <Input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
+                <Input value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Direccion fiscal</span>
+                <Input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de correccion</span>
+                <textarea
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+                  placeholder="Ej. Cliente solicito corregir RTN."
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button onClick={onClose} variant="ghost">
+                Cancelar
+              </Button>
+              <Button
+                onClick={() =>
+                  onCorrect({
+                    orderId: order.id,
+                    customerName,
+                    customerRtn,
+                    customerPhone,
+                    customerEmail,
+                    customerAddress,
+                    correctionReason,
+                  })
+                }
+                disabled={isPending || !canSubmit}
+                variant="primary"
+              >
+                {isPending ? "Guardando..." : "Guardar correccion"}
+              </Button>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
+}
+
+function RejectPaymentModal({
+  order,
+  isPending,
+  onReject,
+  onClose,
+}: {
+  order: AdminOrderRow;
+  isPending: boolean;
+  onReject: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const canSubmit = reason.trim().length >= 4 && confirmation.trim() === order.order_number;
+
+  return (
+    <ConfirmReasonModal
+      title="Rechazar pago"
+      identifier={order.order_number}
+      reasonLabel="Motivo del rechazo"
+      description="El pago rechazado cancelara el pedido y liberara la reserva segun la logica de inventario."
+      icon={<XCircle size={18} />}
+      reason={reason}
+      confirmation={confirmation}
+      isPending={isPending}
+      canSubmit={canSubmit}
+      submitLabel="Rechazar pago"
+      onReasonChange={setReason}
+      onConfirmationChange={setConfirmation}
+      onSubmit={() => onReject(reason)}
+      onClose={onClose}
+    />
+  );
+}
+
+function CancelOrderInvoiceModal({
+  order,
+  isPending,
+  onCancel,
+  onClose,
+}: {
+  order: AdminOrderRow;
+  isPending: boolean;
+  onCancel: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const invoiceNumber = order.invoice_number ?? "";
+  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === invoiceNumber;
+
+  return (
+    <ConfirmReasonModal
+      title="Anular factura"
+      identifier={invoiceNumber}
+      reasonLabel="Motivo de anulacion"
+      description="No se elimina la factura: conserva numero fiscal, CAI, fecha, motivo y auditoria."
+      icon={<Ban size={18} />}
+      reason={reason}
+      confirmation={confirmation}
+      isPending={isPending}
+      canSubmit={canSubmit}
+      submitLabel="Anular factura"
+      onReasonChange={setReason}
+      onConfirmationChange={setConfirmation}
+      onSubmit={() => onCancel(reason)}
+      onClose={onClose}
+    />
+  );
+}
+
+function ConfirmReasonModal({
+  title,
+  identifier,
+  reasonLabel,
+  description,
+  icon,
+  reason,
+  confirmation,
+  isPending,
+  canSubmit,
+  submitLabel,
+  onReasonChange,
+  onConfirmationChange,
+  onSubmit,
+  onClose,
+}: {
+  title: string;
+  identifier: string;
+  reasonLabel: string;
+  description: string;
+  icon: React.ReactNode;
+  reason: string;
+  confirmation: string;
+  isPending: boolean;
+  canSubmit: boolean;
+  submitLabel: string;
+  onReasonChange: (value: string) => void;
+  onConfirmationChange: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
+      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+        <div className="border-b border-black/10 pb-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[#9b341b]">
+            {icon}
+            {title}
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold">{identifier}</h2>
+          <p className="mt-2 text-sm text-black/60">{description}</p>
+        </div>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">{reasonLabel}</span>
+          <textarea
+            value={reason}
+            onChange={(event) => onReasonChange(event.target.value)}
+            className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+          />
+        </label>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmacion fuerte</span>
+          <input
+            value={confirmation}
+            onChange={(event) => onConfirmationChange(event.target.value)}
+            placeholder={`Escribe ${identifier}`}
+            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+          />
+        </label>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button onClick={onClose} variant="ghost">
+            Cerrar
+          </Button>
+          <Button onClick={onSubmit} disabled={isPending || !canSubmit} variant="secondary">
+            {submitLabel}
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CompactInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
+      <p className="text-xs uppercase text-black/45">{label}</p>
+      <p className="mt-1 truncate font-medium" title={value}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function Badge({
+  children,
+  tone = "default",
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "success" | "warning" | "danger" | "neutral";
+}) {
+  const classes = {
+    default: "bg-[#fff1f2] text-[#b91c25]",
+    success: "bg-[#ecfdf5] text-[#047857]",
+    warning: "bg-[#fffbeb] text-[#92400e]",
+    danger: "bg-[#fff7ed] text-[#9b341b]",
+    neutral: "bg-[#f4f4f5] text-black/70",
+  };
+
+  return <span className={`w-fit rounded-md px-3 py-2 text-sm font-medium ${classes[tone]}`}>{children}</span>;
 }

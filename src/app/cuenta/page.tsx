@@ -170,7 +170,7 @@ export default async function CuentaPage({
                 <p className="text-sm text-black/50">Estado mayorista</p>
                 <h2 className="mt-1 text-xl font-semibold">{wholesaleLifecycleStatus}</h2>
                 <p className="mt-2 text-sm text-black/60">
-                  La primera compra mayorista usa el subtotal de productos, sin envio ni comision contra entrega.
+                  Tu primera compra mayorista debe alcanzar un total final de L 10,000.00 o más.
                 </p>
               </div>
               <Link href="/catalogo" className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white">
@@ -181,9 +181,9 @@ export default async function CuentaPage({
               <div className="mt-4">
                 <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Info label="Monto minimo" value={formatCurrency(firstPurchaseRequirement.minimum)} />
-                  <Info label="Monto acumulado" value={formatCurrency(firstPurchaseRequirement.accumulated)} />
-                  <Info label="Monto faltante" value={formatCurrency(firstPurchaseRequirement.missing)} />
+                  <Info label="Total final minimo" value={formatCurrency(firstPurchaseRequirement.minimum)} />
+                  <Info label="Total final acumulado" value={formatCurrency(firstPurchaseRequirement.accumulated)} />
+                  <Info label="Total final faltante" value={formatCurrency(firstPurchaseRequirement.missing)} />
                 </div>
               </div>
             ) : (

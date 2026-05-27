@@ -33,6 +33,9 @@ function toFiscalInvoice(invoice: StoreInvoice) {
     tax: invoice.isv,
     shippingFee: invoice.shippingFee,
     cashOnDeliveryFee: invoice.cashOnDeliveryFee,
+    smallOrderFee: invoice.smallOrderFee,
+    discountTotal: invoice.discountTotal,
+    additionalFees: invoice.additionalFees,
     total: invoice.total,
     items: invoice.items.map((item) => ({
       sku: item.sku,

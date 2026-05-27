@@ -72,7 +72,9 @@ const processSteps = [
 ];
 
 export default async function AdminGuidePage() {
-  await requirePermission("admin:access");
+  const profile = await requirePermission("admin:access");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const visibleProcessSteps = canViewTechnical ? processSteps : processSteps.filter(([title]) => !/backup|backups/i.test(title));
 
   return (
     <AdminShell title="Guía rápida">
@@ -105,7 +107,7 @@ export default async function AdminGuidePage() {
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <h2 className="text-xl font-semibold">Flujos principales</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {processSteps.map(([title, href, detail]) => (
+            {visibleProcessSteps.map(([title, href, detail]) => (
               <Link
                 key={title}
                 href={href}

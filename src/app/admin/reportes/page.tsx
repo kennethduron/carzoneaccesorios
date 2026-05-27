@@ -1,11 +1,14 @@
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
+import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
-import { requirePermission } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminReports } from "@/services/supabase/admin-reports.service";
+import type { AppRole } from "@/types/auth";
+import type { ReportFilters, ReportPaymentMethod } from "@/types/reports";
 import { getFiscalAlerts } from "@/utils/fiscal";
 
 export const dynamic = "force-dynamic";
@@ -18,15 +21,37 @@ const ReportsDashboard = nextDynamic(
 export default async function AdminReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePermission("reports:read");
+  const profile = await requireSession();
+  const fullAccessRoles = new Set<AppRole>(["technical_owner", "admin", "business_owner", "contadora"]);
+  const accessMode = fullAccessRoles.has(profile.role) ? "full" : profile.role === "vendedor" ? "limited" : null;
+
+  if (!accessMode || (accessMode === "full" && !profile.permissions.includes("reports:read") && profile.role !== "admin")) {
+    redirect("/sin-permiso");
+  }
+
   const params = await searchParams;
+  const filters: ReportFilters = {
+    page: Number(readParam(params.page) ?? 1),
+    pageSize: 50,
+    startDate: readParam(params.startDate),
+    endDate: readParam(params.endDate),
+    customer: readParam(params.customer),
+    product: readParam(params.product),
+    sku: readParam(params.sku),
+    invoice: accessMode === "full" ? readParam(params.invoice) : "",
+    paymentMethod: readParam(params.paymentMethod) as ReportPaymentMethod | "all" | undefined,
+    priceMode: readParam(params.priceMode) as ReportFilters["priceMode"],
+    invoiceStatus: accessMode === "full" ? (readParam(params.invoiceStatus) as ReportFilters["invoiceStatus"]) : "all",
+    orderStatus: readParam(params.orderStatus) as ReportFilters["orderStatus"],
+  };
+
   const [reports, fiscalSettings] = await Promise.all([
-    getAdminReports({ page: Number(params.page ?? 1), pageSize: 50 }),
-    getFiscalSettings(),
+    getAdminReports(filters),
+    accessMode === "full" ? getFiscalSettings() : Promise.resolve(null),
   ]);
-  const fiscalAlerts = getFiscalAlerts(fiscalSettings, reports.invoices);
+  const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, reports.invoices) : [];
 
   return (
     <AdminShell title="Reportes">
@@ -45,15 +70,18 @@ export default async function AdminReportsPage({
         </div>
       ) : null}
       <section className="mb-5 rounded-lg border border-[#f2b8a0] bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
-        <p className="font-semibold">Reporte preliminar / paginado</p>
+        <p className="font-semibold">Reportes paginados con filtros server-side</p>
         <p className="mt-1">
-          Esta vista calcula indicadores sobre la página actual, hasta {reports.pageSize} registros por módulo. No debe
-          usarse como reporte contable final ni como cierre fiscal hasta mover las agregaciones a consultas SQL/RPC por
-          rango completo y validarlas con contabilidad.
+          Esta vista carga hasta {reports.pageSize} registros por tabla y aplica filtros antes de traer datos al panel.
+          Para cierres contables grandes, usa filtros por fecha, cliente, factura, producto o metodo de pago y exporta
+          cada segmento.
         </p>
       </section>
-      <ReportsDashboard data={reports} fiscalSettings={fiscalSettings} />
+      <ReportsDashboard data={reports} fiscalSettings={fiscalSettings} accessMode={accessMode} />
     </AdminShell>
   );
 }
 
+function readParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}

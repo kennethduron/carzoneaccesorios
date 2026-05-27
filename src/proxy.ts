@@ -4,7 +4,7 @@ import type { AppRole } from "@/types/auth";
 
 const protectedRoutes = ["/cuenta", "/mis-pedidos", "/facturas"];
 const adminRoutes = ["/admin"];
-const adminAccessRoles: AppRole[] = ["technical_owner", "admin", "business_owner", "vendedor", "bodega", "contadora"];
+const adminAccessRoles: AppRole[] = ["technical_owner", "admin", "business_owner", "vendedor", "bodega", "contadora", "soporte"];
 
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next({

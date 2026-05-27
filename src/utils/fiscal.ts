@@ -5,6 +5,9 @@ export type FiscalInvoiceValidation =
   | { ok: true; invoiceNumber: string; nextInvoiceNumber: string }
   | { ok: false; message: string };
 
+const HONDURAS_TIME_ZONE = "America/Tegucigalpa";
+const millisecondsPerDay = 24 * 60 * 60 * 1000;
+
 type FiscalInvoiceAlertSource = {
   status: InvoiceStatus | string;
   invoice_number?: string;
@@ -29,17 +32,56 @@ export function incrementInvoiceNumber(value: string) {
   return `${value.slice(0, match.index)}${next}${value.slice((match.index ?? 0) + current.length)}`;
 }
 
-function daysUntil(value: string) {
-  const deadline = new Date(`${value}T23:59:59`);
-  if (Number.isNaN(deadline.getTime())) {
+function normalizeFiscalDateKey(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) {
     return null;
   }
 
-  const millisecondsPerDay = 24 * 60 * 60 * 1000;
-  return Math.ceil((deadline.getTime() - Date.now()) / millisecondsPerDay);
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    utcDate.getUTCFullYear() !== year ||
+    utcDate.getUTCMonth() !== month - 1 ||
+    utcDate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${yearText}-${monthText}-${dayText}`;
 }
 
-export function validateFiscalInvoiceSettings(settings: FiscalSettings): FiscalInvoiceValidation {
+function fiscalDateOrdinal(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / millisecondsPerDay);
+}
+
+export function getHondurasDateKey(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: HONDURAS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+export function daysUntilFiscalDeadline(value: string, now = new Date()) {
+  const deadlineKey = normalizeFiscalDateKey(value);
+  if (!deadlineKey) {
+    return null;
+  }
+
+  return fiscalDateOrdinal(deadlineKey) - fiscalDateOrdinal(getHondurasDateKey(now));
+}
+
+export function validateFiscalInvoiceSettings(settings: FiscalSettings, now = new Date()): FiscalInvoiceValidation {
   const cai = settings.cai.trim();
   const invoiceNumber = settings.current_invoice_number.trim();
   const rangeStartText = settings.invoice_range_start.trim();
@@ -71,15 +113,19 @@ export function validateFiscalInvoiceSettings(settings: FiscalSettings): FiscalI
     return { ok: false, message: "Error fiscal: configura la fecha límite de emisión del CAI." };
   }
 
-  const deadline = new Date(`${settings.emission_deadline}T23:59:59`);
-  if (Number.isNaN(deadline.getTime()) || deadline.getTime() < Date.now()) {
+  const remainingDays = daysUntilFiscalDeadline(settings.emission_deadline, now);
+  if (remainingDays === null || remainingDays < 0) {
     return { ok: false, message: "Error fiscal: la fecha límite de emisión del CAI está vencida." };
   }
 
   return { ok: true, invoiceNumber, nextInvoiceNumber: incrementInvoiceNumber(invoiceNumber) };
 }
 
-export function getFiscalAlerts(settings: FiscalSettings, invoices: FiscalInvoiceAlertSource[] = []): FiscalAlert[] {
+export function getFiscalAlerts(
+  settings: FiscalSettings,
+  invoices: FiscalInvoiceAlertSource[] = [],
+  now = new Date(),
+): FiscalAlert[] {
   const alerts: FiscalAlert[] = [];
   const cai = settings.cai.trim();
   const rangeStartText = settings.invoice_range_start.trim();
@@ -131,7 +177,7 @@ export function getFiscalAlerts(settings: FiscalSettings, invoices: FiscalInvoic
       message: "Error fiscal: la fecha límite de emisión del CAI no está configurada.",
     });
   } else {
-    const remainingDays = daysUntil(settings.emission_deadline);
+    const remainingDays = daysUntilFiscalDeadline(settings.emission_deadline, now);
     if (remainingDays === null) {
       alerts.push({
         type: "danger",
@@ -140,7 +186,17 @@ export function getFiscalAlerts(settings: FiscalSettings, invoices: FiscalInvoic
     } else if (remainingDays < 0) {
       alerts.push({
         type: "danger",
-        message: "La fecha límite de emisión está vencida.",
+        message: "La fecha límite de emisión del CAI está vencida. Actualiza el CAI antes de emitir facturas.",
+      });
+    } else if (remainingDays === 0) {
+      alerts.push({
+        type: "warning",
+        message: "La fecha límite de emisión vence hoy. Este es el último día para emitir facturas con este CAI.",
+      });
+    } else if (remainingDays === 1) {
+      alerts.push({
+        type: "warning",
+        message: "La fecha límite de emisión está próxima: falta 1 día.",
       });
     } else if (remainingDays <= 15) {
       alerts.push({

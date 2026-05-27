@@ -1,6 +1,7 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { AdminInvoiceItem, InvoiceStatus, StoreInvoice } from "@/types/invoices";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
+import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
 export type CustomerOrderInvoice = {
   id: string;
@@ -26,6 +27,9 @@ export type CustomerOrderInvoice = {
   tax: number;
   shipping_fee: number;
   cash_on_delivery_fee: number;
+  small_order_fee: number;
+  discount_total: number;
+  additional_fees: ReturnType<typeof normalizeAdditionalFees>;
   total: number;
   price_mode: StoreInvoice["priceMode"];
   issued_at: string | null;
@@ -41,7 +45,14 @@ export type CustomerOrderInvoice = {
 
 export type CustomerOrderRow = Omit<
   AdminOrderRow,
-  "order_items" | "invoice_id" | "invoice_number" | "invoice_issued_at" | "customer_rtn"
+  | "order_items"
+  | "invoice_id"
+  | "invoice_number"
+  | "invoice_issued_at"
+  | "invoice_status"
+  | "invoice_cancelled_at"
+  | "invoice_cancellation_reason"
+  | "customer_rtn"
 > & {
   order_items: AdminOrderItem[];
   invoices: CustomerOrderInvoice[];
@@ -78,11 +89,16 @@ type CustomerAccountSummaryRow = {
 
 type CustomerOrderQueryRow = Omit<
   CustomerOrderRow,
-  "subtotal" | "tax" | "shipping_total" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices"
+  "subtotal" | "tax" | "shipping_fee" | "shipping_total" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices"
 > & {
   subtotal: unknown;
   tax: unknown;
+  shipping_fee: unknown;
   shipping_total: unknown;
+  cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   total: unknown;
   order_items: Array<Omit<AdminOrderItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
     quantity: unknown;
@@ -124,6 +140,9 @@ type CustomerInvoiceQueryRow = {
   due_at: string | null;
   shipping_fee: unknown;
   cash_on_delivery_fee: unknown;
+  small_order_fee: unknown;
+  discount_total: unknown;
+  additional_fees: unknown;
   status: InvoiceStatus;
   price_mode: StoreInvoice["priceMode"];
   subtotal: unknown;
@@ -193,7 +212,12 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
     ...row,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
+    shipping_fee: toNumber(row.shipping_fee),
     shipping_total: toNumber(row.shipping_total),
+    cash_on_delivery_fee: toNumber(row.cash_on_delivery_fee),
+    small_order_fee: toNumber(row.small_order_fee),
+    discount_total: toNumber(row.discount_total),
+    additional_fees: normalizeAdditionalFees(row.additional_fees),
     total: toNumber(row.total),
     payment_status: normalizePaymentStatus(row.payments),
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
@@ -204,6 +228,9 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
       tax: toNumber(invoice.tax),
       shipping_fee: toNumber(invoice.shipping_fee),
       cash_on_delivery_fee: toNumber(invoice.cash_on_delivery_fee),
+      small_order_fee: toNumber(invoice.small_order_fee),
+      discount_total: toNumber(invoice.discount_total),
+      additional_fees: normalizeAdditionalFees(invoice.additional_fees),
       total: toNumber(invoice.total),
       invoice_items: (invoice.invoice_items ?? []).map((item) => ({
         ...item,
@@ -262,6 +289,9 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     isv: toNumber(row.tax),
     shippingFee: toNumber(row.shipping_fee),
     cashOnDeliveryFee: toNumber(row.cash_on_delivery_fee),
+    smallOrderFee: toNumber(row.small_order_fee),
+    discountTotal: toNumber(row.discount_total),
+    additionalFees: normalizeAdditionalFees(row.additional_fees),
     total: toNumber(row.total),
     priceMode: row.price_mode,
     paymentMethod: paymentMethodLabel(row.orders?.payment_method ?? "cash"),
@@ -375,6 +405,11 @@ export async function getCustomerOrdersPage(
       subtotal,
       tax,
       shipping_total,
+      shipping_fee,
+      cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
       total,
       status,
       created_at,
@@ -415,6 +450,9 @@ export async function getCustomerOrdersPage(
         tax,
         shipping_fee,
         cash_on_delivery_fee,
+        small_order_fee,
+        discount_total,
+        additional_fees,
         total,
         price_mode,
         issued_at,
@@ -505,6 +543,9 @@ export async function getCustomerIssuedInvoicesPage(
       tax,
       shipping_fee,
       cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
       total,
       issued_at,
       cancelled_at,

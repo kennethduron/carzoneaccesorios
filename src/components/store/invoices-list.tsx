@@ -3,10 +3,11 @@ import { FileText } from "lucide-react";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import type { StoreInvoice } from "@/types/invoices";
+import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatCurrency } from "@/utils/pricing";
 
 function isIssued(invoice: StoreInvoice) {
-  return ["emitida", "issued", "paid"].includes(invoice.status);
+  return ["emitida", "issued", "paid", "anulada", "cancelled"].includes(invoice.status);
 }
 
 export function InvoicesList({
@@ -57,11 +58,19 @@ export function InvoicesList({
             </span>
           </div>
 
-          <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
-            <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
-            <p>ISV: {formatCurrency(invoice.isv)}</p>
-            <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
-            <p>{invoice.priceMode === "wholesale" ? "Mayorista" : "Al detalle"}</p>
+          <div className="mt-4 rounded-md border border-black/10 bg-white p-3 text-sm">
+            <p className="font-semibold">Resumen financiero</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-4">
+              <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
+              <p>ISV: {formatCurrency(invoice.isv)}</p>
+              <p>Envio: {invoice.shippingFee === 0 ? "Gratis" : formatCurrency(invoice.shippingFee)}</p>
+              <p>Contra entrega: {formatCurrency(invoice.cashOnDeliveryFee)}</p>
+              <p>Recargo minimo: {formatCurrency(invoice.smallOrderFee)}</p>
+              <p>Descuentos: {invoice.discountTotal > 0 ? `-${formatCurrency(invoice.discountTotal)}` : formatCurrency(0)}</p>
+              <p>Otros cargos: {formatCurrency(additionalFeesTotal(invoice.additionalFees))}</p>
+              <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
+            </div>
+            <p className="mt-2 text-black/60">{invoice.priceMode === "wholesale" ? "Mayorista" : "Al detalle"}</p>
           </div>
 
           <div className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
@@ -81,11 +90,12 @@ export function InvoicesList({
                 Ver pedido
               </Link>
             </div>
-          ) : (
+          ) : null}
+          {invoice.status === "anulada" || invoice.status === "cancelled" ? (
             <p className="mt-4 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
-              Factura anulada. Contacta a la empresa.
+              Factura anulada. El PDF se descarga con marca ANULADA.
             </p>
-          )}
+          ) : null}
         </article>
       ))}
       {page && pageSize && total !== undefined ? (

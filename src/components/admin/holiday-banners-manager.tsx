@@ -6,6 +6,7 @@ import {
   deleteHolidayBannerAction,
   deleteUploadedHolidayBannerMediaAction,
   reviewHolidayBannerIntegrityAction,
+  saveTechnicalAlertSettingsAction,
   saveHolidayBannerAction,
   toggleHolidayBannerAction,
   updateHolidayBannerPriorityAction,
@@ -21,13 +22,16 @@ import type {
   HolidayBannerAuditEntry,
   HolidayBannerInput,
   HolidayBannerStorageSummary,
+  TechnicalAlertSettings,
 } from "@/types/settings";
 import { getBannerPosterUrl } from "@/utils/image-optimization";
 
 type HolidayBannersManagerProps = {
   banners: HolidayBanner[];
   auditEntries: HolidayBannerAuditEntry[];
-  storageSummary: HolidayBannerStorageSummary;
+  storageSummary: HolidayBannerStorageSummary | null;
+  technicalAlertSettings: TechnicalAlertSettings | null;
+  canViewTechnical: boolean;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -47,6 +51,7 @@ const emptyBanner: HolidayBannerInput = {
   media_height: null,
   media_duration_seconds: null,
   media_thumbnail_url: "",
+  media_asset_token: "",
   image_url: "",
   start_date: today,
   end_date: today,
@@ -85,6 +90,7 @@ function fromBanner(banner: HolidayBanner): HolidayBannerInput {
     media_height: banner.media_height,
     media_duration_seconds: banner.media_duration_seconds,
     media_thumbnail_url: banner.media_thumbnail_url ?? "",
+    media_asset_token: "",
     image_url: banner.image_url ?? "",
     start_date: banner.start_date,
     end_date: banner.end_date,
@@ -120,8 +126,9 @@ function previewPoster(form: HolidayBannerInput) {
   return "";
 }
 
-export function HolidayBannersManager({ banners, auditEntries, storageSummary }: HolidayBannersManagerProps) {
+export function HolidayBannersManager({ banners, auditEntries, storageSummary, technicalAlertSettings, canViewTechnical }: HolidayBannersManagerProps) {
   const [form, setForm] = useState<HolidayBannerInput>(emptyBanner);
+  const [alertSettings, setAlertSettings] = useState<TechnicalAlertSettings | null>(technicalAlertSettings);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
   const toast = useToast();
@@ -145,6 +152,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
       media_height: null,
       media_duration_seconds: null,
       media_thumbnail_url: "",
+      media_asset_token: "",
       image_url: "",
     }));
   }
@@ -184,7 +192,10 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
   }
 
   function deleteBanner(id: string) {
-    if (!window.confirm("Esto eliminara el banner y su archivo en Cloudinary. Continuar?")) {
+    const message = canViewTechnical
+      ? "Esto eliminara el banner y su archivo en Cloudinary. Continuar?"
+      : "Esto eliminara el banner y su archivo. Continuar?";
+    if (!window.confirm(message)) {
       return;
     }
 
@@ -202,8 +213,28 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
   }
 
   function reviewIntegrity(deleteOrphans: boolean) {
+    if (!canViewTechnical) {
+      toast.error("Esta accion solo esta disponible para administracion tecnica.");
+      return;
+    }
+
     startTransition(async () => {
       const result = await reviewHolidayBannerIntegrityAction(deleteOrphans);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function saveAlertSettings() {
+    if (!alertSettings) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await saveTechnicalAlertSettingsAction(alertSettings);
       if (result.ok) {
         toast.success(result.message);
       } else {
@@ -219,20 +250,19 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
 
     setUploading(true);
     try {
-      const previousUnsavedPublicId = !form.id ? form.media_public_id : "";
-      const previousUnsavedResourceType = form.media_resource_type;
+      const previousUnsavedToken = !form.id ? form.media_asset_token ?? "" : "";
       const formData = new FormData();
       formData.set("file", file);
       formData.set("mediaType", form.media_type);
       const result = await uploadHolidayBannerMediaAction(formData);
 
-      if (result.ok && result.mediaUrl && result.publicId && result.resourceType && result.mediaType) {
+      if (result.ok && result.mediaUrl && result.assetToken && result.mediaType) {
         setForm((current) => ({
           ...current,
           media_type: result.mediaType ?? current.media_type,
           media_url: result.mediaUrl ?? "",
-          media_public_id: result.publicId ?? "",
-          media_resource_type: result.resourceType ?? current.media_resource_type,
+          media_public_id: "",
+          media_resource_type: result.mediaType ?? current.media_resource_type,
           media_bytes: result.bytes ?? 0,
           media_created_at: result.createdAt ?? "",
           media_format: result.format ?? "",
@@ -240,10 +270,11 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
           media_height: result.height ?? null,
           media_duration_seconds: result.durationSeconds ?? null,
           media_thumbnail_url: result.thumbnailUrl ?? "",
+          media_asset_token: result.assetToken ?? "",
           image_url: result.mediaType === "image" ? result.mediaUrl ?? "" : "",
         }));
-        if (previousUnsavedPublicId && previousUnsavedPublicId !== result.publicId) {
-          await deleteUploadedHolidayBannerMediaAction(previousUnsavedPublicId, previousUnsavedResourceType);
+        if (previousUnsavedToken && previousUnsavedToken !== result.assetToken) {
+          await deleteUploadedHolidayBannerMediaAction(previousUnsavedToken);
         }
         toast.success(result.message);
       } else {
@@ -325,7 +356,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
               <div className="grid gap-1 border-t border-black/10 bg-white p-3 text-xs text-black/55">
                 <span>{bytesLabel(form.media_bytes)}</span>
                 {form.media_duration_seconds ? <span>Duracion: {Math.round(form.media_duration_seconds)} segundos</span> : null}
-                <span>public_id: {form.media_public_id}</span>
+                {canViewTechnical && form.media_public_id ? <span>public_id: {form.media_public_id}</span> : null}
               </div>
             </div>
           ) : null}
@@ -379,7 +410,14 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
       </section>
 
       <div className="grid gap-5">
-        <StorageSummaryPanel summary={storageSummary} />
+        {canViewTechnical && storageSummary ? (
+          <>
+            <StorageSummaryPanel summary={storageSummary} />
+            {alertSettings ? (
+              <TechnicalAlertsPanel settings={alertSettings} onChange={setAlertSettings} onSave={saveAlertSettings} disabled={isPending} />
+            ) : null}
+          </>
+        ) : null}
 
         <section className="rounded-lg border border-black/10 bg-white">
           <div className="flex flex-col gap-3 border-b border-black/10 p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -389,14 +427,16 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
                 El Home muestra 1 banner principal vigente y hasta 3 secundarios, ordenados por prioridad.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => reviewIntegrity(false)} variant="ghost" disabled={isPending}>
-                Revisar integridad
-              </Button>
-              <Button onClick={() => reviewIntegrity(true)} variant="secondary" disabled={isPending}>
-                Limpiar huerfanos
-              </Button>
-            </div>
+            {canViewTechnical ? (
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => reviewIntegrity(false)} variant="ghost" disabled={isPending}>
+                  Revisar integridad
+                </Button>
+                <Button onClick={() => reviewIntegrity(true)} variant="secondary" disabled={isPending}>
+                  Limpiar huerfanos
+                </Button>
+              </div>
+            ) : null}
           </div>
           <div className="divide-y divide-black/10">
             {banners.length === 0 ? <p className="p-4 text-sm text-black/55">No hay banners.</p> : null}
@@ -431,7 +471,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary }:
                     <p className="mt-2 text-xs text-black/45">
                       {banner.start_date} a {banner.end_date} / prioridad {banner.priority} / {bytesLabel(banner.media_bytes)}
                     </p>
-                    {banner.media_public_id ? <p className="mt-1 break-all text-xs text-black/40">{banner.media_public_id}</p> : null}
+                    {canViewTechnical && banner.media_public_id ? <p className="mt-1 break-all text-xs text-black/40">{banner.media_public_id}</p> : null}
                   </div>
                   <div className="flex flex-wrap items-start gap-2 lg:justify-end">
                     <select
@@ -507,6 +547,10 @@ function auditActionLabel(action: string) {
     "holiday_banner.priority_updated": "Cambio de prioridad",
     "holiday_banner.integrity_review": "Revision de integridad",
     "holiday_banner.integrity_cleanup": "Limpieza de huerfanos",
+    "holiday_banner.cloudinary_asset_deleted": "Archivo tecnico eliminado",
+    "technical_alert.cloudinary_storage_sent": "Alerta tecnica enviada",
+    "technical_alert.cloudinary_storage_failed": "Alerta tecnica fallida",
+    "technical_alert_settings.updated": "Configuracion tecnica actualizada",
   };
 
   return labels[action] ?? action;
@@ -577,6 +621,64 @@ function StorageSummaryPanel({ summary }: { summary: HolidayBannerStorageSummary
   );
 }
 
+function TechnicalAlertsPanel({
+  settings,
+  onChange,
+  onSave,
+  disabled,
+}: {
+  settings: TechnicalAlertSettings;
+  onChange: (settings: TechnicalAlertSettings) => void;
+  onSave: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-black/10 bg-white p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="font-semibold">Alertas tecnicas</h2>
+          <p className="mt-1 text-sm text-black/55">Configuracion visible solo para administracion tecnica.</p>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={settings.enabled} onChange={(event) => onChange({ ...settings, enabled: event.target.checked })} />
+          Activas
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]">
+        <Field label="Correo tecnico">
+          <Input value={settings.email} onChange={(event) => onChange({ ...settings, email: event.target.value })} />
+        </Field>
+        <Field label="Umbral Cloudinary">
+          <Input
+            type="number"
+            min={1}
+            max={100}
+            value={settings.cloudinaryStorageThresholdPercent}
+            onChange={(event) =>
+              onChange({ ...settings, cloudinaryStorageThresholdPercent: Math.min(100, Math.max(1, numberValue(event.target.value))) })
+            }
+          />
+        </Field>
+        <div className="flex items-end">
+          <Button onClick={onSave} disabled={disabled} variant="secondary">
+            Guardar alertas
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-black/50">
+        <span className="rounded-md bg-zinc-100 px-2 py-1">
+          Ultimo chequeo: {settings.lastCheckedAt ? formatDateTime(settings.lastCheckedAt) : "Sin registro"}
+        </span>
+        <span className="rounded-md bg-zinc-100 px-2 py-1">
+          Ultima alerta: {settings.lastAlertSentAt ? formatDateTime(settings.lastAlertSentAt) : "Sin registro"}
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-md border border-black/10 bg-[#f8f8f8] p-3">
@@ -592,7 +694,7 @@ function BannerAuditPanel({ entries }: { entries: HolidayBannerAuditEntry[] }) {
     <section className="rounded-lg border border-black/10 bg-white">
       <div className="border-b border-black/10 p-4">
         <h2 className="font-semibold">Historial de banners</h2>
-        <p className="mt-1 text-sm text-black/55">Ultimos movimientos de creacion, cambios, eliminacion e integridad.</p>
+        <p className="mt-1 text-sm text-black/55">Ultimos movimientos de creacion, cambios y eliminacion.</p>
       </div>
       <div className="max-h-[420px] overflow-y-auto">
         {entries.length === 0 ? <p className="p-4 text-sm text-black/55">No hay movimientos registrados.</p> : null}

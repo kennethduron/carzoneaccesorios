@@ -12,6 +12,8 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "invoices:read",
     "invoices:correct",
     "invoices:manage",
+    "reports:read",
+    "reports:export",
   ],
   admin: [
     "admin:access",
@@ -58,7 +60,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "audit:read",
     "commercial_settings:manage",
   ],
-  vendedor: ["admin:access", "products:read", "orders:manage", "customers:manage", "crm:manage"],
+  vendedor: ["admin:access", "products:read", "orders:manage", "customers:manage", "crm:manage", "reports:read"],
   bodega: ["admin:access", "products:read", "inventory:manage", "shipments:manage", "orders:read"],
   contadora: [
     "admin:access",
@@ -72,6 +74,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "reports:read",
     "reports:export",
   ],
+  soporte: ["admin:access", "customers:read", "crm:manage", "orders:read", "invoices:read"],
   cliente: ["store:buy", "orders:read_own", "invoices:read_own"],
 };
 

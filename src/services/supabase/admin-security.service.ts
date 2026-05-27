@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupLogRow } from "@/types/security";
 
@@ -286,6 +287,8 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
         full_name: user.full_name,
         phone: user.phone,
         role: user.roles?.name ?? "cliente",
+        profile_kind: isInternalRole(user.roles?.name) ? "internal" : "customer",
+        profile_label: isInternalRole(user.roles?.name) ? internalRoleLabel(user.roles?.name) : "Cliente",
         active: user.active,
         created_at: user.created_at,
         updated_at: user.updated_at,

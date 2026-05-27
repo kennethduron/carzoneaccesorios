@@ -75,7 +75,9 @@ const publicRoutes = [
 ];
 
 export default async function RevisionBacPage() {
-  await requirePermission("commercial_settings:manage");
+  const profile = await requirePermission("commercial_settings:manage");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const visibleChecklistGroups = canViewTechnical ? checklistGroups : checklistGroups.filter((group) => group.status !== "credentials");
 
   return (
     <AdminShell title="Revisión BAC Credomatic">
@@ -98,23 +100,23 @@ export default async function RevisionBacPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {checklistGroups.map((group) => (
+          {visibleChecklistGroups.map((group) => (
             <ChecklistCard key={group.title} title={group.title} status={group.status} items={group.items} />
           ))}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className={`grid gap-4 ${canViewTechnical ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
           <InfoCard
             title="Qué falta para tarjeta real"
-            text="BAC debe entregar documentación, credenciales, parámetros productivos, flujo de respuesta y reglas de pruebas antes de activar cobro con tarjeta."
+            text="BAC debe autorizar el flujo productivo y las pruebas bancarias antes de activar cobro con tarjeta."
           />
           <InfoCard
             title="Qué no debe hacerse todavía"
-            text="No ingresar credenciales reales en código, no simular 3D Secure, no guardar datos de tarjeta y no activar tarjeta sin pruebas bancarias completas."
+            text="No activar tarjeta como método real hasta completar pruebas bancarias, validación contable y confirmación técnica."
           />
           <InfoCard
             title="3D Secure"
-            text="La autenticación 3D Secure debe manejarse según el flujo oficial de BAC. La tienda solo debe recibir y validar respuestas en backend."
+            text="La validación bancaria debe manejarse únicamente por el flujo autorizado antes de abrir tarjeta a clientes."
           />
         </div>
 
@@ -134,10 +136,10 @@ export default async function RevisionBacPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-5 text-sm leading-6 text-[#7f1d1d]">
+        {canViewTechnical ? <div className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-5 text-sm leading-6 text-[#7f1d1d]">
           Las credenciales BAC, llaves privadas y secretos deben vivir solo en variables seguras de Vercel. Ningún usuario
           operativo debe ver o modificar API keys, secretos de cron ni configuración técnica sensible.
-        </div>
+        </div> : null}
       </section>
     </AdminShell>
   );

@@ -71,10 +71,11 @@ const roleLabels: Record<AppRole, string> = {
   vendedor: "Vendedor",
   bodega: "Bodega",
   contadora: "Contadora",
+  soporte: "Soporte",
   cliente: "Cliente",
 };
 
-const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora"];
+const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte"];
 const sensitiveKeyPattern = /(password|token|secret|apikey|api_key|key|service_role|authorization|card|tarjeta|cron_secret)/i;
 
 const roleDescriptions: Record<AppRole, string> = {
@@ -84,6 +85,7 @@ const roleDescriptions: Record<AppRole, string> = {
   vendedor: "Atiende clientes, pedidos y CRM operativo.",
   bodega: "Gestiona inventario, preparación y envíos.",
   contadora: "Revisa pagos, facturas, fiscal y reportes financieros.",
+  soporte: "Atiende soporte, consultas de clientes y seguimiento operativo limitado.",
   cliente: "Cuenta pública de compra y consulta de sus propios pedidos.",
 };
 
@@ -192,15 +194,15 @@ function deviceLabel(userAgent: string | null) {
 
 function canAssignRole(actorRole: AppRole, role: AppRole) {
   if (actorRole === "business_owner") {
-    return ["cliente", "vendedor", "bodega", "contadora"].includes(role);
+    return ["cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
   }
 
   if (actorRole === "admin") {
-    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora"].includes(role);
+    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
   }
 
   if (actorRole === "technical_owner") {
-    return ["technical_owner", "admin", "business_owner", "cliente", "vendedor", "bodega", "contadora"].includes(role);
+    return ["technical_owner", "admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
   }
 
   return false;
@@ -212,7 +214,7 @@ function assignableRoles(actorRole: AppRole) {
 
 function canModifyUser(actorRole: AppRole, user: AdminUserSummary) {
   if (actorRole === "business_owner") {
-    return ["cliente", "vendedor", "bodega", "contadora"].includes(user.role);
+    return ["cliente", "vendedor", "bodega", "contadora", "soporte"].includes(user.role);
   }
 
   if (actorRole === "admin") {
@@ -926,6 +928,7 @@ function UserProfileModal({
   onViewActivity: () => void;
 }) {
   const isClient = user.role === "cliente";
+  const isInternal = user.profile_kind === "internal";
 
   return (
     <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
@@ -937,8 +940,12 @@ function UserProfileModal({
               <h2 className="text-lg font-semibold">Perfil del usuario</h2>
             </div>
             <p className="mt-1 text-sm text-black/55">
-              {isClient ? "Perfil de cliente: cuenta, pedidos, facturas e historial de compras." : "Perfil operativo: rol, estado, acceso y módulos permitidos."}
+              {isClient ? "Perfil de cliente: cuenta, pedidos, facturas e historial de compras." : "Perfil operativo: rol, estado, acceso, módulos permitidos y auditoría."}
             </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-md bg-[#fff1f2] px-2 py-1 font-semibold text-[#b91c25]">{user.profile_label}</span>
+              {isInternal ? <span className="rounded-md bg-[#f4f4f5] px-2 py-1 text-black/60">Usuario interno</span> : null}
+            </div>
           </div>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cerrar
@@ -958,17 +965,17 @@ function UserProfileModal({
 
         {isClient || user.customer_id ? (
           <div className="mt-5 rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-            <h3 className="font-semibold">Información de cliente</h3>
+            <h3 className="font-semibold">{isInternal ? "Compras personales vinculadas" : "Información de cliente"}</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-4">
-              <InfoCard label="Negocio/contacto" value={user.customer_business_name ?? user.full_name ?? "-"} compact />
-              <InfoCard label="Estado cliente" value={user.customer_status ?? "-"} compact />
-              <InfoCard label="Mayoreo" value={user.customer_wholesale_status ?? "Sin solicitud"} compact />
-              <InfoCard label="Solicitudes mayoristas" value={String(user.wholesale_request_count)} compact />
+              {!isInternal ? <InfoCard label="Negocio/contacto" value={user.customer_business_name ?? user.full_name ?? "-"} compact /> : null}
+              {!isInternal ? <InfoCard label="Estado cliente" value={user.customer_status ?? "-"} compact /> : null}
+              {!isInternal ? <InfoCard label="Mayoreo" value={user.customer_wholesale_status ?? "Sin solicitud"} compact /> : null}
+              {!isInternal ? <InfoCard label="Solicitudes mayoristas" value={String(user.wholesale_request_count)} compact /> : null}
               <InfoCard label="Pedidos" value={String(user.order_count)} compact />
               <InfoCard label="Facturas" value={String(user.invoice_count)} compact />
-              <InfoCard label="Historial de compras" value={user.recent_orders.length > 0 ? "Con compras registradas" : "Sin compras"} compact />
+              <InfoCard label={isInternal ? "Compras personales" : "Historial de compras"} value={user.recent_orders.length > 0 ? "Con compras registradas" : "Sin compras"} compact />
             </div>
-            {user.customer_id ? (
+            {user.customer_id && !isInternal ? (
               <Link
                 href={`/admin/clientes?customerId=${encodeURIComponent(user.customer_id)}`}
                 className="mt-4 inline-flex rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold"

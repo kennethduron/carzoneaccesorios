@@ -5,13 +5,19 @@ import { getAdminCrm } from "@/services/supabase/admin-crm.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminWholesaleCustomersPage() {
+export default async function AdminWholesaleCustomersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
   await requirePermission("customers:manage");
-  const data = await getAdminCrm({ pageSize: 100 });
+  const params = await searchParams;
+  const activeStatus = params.status === "pending" ? { id: "pending" as const, label: "Solicitudes mayoristas pendientes" } : null;
+  const data = await getAdminCrm({ pageSize: 100, wholesaleStatus: activeStatus?.id ?? null });
 
   return (
     <AdminShell title="Clientes Mayoristas">
-      <WholesaleCustomersManager customers={data.customers} />
+      <WholesaleCustomersManager customers={data.customers} activeFilter={activeStatus} />
     </AdminShell>
   );
 }

@@ -69,3 +69,12 @@
 \i ./migrations/202605250006_guest_checkout_account_isolation.sql
 \i ./migrations/202605250007_order_payment_tracking_workflow.sql
 \i ./migrations/202605250008_customer_price_visibility.sql
+\i ./migrations/202605260011_fiscal_deadline_honduras_timezone.sql
+\i ./migrations/202605260012_reports_permissions_and_details.sql
+\i ./migrations/202605260013_additional_charges_financial_breakdown.sql
+\i ./migrations/202605260014_checkout_total_includes_isv.sql
+\i ./migrations/202605260015_backfill_financial_totals.sql
+\i ./migrations/202605270002_internal_user_classification_and_support_role.sql
+\i ./migrations/202605270003_first_wholesale_minimum_uses_final_total.sql
+\i ./migrations/202605270004_enforce_wholesale_product_min_quantity.sql
+\i ./migrations/202605270005_fix_wholesale_min_quantity_trigger_detail.sql

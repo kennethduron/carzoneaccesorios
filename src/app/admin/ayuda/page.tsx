@@ -137,7 +137,19 @@ const workflows = [
 ];
 
 export default async function AdminHelpPage() {
-  await requirePermission("admin:access");
+  const profile = await requirePermission("admin:access");
+  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const visibleRoleSections = roleSections.map((section) => {
+    if (canViewTechnical) {
+      return section;
+    }
+
+    return {
+      ...section,
+      items: section.items.filter((item) => !/cron|backup|backups/i.test(item)),
+    };
+  });
+  const visibleWorkflows = canViewTechnical ? workflows : workflows.filter((workflow) => !/cron|backup|backups/i.test(workflow.title));
 
   return (
     <AdminShell title="Ayuda interna">
@@ -157,7 +169,7 @@ export default async function AdminHelpPage() {
       </section>
 
       <section className="mt-5 grid gap-4 lg:grid-cols-2">
-        {roleSections.map((section) => (
+        {visibleRoleSections.map((section) => (
           <article key={section.role} className="rounded-lg border border-black/10 bg-white p-5">
             <p className="text-sm font-semibold uppercase text-[#e4252c]">{section.role}</p>
             <p className="mt-1 text-sm text-black/60">{section.focus}</p>
@@ -175,7 +187,7 @@ export default async function AdminHelpPage() {
       <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
         <h2 className="text-xl font-semibold">Flujos de trabajo</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {workflows.map((workflow) => (
+          {visibleWorkflows.map((workflow) => (
             <Link key={workflow.title} href={workflow.href} className="rounded-lg border border-black/10 p-4 transition-colors hover:border-[#e4252c]">
               <p className="font-semibold">{workflow.title}</p>
               <ol className="mt-3 space-y-2 text-sm text-black/60">

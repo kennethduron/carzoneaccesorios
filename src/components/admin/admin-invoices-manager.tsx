@@ -9,6 +9,7 @@ import {
   logInvoiceReprintAction,
   updateInvoiceCustomerDataAction,
 } from "@/app/admin/facturas/actions";
+import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
@@ -28,6 +29,7 @@ type AdminInvoicesManagerProps = {
   fiscalAlerts: FiscalAlert[];
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
+  activeTask?: { id: string; label: string } | null;
 };
 
 const statusLabels: Record<InvoiceStatus, string> = {
@@ -72,6 +74,7 @@ export function AdminInvoicesManager({
   fiscalAlerts,
   canCancelInvoices,
   canCorrectInvoices,
+  activeTask = null,
 }: AdminInvoicesManagerProps) {
   const router = useRouter();
   const [status, setStatus] = useState<InvoiceStatus | "all">("all");
@@ -128,6 +131,9 @@ export function AdminInvoicesManager({
       "Referencia bancaria",
       "Subtotal",
       "ISV",
+      "Recargo minimo",
+      "Descuentos",
+      "Otros cargos",
       "Envío",
       "Comisión entrega",
       "Total",
@@ -142,6 +148,9 @@ export function AdminInvoicesManager({
       invoice.bank_reference_number ?? "-",
       invoice.subtotal,
       invoice.tax,
+      invoice.small_order_fee,
+      invoice.discount_total,
+      invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0),
       invoice.shipping_fee,
       invoice.cash_on_delivery_fee,
       invoice.total,
@@ -291,6 +300,8 @@ export function AdminInvoicesManager({
 
   return (
     <div className="space-y-5">
+      {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/facturas" /> : null}
+
       <FiscalAlertsPanel alerts={fiscalAlerts} />
 
       <section className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
@@ -300,7 +311,14 @@ export function AdminInvoicesManager({
         </p>
       </section>
 
-      <PaginationControls basePath="/admin/facturas" page={page} pageSize={pageSize} total={total} label="facturas" />
+      <PaginationControls
+        basePath="/admin/facturas"
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        label="facturas"
+        params={activeTask ? { task: activeTask.id } : undefined}
+      />
 
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Subtotal" value={formatCurrency(totals.subtotal)} />
@@ -660,6 +678,9 @@ function InvoiceModal({
           <p>ISV: {formatCurrency(invoice.tax)}</p>
           <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
           <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
+          <p>Recargo minimo: {formatCurrency(invoice.small_order_fee)}</p>
+          <p>Descuentos: {invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0)}</p>
+          <p>Otros cargos: {formatCurrency(invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))}</p>
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
         </div>
       </section>

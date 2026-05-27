@@ -128,7 +128,7 @@ export function CheckoutView({
   const [isFirstWholesalePurchase, setIsFirstWholesalePurchase] = useState(true);
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
-  const { rows, invalidItemCount, subtotal, tax, clearCart, clearInvalidCartItems } = useShoppingCart();
+  const { rows, wholesaleQuantityIssues, invalidItemCount, subtotal, tax, clearCart, clearInvalidCartItems } = useShoppingCart();
   const { createOrder } = useOrders();
   const toast = useToast();
   const sellsInHonduras = checkout.country === "Honduras";
@@ -141,7 +141,7 @@ export function CheckoutView({
     if (settings.allow_bank_transfer) {
       methods.push(["Transferencia bancaria", Banknote]);
     }
-    if (settings.bac_card_status !== "hidden") {
+    if (settings.bac_card_status === "active") {
       methods.push(["Tarjeta", CreditCard]);
     }
     if (settings.allow_cash_on_delivery) {
@@ -149,8 +149,11 @@ export function CheckoutView({
     }
     return methods;
   }, [settings.allow_bank_transfer, settings.allow_cash_on_delivery, settings.bac_card_status]);
-  const finalTotal = Math.round((subtotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee) * 100) / 100;
-  const wholesaleMinimumMissing = Math.max(0, settings.first_wholesale_minimum - subtotal);
+  const smallOrderFee = 0;
+  const discountTotal = 0;
+  const additionalFees: [] = [];
+  const finalTotal = Math.round((subtotal + tax + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee + smallOrderFee - discountTotal) * 100) / 100;
+  const wholesaleMinimumMissing = Math.max(0, Math.round((settings.first_wholesale_minimum - finalTotal) * 100) / 100);
   const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
   const wholesaleMinimumApplies =
     priceMode === "wholesale" &&
@@ -159,8 +162,15 @@ export function CheckoutView({
     settings.first_wholesale_minimum > 0;
   const blocksFirstWholesaleOrder = wholesaleMinimumApplies && wholesaleMinimumMissing > 0;
   const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
+  const blocksWholesaleQuantityMinimum = priceMode === "wholesale" && wholesaleQuantityIssues.length > 0;
 
-  const wholesaleMinimumBlockMessage = `Tu primera compra como mayorista debe ser de ${formatCurrency(settings.first_wholesale_minimum)} o más. Agrega más productos para completar el mínimo. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`;
+  const wholesaleMinimumBlockMessage = `Tu primera compra mayorista debe alcanzar un total final de ${formatCurrency(settings.first_wholesale_minimum)} o más. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo de primera compra mayorista.`;
+  const wholesaleQuantityBlockMessage =
+    wholesaleQuantityIssues.length === 1
+      ? `No se puede crear el pedido. El producto ${wholesaleQuantityIssues[0].productName} requiere mínimo ${wholesaleQuantityIssues[0].minimumQuantity} unidades para compra mayorista.`
+      : `No se puede crear el pedido. Corrige las cantidades mínimas mayoristas antes de crear el pedido: ${wholesaleQuantityIssues
+          .map((issue) => `${issue.productName} requiere mínimo ${issue.minimumQuantity}`)
+          .join("; ")}.`;
 
   useEffect(() => {
     let active = true;
@@ -303,8 +313,8 @@ export function CheckoutView({
       return;
     }
 
-    if (checkout.paymentMethod === "Tarjeta" && settings.bac_card_status === "hidden") {
-      showCheckoutError("paymentMethod", "El pago con tarjeta no está disponible en este momento.");
+    if (checkout.paymentMethod === "Tarjeta" && settings.bac_card_status !== "active") {
+      showCheckoutError("paymentMethod", "El pago con tarjeta no está disponible hasta activar la pasarela BAC.");
       return;
     }
 
@@ -324,6 +334,12 @@ export function CheckoutView({
       const message = "Las compras mayoristas están desactivadas temporalmente.";
       setCheckoutMessage(message);
       toast.error(message);
+      return;
+    }
+
+    if (blocksWholesaleQuantityMinimum) {
+      setCheckoutMessage(wholesaleQuantityBlockMessage);
+      toast.error(wholesaleQuantityBlockMessage);
       return;
     }
 
@@ -380,6 +396,11 @@ export function CheckoutView({
         wholesaleCode: null,
         subtotal,
         tax,
+        shippingFee: checkoutFees.shippingFee,
+        cashOnDeliveryFee: checkoutFees.cashOnDeliveryFee,
+        smallOrderFee,
+        discountTotal,
+        additionalFees,
         total: finalTotal,
         paymentMethod: checkout.paymentMethod,
         paymentReference: isBankTransfer ? bankTransferReference : null,
@@ -726,15 +747,34 @@ export function CheckoutView({
               </button>
             </div>
           ) : null}
+          {blocksWholesaleQuantityMinimum ? (
+            <div className="rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">
+              <p className="font-medium">Corrige las cantidades mínimas mayoristas antes de crear el pedido.</p>
+              <ul className="mt-2 space-y-1">
+                {wholesaleQuantityIssues.map((issue) => (
+                  <li key={issue.productId}>
+                    {issue.productName}: mínimo {issue.minimumQuantity} unidades, tienes {issue.currentQuantity}.
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {rows.length === 0 ? (
             <p className="rounded-md bg-[#f4f4f5] p-4 text-sm text-black/55">Agrega productos para continuar.</p>
           ) : (
             rows.map((item) => (
-              <div key={item.product.id} className="flex justify-between gap-3 text-sm">
-                <span>
-                  {item.quantity} x {item.product.name}
-                </span>
-                <span>{formatCurrency(item.lineTotal)}</span>
+              <div key={item.product.id} className="space-y-1 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span>
+                    {item.quantity} x {item.product.name}
+                  </span>
+                  <span>{formatCurrency(item.lineTotal)}</span>
+                </div>
+                {wholesaleQuantityIssues.some((issue) => issue.productId === item.product.id) ? (
+                  <p className="text-xs font-medium text-[#9b341b]">
+                    Este producto requiere mínimo {item.product.wholesale_min_quantity} unidades para precio mayorista.
+                  </p>
+                ) : null}
               </div>
             ))
           )}
@@ -757,18 +797,22 @@ export function CheckoutView({
           >
             <p>
               {blocksFirstWholesaleOrder
-                ? `Primera compra mayorista: mínimo ${formatCurrency(settings.first_wholesale_minimum)}. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo mayorista.`
-                : "Cumples con el mínimo para primera compra mayorista."}
+                ? `Tu primera compra mayorista debe alcanzar un total final de ${formatCurrency(settings.first_wholesale_minimum)} o más. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo de primera compra mayorista.`
+                : "Has alcanzado el mínimo requerido para tu primera compra mayorista."}
             </p>
             <p className="mt-1 text-xs opacity-80">
-              El mínimo se calcula con el subtotal de productos, sin envío ni comisión contra entrega.
+              Se calcula con el mismo total final que aparece como Total a pagar.
             </p>
           </div>
         ) : null}
         <CheckoutTotals
           subtotal={subtotal}
+          tax={tax}
           shippingFee={checkoutFees.shippingFee}
           cashOnDeliveryFee={checkoutFees.cashOnDeliveryFee}
+          smallOrderFee={smallOrderFee}
+          discountTotal={discountTotal}
+          additionalFeesTotal={0}
           total={finalTotal}
           settings={settings}
           paymentMethod={checkout.paymentMethod}
@@ -845,15 +889,23 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
 
 function CheckoutTotals({
   subtotal,
+  tax,
   shippingFee,
   cashOnDeliveryFee,
+  smallOrderFee,
+  discountTotal,
+  additionalFeesTotal,
   total,
   settings,
   paymentMethod,
 }: {
   subtotal: number;
+  tax: number;
   shippingFee: number;
   cashOnDeliveryFee: number;
+  smallOrderFee: number;
+  discountTotal: number;
+  additionalFeesTotal: number;
   total: number;
   settings: PublicCompanySettings;
   paymentMethod: CheckoutData["paymentMethod"];
@@ -862,9 +914,14 @@ function CheckoutTotals({
 
   return (
     <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
+      <p className="text-xs font-semibold uppercase text-black/50">Resumen financiero</p>
       <div className="flex justify-between">
         <span>Subtotal productos</span>
         <span>{formatCurrency(subtotal)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>ISV</span>
+        <span>{formatCurrency(tax)}</span>
       </div>
       <div className="flex justify-between">
         <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>
@@ -872,10 +929,22 @@ function CheckoutTotals({
       </div>
       {paymentMethod === "Efectivo" && settings.enable_cash_on_delivery_fee ? (
         <div className="flex justify-between">
-          <span>Comisión pago al recibir</span>
+          <span>Cargo contra entrega</span>
           <span>{formatCurrency(cashOnDeliveryFee)}</span>
         </div>
       ) : null}
+      <div className="flex justify-between">
+        <span>Recargo pedido minimo</span>
+        <span>{formatCurrency(smallOrderFee)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Descuentos</span>
+        <span>{discountTotal > 0 ? `-${formatCurrency(discountTotal)}` : formatCurrency(0)}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>Otros cargos</span>
+        <span>{formatCurrency(additionalFeesTotal)}</span>
+      </div>
       <div className="rounded-md bg-[#f4f4f5] p-3 text-xs text-black/60">
         <p>El envío es gratis en compras mayores o iguales a {formatCurrency(settings.free_shipping_threshold)}.</p>
         <p>Para compras menores aplica envío estándar de {formatCurrency(settings.standard_shipping_fee)}.</p>
