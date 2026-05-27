@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getFiscalCorrectionHistory } from "@/services/supabase/fiscal-corrections.service";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
@@ -151,6 +152,7 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     invoice_status: invoice?.status ?? null,
     invoice_cancelled_at: invoice?.cancelled_at ?? null,
     invoice_cancellation_reason: invoice?.cancellation_reason ?? null,
+    fiscal_correction_history: [],
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -276,8 +278,21 @@ export async function getAdminOrdersPage({
     throw new Error(error.message);
   }
 
+  const orders = (data ?? []).map(normalizeOrder);
+  const correctionHistories = await Promise.all(
+    orders.map((order) =>
+      getFiscalCorrectionHistory({
+        orderId: order.id,
+        invoiceId: order.invoice_id,
+      }).catch(() => []),
+    ),
+  );
+
   return {
-    orders: (data ?? []).map(normalizeOrder),
+    orders: orders.map((order, index) => ({
+      ...order,
+      fiscal_correction_history: correctionHistories[index],
+    })),
     total: count ?? 0,
     page,
     pageSize,

@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getFiscalCorrectionHistory } from "@/services/supabase/fiscal-corrections.service";
 import type { AdminInvoiceDetail, AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
@@ -144,6 +145,7 @@ function normalizeDetail(row: InvoiceDetailQueryRow, paymentByOrder: Map<string,
     fiscal_range_end: row.fiscal_range_end,
     due_at: row.due_at,
     items: normalizeItems(row.invoice_items),
+    fiscal_correction_history: [],
   };
 }
 
@@ -343,5 +345,11 @@ export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInv
     paymentByOrder.set(invoice.order_id, payment);
   }
 
-  return normalizeDetail(invoice, paymentByOrder);
+  const detail = normalizeDetail(invoice, paymentByOrder);
+  detail.fiscal_correction_history = await getFiscalCorrectionHistory({
+    orderId: invoice.order_id,
+    invoiceId,
+  });
+
+  return detail;
 }

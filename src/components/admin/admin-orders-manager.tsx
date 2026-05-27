@@ -16,6 +16,7 @@ import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 import type { AdminOrderRow } from "@/types/orders";
 import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { formatHnDateTime } from "@/utils/format";
@@ -56,6 +57,17 @@ const reservationStatusLabels: Record<string, string> = {
   expired: "Vencido",
   canceled: "Cancelado",
 };
+
+const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
+  customer_name: "Nombre fiscal",
+  customer_rtn: "RTN",
+  customer_phone: "Teléfono",
+  customer_email: "Correo",
+  customer_address: "Dirección fiscal",
+};
+
+const fiscalCorrectionWarning =
+  "Esta acción actualizará datos fiscales del cliente. Si la factura ya fue emitida, conservará el mismo número fiscal y quedará registrada en auditoría.";
 
 export function AdminOrdersManager({
   orders,
@@ -518,7 +530,7 @@ function OrderDetail({
             </Button>
           ) : null}
           {canCorrectInvoices && canViewFinancialData ? (
-            <Button onClick={onCorrectFiscalData} disabled={isPending} variant="ghost">
+            <Button onClick={onCorrectFiscalData} disabled={isPending || invoiceIsCancelled} variant="ghost">
               <FilePenLine size={17} />
               Editar datos fiscales
             </Button>
@@ -603,6 +615,8 @@ function OrderDetail({
             ) : null}
           </details>
         ) : null}
+
+        {canCorrectInvoices && canViewFinancialData ? <FiscalCorrectionHistory history={order.fiscal_correction_history} /> : null}
 
         {isCard && !paymentIsApproved ? (
           <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
@@ -717,10 +731,24 @@ function CorrectOrderFiscalDataModal({
   const [customerEmail, setCustomerEmail] = useState(order.fiscal_customer_email ?? order.email ?? "");
   const [customerAddress, setCustomerAddress] = useState(order.fiscal_customer_address ?? order.delivery_address ?? "");
   const [correctionReason, setCorrectionReason] = useState("");
+  const [confirmingCorrection, setConfirmingCorrection] = useState(false);
   const normalizedRtn = customerRtn.trim().replace(/[\s-]/g, "");
   const rtnIsValid = normalizedRtn.length === 0 || /^\d{14}$/.test(normalizedRtn);
   const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
-  const canSubmit = customerName.trim().length > 0 && correctionReason.trim().length >= 8 && rtnIsValid && !invoiceIsCancelled;
+  const canSubmit = customerName.trim().length > 0 && correctionReason.trim().length >= 10 && rtnIsValid && !invoiceIsCancelled;
+
+  function submitCorrection() {
+    onCorrect({
+      orderId: order.id,
+      customerName,
+      customerRtn,
+      customerPhone,
+      customerEmail,
+      customerAddress,
+      correctionReason,
+    });
+    setConfirmingCorrection(false);
+  }
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
@@ -748,8 +776,7 @@ function CorrectOrderFiscalDataModal({
         ) : (
           <>
             <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-              Esta accion actualizara los datos fiscales del cliente. Si la factura ya fue emitida, se mantendra el mismo
-              numero fiscal y quedara registrada en auditoria.
+              {fiscalCorrectionWarning}
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
@@ -759,7 +786,7 @@ function CorrectOrderFiscalDataModal({
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN del cliente</span>
                 <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
-                {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 digitos.</p> : null}
+                {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 dígitos.</p> : null}
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Telefono</span>
@@ -783,32 +810,82 @@ function CorrectOrderFiscalDataModal({
                 />
               </label>
             </div>
+            {confirmingCorrection ? (
+              <div className="mt-4 rounded-md border border-[#f59e0b]/35 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+                <p>{fiscalCorrectionWarning}</p>
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <Button onClick={() => setConfirmingCorrection(false)} variant="ghost">
+                    Cancelar
+                  </Button>
+                  <Button onClick={submitCorrection} disabled={isPending || !canSubmit} variant="primary">
+                    Guardar corrección
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button onClick={onClose} variant="ghost">
                 Cancelar
               </Button>
               <Button
-                onClick={() =>
-                  onCorrect({
-                    orderId: order.id,
-                    customerName,
-                    customerRtn,
-                    customerPhone,
-                    customerEmail,
-                    customerAddress,
-                    correctionReason,
-                  })
-                }
+                onClick={() => setConfirmingCorrection(true)}
                 disabled={isPending || !canSubmit}
                 variant="primary"
               >
-                {isPending ? "Guardando..." : "Guardar correccion"}
+                {isPending ? "Guardando..." : "Guardar corrección"}
               </Button>
             </div>
           </>
         )}
       </section>
     </div>
+  );
+}
+
+function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistoryEntry[] }) {
+  return (
+    <section className="rounded-md border border-black/10 bg-white p-3">
+      <h3 className="text-sm font-semibold">Historial de correcciones fiscales</h3>
+      {history.length === 0 ? (
+        <p className="mt-2 text-sm text-black/55">Sin correcciones fiscales registradas.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
+              <tr>
+                <th className="px-3 py-2">Fecha</th>
+                <th className="px-3 py-2">Usuario</th>
+                <th className="px-3 py-2">Campo</th>
+                <th className="px-3 py-2">Valor anterior</th>
+                <th className="px-3 py-2">Valor nuevo</th>
+                <th className="px-3 py-2">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/10">
+              {history.flatMap((entry) => {
+                const fields =
+                  entry.fields_modified.length > 0
+                    ? entry.fields_modified
+                    : (Object.keys(entry.new_values) as FiscalCorrectionValueKey[]);
+                return fields.map((field) => (
+                  <tr key={`${entry.id}-${field}`}>
+                    <td className="px-3 py-2">{formatHnDateTime(entry.created_at)}</td>
+                    <td className="px-3 py-2">
+                      {entry.user_label ?? "Usuario"}
+                      {entry.actor_role ? <span className="block text-xs text-black/45">{entry.actor_role}</span> : null}
+                    </td>
+                    <td className="px-3 py-2">{fiscalCorrectionFieldLabels[field] ?? field}</td>
+                    <td className="px-3 py-2">{entry.old_values[field] || "-"}</td>
+                    <td className="px-3 py-2">{entry.new_values[field] || "-"}</td>
+                    <td className="px-3 py-2">{entry.correction_reason ?? "-"}</td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

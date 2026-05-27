@@ -17,7 +17,11 @@ export default async function AdminProductsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
 }) {
-  await requirePermission("products:manage");
+  const profile = await requirePermission("products:manage");
+  const canUseTechnicalExports =
+    profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
+    profile.role === "technical_owner" ||
+    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
   const params = await searchParams;
   const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
     query: params.q,
@@ -46,6 +50,7 @@ export default async function AdminProductsPage({
         total={total}
         page={page}
         pageSize={pageSize}
+        canUseTechnicalExports={canUseTechnicalExports}
         filters={{
           query: params.q ?? "",
           status: params.status ?? "all",

@@ -36,6 +36,7 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     invoice_status: null,
     invoice_cancelled_at: null,
     invoice_cancellation_reason: null,
+    fiscal_correction_history: [],
     customer_rtn: null,
     fiscal_customer_rtn: null,
     order_items: order.order_items.map((item) => ({
@@ -66,7 +67,9 @@ export default async function AdminOrdersPage({
   const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
   const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");
   const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
-  const canCorrectInvoices = profile.role === "admin" || profile.permissions.includes("invoices:correct");
+  const canCorrectInvoices =
+    ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
+    profile.permissions.includes("invoices:correct");
   const canViewFinancialData =
     profile.role === "admin" ||
     profile.permissions.some((permission) =>

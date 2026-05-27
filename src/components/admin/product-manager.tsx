@@ -7,6 +7,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Download,
+  FileSpreadsheet,
   FileImage,
   HelpCircle,
   ImageOff,
@@ -24,6 +25,7 @@ import {
 import {
   deleteUploadedProductImageAction,
   deleteProductAction,
+  getProductImportSkuStatusAction,
   importProductsAction,
   saveProductAction,
   setProductActiveAction,
@@ -57,6 +59,7 @@ type ProductManagerProps = {
   total: number;
   page: number;
   pageSize: number;
+  canUseTechnicalExports: boolean;
   filters: {
     query: string;
     status: string;
@@ -75,6 +78,26 @@ type ImageUploadState = {
   fileName?: string;
   previewUrl?: string;
   file?: File;
+};
+
+type ProductImportMode = "create" | "update" | "upsert";
+
+type ProductImportPreviewRow = {
+  rowNumber: number;
+  product: ProductFormInput;
+  imageName: string;
+  matchedImageName: string | null;
+  imageFile?: File;
+  exists: boolean;
+  duplicateSku: boolean;
+  action: "create" | "update" | "skip";
+  errors: string[];
+  warnings: string[];
+};
+
+type ProductImportPreview = {
+  rows: ProductImportPreviewRow[];
+  zipWarnings: string[];
 };
 
 const productDraftStorageKey = "car-zone-product-editor-draft";
@@ -215,19 +238,40 @@ function slugifyProductUrl(value: string) {
     .slice(0, 80);
 }
 
-const productCsvHeaders = [
+const productExcelHeaders = [
+  "SKU",
+  "Código OEM / proveedor",
+  "Nombre del producto",
+  "Descripción corta",
+  "Descripción completa",
+  "Categoría",
+  "Stock",
+  "Stock mínimo",
+  "Precio costo",
+  "Precio al detalle",
+  "Precio mayorista",
+  "Cantidad mínima mayorista",
+  "Producto nuevo",
+  "Estado",
+  "Marca del vehículo",
+  "Modelo del vehículo",
+  "Año inicial",
+  "Año final",
+  "Notas de compatibilidad",
+  "Nombre de imagen",
+];
+
+const productTechnicalCsvHeaders = [
   "sku",
   "codigo_proveedor",
   "nombre",
-  "marca",
+  "marca_producto",
   "marca_carro",
   "modelo_carro",
   "anio_inicial",
   "anio_final",
   "descripcion_corta",
   "descripcion_completa",
-  "caracteristicas",
-  "especificaciones",
   "notas_compatibilidad",
   "categoria",
   "stock",
@@ -240,10 +284,37 @@ const productCsvHeaders = [
   "estado",
   "activo",
   "url_imagen",
-  "angulo_imagen",
+  "public_id",
 ];
 
-const requiredImportHeaders = ["sku", "nombre", "marca", "stock", "precio_detalle", "precio_mayorista"];
+const productCsvHeaders = productTechnicalCsvHeaders;
+
+const productOperationalExportHeaders = [
+  "SKU",
+  "Código OEM / proveedor",
+  "Nombre del producto",
+  "Descripción corta",
+  "Descripción completa",
+  "Categoría",
+  "Stock",
+  "Stock mínimo",
+  "Precio costo",
+  "Precio al detalle",
+  "Precio mayorista",
+  "Cantidad mínima mayorista",
+  "Producto nuevo",
+  "Estado",
+  "Marca del vehículo",
+  "Modelo del vehículo",
+  "Año inicial",
+  "Año final",
+  "Notas de compatibilidad",
+  "Imagen",
+];
+
+const requiredImportHeaders = ["SKU", "Nombre del producto", "Categoría", "Stock", "Precio al detalle"];
+const allowedZipImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+const zipMaxBytes = 250 * 1024 * 1024;
 
 function csvValue(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -275,6 +346,128 @@ function parseCsvLine(line: string) {
   return values;
 }
 
+function htmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function downloadBlob(content: BlobPart, fileName: string, type: string) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildExcelTable(title: string, columns: string[], rows: unknown[][]) {
+  const header = columns.map((column) => `<th>${htmlEscape(column)}</th>`).join("");
+  const body = rows
+    .map((row) => `<tr>${row.map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`)
+    .join("");
+
+  return `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <h1>${htmlEscape(title)}</h1>
+        <table border="1">
+          <thead><tr>${header}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+function normalizeHeader(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeImageLookupName(value: string) {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  const lastDot = trimmed.lastIndexOf(".");
+  if (lastDot <= 0) {
+    return "";
+  }
+
+  const name = trimmed
+    .slice(0, lastDot)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s._()-]+/gu, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const extension = trimmed.slice(lastDot + 1).toLowerCase();
+
+  return name && allowedZipImageExtensions.has(extension) ? `${name}.${extension}` : "";
+}
+
+function safeZipFileName(path: string) {
+  const normalized = path.replaceAll("\\", "/");
+  if (
+    normalized.startsWith("/") ||
+    normalized.includes("../") ||
+    normalized.includes("..\\") ||
+    /^[a-z]:/i.test(normalized)
+  ) {
+    return null;
+  }
+
+  const fileName = normalized.split("/").pop()?.trim() ?? "";
+  return fileName && !fileName.startsWith(".") ? fileName : null;
+}
+
+function readExcelCell(row: Record<string, unknown>, labels: string[]) {
+  const normalizedLabels = labels.map(normalizeHeader);
+  const entry = Object.entries(row).find(([key]) => normalizedLabels.includes(normalizeHeader(key)));
+  return String(entry?.[1] ?? "").trim();
+}
+
+function excelCellToText(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    const cellObject = value as { text?: unknown; result?: unknown; richText?: Array<{ text?: unknown }> };
+    if (cellObject.text !== undefined) return String(cellObject.text);
+    if (cellObject.result !== undefined) return String(cellObject.result);
+    if (Array.isArray(cellObject.richText)) return cellObject.richText.map((part) => String(part.text ?? "")).join("");
+  }
+  return String(value);
+}
+
+function yesNo(value: boolean) {
+  return value ? "Sí" : "No";
+}
+
+function parseYesNo(value: string) {
+  const normalized = normalizeHeader(value);
+  return ["si", "sí", "yes", "true", "1", "nuevo", "activa", "activo"].includes(normalized);
+}
+
+function parseStatus(value: string): ProductStatus {
+  const normalized = normalizeHeader(value);
+  if (["inactivo", "inactive"].includes(normalized)) return "inactive";
+  if (["borrador", "draft"].includes(normalized)) return "draft";
+  if (["archivado", "archived"].includes(normalized)) return "archived";
+  return "active";
+}
+
+function displayStatus(status: ProductStatus) {
+  return statusLabels[status] ?? status;
+}
+
 function persistProductDraft(product: ProductFormInput | null) {
   if (typeof window === "undefined") {
     return;
@@ -291,13 +484,29 @@ function persistProductDraft(product: ProductFormInput | null) {
   }
 }
 
-export function ProductManager({ products, categories, vehicleBrands, vehicleModels, total, page, pageSize, filters }: ProductManagerProps) {
+export function ProductManager({
+  products,
+  categories,
+  vehicleBrands,
+  vehicleModels,
+  total,
+  page,
+  pageSize,
+  canUseTechnicalExports,
+  filters,
+}: ProductManagerProps) {
   const [query, setQuery] = useState(filters.query);
   const [status, setStatus] = useState<ProductStatus | "all">(filters.status as ProductStatus | "all");
   const [categoryId, setCategoryId] = useState(filters.categoryId);
   const [editing, setEditing] = useState<ProductFormInput | null>(null);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [imageUploads, setImageUploads] = useState<Record<number, ImageUploadState>>({});
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState<ProductImportMode>("upsert");
+  const [importPreview, setImportPreview] = useState<ProductImportPreview | null>(null);
+  const [isPreparingImport, setIsPreparingImport] = useState(false);
+  const [isImportingProducts, setIsImportingProducts] = useState(false);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
@@ -938,6 +1147,341 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
     reader.readAsText(file);
   }
 
+  void downloadImportTemplate;
+  void importCsv;
+
+  function exportTechnicalCsv() {
+    if (!canUseTechnicalExports) return;
+    exportCsv();
+  }
+
+  function productExportRows() {
+    return filteredProducts.map((product) => [
+      product.sku,
+      product.internal_code ?? "",
+      product.name,
+      product.short_description ?? "",
+      product.description ?? "",
+      product.category_name ?? "Sin categoría",
+      product.stock,
+      product.min_stock,
+      formatCurrency(product.cost_price),
+      formatCurrency(product.retail_price),
+      formatCurrency(product.wholesale_price),
+      product.wholesale_min_quantity,
+      yesNo(product.is_new),
+      displayStatus(product.status),
+      product.vehicle_brand ?? "",
+      product.vehicle_model ?? "",
+      product.vehicle_year_start ?? "",
+      product.vehicle_year_end ?? "",
+      product.compatibility_notes ?? "",
+      yesNo(product.images.length > 0),
+    ]);
+  }
+
+  function exportExcel() {
+    downloadBlob(
+      buildExcelTable("Productos - Car Zone Accesorios", productOperationalExportHeaders, productExportRows()),
+      "car-zone-productos.xlsx.xls",
+      "application/vnd.ms-excel;charset=utf-8",
+    );
+    toast.success("Excel operativo descargado correctamente.");
+  }
+
+  async function downloadExcelImportTemplate() {
+    const sampleRow = [
+      "ACCU088053",
+      "OEM-088053",
+      "Cámara Reversa Universal",
+      "Cámara de reversa universal para instalación automotriz.",
+      "Cámara de reversa universal con cableado para instalación automotriz.",
+      categories[0]?.name ?? "",
+      "10",
+      "2",
+      "50.00",
+      "100.00",
+      "80.00",
+      "1",
+      "Sí",
+      "Activo",
+      "Toyota",
+      "Hilux",
+      "2018",
+      "2026",
+      "Validar arnés y moldura antes de instalar.",
+      "Cámara Reversa Universal.jpeg",
+    ];
+
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Productos");
+    worksheet.addRow(productExcelHeaders);
+    worksheet.addRow(sampleRow);
+    worksheet.columns = productExcelHeaders.map((header) => ({ width: Math.max(16, header.length + 4) }));
+    worksheet.getRow(1).font = { bold: true };
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadBlob(
+      new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      "plantilla-productos-car-zone.xlsx",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    toast.success("Plantilla Excel descargada correctamente.");
+  }
+
+  async function readZipImages(file: File | null) {
+    const exact = new Map<string, File>();
+    const normalized = new Map<string, File>();
+    const warnings: string[] = [];
+
+    if (!file) return { exact, normalized, warnings };
+    if (!file.name.toLowerCase().endsWith(".zip")) {
+      warnings.push("El archivo de imágenes debe ser ZIP.");
+      return { exact, normalized, warnings };
+    }
+    if (file.size > zipMaxBytes) {
+      warnings.push("El ZIP es demasiado grande. Divide las imágenes en lotes más pequeños.");
+      return { exact, normalized, warnings };
+    }
+
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(file);
+    for (const entry of Object.values(zip.files)) {
+      if (entry.dir) continue;
+      const fileName = safeZipFileName(entry.name);
+      if (!fileName) {
+        warnings.push(`Se omitió una ruta peligrosa dentro del ZIP: ${entry.name}`);
+        continue;
+      }
+      const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+      if (!allowedZipImageExtensions.has(extension)) {
+        warnings.push(`Se omitió ${fileName}: formato no permitido.`);
+        continue;
+      }
+      const blob = await entry.async("blob");
+      if (blob.size > 5 * 1024 * 1024) {
+        warnings.push(`Se omitió ${fileName}: supera 5 MB.`);
+        continue;
+      }
+      const type = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
+      const imageFile = new File([blob], fileName, { type });
+      exact.set(fileName.trim().toLowerCase(), imageFile);
+      const lookupName = normalizeImageLookupName(fileName);
+      if (lookupName && !normalized.has(lookupName)) normalized.set(lookupName, imageFile);
+    }
+
+    return { exact, normalized, warnings };
+  }
+
+  function matchImageForRow(imageName: string, sku: string, zipImages: Awaited<ReturnType<typeof readZipImages>>) {
+    const exactName = imageName.trim().toLowerCase();
+    if (exactName && zipImages.exact.has(exactName)) return zipImages.exact.get(exactName) ?? null;
+    const normalizedImageName = normalizeImageLookupName(imageName);
+    if (normalizedImageName && zipImages.normalized.has(normalizedImageName)) return zipImages.normalized.get(normalizedImageName) ?? null;
+    for (const extension of allowedZipImageExtensions) {
+      const skuMatch = zipImages.normalized.get(normalizeImageLookupName(`${sku.trim().toUpperCase()}.${extension}`));
+      if (skuMatch) return skuMatch;
+    }
+    return null;
+  }
+
+  async function prepareProductImportPreview() {
+    if (!excelFile) {
+      showMessage("Selecciona la plantilla Excel antes de validar.", "error");
+      return;
+    }
+    if (!excelFile.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
+      showMessage("Selecciona un archivo Excel .xlsx o .xls.", "error");
+      return;
+    }
+
+    setIsPreparingImport(true);
+    setImportPreview(null);
+    showMessage("Validando Excel e imágenes...", "neutral");
+
+    try {
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await excelFile.arrayBuffer());
+      const worksheet = workbook.worksheets[0] ?? null;
+      const headerValues = worksheet
+        ? (worksheet.getRow(1).values as unknown[]).slice(1).map((value) => excelCellToText(value).trim())
+        : [];
+      const rows: Array<Record<string, unknown>> = [];
+      worksheet?.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        const values = row.values as unknown[];
+        const rowObject = Object.fromEntries(headerValues.map((header, index) => [header, excelCellToText(values[index + 1]).trim()]));
+        if (Object.values(rowObject).some((value) => String(value).trim())) {
+          rows.push(rowObject);
+        }
+      });
+      if (rows.length === 0) {
+        showMessage("El Excel está vacío o no tiene filas de productos.", "error");
+        return;
+      }
+
+      const headers = Object.keys(rows[0] ?? {});
+      const missingHeaders = requiredImportHeaders.filter((header) => !headers.some((value) => normalizeHeader(value) === normalizeHeader(header)));
+      if (missingHeaders.length > 0) {
+        showMessage(`El Excel no tiene columnas requeridas: ${missingHeaders.join(", ")}. Descarga la plantilla oficial.`, "error");
+        return;
+      }
+
+      const zipImages = await readZipImages(zipFile);
+      const skuCounts = new Map<string, number>();
+      const categoryByName = new Map(categories.map((category) => [normalizeHeader(category.name), category]));
+      const parsedRows = rows.map((row, index): ProductImportPreviewRow => {
+        const sku = readExcelCell(row, ["SKU"]).toUpperCase();
+        skuCounts.set(sku, (skuCounts.get(sku) ?? 0) + 1);
+        const categoryName = readExcelCell(row, ["Categoría", "Categoria"]);
+        const category = categoryByName.get(normalizeHeader(categoryName));
+        const imageName = readExcelCell(row, ["Nombre de imagen"]);
+        const matchedImage = matchImageForRow(imageName, sku, zipImages);
+        const statusValue = parseStatus(readExcelCell(row, ["Estado"]));
+        const stock = numberValue(readExcelCell(row, ["Stock"]));
+        const minStock = numberValue(readExcelCell(row, ["Stock mínimo", "Stock minimo"]));
+        const retailPrice = numberValue(readExcelCell(row, ["Precio al detalle"]));
+        const wholesalePrice = numberValue(readExcelCell(row, ["Precio mayorista"]));
+        const wholesaleMinQuantity = numberValue(readExcelCell(row, ["Cantidad mínima mayorista", "Cantidad minima mayorista"]) || "1");
+        const name = readExcelCell(row, ["Nombre del producto"]);
+        const errors: string[] = [];
+        const warnings: string[] = [];
+
+        if (!sku) errors.push("SKU obligatorio.");
+        if (!name) errors.push("Nombre del producto obligatorio.");
+        if (!category) errors.push(`Categoría inválida: ${categoryName || "vacía"}.`);
+        if (stock < 0) errors.push("Stock no puede ser negativo.");
+        if (minStock < 0) errors.push("Stock mínimo no puede ser negativo.");
+        if (retailPrice <= 0) errors.push("Precio al detalle debe ser mayor a 0.");
+        if (wholesalePrice < 0) errors.push("Precio mayorista no puede ser negativo.");
+        if (wholesaleMinQuantity < 1) errors.push("Cantidad mínima mayorista debe ser al menos 1.");
+        if (imageName && !matchedImage) warnings.push(`Imagen no encontrada: ${imageName}.`);
+
+        return {
+          rowNumber: index + 2,
+          product: {
+            ...emptyProduct,
+            sku,
+            internal_code: readExcelCell(row, ["Código OEM / proveedor", "Codigo OEM / proveedor"]) || null,
+            name,
+            brand: "General",
+            vehicle_brand: normalizeVehicleBrand(readExcelCell(row, ["Marca del vehículo", "Marca del vehiculo"]) || null),
+            vehicle_model: normalizeVehicleModel(readExcelCell(row, ["Modelo del vehículo", "Modelo del vehiculo"]) || null),
+            vehicle_year_start: readExcelCell(row, ["Año inicial", "Anio inicial"]) ? numberValue(readExcelCell(row, ["Año inicial", "Anio inicial"])) : null,
+            vehicle_year_end: readExcelCell(row, ["Año final", "Anio final"]) ? numberValue(readExcelCell(row, ["Año final", "Anio final"])) : null,
+            short_description: readExcelCell(row, ["Descripción corta", "Descripcion corta"]) || null,
+            description: readExcelCell(row, ["Descripción completa", "Descripcion completa"]) || "",
+            compatibility_notes: readExcelCell(row, ["Notas de compatibilidad"]) || null,
+            category_id: category?.id ?? null,
+            stock,
+            min_stock: minStock,
+            cost_price: numberValue(readExcelCell(row, ["Precio costo"])),
+            retail_price: retailPrice,
+            wholesale_price: wholesalePrice,
+            wholesale_min_quantity: wholesaleMinQuantity,
+            is_new: parseYesNo(readExcelCell(row, ["Producto nuevo"])),
+            status: statusValue,
+            active: statusValue === "active",
+            images: [],
+          },
+          imageName,
+          matchedImageName: matchedImage?.name ?? null,
+          imageFile: matchedImage ?? undefined,
+          exists: false,
+          duplicateSku: false,
+          action: "create",
+          errors,
+          warnings,
+        };
+      });
+
+      const skuStatus = await getProductImportSkuStatusAction(parsedRows.map((row) => row.product.sku));
+      const existingSkus = new Set((skuStatus.existingSkus ?? []).map((sku) => sku.toUpperCase()));
+      const previewRows = parsedRows.map((row) => {
+        const exists = existingSkus.has(row.product.sku);
+        const duplicateSku = (skuCounts.get(row.product.sku) ?? 0) > 1;
+        const errors = duplicateSku ? [...row.errors, "SKU duplicado en el Excel."] : row.errors;
+        const action: ProductImportPreviewRow["action"] = exists
+          ? (importMode === "create" ? "skip" : "update")
+          : importMode === "update"
+            ? "skip"
+            : "create";
+        return { ...row, exists, duplicateSku, action, errors };
+      });
+
+      setImportPreview({ rows: previewRows, zipWarnings: zipImages.warnings });
+      showMessage("Preview listo. Revisa errores y confirma para importar.", "success");
+    } catch (error) {
+      showMessage(error instanceof Error ? `No se pudo preparar la importación: ${error.message}` : "No se pudo preparar la importación.", "error");
+    } finally {
+      setIsPreparingImport(false);
+    }
+  }
+
+  async function confirmProductImport() {
+    if (!importPreview) return;
+    const rowsToImport = importPreview.rows.filter((row) => row.action !== "skip");
+    if (rowsToImport.some((row) => row.errors.length > 0)) {
+      showMessage("Corrige los errores del preview antes de importar.", "error");
+      return;
+    }
+
+    setIsImportingProducts(true);
+    showMessage("Subiendo imágenes y guardando productos...", "neutral");
+    let uploaded = 0;
+    let missing = 0;
+    let imageErrors = 0;
+
+    try {
+      const productsToSave: ProductFormInput[] = [];
+      for (const row of rowsToImport) {
+        let product: ProductFormInput = { ...row.product, images: [] };
+        if (row.imageFile) {
+          const formData = new FormData();
+          formData.set("file", row.imageFile);
+          formData.set("productSlug", row.product.slug || row.product.sku || row.product.name);
+          formData.set("angle", "principal");
+          const upload = await uploadProductImageAction(formData);
+          if (upload.ok && upload.publicUrl) {
+            uploaded += 1;
+            product = {
+              ...product,
+              images: [{
+                ...emptyImage,
+                public_url: upload.publicUrl,
+                storage_path: upload.storagePath,
+                public_id: upload.publicId ?? upload.storagePath,
+                alt_text: row.product.name,
+              }],
+            };
+          } else {
+            imageErrors += 1;
+          }
+        } else if (row.imageName) {
+          missing += 1;
+        }
+        productsToSave.push(product);
+      }
+
+      const result = await importProductsAction(productsToSave, {
+        mode: importMode,
+        fileName: excelFile?.name,
+        imageSummary: { uploaded, missing, errors: imageErrors },
+      });
+      showMessage(result.message, result.ok ? "success" : "error");
+      if (result.ok) {
+        setImportPreview(null);
+        setExcelFile(null);
+        setZipFile(null);
+      }
+    } catch (error) {
+      showMessage(error instanceof Error ? `No se pudo importar: ${error.message}` : "No se pudo importar.", "error");
+    } finally {
+      setIsImportingProducts(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid gap-3 md:grid-cols-3">
@@ -997,33 +1541,26 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
             <Plus size={17} />
             Nuevo
           </Button>
-          <Button onClick={exportCsv} variant="ghost">
-            <Download size={17} />
-            CSV
+          <Button onClick={exportExcel} variant="ghost">
+            <FileSpreadsheet size={17} />
+            Excel
           </Button>
-          <Button onClick={downloadImportTemplate} variant="ghost" title="Descargar plantilla CSV para importar productos">
+          <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost" title="Descargar plantilla Excel para importar productos">
             <HelpCircle size={17} />
-            Plantilla
+            Plantilla Excel
           </Button>
-          <label
-            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-2 text-sm font-medium text-white"
-            title="Importa productos desde CSV usando la plantilla oficial."
-          >
-            <Upload size={17} />
-            Importar CSV
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="hidden"
-              onChange={(event) => importCsv(event.target.files?.[0] ?? null)}
-            />
-          </label>
+          {canUseTechnicalExports ? (
+            <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica solo para Kenneth/admin técnico">
+              <Download size={17} />
+              CSV técnico
+            </Button>
+          ) : null}
         </form>
         <p className="mt-3 text-sm text-black/55">
           Página {page}: mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
         </p>
         <p className="mt-2 text-sm text-black/55">
-          Importa productos desde CSV usando la plantilla oficial. El sistema valida columnas antes de guardar.
+          Importa productos con Excel limpio y ZIP de imágenes. Las URLs técnicas y Cloudinary solo aparecen en herramientas técnicas.
         </p>
         {message ? (
           <p
@@ -1038,6 +1575,82 @@ export function ProductManager({ products, categories, vehicleBrands, vehicleMod
           >
             {message.text}
           </p>
+        ) : null}
+      </section>
+
+      <section className="rounded-lg border border-black/10 bg-white p-4">
+        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
+          <div>
+            <h2 className="font-semibold">Importación masiva con Excel + ZIP</h2>
+            <p className="mt-1 text-sm text-black/55">
+              El Excel contiene datos del producto y la columna Nombre de imagen. Las imágenes van en ZIP y pueden tener espacios,
+              mayúsculas, acentos, guiones o underscores.
+            </p>
+          </div>
+          <select
+            value={importMode}
+            onChange={(event) => {
+              setImportMode(event.target.value as ProductImportMode);
+              setImportPreview(null);
+            }}
+            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+          >
+            <option value="upsert">Crear y actualizar</option>
+            <option value="create">Crear solo nuevos</option>
+            <option value="update">Actualizar existentes</option>
+          </select>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+          <label className="rounded-md border border-dashed border-black/20 bg-[#f8fafc] p-3 text-sm">
+            <span className="block font-semibold">Excel de productos</span>
+            <span className="mt-1 block text-xs text-black/55">Usa la plantilla oficial .xlsx.</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              className="mt-3 block w-full text-sm"
+              onChange={(event) => {
+                setExcelFile(event.target.files?.[0] ?? null);
+                setImportPreview(null);
+              }}
+            />
+            {excelFile ? <span className="mt-2 block text-xs font-medium text-black/60">{excelFile.name}</span> : null}
+          </label>
+
+          <label className="rounded-md border border-dashed border-black/20 bg-[#f8fafc] p-3 text-sm">
+            <span className="block font-semibold">ZIP de imágenes</span>
+            <span className="mt-1 block text-xs text-black/55">Opcional. JPG, JPEG, PNG o WEBP, máximo 5 MB por imagen.</span>
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              className="mt-3 block w-full text-sm"
+              onChange={(event) => {
+                setZipFile(event.target.files?.[0] ?? null);
+                setImportPreview(null);
+              }}
+            />
+            {zipFile ? <span className="mt-2 block text-xs font-medium text-black/60">{zipFile.name}</span> : null}
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || !excelFile} variant="dark">
+              {isPreparingImport ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
+              Validar
+            </Button>
+            <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost">
+              <FileSpreadsheet size={17} />
+              Plantilla
+            </Button>
+          </div>
+        </div>
+
+        {importPreview ? (
+          <ImportPreviewPanel
+            preview={importPreview}
+            pending={isImportingProducts}
+            onConfirm={() => void confirmProductImport()}
+            onCancel={() => setImportPreview(null)}
+          />
         ) : null}
       </section>
 
@@ -1154,6 +1767,105 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-black/10 bg-white p-4">
       <p className="text-sm text-black/50">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function ImportPreviewPanel({
+  preview,
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  preview: ProductImportPreview;
+  pending: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const validRows = preview.rows.filter((row) => row.errors.length === 0 && row.action !== "skip");
+  const errorRows = preview.rows.filter((row) => row.errors.length > 0);
+  const createRows = preview.rows.filter((row) => row.action === "create" && row.errors.length === 0);
+  const updateRows = preview.rows.filter((row) => row.action === "update" && row.errors.length === 0);
+  const skippedRows = preview.rows.filter((row) => row.action === "skip");
+  const foundImages = preview.rows.filter((row) => row.imageFile).length;
+  const missingImages = preview.rows.filter((row) => row.imageName && !row.imageFile).length;
+
+  return (
+    <div className="mt-4 rounded-lg border border-black/10 bg-[#f8fafc] p-4">
+      <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-7">
+        <PreviewMetric label="Válidos" value={validRows.length} />
+        <PreviewMetric label="Con error" value={errorRows.length} tone="danger" />
+        <PreviewMetric label="Nuevos" value={createRows.length} />
+        <PreviewMetric label="Actualizar" value={updateRows.length} />
+        <PreviewMetric label="Omitidos" value={skippedRows.length} />
+        <PreviewMetric label="Imágenes encontradas" value={foundImages} />
+        <PreviewMetric label="Imágenes faltantes" value={missingImages} tone={missingImages > 0 ? "warning" : "neutral"} />
+      </div>
+
+      {preview.zipWarnings.length > 0 ? (
+        <div className="mt-3 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
+          {preview.zipWarnings.slice(0, 6).map((warning) => <p key={warning}>{warning}</p>)}
+          {preview.zipWarnings.length > 6 ? <p>Hay {preview.zipWarnings.length - 6} advertencias adicionales del ZIP.</p> : null}
+        </div>
+      ) : null}
+
+      <div className="mt-4 max-h-80 overflow-auto rounded-md border border-black/10 bg-white">
+        <table className="w-full min-w-[900px] text-left text-xs">
+          <thead className="bg-[#e7e5e4] uppercase text-black/55">
+            <tr>
+              <th className="px-3 py-2">Fila</th>
+              <th className="px-3 py-2">SKU</th>
+              <th className="px-3 py-2">Producto</th>
+              <th className="px-3 py-2">Acción</th>
+              <th className="px-3 py-2">Imagen</th>
+              <th className="px-3 py-2">Validación</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/10">
+            {preview.rows.slice(0, 200).map((row) => (
+              <tr key={`${row.rowNumber}-${row.product.sku}`}>
+                <td className="px-3 py-2">{row.rowNumber}</td>
+                <td className="px-3 py-2 font-semibold">{row.product.sku || "-"}</td>
+                <td className="px-3 py-2">{row.product.name || "-"}</td>
+                <td className="px-3 py-2">
+                  {row.action === "create" ? "Crear" : row.action === "update" ? "Actualizar" : "Omitir"}
+                </td>
+                <td className="px-3 py-2">
+                  {row.matchedImageName ? `Sí: ${row.matchedImageName}` : row.imageName ? "Faltante" : "Sin imagen"}
+                </td>
+                <td className="px-3 py-2">
+                  {row.errors.length > 0 ? (
+                    <span className="text-[#b91c25]">{row.errors.join(" ")}</span>
+                  ) : row.warnings.length > 0 ? (
+                    <span className="text-[#7c2d12]">{row.warnings.join(" ")}</span>
+                  ) : (
+                    <span className="text-[#166534]">Listo</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        <Button onClick={onCancel} variant="ghost" disabled={pending}>
+          Cancelar
+        </Button>
+        <Button onClick={onConfirm} variant="dark" disabled={pending || errorRows.length > 0 || validRows.length === 0}>
+          {pending ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+          Importar productos
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PreviewMetric({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "neutral" | "warning" | "danger" }) {
+  return (
+    <div className={`rounded-md px-3 py-2 ${tone === "danger" ? "bg-[#fff0ea]" : tone === "warning" ? "bg-[#fffbeb]" : "bg-white"}`}>
+      <p className="text-[11px] font-medium uppercase text-black/50">{label}</p>
+      <p className="text-lg font-semibold">{value.toLocaleString("es-HN")}</p>
     </div>
   );
 }

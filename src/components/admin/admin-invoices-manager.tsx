@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Download, ExternalLink, Eye, FilePenLine, FileText, Printer } from "lucide-react";
+import { Ban, Download, ExternalLink, Eye, FilePenLine, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import {
   cancelInvoiceAction,
   getInvoiceDetailAction,
@@ -20,6 +20,7 @@ import type { AdminInvoiceDetail, AdminInvoiceRow, InvoiceStatus } from "@/types
 import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { formatHnDate } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
+import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 
 type AdminInvoicesManagerProps = {
   invoices: AdminInvoiceRow[];
@@ -29,6 +30,7 @@ type AdminInvoicesManagerProps = {
   fiscalAlerts: FiscalAlert[];
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
+  canUseTechnicalExports: boolean;
   activeTask?: { id: string; label: string } | null;
 };
 
@@ -48,6 +50,17 @@ const paymentLabels: Record<string, string> = {
   cash: "Efectivo",
 };
 
+const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
+  customer_name: "Nombre fiscal",
+  customer_rtn: "RTN",
+  customer_phone: "Teléfono",
+  customer_email: "Correo",
+  customer_address: "Dirección fiscal",
+};
+
+const fiscalCorrectionWarning =
+  "Esta acción actualizará datos fiscales del cliente. Si la factura ya fue emitida, conservará el mismo número fiscal y quedará registrada en auditoría.";
+
 function formatDate(value: string | null) {
   return formatHnDate(value);
 }
@@ -66,6 +79,34 @@ function downloadBlob(content: string, fileName: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
+function htmlEscape(value: string | number) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function buildExcelTable(title: string, columns: string[], rows: Array<Array<string | number>>) {
+  const header = columns.map((column) => `<th>${htmlEscape(column)}</th>`).join("");
+  const body = rows
+    .map((row) => `<tr>${row.map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`)
+    .join("");
+
+  return `
+    <html>
+      <head><meta charset="utf-8" /></head>
+      <body>
+        <h1>${htmlEscape(title)}</h1>
+        <table border="1">
+          <thead><tr>${header}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
 export function AdminInvoicesManager({
   invoices,
   total,
@@ -74,6 +115,7 @@ export function AdminInvoicesManager({
   fiscalAlerts,
   canCancelInvoices,
   canCorrectInvoices,
+  canUseTechnicalExports,
   activeTask = null,
 }: AdminInvoicesManagerProps) {
   const router = useRouter();
@@ -121,7 +163,7 @@ export function AdminInvoicesManager({
     { subtotal: 0, tax: 0, total: 0 },
   );
 
-  function exportCsv() {
+  function invoiceExportRows() {
     const columns = [
       "Factura",
       "Cliente",
@@ -146,21 +188,40 @@ export function AdminInvoicesManager({
       formatDate(invoice.issued_at ?? invoice.created_at),
       paymentLabels[invoice.payment_method] ?? invoice.payment_method,
       invoice.bank_reference_number ?? "-",
-      invoice.subtotal,
-      invoice.tax,
-      invoice.small_order_fee,
-      invoice.discount_total,
-      invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0),
-      invoice.shipping_fee,
-      invoice.cash_on_delivery_fee,
-      invoice.total,
+      formatCurrency(invoice.subtotal),
+      formatCurrency(invoice.tax),
+      formatCurrency(invoice.small_order_fee),
+      invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0),
+      formatCurrency(invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0)),
+      formatCurrency(invoice.shipping_fee),
+      formatCurrency(invoice.cash_on_delivery_fee),
+      formatCurrency(invoice.total),
       statusLabels[invoice.status],
     ]);
+
+    return { columns, rows };
+  }
+
+  function exportCsv() {
+    if (!canUseTechnicalExports) {
+      return;
+    }
+
+    const { columns, rows } = invoiceExportRows();
 
     downloadBlob(
       [columns.map(csvEscape).join(","), ...rows.map((row) => row.map(csvEscape).join(","))].join("\n"),
       "car-zone-facturas.csv",
       "text/csv;charset=utf-8",
+    );
+  }
+
+  function exportExcel() {
+    const { columns, rows } = invoiceExportRows();
+    downloadBlob(
+      buildExcelTable("Facturas fiscales - Car Zone Accesorios", columns, rows),
+      "car-zone-facturas.xlsx.xls",
+      "application/vnd.ms-excel;charset=utf-8",
     );
   }
 
@@ -372,10 +433,16 @@ export function AdminInvoicesManager({
               <option value="cash">Efectivo</option>
             </select>
           </label>
-          <Button onClick={exportCsv} variant="ghost">
-            <Download size={16} />
-            CSV
+          <Button onClick={exportExcel} variant="ghost">
+            <FileSpreadsheet size={16} />
+            Excel
           </Button>
+          {canUseTechnicalExports ? (
+            <Button onClick={exportCsv} variant="ghost" title="Exportación técnica solo para Kenneth/admin técnico">
+              <Download size={16} />
+              CSV técnico
+            </Button>
+          ) : null}
           <Button
             onClick={() => {
               setQuery("");
@@ -517,6 +584,23 @@ function InvoiceModal({
   const [customerEmail, setCustomerEmail] = useState(invoice.customer_email ?? "");
   const [customerAddress, setCustomerAddress] = useState(invoice.customer_address ?? "");
   const [correctionReason, setCorrectionReason] = useState("");
+  const [confirmingCorrection, setConfirmingCorrection] = useState(false);
+  const normalizedRtn = customerRtn.trim().replace(/[\s-]/g, "");
+  const rtnIsValid = normalizedRtn.length === 0 || /^\d{14}$/.test(normalizedRtn);
+  const canSubmitCorrection = customerName.trim().length > 0 && correctionReason.trim().length >= 10 && rtnIsValid;
+
+  function submitCorrection() {
+    onCorrect({
+      invoiceId: invoice.id,
+      customerName,
+      customerRtn,
+      customerPhone,
+      customerEmail,
+      customerAddress,
+      correctionReason,
+    });
+    setConfirmingCorrection(false);
+  }
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
@@ -580,10 +664,7 @@ function InvoiceModal({
             <p className="mt-1 text-sm text-black/55">
               No cambia número fiscal, CAI, rango, fecha original, productos ni totales.
             </p>
-            <p className="mt-2 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-              Esta accion actualizara los datos fiscales del cliente en la factura, manteniendo el mismo numero fiscal.
-              Quedara registrada en auditoria.
-            </p>
+            <p className="mt-2 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">{fiscalCorrectionWarning}</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cliente / razon social</span>
@@ -592,6 +673,7 @@ function InvoiceModal({
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN</span>
                 <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
+                {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 dígitos.</p> : null}
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Teléfono</span>
@@ -615,32 +697,37 @@ function InvoiceModal({
                 />
               </label>
             </div>
+            {confirmingCorrection ? (
+              <div className="mt-4 rounded-md border border-[#f59e0b]/35 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+                <p>{fiscalCorrectionWarning}</p>
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <Button onClick={() => setConfirmingCorrection(false)} variant="ghost">
+                    Cancelar
+                  </Button>
+                  <Button onClick={submitCorrection} disabled={isPending || !canSubmitCorrection} variant="primary">
+                    Guardar corrección
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <Button onClick={onClose} variant="ghost">Cancelar</Button>
               <Button
-                onClick={() =>
-                  onCorrect({
-                    invoiceId: invoice.id,
-                    customerName,
-                    customerRtn,
-                    customerPhone,
-                    customerEmail,
-                    customerAddress,
-                    correctionReason,
-                  })
-                }
-                disabled={isPending || customerName.trim().length === 0 || correctionReason.trim().length < 8}
+                onClick={() => setConfirmingCorrection(true)}
+                disabled={isPending || !canSubmitCorrection}
                 variant="primary"
               >
-                {isPending ? "Guardando..." : "Guardar correccion"}
+                {isPending ? "Guardando..." : "Guardar corrección"}
               </Button>
             </div>
           </section>
         ) : invoice.status === "anulada" || invoice.status === "cancelled" ? (
           <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            No se puede corregir una factura anulada.
+            No se pueden corregir datos de una factura anulada.
           </p>
         ) : null}
+
+        {canCorrectInvoices ? <FiscalCorrectionHistory history={invoice.fiscal_correction_history} /> : null}
 
         <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
           <table className="w-full text-left text-sm">
@@ -738,6 +825,53 @@ function CancelInvoiceModal({
         </div>
       </section>
     </div>
+  );
+}
+
+function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistoryEntry[] }) {
+  return (
+    <section className="mt-5 rounded-lg border border-black/10 bg-white p-4">
+      <h3 className="font-semibold">Historial de correcciones fiscales</h3>
+      {history.length === 0 ? (
+        <p className="mt-2 text-sm text-black/55">Sin correcciones fiscales registradas.</p>
+      ) : (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
+              <tr>
+                <th className="px-3 py-2">Fecha</th>
+                <th className="px-3 py-2">Usuario</th>
+                <th className="px-3 py-2">Campo</th>
+                <th className="px-3 py-2">Valor anterior</th>
+                <th className="px-3 py-2">Valor nuevo</th>
+                <th className="px-3 py-2">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/10">
+              {history.flatMap((entry) => {
+                const fields =
+                  entry.fields_modified.length > 0
+                    ? entry.fields_modified
+                    : (Object.keys(entry.new_values) as FiscalCorrectionValueKey[]);
+                return fields.map((field) => (
+                  <tr key={`${entry.id}-${field}`}>
+                    <td className="px-3 py-2">{formatDate(entry.created_at)}</td>
+                    <td className="px-3 py-2">
+                      {entry.user_label ?? "Usuario"}
+                      {entry.actor_role ? <span className="block text-xs text-black/45">{entry.actor_role}</span> : null}
+                    </td>
+                    <td className="px-3 py-2">{fiscalCorrectionFieldLabels[field] ?? field}</td>
+                    <td className="px-3 py-2">{entry.old_values[field] || "-"}</td>
+                    <td className="px-3 py-2">{entry.new_values[field] || "-"}</td>
+                    <td className="px-3 py-2">{entry.correction_reason ?? "-"}</td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

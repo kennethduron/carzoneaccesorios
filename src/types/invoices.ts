@@ -1,5 +1,6 @@
 import type { StoreOrder } from "@/types/orders";
 import type { AdditionalFee } from "@/types/financial";
+import type { FiscalCorrectionHistoryEntry } from "@/types/fiscal-corrections";
 
 export type InvoiceStatus = "emitida" | "anulada" | "pendiente" | "draft" | "issued" | "paid" | "cancelled";
 
@@ -103,4 +104,5 @@ export type AdminInvoiceDetail = AdminInvoiceRow & {
   fiscal_range_end: string | null;
   due_at: string | null;
   items: AdminInvoiceItem[];
+  fiscal_correction_history: FiscalCorrectionHistoryEntry[];
 };

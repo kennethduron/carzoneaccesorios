@@ -12,6 +12,10 @@ export type PublicTrackingItem = {
   line_total: number;
 };
 
+const FINALIZED_TRACKING_MESSAGE =
+  "Este pedido ya fue finalizado. Para más información, contacta a Car Zone Accesorios.";
+const TRACKING_NOT_FOUND_MESSAGE = "Código de seguimiento no encontrado.";
+
 export type PublicTrackingOrder = {
   orderNumber: string;
   trackingCode: string;
@@ -29,18 +33,19 @@ export type PublicTrackingOrder = {
 };
 
 type PublicTrackingRpcRow = {
-  order_number: string;
-  tracking_code: string;
-  tracking_status: string;
-  order_status: string;
-  payment_status: string;
+  lookup_status?: "active" | "finalized";
+  order_number: string | null;
+  tracking_code: string | null;
+  tracking_status: string | null;
+  order_status: string | null;
+  payment_status: string | null;
   has_transfer_receipt: boolean | null;
   has_bank_reference: boolean | null;
-  created_at: string;
-  payment_method: string;
+  created_at: string | null;
+  payment_method: string | null;
   total: unknown;
-  customer_name_masked: string;
-  phone_last4: string;
+  customer_name_masked: string | null;
+  phone_last4: string | null;
   items: PublicTrackingItem[] | string | null;
 };
 
@@ -80,12 +85,28 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
           code_suffix: trackingCode.slice(-4),
         },
       });
-      return { ok: false, message: "No encontramos un pedido con ese código. Verifica e intenta nuevamente." };
+      return { ok: false, message: TRACKING_NOT_FOUND_MESSAGE };
     }
 
     const row = Array.isArray(data) ? data[0] : null;
     if (!row) {
-      return { ok: false, message: "No encontramos un pedido con ese código. Verifica e intenta nuevamente." };
+      return { ok: false, message: TRACKING_NOT_FOUND_MESSAGE };
+    }
+
+    if (row.lookup_status === "finalized") {
+      return { ok: false, message: FINALIZED_TRACKING_MESSAGE };
+    }
+
+    if (
+      !row.order_number ||
+      !row.tracking_code ||
+      !row.tracking_status ||
+      !row.order_status ||
+      !row.payment_status ||
+      !row.created_at ||
+      !row.payment_method
+    ) {
+      return { ok: false, message: TRACKING_NOT_FOUND_MESSAGE };
     }
 
     const items = Array.isArray(row.items)
@@ -107,8 +128,8 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
         createdAt: row.created_at,
         paymentMethod: row.payment_method,
         total: Number(row.total ?? 0),
-        customerNameMasked: row.customer_name_masked,
-        phoneLast4: row.phone_last4,
+        customerNameMasked: row.customer_name_masked ?? "",
+        phoneLast4: row.phone_last4 ?? "",
         items,
       },
     };
@@ -122,7 +143,7 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
         code_suffix: trackingCode.slice(-4),
       },
     });
-    return { ok: false, message: "No encontramos un pedido con ese código. Verifica e intenta nuevamente." };
+    return { ok: false, message: TRACKING_NOT_FOUND_MESSAGE };
   }
 }
 

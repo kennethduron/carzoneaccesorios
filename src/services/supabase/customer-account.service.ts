@@ -222,6 +222,7 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
     payment_status: normalizePaymentStatus(row.payments),
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
     transfer_receipt_url: payment?.transfer_receipt_url ?? null,
+    fiscal_correction_history: [],
     invoices: invoices.map((invoice) => ({
       ...invoice,
       subtotal: toNumber(invoice.subtotal),

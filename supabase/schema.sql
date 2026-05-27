@@ -78,3 +78,5 @@
 \i ./migrations/202605270003_first_wholesale_minimum_uses_final_total.sql
 \i ./migrations/202605270004_enforce_wholesale_product_min_quantity.sql
 \i ./migrations/202605270005_fix_wholesale_min_quantity_trigger_detail.sql
+\i ./migrations/202605270006_public_tracking_active_orders_only.sql
+\i ./migrations/202605270007_fiscal_correction_audit_hardening.sql

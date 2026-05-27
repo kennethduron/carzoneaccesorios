@@ -1,5 +1,6 @@
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import type { AdditionalFee } from "@/types/financial";
+import type { FiscalCorrectionHistoryEntry } from "@/types/fiscal-corrections";
 
 export type OrderStatus =
   | "recibido"
@@ -126,4 +127,5 @@ export type AdminOrderRow = {
   invoice_status: string | null;
   invoice_cancelled_at: string | null;
   invoice_cancellation_reason: string | null;
+  fiscal_correction_history: FiscalCorrectionHistoryEntry[];
 };

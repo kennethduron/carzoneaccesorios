@@ -22,9 +22,14 @@ export default async function AdminInvoicesPage({
   const profile = await requirePermission("invoices:read");
   const params = await searchParams;
   const task = normalizeAdminInvoiceTask(params.task);
+  const canUseTechnicalExports =
+    profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
+    profile.role === "technical_owner" ||
+    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
   const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
   const canCorrectInvoices =
-    profile.role === "admin" || profile.permissions.includes("invoices:correct") || profile.permissions.includes("invoices:manage");
+    ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
+    profile.permissions.includes("invoices:correct");
   const [invoicesPage, fiscalSettings] = await Promise.all([
     getAdminInvoicesPage({ page: Number(params.page ?? 1), pageSize: 50, task }),
     getFiscalSettings(),
@@ -57,6 +62,7 @@ export default async function AdminInvoicesPage({
         fiscalAlerts={fiscalAlerts}
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
+        canUseTechnicalExports={canUseTechnicalExports}
         activeTask={task ? { id: task, label: adminInvoiceTaskLabels[task] } : null}
       />
     </AdminShell>

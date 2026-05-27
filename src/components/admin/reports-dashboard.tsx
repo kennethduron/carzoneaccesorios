@@ -48,6 +48,7 @@ type ReportsDashboardProps = {
   data: AdminReportsData;
   fiscalSettings: FiscalSettings | null;
   accessMode: ReportAccessMode;
+  canUseTechnicalExports: boolean;
 };
 
 const paymentLabels: Record<string, string> = {
@@ -175,7 +176,7 @@ function reportParams(filters: AdminReportsData["filters"]) {
   };
 }
 
-export function ReportsDashboard({ data, fiscalSettings, accessMode }: ReportsDashboardProps) {
+export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechnicalExports }: ReportsDashboardProps) {
   const [activeReport, setActiveReport] = useState<ReportKey>(accessMode === "full" ? "soldProductsDetail" : "topProducts");
   const [exportingPdf, setExportingPdf] = useState(false);
   const canExport = accessMode === "full";
@@ -758,7 +759,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode }: ReportsDa
   const currentReport = reportDefinitions.find((report) => report.key === activeReport) ?? reportDefinitions[0];
 
   function exportCsv() {
-    if (!canExport) {
+    if (!canExport || !canUseTechnicalExports) {
       return;
     }
 
@@ -899,14 +900,11 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode }: ReportsDa
           <div>
             <p className="text-sm font-semibold">Exportaciones</p>
             <p className="mt-1 text-sm text-black/55">
-              CSV, Excel y PDF exportan las columnas visibles del reporte activo, incluyendo producto, SKU, cliente, RTN, factura, pedido y metodo de pago cuando aplica.
+              Excel y PDF exportan las columnas visibles del reporte activo con encabezados claros, fechas legibles y moneda en lempiras.
+              CSV tecnico solo aparece para Kenneth/admin tecnico.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={exportCsv} disabled={!canExport}>
-              <Download size={16} />
-              CSV
-            </Button>
             <Button variant="ghost" onClick={exportExcel} disabled={!canExport}>
               <FileSpreadsheet size={16} />
               Excel
@@ -915,6 +913,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode }: ReportsDa
               <Printer size={16} />
               {exportingPdf ? "Generando..." : "PDF"}
             </Button>
+            {canUseTechnicalExports ? (
+              <Button variant="ghost" onClick={exportCsv} disabled={!canExport} title="Exportación técnica solo para Kenneth/admin técnico">
+                <Download size={16} />
+                CSV técnico
+              </Button>
+            ) : null}
           </div>
         </div>
         {!canExport ? <p className="mt-3 text-sm text-[#7c2d12]">Tu rol puede revisar reportes operativos, pero no exportar reportes financieros.</p> : null}

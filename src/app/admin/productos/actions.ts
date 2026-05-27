@@ -26,6 +26,12 @@ type ProductMutationResult = {
   message: string;
 };
 
+export type ProductImportMode = "create" | "update" | "upsert";
+
+export type ProductImportSkuStatusResult = ProductMutationResult & {
+  existingSkus?: string[];
+};
+
 type ProductImageUploadResult = ProductMutationResult & {
   publicUrl?: string;
   storagePath?: string;
@@ -637,18 +643,58 @@ export async function deleteProductAction(id: string, confirmation?: string): Pr
   return { ok: true, message: "Producto eliminado correctamente." };
 }
 
-export async function importProductsAction(products: ProductFormInput[]): Promise<ProductMutationResult> {
+export async function getProductImportSkuStatusAction(skus: string[]): Promise<ProductImportSkuStatusResult> {
   await requirePermission("products:manage");
   const supabase = await getSupabaseServerClient();
+
+  const normalizedSkus = Array.from(new Set(skus.map((sku) => sku.trim().toUpperCase()).filter(Boolean))).slice(0, 5000);
+  if (normalizedSkus.length === 0) {
+    return { ok: true, message: "Sin SKU para validar.", existingSkus: [] };
+  }
+
+  const { data, error } = await supabase.from("products").select("sku").in("sku", normalizedSkus);
+
+  if (error) {
+    return { ok: false, message: friendlyProductError(error.message), existingSkus: [] };
+  }
+
+  return {
+    ok: true,
+    message: "SKU validados correctamente.",
+    existingSkus: (data ?? []).map((row) => String(row.sku ?? "").toUpperCase()).filter(Boolean),
+  };
+}
+
+export async function importProductsAction(
+  products: ProductFormInput[],
+  options: {
+    mode?: ProductImportMode;
+    fileName?: string;
+    imageSummary?: {
+      uploaded: number;
+      missing: number;
+      errors: number;
+    };
+  } = {},
+): Promise<ProductMutationResult> {
+  const profile = await requirePermission("products:manage");
+  const supabase = await getSupabaseServerClient();
+  const mode = options.mode ?? "upsert";
 
   if (products.length === 0) {
     return { ok: false, message: "El archivo no contiene productos para importar." };
   }
 
   let saved = 0;
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const errors: Array<{ sku: string; message: string }> = [];
+
   for (const product of products) {
     const sku = product.sku.trim().toUpperCase();
     let productWithId = product;
+    let exists = false;
 
     if (!product.id && sku) {
       const { data, error } = await supabase
@@ -663,15 +709,69 @@ export async function importProductsAction(products: ProductFormInput[]): Promis
 
       if (data?.id) {
         productWithId = { ...product, id: data.id };
+        exists = true;
+        if (product.images.length === 0) {
+          const { data: existingImages, error: imagesError } = await supabase
+            .from("product_images")
+            .select("id, public_url, storage_path, public_id, angle, alt_text, sort_order, is_primary")
+            .eq("product_id", data.id)
+            .order("sort_order", { ascending: true })
+            .returns<ProductImageInput[]>();
+
+          if (imagesError) {
+            return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(imagesError.message)}` };
+          }
+
+          productWithId = { ...productWithId, images: existingImages ?? [] };
+        }
       }
+    }
+
+    if (exists && mode === "create") {
+      skipped += 1;
+      continue;
+    }
+
+    if (!exists && mode === "update") {
+      skipped += 1;
+      continue;
     }
 
     const result = await saveProductAction(productWithId);
     if (!result.ok) {
+      errors.push({ sku: product.sku, message: friendlyProductError(result.message) });
       return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
     }
     saved += 1;
+    if (exists) {
+      updated += 1;
+    } else {
+      created += 1;
+    }
   }
 
-  return { ok: true, message: `CSV importado correctamente. ${saved} productos guardados.` };
+  await writeAuditLog({
+    tableName: "products",
+    action: "products.bulk_import",
+    newData: {
+      user_id: profile.id,
+      user_role: profile.role,
+      mode,
+      file_name: cleanText(options.fileName),
+      requested: products.length,
+      saved,
+      created,
+      updated,
+      skipped,
+      image_summary: options.imageSummary ?? null,
+      errors,
+      skus: products.map((product) => product.sku.trim().toUpperCase()).filter(Boolean),
+    },
+  });
+
+  revalidateProductCatalog();
+  return {
+    ok: true,
+    message: `Importacion completada. ${created} nuevos, ${updated} actualizados, ${skipped} omitidos.`,
+  };
 }

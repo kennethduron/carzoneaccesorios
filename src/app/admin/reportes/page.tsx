@@ -26,6 +26,10 @@ export default async function AdminReportsPage({
   const profile = await requireSession();
   const fullAccessRoles = new Set<AppRole>(["technical_owner", "admin", "business_owner", "contadora"]);
   const accessMode = fullAccessRoles.has(profile.role) ? "full" : profile.role === "vendedor" ? "limited" : null;
+  const canUseTechnicalExports =
+    profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
+    profile.role === "technical_owner" ||
+    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
 
   if (!accessMode || (accessMode === "full" && !profile.permissions.includes("reports:read") && profile.role !== "admin")) {
     redirect("/sin-permiso");
@@ -77,7 +81,12 @@ export default async function AdminReportsPage({
           cada segmento.
         </p>
       </section>
-      <ReportsDashboard data={reports} fiscalSettings={fiscalSettings} accessMode={accessMode} />
+      <ReportsDashboard
+        data={reports}
+        fiscalSettings={fiscalSettings}
+        accessMode={accessMode}
+        canUseTechnicalExports={canUseTechnicalExports}
+      />
     </AdminShell>
   );
 }
