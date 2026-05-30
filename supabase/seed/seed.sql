@@ -2,8 +2,8 @@ insert into public.roles (name, description, permissions)
 values
   (
     'technical_owner',
-    'Proveedor tecnico del sistema. Acceso a monitoreo, seguridad, backups, integraciones y recuperacion tecnica.',
-    '["admin:access","system:monitoring","settings:manage","users:manage","roles:assign","audit:read"]'::jsonb
+    'Superusuario tecnico del sistema. Acceso total a operacion, administracion, seguridad, monitoreo e infraestructura.',
+    '["admin:access","products:read","products:manage","inventory:manage","orders:read","orders:manage","customers:read","customers:manage","payments:read","payments:manage","invoices:read","invoices:create","invoices:correct","invoices:manage","fiscal:read","reports:export","shipments:manage","crm:manage","reports:read","settings:manage","commercial_settings:manage","users:manage","users:read","users:manage_operational","roles:assign","roles:assign_operational","audit:read","audit:read_operational","user_activity:read_operational","system:monitoring","store:buy","orders:read_own","invoices:read_own"]'::jsonb
   ),
   (
     'admin',
@@ -13,7 +13,7 @@ values
   (
     'business_owner',
     'Dueno operativo del negocio. Administra operacion, equipo, clientes, inventario, pedidos, facturas y reportes sin acceso tecnico critico.',
-    '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","customers:manage","payments:read","payments:manage","invoices:read","invoices:create","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","users:manage","roles:assign","audit:read","commercial_settings:manage"]'::jsonb
+    '["admin:access","products:manage","inventory:manage","orders:manage","customers:read","customers:manage","payments:read","payments:manage","invoices:read","invoices:create","invoices:correct","invoices:manage","fiscal:read","crm:manage","reports:read","reports:export","users:read","users:manage_operational","roles:assign_operational","audit:read","audit:read_operational","user_activity:read_operational","commercial_settings:manage"]'::jsonb
   ),
   (
     'vendedor',

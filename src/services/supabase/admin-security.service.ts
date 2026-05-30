@@ -1,6 +1,7 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
+import { effectivePermissions, effectiveRole, isProtectedTechnicalEmail } from "@/lib/auth/permissions";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupLogRow } from "@/types/security";
 
@@ -108,7 +109,7 @@ function pushToMap<T>(map: Map<string, T[]>, key: string | null | undefined, val
 }
 
 function operationalAuditOnly(log: AuditLogRow) {
-  if (log.actor_role === "technical_owner") {
+  if (log.actor_role === "technical_owner" || log.actor_role === "admin") {
     return false;
   }
 
@@ -116,7 +117,20 @@ function operationalAuditOnly(log: AuditLogRow) {
     return false;
   }
 
+  const serialized = `${JSON.stringify(log.old_data ?? {})} ${JSON.stringify(log.new_data ?? {})}`.toLowerCase();
+  if (serialized.includes(protectedTechnicalEmail)) {
+    return false;
+  }
+
   return true;
+}
+
+const businessOwnerVisibleRoles = new Set(["cliente", "vendedor", "bodega", "contadora", "soporte"]);
+const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
+
+function isVisibleToBusinessOwner(user: UserQueryRow) {
+  const role = user.roles?.name ?? "cliente";
+  return businessOwnerVisibleRoles.has(role) && !isProtectedTechnicalEmail(user.email);
 }
 
 async function getAuthUserMap() {
@@ -258,18 +272,22 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
     }
   }
 
-  const visibleRoles = ownerView ? (roles ?? []).filter((role) => role.name !== "technical_owner") : roles ?? [];
+  const visibleRoles = ownerView
+    ? (roles ?? []).filter((role) => businessOwnerVisibleRoles.has(role.name))
+    : roles ?? [];
   const visibleAuditLogs = ownerView ? (auditLogs ?? []).map(normalizeAuditLog).filter(operationalAuditOnly) : (auditLogs ?? []).map(normalizeAuditLog);
 
   return {
     roles: visibleRoles.map((role) => ({
       role: role.name,
-      permissions: role.permissions,
+      permissions: effectivePermissions(role.name),
     })),
     users: (users ?? [])
-      .filter((user) => !ownerView || user.roles?.name !== "technical_owner")
+      .filter((user) => !ownerView || isVisibleToBusinessOwner(user))
       .map((user): AdminUserSummary => {
       const authUser = authUsers.get(user.id);
+      const userEmail = user.email ?? authUser?.email ?? null;
+      const role = effectiveRole(user.roles?.name ?? "cliente", userEmail);
       const customerId = getCustomerId(user.customers);
       const customer = (customerId ? customersById.get(customerId) : null) ?? customersByUserId.get(user.id) ?? null;
       const relatedOrders = [
@@ -282,13 +300,13 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
 
       return {
         id: user.id,
-        email: user.email ?? authUser?.email ?? null,
+        email: userEmail,
         username: user.username,
         full_name: user.full_name,
         phone: user.phone,
-        role: user.roles?.name ?? "cliente",
-        profile_kind: isInternalRole(user.roles?.name) ? "internal" : "customer",
-        profile_label: isInternalRole(user.roles?.name) ? internalRoleLabel(user.roles?.name) : "Cliente",
+        role,
+        profile_kind: isInternalRole(role) ? "internal" : "customer",
+        profile_label: isInternalRole(role) ? internalRoleLabel(role) : "Cliente",
         active: user.active,
         created_at: user.created_at,
         updated_at: user.updated_at,

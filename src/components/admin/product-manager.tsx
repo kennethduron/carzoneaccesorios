@@ -1491,7 +1491,7 @@ export function ProductManager({
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <form action="/admin/productos" className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto_auto_auto]">
+        <form action="/admin/productos" className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto_auto]">
           <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
             <input
@@ -1545,10 +1545,6 @@ export function ProductManager({
             <FileSpreadsheet size={17} />
             Excel
           </Button>
-          <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost" title="Descargar plantilla Excel para importar productos">
-            <HelpCircle size={17} />
-            Plantilla Excel
-          </Button>
           {canUseTechnicalExports ? (
             <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica solo para Kenneth/admin técnico">
               <Download size={17} />
@@ -1558,9 +1554,6 @@ export function ProductManager({
         </form>
         <p className="mt-3 text-sm text-black/55">
           Página {page}: mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
-        </p>
-        <p className="mt-2 text-sm text-black/55">
-          Importa productos con Excel limpio y ZIP de imágenes. Las URLs técnicas y Cloudinary solo aparecen en herramientas técnicas.
         </p>
         {message ? (
           <p
@@ -1579,70 +1572,72 @@ export function ProductManager({
       </section>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-start">
-          <div>
-            <h2 className="font-semibold">Importación masiva con Excel + ZIP</h2>
-            <p className="mt-1 text-sm text-black/55">
-              El Excel contiene datos del producto y la columna Nombre de imagen. Las imágenes van en ZIP y pueden tener espacios,
-              mayúsculas, acentos, guiones o underscores.
-            </p>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="font-semibold">Importación masiva</h2>
+            <p className="mt-1 text-sm text-black/55">Sube un Excel de productos y un ZIP opcional de imágenes.</p>
           </div>
-          <select
-            value={importMode}
-            onChange={(event) => {
-              setImportMode(event.target.value as ProductImportMode);
-              setImportPreview(null);
-            }}
-            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
-          >
-            <option value="upsert">Crear y actualizar</option>
-            <option value="create">Crear solo nuevos</option>
-            <option value="update">Actualizar existentes</option>
-          </select>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost" title="Descargar plantilla Excel para importar productos">
+              <FileSpreadsheet size={17} />
+              Descargar plantilla
+            </Button>
+            <select
+              aria-label="Modo de importación"
+              value={importMode}
+              onChange={(event) => {
+                setImportMode(event.target.value as ProductImportMode);
+                setImportPreview(null);
+              }}
+              className="h-10 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+            >
+              <option value="upsert">Crear y actualizar</option>
+              <option value="create">Crear solo nuevos</option>
+              <option value="update">Actualizar existentes</option>
+            </select>
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-          <label className="rounded-md border border-dashed border-black/20 bg-[#f8fafc] p-3 text-sm">
-            <span className="block font-semibold">Excel de productos</span>
-            <span className="mt-1 block text-xs text-black/55">Usa la plantilla oficial .xlsx.</span>
+        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+          <label className="rounded-md border border-black/10 bg-[#f8fafc] px-3 py-2.5 text-sm">
+            <span className="block text-sm font-semibold">Excel de productos</span>
             <input
               type="file"
               accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-              className="mt-3 block w-full text-sm"
+              className="mt-2 block w-full text-sm"
               onChange={(event) => {
                 setExcelFile(event.target.files?.[0] ?? null);
                 setImportPreview(null);
               }}
             />
-            {excelFile ? <span className="mt-2 block text-xs font-medium text-black/60">{excelFile.name}</span> : null}
+            <span className="mt-1 block truncate text-xs text-black/55">{excelFile ? excelFile.name : "Selecciona un archivo .xlsx o .xls."}</span>
           </label>
 
-          <label className="rounded-md border border-dashed border-black/20 bg-[#f8fafc] p-3 text-sm">
-            <span className="block font-semibold">ZIP de imágenes</span>
-            <span className="mt-1 block text-xs text-black/55">Opcional. JPG, JPEG, PNG o WEBP, máximo 5 MB por imagen.</span>
+          <label className="rounded-md border border-black/10 bg-[#f8fafc] px-3 py-2.5 text-sm">
+            <span className="block text-sm font-semibold">ZIP de imágenes</span>
             <input
               type="file"
               accept=".zip,application/zip"
-              className="mt-3 block w-full text-sm"
+              className="mt-2 block w-full text-sm"
               onChange={(event) => {
                 setZipFile(event.target.files?.[0] ?? null);
                 setImportPreview(null);
               }}
             />
-            {zipFile ? <span className="mt-2 block text-xs font-medium text-black/60">{zipFile.name}</span> : null}
+            <span className="mt-1 block truncate text-xs text-black/55">{zipFile ? zipFile.name : "Opcional."}</span>
           </label>
 
-          <div className="flex flex-col gap-2">
-            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || !excelFile} variant="dark">
+          <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || !excelFile} variant="dark" className="h-10 whitespace-nowrap">
               {isPreparingImport ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
-              Validar
-            </Button>
-            <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost">
-              <FileSpreadsheet size={17} />
-              Plantilla
+              Validar archivos
             </Button>
           </div>
         </div>
+
+        <p className="mt-2 text-xs text-black/55">
+          Las imágenes se relacionan por Nombre de imagen o SKU. Acepta JPG, PNG y WEBP.
+        </p>
 
         {importPreview ? (
           <ImportPreviewPanel

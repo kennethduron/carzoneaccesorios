@@ -76,6 +76,8 @@ const roleLabels: Record<AppRole, string> = {
 };
 
 const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte"];
+const operationalManageRoles: AppRole[] = ["cliente", "vendedor", "bodega", "contadora", "soporte"];
+const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 const sensitiveKeyPattern = /(password|token|secret|apikey|api_key|key|service_role|authorization|card|tarjeta|cron_secret)/i;
 
 const roleDescriptions: Record<AppRole, string> = {
@@ -192,37 +194,43 @@ function deviceLabel(userAgent: string | null) {
   return `${userAgent.slice(0, 80)}...`;
 }
 
-function canAssignRole(actorRole: AppRole, role: AppRole) {
-  if (actorRole === "business_owner") {
-    return ["cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
-  }
+function hasTechnicalControl(profile: Pick<AuthProfile, "role" | "email">) {
+  return profile.role === "technical_owner" || profile.email?.toLowerCase() === protectedTechnicalEmail;
+}
 
-  if (actorRole === "admin") {
-    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
-  }
-
-  if (actorRole === "technical_owner") {
+function canAssignRole(actor: Pick<AuthProfile, "role" | "email">, role: AppRole) {
+  if (hasTechnicalControl(actor)) {
     return ["technical_owner", "admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
+  }
+
+  if (actor.role === "business_owner") {
+    return operationalManageRoles.includes(role);
+  }
+
+  if (actor.role === "admin") {
+    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
   }
 
   return false;
 }
 
-function assignableRoles(actorRole: AppRole) {
-  return (Object.keys(roleLabels) as AppRole[]).filter((role) => canAssignRole(actorRole, role));
+function assignableRoles(actor: Pick<AuthProfile, "role" | "email">) {
+  return (Object.keys(roleLabels) as AppRole[]).filter((role) => canAssignRole(actor, role));
 }
 
-function canModifyUser(actorRole: AppRole, user: AdminUserSummary) {
-  if (actorRole === "business_owner") {
-    return ["cliente", "vendedor", "bodega", "contadora", "soporte"].includes(user.role);
-  }
+function canModifyUser(actor: Pick<AuthProfile, "role" | "email">, user: AdminUserSummary) {
+  const isProtectedTechnicalUser = user.email?.toLowerCase() === protectedTechnicalEmail || user.role === "technical_owner";
 
-  if (actorRole === "admin") {
-    return user.role !== "technical_owner";
-  }
-
-  if (actorRole === "technical_owner") {
+  if (hasTechnicalControl(actor)) {
     return true;
+  }
+
+  if (actor.role === "business_owner") {
+    return !isProtectedTechnicalUser && operationalManageRoles.includes(user.role);
+  }
+
+  if (actor.role === "admin") {
+    return !isProtectedTechnicalUser;
   }
 
   return false;
@@ -262,9 +270,15 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
   const permissionCount = new Set(data.roles.flatMap((role) => role.permissions)).size;
   const latestBackup = data.backupLogs[0];
-  const canManageUsers = currentUser.role === "admin" || currentUser.permissions.includes("users:manage");
-  const canRequestBackups = currentUser.role === "admin" || currentUser.permissions.includes("settings:manage");
-  const roleOptions = assignableRoles(currentUser.role);
+  const canManageUsers =
+    hasTechnicalControl(currentUser) ||
+    currentUser.role === "admin" ||
+    currentUser.permissions.includes("users:manage") ||
+    currentUser.permissions.includes("users:manage_operational");
+  const canRequestBackups =
+    hasTechnicalControl(currentUser) ||
+    (currentUser.role === "admin" && currentUser.permissions.includes("settings:manage"));
+  const roleOptions = assignableRoles(currentUser);
   const selectedAuditUser = data.users.find((user) => user.id === auditUserId) ?? null;
   const selectedProfileUser = data.users.find((user) => user.id === profileUserId) ?? null;
   const auditModules = Array.from(new Set(data.auditLogs.map(auditModule))).sort((left, right) => left.localeCompare(right, "es-HN"));
@@ -489,8 +503,8 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 <tbody className="divide-y divide-black/10">
                   {filteredUsers.map((user) => {
                     const selectedRole = roleSelections[user.id] ?? user.role;
-                    const canModify = canModifyUser(currentUser.role, user);
-                    const canChangeToSelected = canAssignRole(currentUser.role, selectedRole);
+                    const canModify = canModifyUser(currentUser, user);
+                    const canChangeToSelected = canAssignRole(currentUser, selectedRole);
 
                     return (
                       <tr key={user.id}>
@@ -624,7 +638,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           <div className="grid gap-3 md:grid-cols-2">
             <ControlItem title="Rutas protegidas" description="/admin pasa por proxy y cada página revalida permisos en servidor." />
             <ControlItem title="Cambios de rol" description="Solo se ejecutan mediante RPC con auditoría y reglas de último administrador." />
-            <ControlItem title="Technical owner" description="Usuarios tecnicos no pueden ser modificados por roles operativos." />
+            <ControlItem title="Cuenta protegida" description="Las cuentas protegidas no pueden ser modificadas por roles operativos." />
             <ControlItem title="Usuarios suspendidos" description="active=false invalida acceso al panel y al inicio de sesión." />
             <ControlItem title="RLS Supabase" description="Las politicas limitan lectura y escritura por rol y propietario." />
             <ControlItem title="Secretos" description="La UI no muestra API keys, secretos de cron ni variables de integraciones." />

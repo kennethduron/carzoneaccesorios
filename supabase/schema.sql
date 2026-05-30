@@ -80,3 +80,6 @@
 \i ./migrations/202605270005_fix_wholesale_min_quantity_trigger_detail.sql
 \i ./migrations/202605270006_public_tracking_active_orders_only.sql
 \i ./migrations/202605270007_fiscal_correction_audit_hardening.sql
+\i ./migrations/202605280001_business_owner_security_permissions.sql
+\i ./migrations/202605280002_persist_blocked_security_audit.sql
+\i ./migrations/202605280003_technical_owner_full_access.sql

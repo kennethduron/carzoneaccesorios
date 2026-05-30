@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { effectivePermissions, effectiveRole, hasEffectivePermission, isProtectedTechnicalEmail } from "@/lib/auth/permissions";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 
@@ -39,29 +40,35 @@ export async function getSessionProfile(): Promise<AuthProfile | null> {
     .eq("id", user.id)
     .maybeSingle<UserRoleRow>();
 
-  if (data?.active === false) {
+  const protectedTechnical = isProtectedTechnicalEmail(data?.email) || isProtectedTechnicalEmail(user.email);
+
+  if (data?.active === false && !protectedTechnical) {
     await supabase.auth.signOut();
     return null;
   }
 
   if (!data?.roles) {
+    const role = effectiveRole(null, user.email ?? null);
+
     return {
       id: user.id,
       email: user.email ?? null,
       username: null,
       full_name: user.user_metadata?.full_name ?? null,
-      role: "cliente",
-      permissions: [],
+      role,
+      permissions: effectivePermissions(role, user.email ?? null),
     };
   }
 
+  const role = effectiveRole(data.roles.name, data.email ?? user.email ?? null);
+
   return {
     id: data.id,
-    email: data.email,
+    email: data.email ?? user.email ?? null,
     username: data.username,
     full_name: data.full_name,
-    role: data.roles.name,
-    permissions: data.roles.permissions,
+    role,
+    permissions: effectivePermissions(role, data.email ?? user.email ?? null),
   };
 }
 
@@ -78,7 +85,7 @@ export async function requireSession() {
 export async function requirePermission(permission: Permission) {
   const profile = await requireSession();
 
-  if (!profile.permissions.includes(permission) && profile.role !== "admin") {
+  if (!hasEffectivePermission(profile.role, profile.permissions, permission, profile.email)) {
     redirect("/sin-permiso");
   }
 
@@ -88,7 +95,7 @@ export async function requirePermission(permission: Permission) {
 export async function requireStrictPermission(permission: Permission) {
   const profile = await requireSession();
 
-  if (!profile.permissions.includes(permission)) {
+  if (!hasEffectivePermission(profile.role, profile.permissions, permission, profile.email)) {
     redirect("/sin-permiso");
   }
 

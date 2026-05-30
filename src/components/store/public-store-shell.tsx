@@ -17,11 +17,9 @@ import type { PublicCompanySettings } from "@/types/settings";
 const primaryLinks = [
   ["Inicio", "/"],
   ["Catálogo", "/catalogo"],
-  ["Categorías", "/categorias"],
   ["Contacto", "/contacto"],
   ["Rastrear pedido", "/rastreo"],
   ["Solicitar mayoreo", "/contacto#mayoreo"],
-  ["Políticas", "/politicas"],
 ];
 
 const customerAccountLinks = [

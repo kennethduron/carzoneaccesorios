@@ -2,12 +2,13 @@ import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
+import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminBusinessSettings } from "@/services/supabase/admin-business-settings.service";
 import { getAdminDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminInvoices } from "@/services/supabase/admin-invoices.service";
-import type { Permission } from "@/types/auth";
+import type { AppRole, Permission } from "@/types/auth";
 import type { DashboardCardKey } from "@/types/settings";
 import { getFiscalAlerts } from "@/utils/fiscal";
 import { formatCurrency } from "@/utils/pricing";
@@ -97,7 +98,7 @@ const moduleGroups = [
     title: "Administración",
     navLabel: "Configuración",
     description: "Ajustes empresariales y gobierno interno.",
-    defaultOpen: false,
+    defaultOpen: true,
     modules: [
       { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["settings:manage", "audit:read", "users:manage"] },
       { title: "Configuración empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
@@ -121,7 +122,7 @@ const moduleGroups = [
     title: "Técnico",
     navLabel: "Técnico",
     description: "Monitoreo, cron, backups y alertas técnicas.",
-    defaultOpen: false,
+    defaultOpen: true,
     technicalOnly: true,
     modules: [
       { title: "Uso y monitoreo", href: "/admin/uso", description: "Volumen de datos, logs antiguos, cron y referencias externas.", permissions: ["system:monitoring"] },
@@ -131,7 +132,11 @@ const moduleGroups = [
   },
 ] satisfies AdminModuleGroup[];
 
-function canAccessModule(role: string, permissions: Permission[], modulePermissions: Permission[]) {
+function canAccessModule(role: AppRole, email: string | null, permissions: Permission[], modulePermissions: Permission[]) {
+  if (isTechnicalOwner(role, email)) {
+    return true;
+  }
+
   if (modulePermissions.includes("admin:access")) {
     return role === "admin" || permissions.includes("admin:access");
   }
@@ -172,13 +177,12 @@ function statusTone(status: string | null) {
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = hasEffectivePermission(profile.role, profile.permissions, "system:monitoring", profile.email);
   const canViewFiscalAlerts =
-    profile.role === "admin" ||
-    profile.permissions.includes("fiscal:read") ||
-    profile.permissions.includes("invoices:read") ||
-    profile.permissions.includes("reports:read");
-  const canReadInvoices = profile.role === "admin" || profile.permissions.includes("invoices:read");
+    hasEffectivePermission(profile.role, profile.permissions, "fiscal:read", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "reports:read", profile.email);
+  const canReadInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email);
   const [fiscalSettings, invoices] = canViewFiscalAlerts
     ? await Promise.all([getFiscalSettings(), canReadInvoices ? getAdminInvoices() : Promise.resolve([])])
     : [null, []];
@@ -251,7 +255,7 @@ export default async function AdminPage() {
     permissions: Permission[];
     card: DashboardCardKey;
   }>;
-  const todayTasks = todayTaskOptions.filter((task) => visibleCards[task.card] && canAccessModule(profile.role, profile.permissions, task.permissions));
+  const todayTasks = todayTaskOptions.filter((task) => visibleCards[task.card] && canAccessModule(profile.role, profile.email, profile.permissions, task.permissions));
 
   const metricGroups = [
     {
@@ -306,7 +310,7 @@ export default async function AdminPage() {
       ...group,
       modules: group.technicalOnly && !canViewTechnical
         ? []
-        : group.modules.filter((module) => canAccessModule(profile.role, profile.permissions, module.permissions)),
+        : group.modules.filter((module) => canAccessModule(profile.role, profile.email, profile.permissions, module.permissions)),
     }))
     .filter((group) => group.modules.length > 0);
 
