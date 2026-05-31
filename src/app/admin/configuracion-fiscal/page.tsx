@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalSettingsForm } from "@/components/admin/fiscal-settings-form";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getFiscalAlerts } from "@/utils/fiscal";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminFiscalSettingsPage() {
   const profile = await requirePermission("fiscal:read");
-  const canEditTechnicalSettings = profile.role === "admin" || profile.permissions.includes("settings:manage");
+  const canEditTechnicalSettings = hasEffectivePermission(profile.role, profile.permissions, "settings:fiscal", profile.email);
   const settings = await getFiscalSettings();
   const alerts = getFiscalAlerts(settings);
 

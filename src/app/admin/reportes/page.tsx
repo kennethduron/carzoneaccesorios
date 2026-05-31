@@ -25,13 +25,13 @@ export default async function AdminReportsPage({
 }) {
   const profile = await requireSession();
   const fullAccessRoles = new Set<AppRole>(["technical_owner", "admin", "business_owner", "contadora"]);
-  const accessMode = fullAccessRoles.has(profile.role) ? "full" : profile.role === "vendedor" ? "limited" : null;
+  const accessMode = fullAccessRoles.has(profile.role) && profile.permissions.includes("reports:read") ? "full" : null;
   const canUseTechnicalExports =
     profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
     profile.role === "technical_owner" ||
-    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
+    profile.permissions.includes("technical:tools");
 
-  if (!accessMode || (accessMode === "full" && !profile.permissions.includes("reports:read") && profile.role !== "admin")) {
+  if (!accessMode) {
     redirect("/sin-permiso");
   }
 

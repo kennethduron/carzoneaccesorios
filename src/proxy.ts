@@ -5,6 +5,7 @@ import type { AppRole } from "@/types/auth";
 const protectedRoutes = ["/cuenta", "/mis-pedidos", "/facturas"];
 const adminRoutes = ["/admin"];
 const adminAccessRoles: AppRole[] = ["technical_owner", "admin", "business_owner", "vendedor", "bodega", "contadora", "soporte"];
+const securityAccessRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 
 export async function proxy(request: NextRequest) {
   const response = NextResponse.next({
@@ -60,11 +61,29 @@ export async function proxy(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("active, roles(name)")
+    .select("active, email, roles(name)")
     .eq("id", user.id)
-    .maybeSingle<{ active: boolean; roles: { name: AppRole } | null }>();
+    .maybeSingle<{ active: boolean; email: string | null; roles: { name: AppRole } | null }>();
 
   if (!profile?.active || !profile.roles || !adminAccessRoles.includes(profile.roles.name)) {
+    const deniedUrl = request.nextUrl.clone();
+    deniedUrl.pathname = "/sin-permiso";
+    deniedUrl.search = "";
+    return NextResponse.redirect(deniedUrl);
+  }
+
+  if (pathname.startsWith("/admin/seguridad") && !securityAccessRoles.includes(profile.roles.name)) {
+    const deniedUrl = request.nextUrl.clone();
+    deniedUrl.pathname = "/sin-permiso";
+    deniedUrl.search = "";
+    return NextResponse.redirect(deniedUrl);
+  }
+
+  if (
+    pathname.startsWith("/admin/uso") &&
+    profile.roles.name !== "technical_owner" &&
+    profile.email?.trim().toLowerCase() !== "kennethduron.paz@gmail.com"
+  ) {
     const deniedUrl = request.nextUrl.clone();
     deniedUrl.pathname = "/sin-permiso";
     deniedUrl.search = "";

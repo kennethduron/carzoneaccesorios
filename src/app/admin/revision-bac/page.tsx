@@ -76,7 +76,7 @@ const publicRoutes = [
 
 export default async function RevisionBacPage() {
   const profile = await requirePermission("commercial_settings:manage");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
   const visibleChecklistGroups = canViewTechnical ? checklistGroups : checklistGroups.filter((group) => group.status !== "credentials");
 
   return (

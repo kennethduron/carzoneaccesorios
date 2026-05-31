@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
+import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission, requireSession } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
-import type { AppRole } from "@/types/auth";
+import type { AppRole, AuthProfile } from "@/types/auth";
 import type { CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
@@ -83,6 +85,7 @@ type DeletionBlock = {
 const permanentDeletionRoles: AppRole[] = ["business_owner", "admin", "technical_owner"];
 const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 const commercialHistoryDeletionMessage = "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla.";
+const wholesaleManagementPermissionMessage = "Solo usuarios autorizados pueden cambiar el estado mayorista.";
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -129,6 +132,23 @@ function isInternalRole(role: AppRole | null | undefined) {
 
 function hasProtectedEmail(email: string | null | undefined) {
   return normalizeAccountEmail(email ?? "") === protectedTechnicalEmail;
+}
+
+function canManageWholesale(profile: AuthProfile) {
+  return hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
+}
+
+async function getWholesaleAuditContext(profile: AuthProfile, reason: string) {
+  const headerStore = await headers();
+  return {
+    actor_user_id: profile.id,
+    actor_role: profile.role,
+    changed_at: new Date().toISOString(),
+    ipAddress: headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+    reason,
+    result: "success",
+    userAgent: headerStore.get("user-agent"),
+  };
 }
 
 function isAutomaticRegistrationFollowup(row: { title: string | null; interaction_type?: string | null; notes?: string | null }) {
@@ -453,10 +473,10 @@ export async function setCrmFollowupStatusAction(
 }
 
 export async function approveWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
-  const profile = await requirePermission("customers:manage");
+  const profile = await requireSession();
 
-  if (!["admin", "business_owner"].includes(profile.role)) {
-    return { ok: false, message: "Solo admin o business_owner puede aprobar solicitudes mayoristas." };
+  if (!canManageWholesale(profile)) {
+    return { ok: false, message: wholesaleManagementPermissionMessage };
   }
 
   const customer = uuidLike(customerId, "Cliente");
@@ -531,6 +551,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
     return { ok: false, message: "No pudimos aprobar la solicitud mayorista." };
   }
 
+  const auditContext = await getWholesaleAuditContext(profile, "Solicitud mayorista aprobada.");
   await writeAuditLog({
     tableName: "customers",
     recordId: customer.value,
@@ -549,7 +570,10 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       wholesale_approved_notice_seen: false,
       status: hasActiveAccount ? "active" : "pending_account",
       active: true,
+      audit_context: auditContext,
     },
+    ipAddress: auditContext.ipAddress,
+    userAgent: auditContext.userAgent,
   });
 
   await addWholesaleHistoryNote({
@@ -577,11 +601,11 @@ async function setWholesaleStatusAction(input: {
   note: string;
   successMessage: string;
 }): Promise<CrmMutationResult> {
-  const profile = await requirePermission("customers:manage");
+  const profile = await requireSession();
   const customer = uuidLike(input.customerId, "Cliente");
 
-  if (!["admin", "business_owner"].includes(profile.role)) {
-    return { ok: false, message: "Solo admin o business_owner puede cambiar el estado mayorista." };
+  if (!canManageWholesale(profile)) {
+    return { ok: false, message: wholesaleManagementPermissionMessage };
   }
 
   if (!customer.ok) {
@@ -625,6 +649,7 @@ async function setWholesaleStatusAction(input: {
     return { ok: false, message: "No pudimos actualizar el estado mayorista." };
   }
 
+  const auditContext = await getWholesaleAuditContext(profile, input.note);
   await writeAuditLog({
     tableName: "customers",
     recordId: customer.value,
@@ -642,7 +667,10 @@ async function setWholesaleStatusAction(input: {
       wholesale_approved_notice_seen: isApproved ? false : true,
       status: nextCustomerStatus,
       active: true,
+      audit_context: auditContext,
     },
+    ipAddress: auditContext.ipAddress,
+    userAgent: auditContext.userAgent,
   });
 
   await addWholesaleHistoryNote({
@@ -1390,10 +1418,10 @@ export async function deleteCustomerAccountPermanentlyAction(input: PermanentAcc
 }
 
 export async function deleteTestAccountAction(input: TestAccountDeletionInput): Promise<CrmMutationResult> {
-  const profile = await requirePermission("settings:manage");
+  const profile = await requirePermission("technical:tools");
 
-  if (profile.role !== "admin") {
-    return { ok: false, message: "Solo un administrador principal puede eliminar cuentas TEST." };
+  if (!isTechnicalOwner(profile.role, profile.email)) {
+    return { ok: false, message: "Solo el administrador tÃ©cnico puede eliminar cuentas TEST." };
   }
 
   const email = normalizeAccountEmail(input.email);

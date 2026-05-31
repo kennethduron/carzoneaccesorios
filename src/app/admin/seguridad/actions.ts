@@ -3,6 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  canAssignRole as canAssignSecurityRole,
+  canManageSecurityUsers,
+  canModifySecurityUser,
+  canRequestTechnicalBackups,
+  creatableRolesFor,
+  hasTechnicalControl as hasTechnicalSecurityControl,
+  isProtectedTechnicalUser as isProtectedTechnicalSecurityUser,
+} from "@/lib/auth/access-control";
 import { requirePermission, requireSession } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -37,11 +46,6 @@ type RequestAuditContext = {
   userAgent: string | null;
 };
 
-const ownerAssignableRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte", "cliente"];
-const adminAssignableRoles: AppRole[] = ["admin", "business_owner", "vendedor", "bodega", "contadora", "soporte", "cliente"];
-const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte"];
-const operationalManageRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte", "cliente"];
-const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 const technicalConfirmation = "CONFIRMAR CAMBIO TECNICO";
 
 function normalizeEmail(email: string) {
@@ -52,81 +56,42 @@ function normalizePhone(phone: string) {
   return phone.replace(/[^\d]/g, "");
 }
 
-function normalizeNullableEmail(email: string | null | undefined) {
-  return (email ?? "").trim().toLowerCase();
-}
-
 function hasTechnicalControl(profile: AuthProfile) {
-  return profile.role === "technical_owner" || normalizeNullableEmail(profile.email) === protectedTechnicalEmail;
-}
-
-function hasPermission(profile: AuthProfile, permission: string) {
-  return (profile.permissions as string[]).includes(permission);
+  return hasTechnicalSecurityControl(profile);
 }
 
 function canManageUsers(profile: AuthProfile) {
-  return (
-    hasTechnicalControl(profile) ||
-    profile.role === "admin" ||
-    hasPermission(profile, "users:manage") ||
-    hasPermission(profile, "users:manage_operational")
-  );
+  return canManageSecurityUsers(profile);
 }
 
 function canAssignRoles(profile: AuthProfile) {
-  return (
-    hasTechnicalControl(profile) ||
-    profile.role === "admin" ||
-    hasPermission(profile, "roles:assign") ||
-    hasPermission(profile, "roles:assign_operational")
-  );
+  return canManageSecurityUsers(profile);
 }
 
 function canAssignRole(profile: AuthProfile, targetRole: AppRole) {
-  if (hasTechnicalControl(profile)) {
-    return targetRole === "technical_owner" || adminAssignableRoles.includes(targetRole);
-  }
-
-  if (profile.role === "business_owner") {
-    return ownerAssignableRoles.includes(targetRole);
-  }
-
-  if (profile.role === "admin") {
-    return adminAssignableRoles.includes(targetRole);
-  }
-
-  return false;
+  return canAssignSecurityRole(profile, targetRole);
 }
 
 function canModifyTarget(profile: AuthProfile, target: TargetUserRecord) {
-  const targetEmail = normalizeNullableEmail(target.email);
-  const isProtectedTechnicalUser = targetEmail === protectedTechnicalEmail || target.role === "technical_owner";
-
-  if (hasTechnicalControl(profile)) {
-    return true;
-  }
-
-  if (isProtectedTechnicalUser || target.role === "admin") {
-    return false;
-  }
-
-  if (profile.role === "business_owner") {
-    return operationalManageRoles.includes(target.role);
-  }
-
-  if (profile.role === "admin") {
-    return target.role !== "technical_owner";
-  }
-
-  return false;
+  return canModifySecurityUser(profile, target);
 }
 
-function protectedTargetMessage(target?: TargetUserRecord | null) {
+function protectedTargetMessage(profile: AuthProfile, target?: TargetUserRecord | null) {
+  if (target?.id === profile.id) {
+    return "No puedes modificar tu propia cuenta.";
+  }
+
+  if (target && isProtectedTechnicalSecurityUser(target)) {
+    return "Este usuario tecnico esta protegido.";
+  }
+
+  if (target?.role === "business_owner") {
+    return "No puedes modificar al dueno operativo.";
+  }
+
   const isTechnical =
     target &&
-    (normalizeNullableEmail(target.email) === protectedTechnicalEmail ||
-      target.role === "technical_owner" ||
-      target.role === "admin");
+    (isProtectedTechnicalSecurityUser(target) || target.role === "admin");
 
   if (isTechnical) {
     return "Este usuario está protegido y solo puede ser modificado por el administrador técnico.";
@@ -168,6 +133,18 @@ function userFriendlyRoleError(message: string) {
   }
 
   return message;
+}
+
+function rpcMutationResult(data: unknown, fallback: string): SecurityMutationResult {
+  if (!data || typeof data !== "object") {
+    return { ok: false, message: fallback };
+  }
+
+  const result = data as { ok?: unknown; message?: unknown };
+  return {
+    ok: result.ok === true,
+    message: typeof result.message === "string" && result.message ? userFriendlyRoleError(result.message) : fallback,
+  };
 }
 
 function roleDescription(role: AppRole) {
@@ -255,7 +232,11 @@ export async function requestBackupAction(
   backupType: BackupType,
   notes: string,
 ): Promise<SecurityMutationResult> {
-  const profile = await requirePermission("settings:manage");
+  const profile = await requirePermission("system:backups");
+
+  if (!canRequestTechnicalBackups(profile)) {
+    return { ok: false, message: "Solo el administrador tecnico puede solicitar respaldos." };
+  }
 
   const allowedTypes: BackupType[] = ["manual", "scheduled", "pre_deploy"];
   if (!allowedTypes.includes(backupType)) {
@@ -332,11 +313,11 @@ export async function changeUserRoleAction(userId: string, role: AppRole): Promi
       newData: { result: "blocked", reason: "protected_or_not_operational", requested_role: role },
       context,
     });
-    return { ok: false, message: protectedTargetMessage(target) };
+    return { ok: false, message: protectedTargetMessage(profile, target) };
   }
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("change_user_role", {
+  const { data, error } = await supabase.rpc("change_user_role", {
     target_user_id: userId,
     target_role_name: role,
     change_reason: `Cambio solicitado desde /admin/seguridad por ${profile.email ?? profile.id}.`,
@@ -347,6 +328,11 @@ export async function changeUserRoleAction(userId: string, role: AppRole): Promi
 
   if (error) {
     return { ok: false, message: userFriendlyRoleError(error.message) };
+  }
+
+  const result = rpcMutationResult(data, "No se pudo actualizar el rol.");
+  if (!result.ok) {
+    return result;
   }
 
   revalidatePath("/admin/seguridad");
@@ -383,11 +369,11 @@ export async function setUserActiveAction(userId: string, active: boolean): Prom
       newData: { result: "blocked", reason: "protected_or_not_operational", requested_active: active },
       context,
     });
-    return { ok: false, message: protectedTargetMessage(target) };
+    return { ok: false, message: protectedTargetMessage(profile, target) };
   }
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("set_user_active", {
+  const { data, error } = await supabase.rpc("set_user_active", {
     target_user_id: userId,
     next_active: active,
     change_reason: `${active ? "Reactivación" : "Suspensión"} solicitada desde /admin/seguridad por ${profile.email ?? profile.id}.`,
@@ -398,6 +384,11 @@ export async function setUserActiveAction(userId: string, active: boolean): Prom
 
   if (error) {
     return { ok: false, message: userFriendlyRoleError(error.message) };
+  }
+
+  const result = rpcMutationResult(data, "No se pudo actualizar el estado del usuario.");
+  if (!result.ok) {
+    return result;
   }
 
   revalidatePath("/admin/seguridad");
@@ -420,15 +411,15 @@ export async function createOperationalUserAction(input: CreateOperationalUserIn
     return { ok: false, message: "No tienes autorización para crear usuarios operativos." };
   }
 
-  if (!operationalCreateRoles.includes(input.role)) {
+  if (!creatableRolesFor(profile).includes(input.role)) {
     await writeSecurityAudit({
       profile,
       action: "user.operational_create_blocked",
       target: null,
-      newData: { result: "blocked", reason: "role_not_operational", requested_role: input.role },
+      newData: { result: "blocked", reason: "role_not_allowed", requested_role: input.role },
       context,
     });
-    return { ok: false, message: "Solo se pueden crear usuarios operativos: vendedor, bodega, contadora o soporte." };
+    return { ok: false, message: roleErrorMessage(input.role) };
   }
 
   if (!canAssignRole(profile, input.role)) {

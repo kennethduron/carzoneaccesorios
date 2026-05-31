@@ -65,7 +65,7 @@ const moduleGroups = [
     defaultOpen: true,
     modules: [
       { title: "Clientes", href: "/admin/clientes", description: "Clientes, notas y seguimiento comercial.", permissions: ["crm:manage", "customers:manage"] },
-      { title: "Clientes mayoristas", href: "/admin/clientes-mayoristas", description: "Aprobar, rechazar, suspender y reactivar mayoristas.", permissions: ["customers:manage"] },
+      { title: "Clientes mayoristas", href: "/admin/clientes-mayoristas", description: "Aprobar, rechazar, suspender y reactivar mayoristas.", permissions: ["wholesale:manage"] },
       { title: "CRM", href: "/admin/crm", description: "Seguimientos, oportunidades y atención vencida.", permissions: ["crm:manage", "customers:manage"] },
     ],
   },
@@ -90,7 +90,7 @@ const moduleGroups = [
     modules: [
       { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes", href: "/admin/reportes", description: "Reportes contables y exportaciones.", permissions: ["reports:read"] },
-      { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["fiscal:read", "settings:manage"] },
+      { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal"] },
     ],
   },
   {
@@ -100,7 +100,7 @@ const moduleGroups = [
     description: "Ajustes empresariales y gobierno interno.",
     defaultOpen: true,
     modules: [
-      { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["settings:manage", "audit:read", "users:manage"] },
+      { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["security:read"] },
       { title: "Configuración empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
       { title: "Banners festivos", href: "/admin/banners", description: "Flyers, promociones y mensajes por días festivos de Honduras.", permissions: ["settings:manage", "commercial_settings:manage"] },
       { title: "Revisión BAC", href: "/admin/revision-bac", description: "Checklist web para pasarela BAC Credomatic.", permissions: ["commercial_settings:manage", "settings:manage"] },
@@ -125,9 +125,9 @@ const moduleGroups = [
     defaultOpen: true,
     technicalOnly: true,
     modules: [
-      { title: "Uso y monitoreo", href: "/admin/uso", description: "Volumen de datos, logs antiguos, cron y referencias externas.", permissions: ["system:monitoring"] },
-      { title: "Backups", href: "/admin/uso", description: "Estado operativo y controles de respaldo.", permissions: ["system:monitoring"] },
-      { title: "Alertas técnicas", href: "/admin/uso", description: "Errores, notificaciones y monitoreo técnico.", permissions: ["system:monitoring"] },
+      { title: "Uso y monitoreo", href: "/admin/uso", description: "Volumen de datos, logs antiguos, cron y referencias externas.", permissions: ["technical:tools"] },
+      { title: "Backups", href: "/admin/uso", description: "Estado operativo y controles de respaldo.", permissions: ["system:backups"] },
+      { title: "Alertas técnicas", href: "/admin/uso", description: "Errores, notificaciones y monitoreo técnico.", permissions: ["technical:tools"] },
     ],
   },
 ] satisfies AdminModuleGroup[];
@@ -141,11 +141,7 @@ function canAccessModule(role: AppRole, email: string | null, permissions: Permi
     return role === "admin" || permissions.includes("admin:access");
   }
 
-  if (modulePermissions.includes("system:monitoring")) {
-    return permissions.includes("system:monitoring");
-  }
-
-  return role === "admin" || modulePermissions.some((permission) => permissions.includes(permission));
+  return modulePermissions.some((permission) => permissions.includes(permission));
 }
 
 function formatDate(value: string | null) {
@@ -177,7 +173,7 @@ function statusTone(status: string | null) {
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
-  const canViewTechnical = hasEffectivePermission(profile.role, profile.permissions, "system:monitoring", profile.email);
+  const canViewTechnical = hasEffectivePermission(profile.role, profile.permissions, "technical:tools", profile.email);
   const canViewFiscalAlerts =
     hasEffectivePermission(profile.role, profile.permissions, "fiscal:read", profile.email) ||
     hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email) ||
@@ -236,7 +232,7 @@ export default async function AdminPage() {
       value: overview.pendingWholesaleRequests,
       href: "/admin/clientes-mayoristas?status=pending",
       empty: "No hay solicitudes mayoristas pendientes.",
-      permissions: ["customers:manage"],
+      permissions: ["wholesale:manage"],
       card: "wholesale_requests",
     },
     {
@@ -257,6 +253,14 @@ export default async function AdminPage() {
   }>;
   const todayTasks = todayTaskOptions.filter((task) => visibleCards[task.card] && canAccessModule(profile.role, profile.email, profile.permissions, task.permissions));
 
+  const metricPermissions: Record<string, Permission[]> = {
+    Ventas: ["reports:read"],
+    Pedidos: ["orders:read", "orders:manage"],
+    Clientes: ["crm:manage", "customers:read"],
+    Inventario: ["inventory:manage"],
+    CRM: ["crm:manage"],
+    Fiscal: ["invoices:read", "payments:read", "payments:manage"],
+  };
   const metricGroups = [
     {
       title: "Ventas",
@@ -278,7 +282,13 @@ export default async function AdminPage() {
       metrics: [
         { label: "Nuevos hoy", value: overview.newCustomersToday.toLocaleString("es-HN"), visible: visibleCards.customers_attention },
         { label: "Nuevos mes", value: overview.newCustomersMonth.toLocaleString("es-HN"), visible: visibleCards.customers_attention },
-        { label: "Mayoristas", value: overview.pendingWholesaleRequests.toLocaleString("es-HN"), visible: visibleCards.wholesale_requests },
+        {
+          label: "Mayoristas",
+          value: overview.pendingWholesaleRequests.toLocaleString("es-HN"),
+          visible:
+            visibleCards.wholesale_requests &&
+            hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email),
+        },
       ],
     },
     {
@@ -302,7 +312,11 @@ export default async function AdminPage() {
       ],
     },
   ]
-    .map((group) => ({ ...group, metrics: group.metrics.filter((metric) => metric.visible) }))
+    .map((group) => ({
+      ...group,
+      metrics: group.metrics.filter((metric) =>
+        metric.visible && canAccessModule(profile.role, profile.email, profile.permissions, metricPermissions[group.title] ?? [])),
+    }))
     .filter((group) => group.metrics.length > 0);
 
   const visibleModuleGroups = moduleGroups

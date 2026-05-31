@@ -60,7 +60,7 @@ const statusLabels = {
 };
 
 export default async function AdminUsagePage() {
-  await requireStrictPermission("system:monitoring");
+  await requireStrictPermission("technical:tools");
   const usage = await getAdminUsageOverview();
   const oldLogTotal = usage.logs
     .filter((log) => log.table !== "audit_logs")

@@ -8,7 +8,7 @@ import { getAdminSecurity } from "@/services/supabase/admin-security.service";
 export const dynamic = "force-dynamic";
 
 export default async function AdminSecurityPage() {
-  const profile = await requirePermission("audit:read");
+  const profile = await requirePermission("security:read");
   const security = await getAdminSecurity(profile);
 
   return (

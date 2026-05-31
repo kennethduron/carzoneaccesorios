@@ -73,7 +73,7 @@ const processSteps = [
 
 export default async function AdminGuidePage() {
   const profile = await requirePermission("admin:access");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
   const visibleProcessSteps = canViewTechnical ? processSteps : processSteps.filter(([title]) => !/backup|backups/i.test(title));
 
   return (

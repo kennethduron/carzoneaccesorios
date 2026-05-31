@@ -3,6 +3,7 @@ import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { adminOrderTaskLabels, getAdminOrdersPage, normalizeAdminOrderTask } from "@/services/supabase/admin-orders.service";
 import type { AdminOrderRow } from "@/types/orders";
@@ -56,7 +57,9 @@ export default async function AdminOrdersPage({
 }) {
   const profile = await requirePermission("admin:access");
   const canReadOrders =
-    profile.role === "admin" || profile.permissions.includes("orders:read") || profile.permissions.includes("orders:manage");
+    hasEffectivePermission(profile.role, profile.permissions, "orders:read", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
 
   if (!canReadOrders) {
     redirect("/sin-permiso");
@@ -64,14 +67,16 @@ export default async function AdminOrdersPage({
 
   const params = await searchParams;
   const task = normalizeAdminOrderTask(params.task);
-  const canManagePayments = profile.role === "admin" || profile.permissions.includes("payments:manage");
-  const canGenerateInvoices = profile.role === "admin" || profile.permissions.includes("invoices:create");
-  const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
+  const canManagePayments = hasEffectivePermission(profile.role, profile.permissions, "payments:manage", profile.email);
+  const canManageOrders = hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email);
+  const canManageLogistics =
+    canManageOrders || hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
+  const canGenerateInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:create", profile.email);
+  const canCancelInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:manage", profile.email);
   const canCorrectInvoices =
     ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
     profile.permissions.includes("invoices:correct");
   const canViewFinancialData =
-    profile.role === "admin" ||
     profile.permissions.some((permission) =>
       ["payments:read", "payments:manage", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),
     );
@@ -95,6 +100,8 @@ export default async function AdminOrdersPage({
         page={ordersPage.page}
         pageSize={ordersPage.pageSize}
         canManagePayments={canManagePayments}
+        canManageOrders={canManageOrders}
+        canManageLogistics={canManageLogistics}
         canGenerateInvoices={canGenerateInvoices}
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}

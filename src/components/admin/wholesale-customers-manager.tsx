@@ -17,6 +17,7 @@ import { formatHnDateTime } from "@/utils/format";
 type WholesaleCustomersManagerProps = {
   customers: CrmCustomerOption[];
   activeFilter?: { id: Filter; label: string } | null;
+  canManageWholesale: boolean;
 };
 
 type Filter = "all" | CrmWholesaleStatus;
@@ -47,7 +48,7 @@ function customerName(customer: CrmCustomerOption) {
   return customer.business_name || customer.company_name || customer.contact_name;
 }
 
-export function WholesaleCustomersManager({ customers, activeFilter = null }: WholesaleCustomersManagerProps) {
+export function WholesaleCustomersManager({ customers, activeFilter = null, canManageWholesale }: WholesaleCustomersManagerProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(activeFilter?.id ?? "all");
   const [message, setMessage] = useState("");
@@ -145,6 +146,11 @@ export function WholesaleCustomersManager({ customers, activeFilter = null }: Wh
           </div>
         </div>
         {message ? <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
+        {!canManageWholesale ? (
+          <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+            Puedes consultar clientes mayoristas. Los cambios de estado requieren autorizacion adicional.
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-lg border border-black/10 bg-white">
@@ -179,7 +185,7 @@ export function WholesaleCustomersManager({ customers, activeFilter = null }: Wh
                         ? "Acceso mayorista suspendido; conserva compra al detalle."
                         : "Sin acceso mayorista activo."}
                 </p>
-                <div className="flex flex-wrap gap-2 xl:justify-end">
+                {canManageWholesale ? <div className="flex flex-wrap gap-2 xl:justify-end">
                   {customer.wholesale_status === "pending" || customer.wholesale_status === "rejected" ? (
                     <Button onClick={() => runAction(() => approveWholesaleRequestAction(customer.id))} disabled={isPending} variant="dark">
                       <CheckCircle2 size={16} />
@@ -204,7 +210,7 @@ export function WholesaleCustomersManager({ customers, activeFilter = null }: Wh
                       Reactivar
                     </Button>
                   ) : null}
-                </div>
+                </div> : null}
               </article>
             ))
           )}

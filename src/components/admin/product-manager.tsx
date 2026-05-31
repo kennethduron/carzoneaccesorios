@@ -37,6 +37,14 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
 import {
+  allowedProductImportImageExtensions,
+  createProductImportImageCandidate,
+  createProductImportImageIndex,
+  matchProductImportImage,
+  type ProductImportImageCandidate,
+  type ProductImportImageIndex,
+} from "@/utils/product-import-image-matching";
+import {
   formatMegapixels,
   isAllowedProductImageMimeType,
   productImageAccept,
@@ -80,13 +88,15 @@ type ImageUploadState = {
   file?: File;
 };
 
-type ProductImportMode = "create" | "update" | "upsert";
+type ProductImportMode = "create_and_update" | "create_only" | "update_only";
 
 type ProductImportPreviewRow = {
   rowNumber: number;
   product: ProductFormInput;
   imageName: string;
   matchedImageName: string | null;
+  matchedImagePath: string | null;
+  imageMatchMethod: string | null;
   imageFile?: File;
   exists: boolean;
   duplicateSku: boolean;
@@ -98,11 +108,30 @@ type ProductImportPreviewRow = {
 type ProductImportPreview = {
   rows: ProductImportPreviewRow[];
   zipWarnings: string[];
+  criticalErrors: string[];
 };
 
 const productDraftStorageKey = "car-zone-product-editor-draft";
 const maxProductImages = 5;
 const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detalle", "otro"];
+
+const productImportModeCopy: Record<ProductImportMode, { label: string; description: string; confirmation: string }> = {
+  create_and_update: {
+    label: "Crear y actualizar (Recomendado)",
+    description: "Si el SKU ya existe, se actualizará. Si no existe, se creará como producto nuevo.",
+    confirmation: "Esta acción puede crear productos nuevos y actualizar productos existentes.",
+  },
+  create_only: {
+    label: "Crear solo productos nuevos",
+    description: "Solo se crearán productos que no existan. Los SKU existentes no se modificarán.",
+    confirmation: "Esta acción creará productos nuevos y omitirá los SKU que ya existen.",
+  },
+  update_only: {
+    label: "Actualizar productos existentes",
+    description: "Solo se actualizarán productos que ya existen. Los SKU nuevos no se crearán.",
+    confirmation: "Esta acción actualizará productos existentes y omitirá los SKU nuevos.",
+  },
+};
 
 const statusLabels: Record<ProductStatus, string> = {
   active: "Activo",
@@ -313,7 +342,6 @@ const productOperationalExportHeaders = [
 ];
 
 const requiredImportHeaders = ["SKU", "Nombre del producto", "Categoría", "Stock", "Precio al detalle"];
-const allowedZipImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
 const zipMaxBytes = 250 * 1024 * 1024;
 
 function csvValue(value: unknown) {
@@ -393,42 +421,6 @@ function normalizeHeader(value: string) {
     .trim();
 }
 
-function normalizeImageLookupName(value: string) {
-  const trimmed = value.trim().replace(/\s+/g, " ");
-  const lastDot = trimmed.lastIndexOf(".");
-  if (lastDot <= 0) {
-    return "";
-  }
-
-  const name = trimmed
-    .slice(0, lastDot)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s._()-]+/gu, "")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const extension = trimmed.slice(lastDot + 1).toLowerCase();
-
-  return name && allowedZipImageExtensions.has(extension) ? `${name}.${extension}` : "";
-}
-
-function safeZipFileName(path: string) {
-  const normalized = path.replaceAll("\\", "/");
-  if (
-    normalized.startsWith("/") ||
-    normalized.includes("../") ||
-    normalized.includes("..\\") ||
-    /^[a-z]:/i.test(normalized)
-  ) {
-    return null;
-  }
-
-  const fileName = normalized.split("/").pop()?.trim() ?? "";
-  return fileName && !fileName.startsWith(".") ? fileName : null;
-}
-
 function readExcelCell(row: Record<string, unknown>, labels: string[]) {
   const normalizedLabels = labels.map(normalizeHeader);
   const entry = Object.entries(row).find(([key]) => normalizedLabels.includes(normalizeHeader(key)));
@@ -503,7 +495,7 @@ export function ProductManager({
   const [imageUploads, setImageUploads] = useState<Record<number, ImageUploadState>>({});
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [zipFile, setZipFile] = useState<File | null>(null);
-  const [importMode, setImportMode] = useState<ProductImportMode>("upsert");
+  const [importMode, setImportMode] = useState<ProductImportMode>("create_and_update");
   const [importPreview, setImportPreview] = useState<ProductImportPreview | null>(null);
   const [isPreparingImport, setIsPreparingImport] = useState(false);
   const [isImportingProducts, setIsImportingProducts] = useState(false);
@@ -1230,59 +1222,50 @@ export function ProductManager({
   }
 
   async function readZipImages(file: File | null) {
-    const exact = new Map<string, File>();
-    const normalized = new Map<string, File>();
     const warnings: string[] = [];
+    const criticalErrors: string[] = [];
+    const images: Array<ProductImportImageCandidate<File>> = [];
 
-    if (!file) return { exact, normalized, warnings };
+    if (!file) return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
     if (!file.name.toLowerCase().endsWith(".zip")) {
-      warnings.push("El archivo de imágenes debe ser ZIP.");
-      return { exact, normalized, warnings };
+      criticalErrors.push("El archivo de imágenes debe ser ZIP.");
+      return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
     }
     if (file.size > zipMaxBytes) {
-      warnings.push("El ZIP es demasiado grande. Divide las imágenes en lotes más pequeños.");
-      return { exact, normalized, warnings };
+      criticalErrors.push("El ZIP es demasiado grande. Divide las imágenes en lotes más pequeños.");
+      return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
     }
 
-    const JSZip = (await import("jszip")).default;
-    const zip = await JSZip.loadAsync(file);
-    for (const entry of Object.values(zip.files)) {
-      if (entry.dir) continue;
-      const fileName = safeZipFileName(entry.name);
-      if (!fileName) {
-        warnings.push(`Se omitió una ruta peligrosa dentro del ZIP: ${entry.name}`);
-        continue;
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(file);
+      for (const entry of Object.values(zip.files)) {
+        if (entry.dir) continue;
+        const originalPath = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
+        const blob = await entry.async("blob");
+        if (blob.size > 5 * 1024 * 1024) {
+          criticalErrors.push(`Se rechazó ${originalPath}: supera 5 MB.`);
+          continue;
+        }
+        const extension = originalPath.split(".").pop()?.toLowerCase() ?? "";
+        const type = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
+        const imageFile = new File([blob], originalPath.split("/").pop() ?? originalPath, { type });
+        const candidate = createProductImportImageCandidate(originalPath, imageFile, blob.size, type);
+        if (!candidate.ok) {
+          criticalErrors.push(candidate.message);
+          continue;
+        }
+        images.push(candidate.image);
       }
-      const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
-      if (!allowedZipImageExtensions.has(extension)) {
-        warnings.push(`Se omitió ${fileName}: formato no permitido.`);
-        continue;
-      }
-      const blob = await entry.async("blob");
-      if (blob.size > 5 * 1024 * 1024) {
-        warnings.push(`Se omitió ${fileName}: supera 5 MB.`);
-        continue;
-      }
-      const type = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : "image/jpeg";
-      const imageFile = new File([blob], fileName, { type });
-      exact.set(fileName.trim().toLowerCase(), imageFile);
-      const lookupName = normalizeImageLookupName(fileName);
-      if (lookupName && !normalized.has(lookupName)) normalized.set(lookupName, imageFile);
+    } catch {
+      criticalErrors.push("No se pudo leer el ZIP. Verifica que no esté corrupto e intenta nuevamente.");
     }
 
-    return { exact, normalized, warnings };
+    return { index: createProductImportImageIndex(images), warnings, criticalErrors };
   }
 
-  function matchImageForRow(imageName: string, sku: string, zipImages: Awaited<ReturnType<typeof readZipImages>>) {
-    const exactName = imageName.trim().toLowerCase();
-    if (exactName && zipImages.exact.has(exactName)) return zipImages.exact.get(exactName) ?? null;
-    const normalizedImageName = normalizeImageLookupName(imageName);
-    if (normalizedImageName && zipImages.normalized.has(normalizedImageName)) return zipImages.normalized.get(normalizedImageName) ?? null;
-    for (const extension of allowedZipImageExtensions) {
-      const skuMatch = zipImages.normalized.get(normalizeImageLookupName(`${sku.trim().toUpperCase()}.${extension}`));
-      if (skuMatch) return skuMatch;
-    }
-    return null;
+  function matchImageForRow(imageName: string, sku: string, index: ProductImportImageIndex<File>) {
+    return matchProductImportImage(imageName, sku, index);
   }
 
   async function prepareProductImportPreview() {
@@ -1337,7 +1320,7 @@ export function ProductManager({
         const categoryName = readExcelCell(row, ["Categoría", "Categoria"]);
         const category = categoryByName.get(normalizeHeader(categoryName));
         const imageName = readExcelCell(row, ["Nombre de imagen"]);
-        const matchedImage = matchImageForRow(imageName, sku, zipImages);
+        const matchedImage = matchImageForRow(imageName, sku, zipImages.index);
         const statusValue = parseStatus(readExcelCell(row, ["Estado"]));
         const stock = numberValue(readExcelCell(row, ["Stock"]));
         const minStock = numberValue(readExcelCell(row, ["Stock mínimo", "Stock minimo"]));
@@ -1356,7 +1339,10 @@ export function ProductManager({
         if (retailPrice <= 0) errors.push("Precio al detalle debe ser mayor a 0.");
         if (wholesalePrice < 0) errors.push("Precio mayorista no puede ser negativo.");
         if (wholesaleMinQuantity < 1) errors.push("Cantidad mínima mayorista debe ser al menos 1.");
-        if (imageName && !matchedImage) warnings.push(`Imagen no encontrada: ${imageName}.`);
+        if (imageName && !matchedImage) {
+          warnings.push(`Imagen faltante: no se encontró ${imageName} con extensiones jpg, jpeg, png o webp.`);
+        }
+        if (matchedImage?.warning) warnings.push(matchedImage.warning);
 
         return {
           rowNumber: index + 2,
@@ -1386,8 +1372,10 @@ export function ProductManager({
             images: [],
           },
           imageName,
-          matchedImageName: matchedImage?.name ?? null,
-          imageFile: matchedImage ?? undefined,
+          matchedImageName: matchedImage?.image.fileName ?? null,
+          matchedImagePath: matchedImage?.image.path ?? null,
+          imageMatchMethod: matchedImage?.method ?? null,
+          imageFile: matchedImage?.image.file,
           exists: false,
           duplicateSku: false,
           action: "create",
@@ -1397,20 +1385,23 @@ export function ProductManager({
       });
 
       const skuStatus = await getProductImportSkuStatusAction(parsedRows.map((row) => row.product.sku));
+      if (!skuStatus.ok) {
+        throw new Error(skuStatus.message);
+      }
       const existingSkus = new Set((skuStatus.existingSkus ?? []).map((sku) => sku.toUpperCase()));
       const previewRows = parsedRows.map((row) => {
         const exists = existingSkus.has(row.product.sku);
         const duplicateSku = (skuCounts.get(row.product.sku) ?? 0) > 1;
         const errors = duplicateSku ? [...row.errors, "SKU duplicado en el Excel."] : row.errors;
         const action: ProductImportPreviewRow["action"] = exists
-          ? (importMode === "create" ? "skip" : "update")
-          : importMode === "update"
+          ? (importMode === "create_only" ? "skip" : "update")
+          : importMode === "update_only"
             ? "skip"
             : "create";
         return { ...row, exists, duplicateSku, action, errors };
       });
 
-      setImportPreview({ rows: previewRows, zipWarnings: zipImages.warnings });
+      setImportPreview({ rows: previewRows, zipWarnings: zipImages.warnings, criticalErrors: zipImages.criticalErrors });
       showMessage("Preview listo. Revisa errores y confirma para importar.", "success");
     } catch (error) {
       showMessage(error instanceof Error ? `No se pudo preparar la importación: ${error.message}` : "No se pudo preparar la importación.", "error");
@@ -1422,8 +1413,19 @@ export function ProductManager({
   async function confirmProductImport() {
     if (!importPreview) return;
     const rowsToImport = importPreview.rows.filter((row) => row.action !== "skip");
-    if (rowsToImport.some((row) => row.errors.length > 0)) {
+    if (importPreview.criticalErrors.length > 0 || rowsToImport.some((row) => row.errors.length > 0)) {
       showMessage("Corrige los errores del preview antes de importar.", "error");
+      return;
+    }
+
+    const modeCopy = productImportModeCopy[importMode];
+    const confirmed = await toast.confirm({
+      title: "Confirmar importación",
+      message: `Vas a importar productos con el modo: ${modeCopy.label}. ${modeCopy.confirmation}`,
+      confirmLabel: "Confirmar importación",
+      cancelLabel: "Cancelar",
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -1591,12 +1593,16 @@ export function ProductManager({
               }}
               className="h-10 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
-              <option value="upsert">Crear y actualizar</option>
-              <option value="create">Crear solo nuevos</option>
-              <option value="update">Actualizar existentes</option>
+              <option value="create_and_update">Crear y actualizar (Recomendado)</option>
+              <option value="create_only">Crear solo productos nuevos</option>
+              <option value="update_only">Actualizar productos existentes</option>
             </select>
           </div>
         </div>
+
+        <p className="mt-2 rounded-md bg-[#f8fafc] px-3 py-2 text-xs text-black/65">
+          {productImportModeCopy[importMode].description}
+        </p>
 
         <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
           <label className="rounded-md border border-black/10 bg-[#f8fafc] px-3 py-2.5 text-sm">
@@ -1632,16 +1638,27 @@ export function ProductManager({
               {isPreparingImport ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
               Validar archivos
             </Button>
+            {!importPreview ? (
+              <Button disabled variant="ghost" className="h-10 whitespace-nowrap" title="Valida los archivos y revisa el preview antes de importar.">
+                <Save size={17} />
+                Importar productos
+              </Button>
+            ) : null}
           </div>
         </div>
 
         <p className="mt-2 text-xs text-black/55">
           Las imágenes se relacionan por Nombre de imagen o SKU. Acepta JPG, PNG y WEBP.
         </p>
+        <p className="mt-1 text-xs text-black/55">
+          Puedes escribir el nombre con o sin extensión. También aceptamos imágenes dentro de carpetas del ZIP.
+          Ejemplo: <span className="font-medium">toyota yaris 14-17</span> o <span className="font-medium">toyota yaris 14-17.jpg</span>.
+        </p>
 
         {importPreview ? (
           <ImportPreviewPanel
             preview={importPreview}
+            mode={importMode}
             pending={isImportingProducts}
             onConfirm={() => void confirmProductImport()}
             onCancel={() => setImportPreview(null)}
@@ -1768,11 +1785,13 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ImportPreviewPanel({
   preview,
+  mode,
   pending,
   onConfirm,
   onCancel,
 }: {
   preview: ProductImportPreview;
+  mode: ProductImportMode;
   pending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -1784,18 +1803,42 @@ function ImportPreviewPanel({
   const skippedRows = preview.rows.filter((row) => row.action === "skip");
   const foundImages = preview.rows.filter((row) => row.imageFile).length;
   const missingImages = preview.rows.filter((row) => row.imageName && !row.imageFile).length;
+  const detectedErrors = errorRows.length + preview.criticalErrors.length;
+  const existingSkippedRows = skippedRows.filter((row) => row.exists);
+  const newSkippedRows = skippedRows.filter((row) => !row.exists);
+  const hasModeWarning =
+    (mode === "create_only" && existingSkippedRows.length > 0) ||
+    (mode === "update_only" && newSkippedRows.length > 0);
 
   return (
     <div className="mt-4 rounded-lg border border-black/10 bg-[#f8fafc] p-4">
-      <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-7">
-        <PreviewMetric label="Válidos" value={validRows.length} />
-        <PreviewMetric label="Con error" value={errorRows.length} tone="danger" />
-        <PreviewMetric label="Nuevos" value={createRows.length} />
-        <PreviewMetric label="Actualizar" value={updateRows.length} />
-        <PreviewMetric label="Omitidos" value={skippedRows.length} />
+      <p className="text-sm font-semibold">
+        Se crearán {createRows.length} productos nuevos y se actualizarán {updateRows.length} productos existentes.
+      </p>
+      <div className="mt-3 grid gap-2 md:grid-cols-3 xl:grid-cols-6">
+        <PreviewMetric label="Productos nuevos que se crearán" value={createRows.length} />
+        <PreviewMetric label="Productos existentes que se actualizarán" value={updateRows.length} />
+        <PreviewMetric label="Productos que se omitirán" value={skippedRows.length} />
         <PreviewMetric label="Imágenes encontradas" value={foundImages} />
         <PreviewMetric label="Imágenes faltantes" value={missingImages} tone={missingImages > 0 ? "warning" : "neutral"} />
+        <PreviewMetric label="Errores detectados" value={detectedErrors} tone={detectedErrors > 0 ? "danger" : "neutral"} />
       </div>
+
+      <div className={`mt-3 rounded-md px-3 py-2 text-sm ${hasModeWarning ? "bg-[#fff7ed] text-[#7c2d12]" : "bg-[#f1faf8] text-[#166534]"}`}>
+        {mode === "create_and_update"
+          ? "Este modo creará productos nuevos y actualizará los existentes según el SKU."
+          : mode === "create_only" && existingSkippedRows.length > 0
+            ? `Hay ${existingSkippedRows.length} productos que ya existen y no serán modificados porque seleccionaste Crear solo productos nuevos.`
+            : mode === "update_only" && newSkippedRows.length > 0
+              ? `Hay ${newSkippedRows.length} productos nuevos que no serán creados porque seleccionaste Actualizar productos existentes.`
+              : productImportModeCopy[mode].description}
+      </div>
+
+      {preview.criticalErrors.length > 0 ? (
+        <div className="mt-3 rounded-md bg-[#fff0ea] px-3 py-2 text-sm text-[#9b341b]">
+          {preview.criticalErrors.map((error) => <p key={error}>{error}</p>)}
+        </div>
+      ) : null}
 
       {preview.zipWarnings.length > 0 ? (
         <div className="mt-3 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
@@ -1805,14 +1848,16 @@ function ImportPreviewPanel({
       ) : null}
 
       <div className="mt-4 max-h-80 overflow-auto rounded-md border border-black/10 bg-white">
-        <table className="w-full min-w-[900px] text-left text-xs">
+        <table className="w-full min-w-[1120px] text-left text-xs">
           <thead className="bg-[#e7e5e4] uppercase text-black/55">
             <tr>
               <th className="px-3 py-2">Fila</th>
               <th className="px-3 py-2">SKU</th>
               <th className="px-3 py-2">Producto</th>
               <th className="px-3 py-2">Acción</th>
-              <th className="px-3 py-2">Imagen</th>
+              <th className="px-3 py-2">Imagen Excel</th>
+              <th className="px-3 py-2">Archivo encontrado</th>
+              <th className="px-3 py-2">Coincidencia</th>
               <th className="px-3 py-2">Validación</th>
             </tr>
           </thead>
@@ -1826,7 +1871,13 @@ function ImportPreviewPanel({
                   {row.action === "create" ? "Crear" : row.action === "update" ? "Actualizar" : "Omitir"}
                 </td>
                 <td className="px-3 py-2">
-                  {row.matchedImageName ? `Sí: ${row.matchedImageName}` : row.imageName ? "Faltante" : "Sin imagen"}
+                  {row.imageName || "Sin nombre; se buscó por SKU"}
+                </td>
+                <td className="px-3 py-2">
+                  {row.matchedImagePath ?? (row.imageName ? "Imagen faltante" : "No se encontró imagen por SKU")}
+                </td>
+                <td className="px-3 py-2">
+                  {row.imageMatchMethod ?? `Sin coincidencia en ${allowedProductImportImageExtensions.join(", ")}`}
                 </td>
                 <td className="px-3 py-2">
                   {row.errors.length > 0 ? (
@@ -1847,7 +1898,7 @@ function ImportPreviewPanel({
         <Button onClick={onCancel} variant="ghost" disabled={pending}>
           Cancelar
         </Button>
-        <Button onClick={onConfirm} variant="dark" disabled={pending || errorRows.length > 0 || validRows.length === 0}>
+        <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0}>
           {pending ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
           Importar productos
         </Button>

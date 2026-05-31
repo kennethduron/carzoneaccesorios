@@ -360,7 +360,7 @@ async function getExistingBanner(id: string) {
 
 export async function saveHolidayBannerAction(input: HolidayBannerInput): Promise<BannerMutationResult> {
   const profile = await requirePermission("commercial_settings:manage");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
 
   try {
     const supabase = await getSupabaseServerClient();
@@ -494,7 +494,7 @@ export async function updateHolidayBannerPriorityAction(id: string, priority: nu
 
 export async function deleteHolidayBannerAction(id: string): Promise<BannerMutationResult> {
   const profile = await requirePermission("commercial_settings:manage");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
   const supabase = await getSupabaseServerClient();
   const { data: banner, error: bannerError } = await supabase
     .from("holiday_banners")
@@ -564,7 +564,7 @@ export async function uploadHolidayBannerMediaAction(formData: FormData): Promis
       : await uploadBannerImage(file, profile.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
-    const publicMessage = profile.permissions.includes("system:monitoring") ? message : message.replaceAll("Cloudinary", "el proveedor de archivos");
+    const publicMessage = profile.permissions.includes("technical:tools") ? message : message.replaceAll("Cloudinary", "el proveedor de archivos");
     await writeErrorLog({
       route: "/admin/banners",
       action: "holiday_banner.media_upload_failed",
@@ -752,7 +752,7 @@ export async function deleteUploadedHolidayBannerMediaAction(mediaReference: str
 
   try {
     const tokenPayload = readAssetToken(mediaReference);
-    if (!tokenPayload && !profile.permissions.includes("system:monitoring")) {
+    if (!tokenPayload && !profile.permissions.includes("technical:tools")) {
       return { ok: false, message: "El archivo debe venir de una carga valida del panel." };
     }
 

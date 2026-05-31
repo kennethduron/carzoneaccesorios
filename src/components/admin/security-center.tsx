@@ -24,6 +24,14 @@ import {
 import { Button } from "@/components/ui";
 import { PasswordInput } from "@/components/ui/password-input";
 import { useToast } from "@/contexts/toast-context";
+import {
+  assignableRolesFor,
+  canAssignRole,
+  canManageSecurityUsers,
+  canModifySecurityUser,
+  canRequestTechnicalBackups,
+  creatableRolesFor,
+} from "@/lib/auth/access-control";
 import type { AppRole, AuthProfile } from "@/types/auth";
 import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupType } from "@/types/security";
 import { formatHnDateTime } from "@/utils/format";
@@ -75,14 +83,11 @@ const roleLabels: Record<AppRole, string> = {
   cliente: "Cliente",
 };
 
-const operationalCreateRoles: AppRole[] = ["vendedor", "bodega", "contadora", "soporte"];
-const operationalManageRoles: AppRole[] = ["cliente", "vendedor", "bodega", "contadora", "soporte"];
-const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 const sensitiveKeyPattern = /(password|token|secret|apikey|api_key|key|service_role|authorization|card|tarjeta|cron_secret)/i;
 
 const roleDescriptions: Record<AppRole, string> = {
   technical_owner: "Administrador técnico. Mantiene infraestructura, monitoreo y recuperación técnica.",
-  admin: "Administrador técnico/avanzado. Puede operar el sistema y administrar configuración sensible.",
+  admin: "Gerente delegado. Opera el negocio y administra accesos operativos sin herramientas técnicas.",
   business_owner: "Dueño operativo. Administra ventas, equipo, pedidos, clientes, pagos, facturas y reportes sin secretos técnicos.",
   vendedor: "Atiende clientes, pedidos y CRM operativo.",
   bodega: "Gestiona inventario, preparación y envíos.",
@@ -194,48 +199,6 @@ function deviceLabel(userAgent: string | null) {
   return `${userAgent.slice(0, 80)}...`;
 }
 
-function hasTechnicalControl(profile: Pick<AuthProfile, "role" | "email">) {
-  return profile.role === "technical_owner" || profile.email?.toLowerCase() === protectedTechnicalEmail;
-}
-
-function canAssignRole(actor: Pick<AuthProfile, "role" | "email">, role: AppRole) {
-  if (hasTechnicalControl(actor)) {
-    return ["technical_owner", "admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
-  }
-
-  if (actor.role === "business_owner") {
-    return operationalManageRoles.includes(role);
-  }
-
-  if (actor.role === "admin") {
-    return ["admin", "business_owner", "cliente", "vendedor", "bodega", "contadora", "soporte"].includes(role);
-  }
-
-  return false;
-}
-
-function assignableRoles(actor: Pick<AuthProfile, "role" | "email">) {
-  return (Object.keys(roleLabels) as AppRole[]).filter((role) => canAssignRole(actor, role));
-}
-
-function canModifyUser(actor: Pick<AuthProfile, "role" | "email">, user: AdminUserSummary) {
-  const isProtectedTechnicalUser = user.email?.toLowerCase() === protectedTechnicalEmail || user.role === "technical_owner";
-
-  if (hasTechnicalControl(actor)) {
-    return true;
-  }
-
-  if (actor.role === "business_owner") {
-    return !isProtectedTechnicalUser && operationalManageRoles.includes(user.role);
-  }
-
-  if (actor.role === "admin") {
-    return !isProtectedTechnicalUser;
-  }
-
-  return false;
-}
-
 function initialCreateForm(): CreateUserForm {
   return {
     fullName: "",
@@ -270,15 +233,10 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
   const permissionCount = new Set(data.roles.flatMap((role) => role.permissions)).size;
   const latestBackup = data.backupLogs[0];
-  const canManageUsers =
-    hasTechnicalControl(currentUser) ||
-    currentUser.role === "admin" ||
-    currentUser.permissions.includes("users:manage") ||
-    currentUser.permissions.includes("users:manage_operational");
-  const canRequestBackups =
-    hasTechnicalControl(currentUser) ||
-    (currentUser.role === "admin" && currentUser.permissions.includes("settings:manage"));
-  const roleOptions = assignableRoles(currentUser);
+  const canManageUsers = canManageSecurityUsers(currentUser);
+  const canRequestBackups = canRequestTechnicalBackups(currentUser);
+  const roleOptions = assignableRolesFor(currentUser);
+  const createRoleOptions = creatableRolesFor(currentUser);
   const selectedAuditUser = data.users.find((user) => user.id === auditUserId) ?? null;
   const selectedProfileUser = data.users.find((user) => user.id === profileUserId) ?? null;
   const auditModules = Array.from(new Set(data.auditLogs.map(auditModule))).sort((left, right) => left.localeCompare(right, "es-HN"));
@@ -400,7 +358,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           <form onSubmit={createUser} className="rounded-lg border border-black/10 bg-white p-5">
             <div className="mb-4 flex items-center gap-2">
               <UserPlus size={19} />
-              <h2 className="font-semibold">Crear usuario operativo</h2>
+              <h2 className="font-semibold">Crear usuario</h2>
             </div>
             <div className="grid gap-3">
               <InputLabel label="Nombre">
@@ -447,7 +405,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     onChange={(event) => updateCreateForm("role", event.target.value as AppRole)}
                     className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
                   >
-                    {operationalCreateRoles.map((role) => (
+                    {createRoleOptions.map((role) => (
                       <option key={role} value={role}>
                         {roleLabels[role]}
                       </option>
@@ -503,7 +461,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 <tbody className="divide-y divide-black/10">
                   {filteredUsers.map((user) => {
                     const selectedRole = roleSelections[user.id] ?? user.role;
-                    const canModify = canModifyUser(currentUser, user);
+                    const canModify = canModifySecurityUser(currentUser, user);
                     const canChangeToSelected = canAssignRole(currentUser, selectedRole);
 
                     return (

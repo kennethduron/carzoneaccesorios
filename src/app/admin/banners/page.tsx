@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminBannersPage() {
   const profile = await requirePermission("commercial_settings:manage");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
   const [banners, auditEntries, storageSummary, technicalAlertSettings] = await Promise.all([
     getAdminHolidayBanners(),
     getHolidayBannerAuditEntries(canViewTechnical),

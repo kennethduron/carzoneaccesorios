@@ -138,7 +138,7 @@ const workflows = [
 
 export default async function AdminHelpPage() {
   const profile = await requirePermission("admin:access");
-  const canViewTechnical = profile.permissions.includes("system:monitoring");
+  const canViewTechnical = profile.permissions.includes("technical:tools");
   const visibleRoleSections = roleSections.map((section) => {
     if (canViewTechnical) {
       return section;

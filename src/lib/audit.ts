@@ -6,6 +6,8 @@ type AuditInput = {
   action: string;
   oldData?: Record<string, unknown> | null;
   newData?: Record<string, unknown> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
 };
 
 export async function writeAuditLog(input: AuditInput) {
@@ -16,6 +18,8 @@ export async function writeAuditLog(input: AuditInput) {
     action_name: input.action,
     previous_data: input.oldData ?? null,
     next_data: input.newData ?? null,
+    actor_ip: input.ipAddress ?? null,
+    actor_user_agent: input.userAgent ?? null,
   });
 
   if (error) {

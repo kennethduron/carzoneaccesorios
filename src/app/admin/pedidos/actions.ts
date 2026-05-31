@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
@@ -258,8 +259,14 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
 }
 
 export async function updateOrderStatusAction(orderId: string, status: OrderStatus, reason = "") {
-  await requirePermission("orders:manage");
+  const profile = await requirePermission("admin:access");
+  const canManageOrders = hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email);
+  const canManageLogistics = hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
   const statusReason = reason.trim();
+
+  if (!canManageOrders && (!canManageLogistics || !["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(status))) {
+    return { ok: false, message: "Solo usuarios autorizados pueden realizar esta accion." };
+  }
 
   if (canonicalOrderStatus(status) === "cancelado" && statusReason.length < 8) {
     return { ok: false, message: "Ingresa un motivo de cancelacion de al menos 8 caracteres." };
@@ -324,14 +331,19 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     return { ok: false, message: transition.message };
   }
 
-  const { error } = await supabase
-    .from("orders")
-    .update({
-      status: transition.status,
-      tracking_status: transition.status,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", orderId);
+  const { error } = canManageOrders
+    ? await supabase
+        .from("orders")
+        .update({
+          status: transition.status,
+          tracking_status: transition.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+    : await supabase.rpc("advance_order_logistics", {
+        target_order_id: orderId,
+        target_status: transition.status,
+      });
 
   if (error) {
     return { ok: false, message: safeAdminOrderMessage(error.message) };

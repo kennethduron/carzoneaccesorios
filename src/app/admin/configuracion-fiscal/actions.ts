@@ -360,7 +360,7 @@ async function resolveFiscalLogo(formData: FormData, previousLogoUrl: string | n
 }
 
 export async function saveFiscalSettingsAction(formData: FormData) {
-  await requirePermission("settings:manage");
+  await requirePermission("settings:fiscal");
   const previousSettings = await getFiscalSettings();
   const logoResult = await resolveFiscalLogo(formData, previousSettings.logo_url);
 

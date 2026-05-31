@@ -25,8 +25,8 @@ export default async function AdminInvoicesPage({
   const canUseTechnicalExports =
     profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
     profile.role === "technical_owner" ||
-    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
-  const canCancelInvoices = profile.role === "admin" || profile.permissions.includes("invoices:manage");
+    profile.permissions.includes("technical:tools");
+  const canCancelInvoices = profile.permissions.includes("invoices:manage");
   const canCorrectInvoices =
     ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
     profile.permissions.includes("invoices:correct");

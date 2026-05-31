@@ -26,7 +26,7 @@ type ProductMutationResult = {
   message: string;
 };
 
-export type ProductImportMode = "create" | "update" | "upsert";
+export type ProductImportMode = "create_and_update" | "create_only" | "update_only";
 
 export type ProductImportSkuStatusResult = ProductMutationResult & {
   existingSkus?: string[];
@@ -679,7 +679,7 @@ export async function importProductsAction(
 ): Promise<ProductMutationResult> {
   const profile = await requirePermission("products:manage");
   const supabase = await getSupabaseServerClient();
-  const mode = options.mode ?? "upsert";
+  const mode = options.mode ?? "create_and_update";
 
   if (products.length === 0) {
     return { ok: false, message: "El archivo no contiene productos para importar." };
@@ -690,6 +690,34 @@ export async function importProductsAction(
   let updated = 0;
   let skipped = 0;
   const errors: Array<{ sku: string; message: string }> = [];
+  async function writeBulkImportAudit(status: "completed" | "failed") {
+    await writeAuditLog({
+      tableName: "products",
+      action: "products.bulk_import",
+      newData: {
+        user_id: profile.id,
+        imported_by: profile.id,
+        user_role: profile.role,
+        status,
+        mode,
+        file_name: cleanText(options.fileName),
+        requested: products.length,
+        saved,
+        created,
+        updated,
+        skipped,
+        products_created: created,
+        products_updated: updated,
+        products_skipped: skipped,
+        errors_count: errors.length + (options.imageSummary?.errors ?? 0),
+        images_uploaded: options.imageSummary?.uploaded ?? 0,
+        images_missing: options.imageSummary?.missing ?? 0,
+        image_summary: options.imageSummary ?? null,
+        errors,
+        skus: products.map((product) => product.sku.trim().toUpperCase()).filter(Boolean),
+      },
+    });
+  }
 
   for (const product of products) {
     const sku = product.sku.trim().toUpperCase();
@@ -704,7 +732,10 @@ export async function importProductsAction(
         .maybeSingle<{ id: string }>();
 
       if (error) {
-        return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(error.message)}` };
+        const message = friendlyProductError(error.message);
+        errors.push({ sku: product.sku, message });
+        await writeBulkImportAudit("failed");
+        return { ok: false, message: `Importacion detenida en ${product.sku}: ${message}` };
       }
 
       if (data?.id) {
@@ -719,7 +750,10 @@ export async function importProductsAction(
             .returns<ProductImageInput[]>();
 
           if (imagesError) {
-            return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(imagesError.message)}` };
+            const message = friendlyProductError(imagesError.message);
+            errors.push({ sku: product.sku, message });
+            await writeBulkImportAudit("failed");
+            return { ok: false, message: `Importacion detenida en ${product.sku}: ${message}` };
           }
 
           productWithId = { ...productWithId, images: existingImages ?? [] };
@@ -727,12 +761,12 @@ export async function importProductsAction(
       }
     }
 
-    if (exists && mode === "create") {
+    if (exists && mode === "create_only") {
       skipped += 1;
       continue;
     }
 
-    if (!exists && mode === "update") {
+    if (!exists && mode === "update_only") {
       skipped += 1;
       continue;
     }
@@ -740,6 +774,7 @@ export async function importProductsAction(
     const result = await saveProductAction(productWithId);
     if (!result.ok) {
       errors.push({ sku: product.sku, message: friendlyProductError(result.message) });
+      await writeBulkImportAudit("failed");
       return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
     }
     saved += 1;
@@ -750,24 +785,7 @@ export async function importProductsAction(
     }
   }
 
-  await writeAuditLog({
-    tableName: "products",
-    action: "products.bulk_import",
-    newData: {
-      user_id: profile.id,
-      user_role: profile.role,
-      mode,
-      file_name: cleanText(options.fileName),
-      requested: products.length,
-      saved,
-      created,
-      updated,
-      skipped,
-      image_summary: options.imageSummary ?? null,
-      errors,
-      skus: products.map((product) => product.sku.trim().toUpperCase()).filter(Boolean),
-    },
-  });
+  await writeBulkImportAudit("completed");
 
   revalidateProductCatalog();
   return {

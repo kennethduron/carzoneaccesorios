@@ -36,6 +36,8 @@ type AdminOrdersManagerProps = {
   page: number;
   pageSize: number;
   canManagePayments: boolean;
+  canManageOrders: boolean;
+  canManageLogistics: boolean;
   canGenerateInvoices: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
@@ -75,6 +77,8 @@ export function AdminOrdersManager({
   page,
   pageSize,
   canManagePayments,
+  canManageOrders,
+  canManageLogistics,
   canGenerateInvoices,
   canCancelInvoices,
   canCorrectInvoices,
@@ -295,6 +299,8 @@ export function AdminOrdersManager({
           <OrderDetail
             order={selectedOrder}
             canManagePayments={canManagePayments}
+            canManageOrders={canManageOrders}
+            canManageLogistics={canManageLogistics}
             canGenerateInvoices={canGenerateInvoices}
             canCancelInvoices={canCancelInvoices}
             canCorrectInvoices={canCorrectInvoices}
@@ -367,6 +373,8 @@ function canIssueInvoice(order: AdminOrderRow) {
 function OrderDetail({
   order,
   canManagePayments,
+  canManageOrders,
+  canManageLogistics,
   canGenerateInvoices,
   canCancelInvoices,
   canCorrectInvoices,
@@ -384,6 +392,8 @@ function OrderDetail({
 }: {
   order: AdminOrderRow;
   canManagePayments: boolean;
+  canManageOrders: boolean;
+  canManageLogistics: boolean;
   canGenerateInvoices: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
@@ -420,10 +430,13 @@ function OrderDetail({
     normalizedStatus !== "cancelado" &&
     (isBankTransfer || (isCash && normalizedStatus === "entregado"));
   const paymentActionLabel = isCash ? "Confirmar pago recibido" : isBankTransfer ? "Confirmar pago" : "Confirmar por pasarela";
-  const safeManualStatuses =
-    manualStatuses.length > 0
-      ? manualStatuses
-      : [{ value: normalizedStatus, label: orderStatusLabels[normalizedStatus] ?? String(normalizedStatus) }];
+  const visibleManualStatuses = canManageOrders
+    ? manualStatuses
+    : manualStatuses.filter((option) => ["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(option.value));
+  const currentStatusOption = { value: normalizedStatus, label: orderStatusLabels[normalizedStatus] ?? String(normalizedStatus) };
+  const safeManualStatuses = visibleManualStatuses.some((option) => option.value === normalizedStatus)
+    ? visibleManualStatuses
+    : [currentStatusOption, ...visibleManualStatuses];
   const nextStatusActionOptions = [
     { status: "preparacion", label: "Marcar en preparacion" },
     { status: "empacado", label: "Marcar empacado" },
@@ -487,18 +500,18 @@ function OrderDetail({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {canAcceptOrder ? (
+          {canManageOrders && canAcceptOrder ? (
             <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary">
               <CheckCircle2 size={17} />
               Aceptar pedido
             </Button>
           ) : null}
-          {nextStatusActions.map((action) => (
+          {canManageLogistics ? nextStatusActions.map((action) => (
             <Button key={action.status} onClick={() => onUpdateOrderStatus(action.status)} disabled={isPending} variant="ghost">
               <CheckCircle2 size={17} />
               {action.label}
             </Button>
-          ))}
+          )) : null}
           {canConfirmPayment ? (
             <Button onClick={onApprovePayment} disabled={isPending} variant="primary">
               <CheckCircle2 size={17} />
@@ -535,7 +548,7 @@ function OrderDetail({
               Editar datos fiscales
             </Button>
           ) : null}
-          {canManagePayments && canCancelOrder ? (
+          {canManageOrders && canCancelOrder ? (
             <Button onClick={onCancelOrder} disabled={isPending} variant="secondary">
               <XCircle size={17} />
               Cancelar pedido
@@ -549,7 +562,7 @@ function OrderDetail({
             <select
               value={normalizedStatus}
               onChange={(event) => onUpdateOrderStatus(event.target.value as AdminOrderRow["status"])}
-              disabled={isPending || safeManualStatuses.length <= 1}
+              disabled={isPending || !canManageLogistics || safeManualStatuses.length <= 1}
               className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
               {safeManualStatuses.map((option) => (

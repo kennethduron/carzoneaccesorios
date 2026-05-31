@@ -21,7 +21,7 @@ export default async function AdminProductsPage({
   const canUseTechnicalExports =
     profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
     profile.role === "technical_owner" ||
-    (profile.role === "admin" && profile.permissions.includes("system:monitoring"));
+    profile.permissions.includes("technical:tools");
   const params = await searchParams;
   const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
     query: params.q,

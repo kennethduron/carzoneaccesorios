@@ -1,7 +1,8 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { canUseTechnicalTools, canViewSecurityUser, visibleSecurityRolesFor } from "@/lib/auth/access-control";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
-import { effectivePermissions, effectiveRole, isProtectedTechnicalEmail } from "@/lib/auth/permissions";
+import { effectivePermissions, effectiveRole } from "@/lib/auth/permissions";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupLogRow } from "@/types/security";
 
@@ -86,6 +87,36 @@ function normalizeBackupLog(row: BackupLogQueryRow): BackupLogRow {
   };
 }
 
+function operationalAuditData(data: Record<string, unknown> | null) {
+  if (!data) {
+    return null;
+  }
+
+  const allowedKeys = [
+    "active",
+    "email",
+    "reason",
+    "requested_active",
+    "requested_role",
+    "result",
+    "role",
+    "role_after",
+    "role_before",
+    "status",
+    "wholesale_status",
+  ];
+
+  return Object.fromEntries(allowedKeys.filter((key) => key in data).map((key) => [key, data[key]]));
+}
+
+function sanitizeOperationalAuditLog(log: AuditLogRow): AuditLogRow {
+  return {
+    ...log,
+    old_data: operationalAuditData(log.old_data),
+    new_data: operationalAuditData(log.new_data),
+  };
+}
+
 function getCustomerId(customers: UserQueryRow["customers"]) {
   if (!customers) {
     return null;
@@ -109,7 +140,7 @@ function pushToMap<T>(map: Map<string, T[]>, key: string | null | undefined, val
 }
 
 function operationalAuditOnly(log: AuditLogRow) {
-  if (log.actor_role === "technical_owner" || log.actor_role === "admin") {
+  if (log.actor_role === "technical_owner") {
     return false;
   }
 
@@ -125,13 +156,7 @@ function operationalAuditOnly(log: AuditLogRow) {
   return true;
 }
 
-const businessOwnerVisibleRoles = new Set(["cliente", "vendedor", "bodega", "contadora", "soporte"]);
 const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
-
-function isVisibleToBusinessOwner(user: UserQueryRow) {
-  const role = user.roles?.name ?? "cliente";
-  return businessOwnerVisibleRoles.has(role) && !isProtectedTechnicalEmail(user.email);
-}
 
 async function getAuthUserMap() {
   const admin = getSupabaseAdminClient();
@@ -163,10 +188,10 @@ async function getAuthUserMap() {
   return users;
 }
 
-export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecurityData> {
+export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecurityData> {
   const supabase = await getSupabaseServerClient();
   const admin = getSupabaseAdminClient();
-  const ownerView = profile?.role === "business_owner";
+  const technicalView = canUseTechnicalTools(profile);
 
   const [
     { data: roles, error: rolesError },
@@ -199,18 +224,20 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
       .returns<SecurityOrderRow[]>(),
     admin.from("invoices").select("id, customer_id").limit(500).returns<SecurityCountRow[]>(),
     admin.from("wholesale_codes").select("id, customer_id").limit(500).returns<SecurityCountRow[]>(),
-    supabase
+    admin
       .from("audit_logs")
       .select("id, user_id, actor_role, table_name, record_id, action, old_data, new_data, ip_address, user_agent, created_at, users(email, full_name)")
       .order("created_at", { ascending: false })
       .limit(250)
       .returns<AuditLogQueryRow[]>(),
-    supabase
-      .from("backup_logs")
-      .select("id, requested_by, backup_type, status, storage_location, notes, started_at, completed_at, created_at, users(email)")
-      .order("created_at", { ascending: false })
-      .limit(50)
-      .returns<BackupLogQueryRow[]>(),
+    technicalView
+      ? admin
+          .from("backup_logs")
+          .select("id, requested_by, backup_type, status, storage_location, notes, started_at, completed_at, created_at, users(email)")
+          .order("created_at", { ascending: false })
+          .limit(50)
+          .returns<BackupLogQueryRow[]>()
+      : Promise.resolve({ data: [] as BackupLogQueryRow[], error: null }),
     getAuthUserMap(),
   ]);
 
@@ -272,10 +299,11 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
     }
   }
 
-  const visibleRoles = ownerView
-    ? (roles ?? []).filter((role) => businessOwnerVisibleRoles.has(role.name))
-    : roles ?? [];
-  const visibleAuditLogs = ownerView ? (auditLogs ?? []).map(normalizeAuditLog).filter(operationalAuditOnly) : (auditLogs ?? []).map(normalizeAuditLog);
+  const visibleRoleNames = new Set(visibleSecurityRolesFor(profile));
+  const visibleRoles = (roles ?? []).filter((role) => visibleRoleNames.has(role.name));
+  const visibleAuditLogs = technicalView
+    ? (auditLogs ?? []).map(normalizeAuditLog)
+    : (auditLogs ?? []).map(normalizeAuditLog).filter(operationalAuditOnly).map(sanitizeOperationalAuditLog);
 
   return {
     roles: visibleRoles.map((role) => ({
@@ -283,7 +311,11 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
       permissions: effectivePermissions(role.name),
     })),
     users: (users ?? [])
-      .filter((user) => !ownerView || isVisibleToBusinessOwner(user))
+      .filter((user) => canViewSecurityUser(profile, {
+        id: user.id,
+        email: user.email,
+        role: user.roles?.name ?? "cliente",
+      }))
       .map((user): AdminUserSummary => {
       const authUser = authUsers.get(user.id);
       const userEmail = user.email ?? authUser?.email ?? null;
@@ -330,6 +362,6 @@ export async function getAdminSecurity(profile?: AuthProfile): Promise<AdminSecu
       };
     }),
     auditLogs: visibleAuditLogs,
-    backupLogs: ownerView ? [] : (backupLogs ?? []).map(normalizeBackupLog),
+    backupLogs: technicalView ? (backupLogs ?? []).map(normalizeBackupLog) : [],
   };
 }
