@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { writeErrorLog } from "@/lib/error-logging";
+import {
+  ensureRegisteredWholesaleFollowup,
+  getPublicRequestContext,
+  notifyPublicFormSubmission,
+  writeRegisteredWholesaleAudit,
+} from "@/lib/public-form-support";
+import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
@@ -251,6 +258,17 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     return { ok: false, message: "Inicia sesión para solicitar mayoreo con un solo clic.", state: guestWholesaleState() };
   }
 
+  const requestLimit = await checkRateLimit({
+    route: "/contacto/mayoreo/cuenta",
+    limit: 4,
+    windowSeconds: 15 * 60,
+    key: user.id,
+  });
+  if (!requestLimit.ok) {
+    return { ok: false, message: getRateLimitMessage(requestLimit.retryAfter) };
+  }
+
+  const requestContext = await getPublicRequestContext();
   const admin = getSupabaseAdminClient();
   const { data: userProfile, error: userProfileError } = await admin
     .from("users")
@@ -292,9 +310,17 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   if (customers.some((customer) => getWholesaleStatus(customer) === "approved")) {
     const approvedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "approved")!;
     const requirement = await getFirstPurchaseRequirement(approvedCustomer.id);
+    await writeRegisteredWholesaleAudit({
+      action: "public_form.wholesale.overwrite_blocked",
+      customerId: approvedCustomer.id,
+      email,
+      phone: approvedCustomer.phone ?? userProfile.phone ?? "00000000",
+      outcome: "approved",
+      context: requestContext,
+    });
     return {
       ok: false,
-      message: "Ya tienes acceso mayorista.",
+      message: "Tu cuenta mayorista ya esta aprobada. Inicia sesion para comprar con precio mayorista.",
       state: {
         kind: "approved",
         title: "Ya tienes acceso mayorista.",
@@ -308,18 +334,86 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   }
 
   if (customers.some((customer) => getWholesaleStatus(customer) === "pending")) {
-    return { ok: false, message: "Tu solicitud mayorista ya está en revisión.", state: pendingWholesaleState() };
+    const pendingCustomer = customers.find((customer) => getWholesaleStatus(customer) === "pending")!;
+    await ensureRegisteredWholesaleFollowup({
+      customerId: pendingCustomer.id,
+      userId: user.id,
+      phone: pendingCustomer.phone ?? userProfile.phone ?? "00000000",
+      note: "Solicitud mayorista pendiente confirmada desde cuenta registrada.",
+    });
+    await writeRegisteredWholesaleAudit({
+      action: "public_form.wholesale.duplicate_pending",
+      customerId: pendingCustomer.id,
+      email,
+      phone: pendingCustomer.phone ?? userProfile.phone ?? "00000000",
+      outcome: "pending",
+      context: requestContext,
+    });
+    return { ok: false, message: "Tu solicitud ya esta pendiente de revision.", state: pendingWholesaleState() };
   }
 
   if (customers.some((customer) => getWholesaleStatus(customer) === "suspended")) {
-    return { ok: false, message: "Tu acceso mayorista está suspendido. Contacta al equipo.", state: suspendedWholesaleState() };
+    const suspendedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "suspended")!;
+    await writeRegisteredWholesaleAudit({
+      action: "public_form.wholesale.overwrite_blocked",
+      customerId: suspendedCustomer.id,
+      email,
+      phone: suspendedCustomer.phone ?? userProfile.phone ?? "00000000",
+      outcome: "suspended",
+      context: requestContext,
+    });
+    return { ok: false, message: "Tu acceso mayorista esta suspendido. Contacta a servicio al cliente.", state: suspendedWholesaleState() };
   }
 
-  if (customers.some((customer) => getWholesaleStatus(customer) === "rejected")) {
-    return { ok: false, message: "Tu solicitud mayorista fue revisada. Contacta al equipo para más información.", state: rejectedWholesaleState() };
+  const rejectedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "rejected");
+  if (rejectedCustomer) {
+    const rejectedName = rejectedCustomer.contact_name || userProfile.full_name || email || "Cliente registrado";
+    const rejectedPhone = rejectedCustomer.phone || userProfile.phone || "00000000";
+    const rejectedNote = [
+      "[SOLICITUD_MAYOREO]",
+      "Origen: Cuenta registrada",
+      `Fecha: ${requestContext.submittedAt}`,
+      "El cliente solicito revision manual despues de un rechazo.",
+    ].join("\n");
+    const followup = await ensureRegisteredWholesaleFollowup({
+      customerId: rejectedCustomer.id,
+      userId: user.id,
+      phone: rejectedPhone,
+      note: rejectedNote,
+      rejectedReview: true,
+    });
+
+    await writeRegisteredWholesaleAudit({
+      action: "public_form.wholesale.overwrite_blocked",
+      customerId: rejectedCustomer.id,
+      email,
+      phone: rejectedPhone,
+      outcome: "rejected_review",
+      context: requestContext,
+    });
+    await notifyPublicFormSubmission({
+      kind: "wholesale",
+      customerId: rejectedCustomer.id,
+      followupId: followup.followupId,
+      name: rejectedName,
+      email,
+      phone: rejectedPhone,
+      businessName: rejectedCustomer.business_name ?? rejectedCustomer.company_name,
+      taxId: rejectedCustomer.tax_id,
+      city: rejectedCustomer.city,
+      comment: "El cliente solicito revision manual despues de un rechazo.",
+      outcome: "rejected_review",
+      context: requestContext,
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/crm");
+    revalidatePath("/admin/clientes");
+    revalidatePath("/admin/clientes-mayoristas");
+    return { ok: true, message: "Recibimos tu mensaje. Nuestro equipo revisara tu caso.", state: rejectedWholesaleState() };
   }
 
-  const now = new Date().toISOString();
+  const now = requestContext.submittedAt;
   const targetCustomer = customers.find((customer) => customer.user_id === user.id) ?? customers[0] ?? null;
   const contactName = targetCustomer?.contact_name || userProfile.full_name || email || "Cliente registrado";
   const phone = targetCustomer?.phone || userProfile.phone || "00000000";
@@ -371,36 +465,26 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     return { ok: false, message: "No pudimos crear tu solicitud mayorista. Intenta nuevamente." };
   }
 
-  const { data: existingFollowup } = await admin
-    .from("crm_followups")
-    .select("id")
-    .eq("customer_id", customer.id)
-    .eq("interaction_type", "solicitud_mayorista")
-    .eq("status", "pending")
-    .limit(1)
-    .maybeSingle<{ id: string }>();
-
-  if (!existingFollowup?.id) {
-    await admin.from("crm_followups").insert({
-      customer_id: customer.id,
-      title: "Solicitud de cuenta mayorista",
-      interaction_type: "solicitud_mayorista",
-      next_action: "Revisar datos de cuenta registrada y aprobar si corresponde.",
-      priority: "alta",
-      phone,
-      notes: note,
-      estimated_value: 0,
-      monthly_amount: 0,
-      status: "pending",
-    });
-  }
-
-  await admin.from("crm_notes").insert({
+  const followup = await ensureRegisteredWholesaleFollowup({
+    customerId: customer.id,
+    userId: user.id,
+    phone,
+    note,
+  });
+  const { error: noteError } = await admin.from("crm_notes").insert({
     customer_id: customer.id,
     user_id: user.id,
     note_type: "wholesale_status",
     note: "Solicitud mayorista enviada desde cuenta registrada.",
   });
+  if (noteError) {
+    await writeErrorLog({
+      route: "/contacto",
+      action: "public_forms.registered_wholesale_note_failed",
+      errorMessage: noteError.message,
+      metadata: { customer_id: customer.id },
+    });
+  }
 
   await writeAuditLog({
     tableName: "customers",
@@ -414,7 +498,29 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       wholesale_requested_at: now,
     },
   });
+  await writeRegisteredWholesaleAudit({
+    action: "public_form.wholesale.submitted",
+    customerId: customer.id,
+    email,
+    phone,
+    outcome: "created",
+    context: requestContext,
+  });
+  await notifyPublicFormSubmission({
+    kind: "wholesale",
+    customerId: customer.id,
+    followupId: followup.followupId,
+    name: contactName,
+    email,
+    phone,
+    businessName: targetCustomer?.business_name ?? targetCustomer?.company_name,
+    taxId: targetCustomer?.tax_id,
+    city: targetCustomer?.city,
+    outcome: "created",
+    context: requestContext,
+  });
 
+  revalidatePath("/admin");
   revalidatePath("/contacto");
   revalidatePath("/cuenta");
   revalidatePath("/admin/crm");

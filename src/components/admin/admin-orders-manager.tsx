@@ -6,6 +6,8 @@ import { Ban, CheckCircle2, Copy, ExternalLink, FilePenLine, FileText, PackageCh
 import { cancelInvoiceAction, getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
 import {
   correctOrderFiscalCustomerDataAction,
+  addOrderInternalNoteAction,
+  extendOrderReservationAction,
   generateInvoiceFromOrderAction,
   updateOrderPaymentStatusAction,
   updateOrderStatusAction,
@@ -35,8 +37,12 @@ type AdminOrdersManagerProps = {
   total: number;
   page: number;
   pageSize: number;
-  canManagePayments: boolean;
+  canConfirmPayments: boolean;
+  canRejectPayments: boolean;
+  canExtendReservations: boolean;
+  canReviewReservations: boolean;
   canManageOrders: boolean;
+  canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
   canCancelInvoices: boolean;
@@ -49,6 +55,11 @@ const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
   card: "Tarjeta",
   cash: "Efectivo",
+};
+
+const paymentTimingLabels: Record<string, string> = {
+  before_delivery: "Antes del envío",
+  on_delivery: "Al recibir",
 };
 
 const reservationStatusLabels: Record<string, string> = {
@@ -76,8 +87,12 @@ export function AdminOrdersManager({
   total,
   page,
   pageSize,
-  canManagePayments,
+  canConfirmPayments,
+  canRejectPayments,
+  canExtendReservations,
+  canReviewReservations,
   canManageOrders,
+  canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
   canCancelInvoices,
@@ -92,6 +107,7 @@ export function AdminOrdersManager({
   const [paymentToReject, setPaymentToReject] = useState<AdminOrderRow | null>(null);
   const [invoiceToCancel, setInvoiceToCancel] = useState<AdminOrderRow | null>(null);
   const [orderToCorrectFiscalData, setOrderToCorrectFiscalData] = useState<AdminOrderRow | null>(null);
+  const [orderToExtend, setOrderToExtend] = useState<AdminOrderRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -157,6 +173,25 @@ export function AdminOrdersManager({
     startTransition(async () => {
       const result = await updateOrderStatusAction(order.id, status, reason);
       showAdminMessage(result.message ?? "Estado del pedido actualizado.", result.ok);
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function extendReservation(order: AdminOrderRow, minutes: 720 | 1440 | 2880, reason: string) {
+    startTransition(async () => {
+      const result = await extendOrderReservationAction(order.id, minutes, reason);
+      showAdminMessage(result.message, result.ok);
+      if (result.ok) {
+        setOrderToExtend(null);
+        router.refresh();
+      }
+    });
+  }
+
+  function addInternalNote(order: AdminOrderRow, note: string) {
+    startTransition(async () => {
+      const result = await addOrderInternalNoteAction(order.id, note);
+      showAdminMessage(result.message, result.ok);
       if (result.ok) router.refresh();
     });
   }
@@ -298,8 +333,12 @@ export function AdminOrdersManager({
         {selectedOrder ? (
           <OrderDetail
             order={selectedOrder}
-            canManagePayments={canManagePayments}
+            canConfirmPayments={canConfirmPayments}
+            canRejectPayments={canRejectPayments}
+            canExtendReservations={canExtendReservations}
+            canReviewReservations={canReviewReservations}
             canManageOrders={canManageOrders}
+            canCancelOrders={canCancelOrders}
             canManageLogistics={canManageLogistics}
             canGenerateInvoices={canGenerateInvoices}
             canCancelInvoices={canCancelInvoices}
@@ -313,6 +352,8 @@ export function AdminOrdersManager({
             onCancelOrder={() => setOrderToCancel(selectedOrder)}
             onCancelInvoice={() => setInvoiceToCancel(selectedOrder)}
             onCorrectFiscalData={() => setOrderToCorrectFiscalData(selectedOrder)}
+            onExtendReservation={() => setOrderToExtend(selectedOrder)}
+            onAddInternalNote={(note) => addInternalNote(selectedOrder, note)}
             onUpdateOrderStatus={(status) => updateOrderStatus(selectedOrder, status)}
             onReprintInvoice={() => reprintInvoice(selectedOrder)}
           />
@@ -357,6 +398,14 @@ export function AdminOrdersManager({
           onCorrect={correctFiscalCustomerData}
         />
       ) : null}
+      {orderToExtend ? (
+        <ExtendReservationModal
+          order={orderToExtend}
+          isPending={isPending}
+          onClose={() => setOrderToExtend(null)}
+          onExtend={(minutes, reason) => extendReservation(orderToExtend, minutes, reason)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -372,8 +421,12 @@ function canIssueInvoice(order: AdminOrderRow) {
 
 function OrderDetail({
   order,
-  canManagePayments,
+  canConfirmPayments,
+  canRejectPayments,
+  canExtendReservations,
+  canReviewReservations,
   canManageOrders,
+  canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
   canCancelInvoices,
@@ -387,12 +440,18 @@ function OrderDetail({
   onCancelOrder,
   onCancelInvoice,
   onCorrectFiscalData,
+  onExtendReservation,
+  onAddInternalNote,
   onUpdateOrderStatus,
   onReprintInvoice,
 }: {
   order: AdminOrderRow;
-  canManagePayments: boolean;
+  canConfirmPayments: boolean;
+  canRejectPayments: boolean;
+  canExtendReservations: boolean;
+  canReviewReservations: boolean;
   canManageOrders: boolean;
+  canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
   canCancelInvoices: boolean;
@@ -406,6 +465,8 @@ function OrderDetail({
   onCancelOrder: () => void;
   onCancelInvoice: () => void;
   onCorrectFiscalData: () => void;
+  onExtendReservation: () => void;
+  onAddInternalNote: (note: string) => void;
   onUpdateOrderStatus: (status: AdminOrderRow["status"]) => void;
   onReprintInvoice: () => void;
 }) {
@@ -423,13 +484,13 @@ function OrderDetail({
   const canCancelOrder = normalizedStatus !== "cancelado" && allowedStatuses.some((option) => option.value === "cancelado");
   const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
   const canConfirmPayment =
-    canManagePayments &&
+    canConfirmPayments &&
     !paymentIsApproved &&
     !paymentIsRejected &&
     !isCard &&
     normalizedStatus !== "cancelado" &&
-    (isBankTransfer || (isCash && normalizedStatus === "entregado"));
-  const paymentActionLabel = isCash ? "Confirmar pago recibido" : isBankTransfer ? "Confirmar pago" : "Confirmar por pasarela";
+    (order.payment_timing !== "on_delivery" || normalizedStatus === "entregado");
+  const paymentActionLabel = isCard ? "Confirmar por pasarela" : "Confirmar pago recibido";
   const visibleManualStatuses = canManageOrders
     ? manualStatuses
     : manualStatuses.filter((option) => ["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(option.value));
@@ -467,10 +528,10 @@ function OrderDetail({
       </div>
 
       <div className="grid gap-3 border-b border-black/10 p-4 md:grid-cols-2 xl:grid-cols-4">
-        <CompactInfo label="Metodo de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
-        <CompactInfo label="Inventario" value={reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
+        <CompactInfo label="Estado del pedido" value={orderStatusLabels[normalizedStatus] ?? order.status} />
+        <CompactInfo label="Estado del pago" value={paymentDisplayLabel(order)} />
+        <CompactInfo label="Reserva" value={order.reservation_review_required ? "Vencida: requiere revisión" : reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
         <CompactInfo label="Tracking" value={order.tracking_code ?? "Sin codigo"} />
-        <CompactInfo label="Factura" value={order.invoice_number ? `${order.invoice_number}${invoiceIsCancelled ? " (anulada)" : ""}` : "Sin factura"} />
       </div>
 
       <div className="space-y-4 p-4">
@@ -478,6 +539,17 @@ function OrderDetail({
           <div className="rounded-md border border-[#9b341b]/25 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
             Este pedido esta cancelado. No requiere avance operativo.
           </div>
+        ) : null}
+
+        {order.reservation_review_required ? (
+          <ReservationReviewPanel
+            order={order}
+            canExtendReservations={canExtendReservations}
+            canReviewReservations={canReviewReservations}
+            isPending={isPending}
+            onExtendReservation={onExtendReservation}
+            onAddInternalNote={onAddInternalNote}
+          />
         ) : null}
 
         <div className="rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-3">
@@ -518,7 +590,7 @@ function OrderDetail({
               {isPending ? "Procesando..." : paymentActionLabel}
             </Button>
           ) : null}
-          {canManagePayments && isBankTransfer && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
+          {canRejectPayments && isBankTransfer && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
             <Button onClick={onRejectPayment} disabled={isPending} variant="secondary">
               <XCircle size={17} />
               Rechazar pago
@@ -548,7 +620,7 @@ function OrderDetail({
               Editar datos fiscales
             </Button>
           ) : null}
-          {canManageOrders && canCancelOrder ? (
+          {canCancelOrders && canCancelOrder ? (
             <Button onClick={onCancelOrder} disabled={isPending} variant="secondary">
               <XCircle size={17} />
               Cancelar pedido
@@ -586,6 +658,8 @@ function OrderDetail({
             <summary className="cursor-pointer text-sm font-semibold">Detalles operativos y fiscales</summary>
             <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
+              <CompactInfo label="Metodo de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
+              <CompactInfo label="Momento del pago" value={paymentTimingLabels[order.payment_timing] ?? order.payment_timing} />
               <CompactInfo label="Subtotal" value={formatCurrency(order.subtotal)} />
               <CompactInfo label="ISV" value={formatCurrency(order.tax)} />
               <CompactInfo label="Total" value={formatCurrency(order.total)} />
@@ -716,6 +790,116 @@ function CancelOrderModal({
       onSubmit={() => onCancel(reason)}
       onClose={onClose}
     />
+  );
+}
+
+function ReservationReviewPanel({
+  order,
+  canExtendReservations,
+  canReviewReservations,
+  isPending,
+  onExtendReservation,
+  onAddInternalNote,
+}: {
+  order: AdminOrderRow;
+  canExtendReservations: boolean;
+  canReviewReservations: boolean;
+  isPending: boolean;
+  onExtendReservation: () => void;
+  onAddInternalNote: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+
+  return (
+    <section className="rounded-md border border-[#f59e0b]/35 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+      <p className="font-semibold">Reserva vencida: requiere revisión</p>
+      <p className="mt-1">
+        El stock sigue reservado. Revisa el pago y el avance del pedido antes de confirmar, extender o cancelar.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {canExtendReservations ? (
+          <Button onClick={onExtendReservation} disabled={isPending} variant="ghost">
+            Extender reserva
+          </Button>
+        ) : null}
+      </div>
+      {canReviewReservations ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+          <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Agregar nota interna" />
+          <Button
+            onClick={() => {
+              onAddInternalNote(note);
+              setNote("");
+            }}
+            disabled={isPending || note.trim().length < 3}
+            variant="ghost"
+          >
+            Guardar nota
+          </Button>
+        </div>
+      ) : null}
+      {order.order_internal_notes.length > 0 ? (
+        <div className="mt-3 space-y-1">
+          {order.order_internal_notes.slice(0, 3).map((item) => (
+            <p key={item.id} className="rounded-md bg-white/70 px-3 py-2 text-xs">
+              {item.note}
+            </p>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ExtendReservationModal({
+  order,
+  isPending,
+  onExtend,
+  onClose,
+}: {
+  order: AdminOrderRow;
+  isPending: boolean;
+  onExtend: (minutes: 720 | 1440 | 2880, reason: string) => void;
+  onClose: () => void;
+}) {
+  const [minutes, setMinutes] = useState<720 | 1440 | 2880>(1440);
+  const [reason, setReason] = useState("");
+
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
+      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+        <h2 className="text-xl font-semibold">Extender reserva</h2>
+        <p className="mt-1 text-sm text-black/60">{order.order_number}</p>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Tiempo adicional</span>
+          <select
+            value={minutes}
+            onChange={(event) => setMinutes(Number(event.target.value) as 720 | 1440 | 2880)}
+            className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm"
+          >
+            <option value={720}>12 horas</option>
+            <option value={1440}>24 horas</option>
+            <option value={2880}>48 horas</option>
+          </select>
+        </label>
+        <label className="mt-4 block">
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo</span>
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm"
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onClose} variant="ghost">
+            Cancelar
+          </Button>
+          <Button onClick={() => onExtend(minutes, reason)} disabled={isPending || reason.trim().length < 4} variant="primary">
+            Extender reserva
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 

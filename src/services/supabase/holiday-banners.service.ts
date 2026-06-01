@@ -34,6 +34,7 @@ type UsageValue = {
 type TechnicalAlertSettingsRow = {
   enabled: boolean | null;
   email: string | null;
+  service_account_email: string | null;
   cloudinary_storage_threshold_percent: number | null;
   last_alert_sent_at: string | null;
   last_checked_at: string | null;
@@ -51,6 +52,7 @@ const technicalAuditActions = new Set([
 const defaultTechnicalAlertSettings: TechnicalAlertSettings = {
   enabled: true,
   email: "kennethduron.paz@gmail.com",
+  serviceAccountEmail: "carzonetech@gmail.com",
   cloudinaryStorageThresholdPercent: 70,
   lastAlertSentAt: null,
   lastCheckedAt: null,
@@ -276,6 +278,7 @@ function normalizeTechnicalAlertSettings(row: TechnicalAlertSettingsRow | null |
   return {
     enabled: row?.enabled ?? defaultTechnicalAlertSettings.enabled,
     email: row?.email?.trim() || defaultTechnicalAlertSettings.email,
+    serviceAccountEmail: row?.service_account_email?.trim() || defaultTechnicalAlertSettings.serviceAccountEmail,
     cloudinaryStorageThresholdPercent:
       Math.min(100, Math.max(1, Math.trunc(Number(row?.cloudinary_storage_threshold_percent ?? defaultTechnicalAlertSettings.cloudinaryStorageThresholdPercent)))),
     lastAlertSentAt: row?.last_alert_sent_at ?? null,
@@ -289,7 +292,7 @@ export async function getTechnicalAlertSettings(): Promise<TechnicalAlertSetting
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("technical_alert_settings")
-    .select("enabled, email, cloudinary_storage_threshold_percent, last_alert_sent_at, last_checked_at")
+    .select("enabled, email, service_account_email, cloudinary_storage_threshold_percent, last_alert_sent_at, last_checked_at")
     .eq("id", true)
     .maybeSingle<TechnicalAlertSettingsRow>();
 

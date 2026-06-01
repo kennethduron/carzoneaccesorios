@@ -371,8 +371,16 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const deliveryAddress = String(input.checkout.address ?? "").trim();
   const email = user ? accountEmail : submittedEmail;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
+  const paymentTiming =
+    paymentMethod === "cash"
+      ? "on_delivery"
+      : paymentMethod === "card"
+        ? "before_delivery"
+        : input.checkout.paymentTiming === "on_delivery"
+          ? "on_delivery"
+          : "before_delivery";
   const bankReferenceResult =
-    paymentMethod === "bank_transfer"
+    paymentMethod === "bank_transfer" && paymentTiming === "before_delivery"
       ? validateBankReference(String(input.checkout.bankTransferReference ?? ""))
       : { ok: true as const, value: "" };
   const bankReference = bankReferenceResult.ok ? bankReferenceResult.value : "";
@@ -566,7 +574,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
           0,
         );
         const wholesaleTax = roundMoney(wholesaleSubtotal * Number(settings.tax_rate ?? 0.15));
-        const checkoutFees = calculateCheckoutFees({ subtotal: wholesaleSubtotal, paymentMethod, settings });
+        const checkoutFees = calculateCheckoutFees({ subtotal: wholesaleSubtotal, paymentMethod, paymentTiming, settings });
         const wholesaleFinalTotal = roundMoney(wholesaleSubtotal + wholesaleTax + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee);
         const missing = Math.max(0, roundMoney(settings.first_wholesale_minimum - wholesaleFinalTotal));
 
@@ -584,7 +592,10 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   try {
     const receiptFile = formData.get("transferReceipt");
-    transferReceipt = paymentMethod === "bank_transfer" && receiptFile instanceof File ? await uploadTransferReceipt(receiptFile, bankReference) : null;
+    transferReceipt =
+      paymentMethod === "bank_transfer" && paymentTiming === "before_delivery" && receiptFile instanceof File
+        ? await uploadTransferReceipt(receiptFile, bankReference)
+        : null;
   } catch (error) {
     await writeErrorLog({
       route: "/checkout",
@@ -607,7 +618,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const { data, error } = await supabase
-    .rpc("create_checkout_order", {
+    .rpc("create_checkout_order_v2", {
       customer_name: customerName,
       customer_email: email,
       customer_phone: phone,
@@ -619,7 +630,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       delivery_city: city,
       requested_price_mode: input.priceMode,
       requested_payment_method: paymentMethod,
-      bank_reference_number: paymentMethod === "bank_transfer" ? bankReference : null,
+      requested_payment_timing: paymentTiming,
+      bank_reference_number: paymentMethod === "bank_transfer" && paymentTiming === "before_delivery" ? bankReference : null,
       order_items: normalizedItems.map((item) => ({
         product_id: item.productId,
         quantity: item.quantity,
@@ -642,6 +654,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         product_ids: productIds,
         price_mode: input.priceMode,
         payment_method: paymentMethod,
+        payment_timing: paymentTiming,
       },
     });
 

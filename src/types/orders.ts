@@ -101,6 +101,7 @@ export type AdminOrderRow = {
   delivery_department: string | null;
   delivery_city: string | null;
   payment_method: "bank_transfer" | "card" | "cash";
+  payment_timing: "before_delivery" | "on_delivery";
   price_mode: PriceMode;
   subtotal: number;
   tax: number;
@@ -114,6 +115,8 @@ export type AdminOrderRow = {
   status: OrderStatus;
   order_reservation_status: "not_required" | "reserved" | "confirmed" | "released" | "expired" | "canceled";
   reservation_expires_at: string | null;
+  reservation_review_required: boolean;
+  reservation_review_detected_at: string | null;
   created_at: string;
   order_items: AdminOrderItem[];
   payment_id: string | null;
@@ -121,6 +124,12 @@ export type AdminOrderRow = {
   bank_reference_number: string | null;
   transfer_receipt_url: string | null;
   transfer_receipt_public_id: string | null;
+  order_internal_notes: Array<{
+    id: string;
+    note: string;
+    actor_role: string | null;
+    created_at: string;
+  }>;
   invoice_id: string | null;
   invoice_number: string | null;
   invoice_issued_at: string | null;

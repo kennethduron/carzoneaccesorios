@@ -147,6 +147,7 @@ function notificationSettingsChanges(previous: NotificationSettings, next: Notif
     "notification_emails",
     "notify_new_orders",
     "notify_payment_confirmed",
+    "notify_general_contact",
     "notify_wholesale_requests",
   ];
 

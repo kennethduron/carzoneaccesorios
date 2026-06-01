@@ -53,6 +53,9 @@ export type ReportOrder = {
   email: string | null;
   phone: string;
   payment_method: ReportPaymentMethod;
+  payment_status: string | null;
+  order_reservation_status: string;
+  reservation_review_required: boolean;
   price_mode: PriceMode;
   subtotal: number;
   tax: number;

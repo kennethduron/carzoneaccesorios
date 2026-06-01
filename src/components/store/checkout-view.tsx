@@ -30,6 +30,7 @@ const emptyCheckout: CheckoutData = {
   city: "",
   address: "",
   paymentMethod: "Transferencia bancaria",
+  paymentTiming: "before_delivery",
   bankTransferReference: "",
 };
 
@@ -133,8 +134,8 @@ export function CheckoutView({
   const toast = useToast();
   const sellsInHonduras = checkout.country === "Honduras";
   const checkoutFees = useMemo(
-    () => calculateCheckoutFees({ subtotal, paymentMethod: checkout.paymentMethod, settings }),
-    [checkout.paymentMethod, settings, subtotal],
+    () => calculateCheckoutFees({ subtotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
+    [checkout.paymentMethod, checkout.paymentTiming, settings, subtotal],
   );
   const paymentMethods = useMemo(() => {
     const methods: Array<[CheckoutData["paymentMethod"], typeof Banknote]> = [];
@@ -301,6 +302,7 @@ export function CheckoutView({
     }
 
     const isBankTransfer = checkout.paymentMethod === "Transferencia bancaria";
+    const isBankTransferNow = isBankTransfer && checkout.paymentTiming === "before_delivery";
     const bankTransferReference = checkout.bankTransferReference.trim();
 
     if (isBankTransfer && !settings.allow_bank_transfer) {
@@ -318,13 +320,13 @@ export function CheckoutView({
       return;
     }
 
-    const bankReferenceError = isBankTransfer ? validateBankReference(bankTransferReference) : "";
+    const bankReferenceError = isBankTransferNow ? validateBankReference(bankTransferReference) : "";
     if (bankReferenceError) {
       showCheckoutError("bankTransferReference", bankReferenceError);
       return;
     }
 
-    if (isBankTransfer && proofMessage && !proofFile) {
+    if (isBankTransferNow && proofMessage && !proofFile) {
       setCheckoutMessage(proofMessage);
       toast.error(proofMessage);
       return;
@@ -366,7 +368,7 @@ export function CheckoutView({
       formData.set("items", JSON.stringify(items));
       formData.set("priceMode", priceMode);
 
-      if (isBankTransfer && proofFile) {
+      if (isBankTransferNow && proofFile) {
         formData.set("transferReceipt", proofFile);
       }
 
@@ -403,8 +405,8 @@ export function CheckoutView({
         additionalFees,
         total: finalTotal,
         paymentMethod: checkout.paymentMethod,
-        paymentReference: isBankTransfer ? bankTransferReference : null,
-        paymentProofFileName: isBankTransfer ? proofFileName || null : null,
+        paymentReference: isBankTransferNow ? bankTransferReference : null,
+        paymentProofFileName: isBankTransferNow ? proofFileName || null : null,
         address: checkout.address,
         phone: phone.value,
         customerPhone: phone.value,
@@ -420,7 +422,9 @@ export function CheckoutView({
         total: finalTotal,
         currentStatus:
           checkout.paymentMethod === "Transferencia bancaria"
-            ? "Tu pedido está pendiente de revisión de pago."
+            ? checkout.paymentTiming === "on_delivery"
+              ? "Tu pago quedará pendiente hasta que recibas el pedido."
+              : "Tu pedido está pendiente de revisión de pago."
             : checkout.paymentMethod === "Efectivo"
               ? "Tu pedido está pendiente de confirmación."
               : "Tu pedido será procesado cuando el pago sea aprobado.",
@@ -561,7 +565,11 @@ export function CheckoutView({
               <button
                 key={method as string}
                 onClick={() => {
-                  setCheckout((current) => ({ ...current, paymentMethod: method as CheckoutData["paymentMethod"] }));
+                  setCheckout((current) => ({
+                    ...current,
+                    paymentMethod: method as CheckoutData["paymentMethod"],
+                    paymentTiming: method === "Efectivo" ? "on_delivery" : method === "Tarjeta" ? "before_delivery" : current.paymentTiming,
+                  }));
                   if (method !== "Transferencia bancaria") {
                     setProofFileName("");
                     setProofFile(null);
@@ -587,10 +595,46 @@ export function CheckoutView({
                 <div>
                   <h2 className="font-semibold">Transferencia bancaria</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Revisaremos tu pago con la referencia bancaria proporcionada. El comprobante es opcional, pero puede acelerar la validación.
+                    Elige si transferirás antes del envío o cuando recibas tu pedido.
                   </p>
                 </div>
               </div>
+              <div className="mt-4 grid gap-2">
+                <label className="flex gap-3 rounded-md border border-black/10 bg-white p-3 text-sm">
+                  <input
+                    type="radio"
+                    name="paymentTiming"
+                    checked={checkout.paymentTiming === "before_delivery"}
+                    onChange={() => updateCheckoutField("paymentTiming", "before_delivery")}
+                    className="mt-1 accent-[#e4252c]"
+                  />
+                  <span>
+                    <span className="block font-semibold">Transferencia ahora</span>
+                    <span className="mt-1 block text-black/55">Ya hice o haré la transferencia antes de enviar el pedido.</span>
+                  </span>
+                </label>
+                <label className="flex gap-3 rounded-md border border-black/10 bg-white p-3 text-sm">
+                  <input
+                    type="radio"
+                    name="paymentTiming"
+                    checked={checkout.paymentTiming === "on_delivery"}
+                    onChange={() => {
+                      updateCheckoutField("paymentTiming", "on_delivery");
+                      updateCheckoutField("bankTransferReference", "");
+                      setProofFileName("");
+                      setProofFile(null);
+                      setProofMessage("");
+                    }}
+                    className="mt-1 accent-[#e4252c]"
+                  />
+                  <span>
+                    <span className="block font-semibold">Transferencia al recibir</span>
+                    <span className="mt-1 block text-black/55">Haré la transferencia cuando reciba el pedido. Aplica tarifa contra entrega.</span>
+                  </span>
+                </label>
+              </div>
+              {checkout.paymentTiming === "before_delivery" ? (
+              <>
               <label className="mt-4 block">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">
                   Número de referencia bancaria
@@ -669,6 +713,12 @@ export function CheckoutView({
                   {proofMessage}
                 </p>
               ) : null}
+              </>
+              ) : (
+                <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+                  Este pedido tendrá tarifa contra entrega porque el pago se realizará al recibir. No necesitas referencia bancaria todavía.
+                </p>
+              )}
             </section>
           ) : null}
 
@@ -704,7 +754,7 @@ export function CheckoutView({
                 <div>
                   <h2 className="font-semibold">Pago contra entrega</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Pagarás en efectivo al recibir tu pedido. Nuestro equipo confirmará disponibilidad y despacho.
+                    Pagarás en efectivo al recibir tu pedido. Puede aplicar tarifa contra entrega.
                   </p>
                 </div>
               </div>
@@ -816,6 +866,7 @@ export function CheckoutView({
           total={finalTotal}
           settings={settings}
           paymentMethod={checkout.paymentMethod}
+          paymentTiming={checkout.paymentTiming}
         />
         {orderNumber ? (
           <div className="mt-5 rounded-md bg-[#fff1f2] p-4 text-sm">
@@ -898,6 +949,7 @@ function CheckoutTotals({
   total,
   settings,
   paymentMethod,
+  paymentTiming,
 }: {
   subtotal: number;
   tax: number;
@@ -909,6 +961,7 @@ function CheckoutTotals({
   total: number;
   settings: PublicCompanySettings;
   paymentMethod: CheckoutData["paymentMethod"];
+  paymentTiming: CheckoutData["paymentTiming"];
 }) {
   const hasFreeShipping = shippingFee === 0 && subtotal >= settings.free_shipping_threshold;
 
@@ -927,7 +980,8 @@ function CheckoutTotals({
         <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>
         <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
       </div>
-      {paymentMethod === "Efectivo" && settings.enable_cash_on_delivery_fee ? (
+      {(paymentMethod === "Efectivo" || (paymentMethod === "Transferencia bancaria" && paymentTiming === "on_delivery")) &&
+      settings.enable_cash_on_delivery_fee ? (
         <div className="flex justify-between">
           <span>Cargo contra entrega</span>
           <span>{formatCurrency(cashOnDeliveryFee)}</span>
@@ -950,6 +1004,11 @@ function CheckoutTotals({
         <p>Para compras menores aplica envío estándar de {formatCurrency(settings.standard_shipping_fee)}.</p>
         <p>El pago al recibir puede incluir una comisión adicional definida por la empresa de entrega.</p>
       </div>
+      {paymentMethod === "Efectivo" || (paymentMethod === "Transferencia bancaria" && paymentTiming === "on_delivery") ? (
+        <p className="rounded-md bg-[#fff7ed] p-3 text-xs text-[#7c2d12]">
+          Este pedido tendrá tarifa contra entrega porque el pago se realizará al recibir.
+        </p>
+      ) : null}
       <div className="flex justify-between text-lg font-semibold">
         <span>Total a pagar</span>
         <span>{formatCurrency(total)}</span>

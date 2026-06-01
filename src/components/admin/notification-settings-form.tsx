@@ -91,6 +91,12 @@ export function NotificationSettingsForm({ settings, canEdit }: NotificationSett
             onChange={(checked) => updateField("notify_payment_confirmed", checked)}
           />
           <Toggle
+            label="Contacto general"
+            checked={form.notify_general_contact}
+            disabled={!canEdit}
+            onChange={(checked) => updateField("notify_general_contact", checked)}
+          />
+          <Toggle
             label="Solicitud mayorista"
             checked={form.notify_wholesale_requests}
             disabled={!canEdit}

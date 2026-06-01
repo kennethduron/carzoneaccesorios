@@ -41,6 +41,7 @@ const moduleGroups = [
     defaultOpen: true,
     modules: [
       { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, pagos y facturación.", permissions: ["orders:read", "orders:manage"] },
+      { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decisión humana.", permissions: ["reservations:review"] },
       { title: "Inventario", href: "/admin/inventario", description: "Entradas, salidas, ajustes e inventario bajo.", permissions: ["inventory:manage"] },
       { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:manage"] },
     ],
@@ -52,7 +53,7 @@ const moduleGroups = [
     description: "Seguimiento de cobros, facturas y reportes.",
     defaultOpen: true,
     modules: [
-      { title: "Pedidos por cobrar", href: "/admin/pedidos?task=pending_payments", description: "Pagos pendientes de confirmar.", permissions: ["orders:manage"] },
+      { title: "Pedidos por cobrar", href: "/admin/pedidos?task=pending_payments", description: "Pagos pendientes de confirmar.", permissions: ["payments:confirm", "payments:manage"] },
       { title: "Facturas pendientes", href: "/admin/facturas?task=pending_invoices", description: "Facturas listas para revisar o emitir.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes", href: "/admin/reportes", description: "Reportes contables, filtros, Excel, CSV y PDF.", permissions: ["reports:read"] },
     ],
@@ -208,8 +209,16 @@ export default async function AdminPage() {
       value: overview.pendingPayments,
       href: "/admin/pedidos?task=pending_payments",
       empty: "No hay pagos esperando revisión.",
-      permissions: ["orders:manage"],
+      permissions: ["payments:confirm", "payments:manage"],
       card: "pending_payments",
+    },
+    {
+      label: "Revisar reservas vencidas",
+      value: overview.expiredReservations,
+      href: "/admin/pedidos?task=expired_reservations",
+      empty: "No hay reservas vencidas por revisar.",
+      permissions: ["reservations:review"],
+      card: "pending_orders",
     },
     {
       label: "Revisar inventario bajo",
@@ -296,6 +305,7 @@ export default async function AdminPage() {
       metrics: [
         { label: "Sin stock", value: overview.outOfStockProducts.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
         { label: "Bajo mínimo", value: overview.lowStockProducts.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
+        { label: "Reservas vencidas", value: overview.expiredReservations.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
       ],
     },
     {

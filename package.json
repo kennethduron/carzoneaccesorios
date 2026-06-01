@@ -12,7 +12,10 @@
     "test:wholesale-permissions:remote": "node scripts/test-wholesale-permissions-remote.mjs",
     "test:role-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-role-hierarchy.mjs",
     "test:role-hierarchy:remote": "node scripts/test-role-hierarchy-remote.mjs",
-    "test:role-hierarchy:rpcs": "node scripts/test-role-hierarchy-rpcs.mjs"
+    "test:role-hierarchy:rpcs": "node scripts/test-role-hierarchy-rpcs.mjs",
+    "test:public-contact-workflow": "node scripts/test-public-contact-workflow.mjs",
+    "test:public-contact-workflow:remote": "node scripts/test-public-contact-workflow-remote.mjs",
+    "test:payment-reservations:remote": "node scripts/test-payment-reservation-workflow-remote.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

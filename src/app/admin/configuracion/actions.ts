@@ -73,6 +73,7 @@ export async function saveBusinessSettingsAction(input: BusinessSettings) {
     ...sanitizeBusinessSettings(input),
     require_bank_reference: true,
     transfer_receipt_requirement: "optional" as const,
+    stock_reservations_enabled: true,
   };
   const emailError = validateEmailList(sanitized.notification_emails);
   if (emailError) {

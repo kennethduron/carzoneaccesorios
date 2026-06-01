@@ -666,6 +666,9 @@ function TechnicalAlertsPanel({
           </Button>
         </div>
       </div>
+      <p className="mt-3 rounded-md bg-zinc-100 px-3 py-2 text-xs text-black/60">
+        Cuenta técnica de servicios: {settings.serviceAccountEmail}. Uso interno para backups, cron, proveedores y futuras integraciones.
+      </p>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-black/50">
         <span className="rounded-md bg-zinc-100 px-2 py-1">

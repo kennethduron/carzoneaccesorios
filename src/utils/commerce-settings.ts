@@ -85,10 +85,12 @@ export function normalizeDashboardCards(value: unknown): DashboardCardSettings {
 export function calculateCheckoutFees({
   subtotal,
   paymentMethod,
+  paymentTiming,
   settings,
 }: {
   subtotal: number;
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo" | "bank_transfer" | "card" | "cash";
+  paymentTiming?: "before_delivery" | "on_delivery";
   settings: CommerceSettings;
 }) {
   const normalized = normalizeCommerceSettings(settings);
@@ -97,7 +99,8 @@ export function calculateCheckoutFees({
   const safeSubtotal = toPositiveMoney(subtotal, 0);
   const shippingFee = safeSubtotal >= normalized.free_shipping_threshold ? 0 : normalized.standard_shipping_fee;
   const cashOnDeliveryFee =
-    normalizedPaymentMethod === "cash" && normalized.enable_cash_on_delivery_fee
+    (normalizedPaymentMethod === "cash" || (normalizedPaymentMethod === "bank_transfer" && paymentTiming === "on_delivery")) &&
+    normalized.enable_cash_on_delivery_fee
       ? Math.round(safeSubtotal * (normalized.cash_on_delivery_percentage / 100) * 100) / 100
       : 0;
 

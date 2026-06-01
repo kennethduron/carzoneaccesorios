@@ -120,6 +120,11 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
               onChange={(value) => update("notify_transfer_receipt_uploaded", value)}
             />
             <Switch
+              label="Contacto general"
+              checked={form.notify_general_contact}
+              onChange={(value) => update("notify_general_contact", value)}
+            />
+            <Switch
               label="Solicitud mayorista"
               checked={form.notify_wholesale_requests}
               onChange={(value) => update("notify_wholesale_requests", value)}
@@ -279,8 +284,9 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
             />
             <Switch
               label="Reservas temporales"
-              checked={form.stock_reservations_enabled}
-              onChange={(value) => update("stock_reservations_enabled", value)}
+              help="Protección obligatoria: reserva stock al crear el pedido y evita sobreventas."
+              checked
+              onChange={() => update("stock_reservations_enabled", true)}
             />
           </SwitchGrid>
           <div className="grid gap-4 md:grid-cols-3">

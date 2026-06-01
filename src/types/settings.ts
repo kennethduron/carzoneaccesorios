@@ -28,6 +28,7 @@ export type BusinessNotificationSettings = {
   notify_new_orders: boolean;
   notify_payment_confirmed: boolean;
   notify_transfer_receipt_uploaded: boolean;
+  notify_general_contact: boolean;
   notify_wholesale_requests: boolean;
   notify_customer_account_created: boolean;
   notify_low_stock: boolean;
@@ -198,6 +199,7 @@ export type HolidayBannerStorageSummary = {
 export type TechnicalAlertSettings = {
   enabled: boolean;
   email: string;
+  serviceAccountEmail: string;
   cloudinaryStorageThresholdPercent: number;
   lastAlertSentAt: string | null;
   lastCheckedAt: string | null;

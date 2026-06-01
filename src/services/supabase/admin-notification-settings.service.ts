@@ -5,6 +5,7 @@ export const defaultNotificationSettings: NotificationSettings = {
   notification_emails: "",
   notify_new_orders: true,
   notify_payment_confirmed: true,
+  notify_general_contact: true,
   notify_wholesale_requests: true,
   notify_transfer_receipt_uploaded: true,
   notify_customer_account_created: true,
@@ -18,7 +19,7 @@ export async function getNotificationSettings(): Promise<NotificationSettings> {
   const { data, error } = await supabase
     .from("company_settings")
     .select(
-      "notification_emails, notify_new_orders, notify_payment_confirmed, notify_wholesale_requests, notify_transfer_receipt_uploaded, notify_customer_account_created, notify_low_stock, send_daily_activity_summary, send_weekly_sales_summary",
+      "notification_emails, notify_new_orders, notify_payment_confirmed, notify_general_contact, notify_wholesale_requests, notify_transfer_receipt_uploaded, notify_customer_account_created, notify_low_stock, send_daily_activity_summary, send_weekly_sales_summary",
     )
     .order("created_at", { ascending: true })
     .limit(1)
@@ -41,6 +42,7 @@ export async function saveNotificationSettings(input: NotificationSettings) {
     notification_emails: input.notification_emails.trim(),
     notify_new_orders: Boolean(input.notify_new_orders),
     notify_payment_confirmed: Boolean(input.notify_payment_confirmed),
+    notify_general_contact: Boolean(input.notify_general_contact),
     notify_wholesale_requests: Boolean(input.notify_wholesale_requests),
     notify_transfer_receipt_uploaded: Boolean(input.notify_transfer_receipt_uploaded),
     notify_customer_account_created: Boolean(input.notify_customer_account_created),

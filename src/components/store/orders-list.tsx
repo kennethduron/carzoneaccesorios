@@ -38,6 +38,15 @@ const paymentMethodLabels: Record<string, string> = {
   card: "Tarjeta",
 };
 
+const reservationLabels: Record<string, string> = {
+  not_required: "No aplica",
+  reserved: "Activa",
+  confirmed: "Confirmada",
+  released: "Liberada",
+  expired: "Vencida",
+  canceled: "Cancelada",
+};
+
 function invoiceStatusMessage(order: CustomerOrderRow) {
   const invoice = order.invoices[0] ?? null;
 
@@ -174,9 +183,13 @@ export function OrdersList({
               </span>
             </div>
 
-            <div className="mt-4 grid gap-2 text-sm md:grid-cols-4">
+            <div className="mt-4 grid gap-2 text-sm md:grid-cols-5">
               <Info label="Pago" value={paymentStatusLabels[order.payment_status ?? "pending"] ?? "Pendiente"} />
               <Info label="Método" value={paymentMethodLabels[order.payment_method] ?? order.payment_method} />
+              <Info
+                label="Reserva"
+                value={order.reservation_review_required ? "Requiere revisión interna" : reservationLabels[order.order_reservation_status] ?? order.order_reservation_status}
+              />
               <Info label="Total" value={formatCurrency(order.total)} strong />
               <Info label="Modo" value={order.price_mode === "wholesale" ? "Mayorista" : "Al detalle"} />
             </div>
@@ -191,6 +204,11 @@ export function OrdersList({
               additionalFeesValue={additionalFeesTotal(order.additional_fees)}
               total={order.total}
             />
+            {order.cash_on_delivery_fee > 0 ? (
+              <p className="mt-4 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
+                Este pedido incluye tarifa contra entrega porque el pago se realizará al recibir.
+              </p>
+            ) : null}
 
             <div className="mt-4 divide-y divide-black/10 rounded-md border border-black/10">
               {order.order_items.map((item) => (

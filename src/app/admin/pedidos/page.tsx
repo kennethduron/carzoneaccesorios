@@ -68,7 +68,15 @@ export default async function AdminOrdersPage({
   const params = await searchParams;
   const task = normalizeAdminOrderTask(params.task);
   const canManagePayments = hasEffectivePermission(profile.role, profile.permissions, "payments:manage", profile.email);
+  const canConfirmPayments =
+    canManagePayments || hasEffectivePermission(profile.role, profile.permissions, "payments:confirm", profile.email);
+  const canRejectPayments =
+    canManagePayments || hasEffectivePermission(profile.role, profile.permissions, "payments:reject", profile.email);
+  const canExtendReservations = hasEffectivePermission(profile.role, profile.permissions, "orders:extend_reservation", profile.email);
+  const canReviewReservations = hasEffectivePermission(profile.role, profile.permissions, "reservations:review", profile.email);
   const canManageOrders = hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email);
+  const canCancelOrders =
+    canManageOrders || hasEffectivePermission(profile.role, profile.permissions, "orders:cancel", profile.email);
   const canManageLogistics =
     canManageOrders || hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
   const canGenerateInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:create", profile.email);
@@ -78,7 +86,7 @@ export default async function AdminOrdersPage({
     profile.permissions.includes("invoices:correct");
   const canViewFinancialData =
     profile.permissions.some((permission) =>
-      ["payments:read", "payments:manage", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),
+      ["payments:read", "payments:manage", "payments:confirm", "payments:reject", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),
     );
   const ordersPage = await getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50, task });
   const visibleOrders = canViewFinancialData ? ordersPage.orders : ordersPage.orders.map(stripFinancialOrderData);
@@ -99,8 +107,12 @@ export default async function AdminOrdersPage({
         total={ordersPage.total}
         page={ordersPage.page}
         pageSize={ordersPage.pageSize}
-        canManagePayments={canManagePayments}
+        canConfirmPayments={canConfirmPayments}
+        canRejectPayments={canRejectPayments}
+        canExtendReservations={canExtendReservations}
+        canReviewReservations={canReviewReservations}
         canManageOrders={canManageOrders}
+        canCancelOrders={canCancelOrders}
         canManageLogistics={canManageLogistics}
         canGenerateInvoices={canGenerateInvoices}
         canCancelInvoices={canCancelInvoices}

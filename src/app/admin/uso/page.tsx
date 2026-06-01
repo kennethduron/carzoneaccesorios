@@ -410,10 +410,10 @@ export default async function AdminUsagePage() {
             <p className="mt-1 text-2xl font-semibold">{formatNumber(usage.reservedOrderCount)}</p>
           </div>
           <div className="rounded-md border border-black/10 bg-[#fff7ed] p-4">
-            <p className="text-sm text-[#7c2d12]">Reservas vencidas pendientes de liberar</p>
+            <p className="text-sm text-[#7c2d12]">Reservas vencidas que requieren revisión</p>
             <p className="mt-1 text-2xl font-semibold text-[#7c2d12]">{formatNumber(usage.expiredReservationCount)}</p>
             <p className="mt-2 text-xs leading-5 text-[#7c2d12]">
-              Endpoint cron: POST /api/cron/release-expired-reservations con Authorization Bearer del secreto configurado.
+              Endpoint cron: GET /api/cron/check-expired-reservations con Authorization Bearer del secreto configurado. Solo alerta; no libera stock automáticamente.
             </p>
           </div>
         </div>

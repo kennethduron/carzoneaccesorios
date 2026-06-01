@@ -47,7 +47,7 @@ const paymentMethodLabels: Record<string, string> = {
 };
 
 function trackingSteps(order: PublicTrackingOrder) {
-  if (order.paymentMethod === "cash") return cashProgressSteps;
+  if (order.paymentMethod === "cash" || order.paymentTiming === "on_delivery") return cashProgressSteps;
   if (order.paymentMethod === "bank_transfer") return transferProgressSteps;
   return cardProgressSteps;
 }
@@ -75,6 +75,7 @@ function customerPaymentLabel(order: PublicTrackingOrder) {
     return "Pago confirmado";
   }
   if (order.paymentMethod === "bank_transfer") {
+    if (order.paymentTiming === "on_delivery") return "Pago pendiente al recibir";
     return "Pago en revisión";
   }
   if (order.paymentMethod === "card") return "Pendiente de pasarela";
@@ -85,7 +86,7 @@ function activeProgressIndex(order: PublicTrackingOrder) {
   const status = canonicalOrderStatus(order.orderStatus);
   if (status === "cancelado") return 0;
 
-  if (order.paymentMethod === "cash") {
+  if (order.paymentMethod === "cash" || order.paymentTiming === "on_delivery") {
     if (isPaymentConfirmed(order.paymentStatus) && status === "entregado") return 8;
     if (status === "entregado") return 7;
     if (status === "en_ruta") return 6;
@@ -208,7 +209,13 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             <InfoBlock label="Estado del pago" value={customerPaymentLabel(order)} />
           </div>
 
-          {order.paymentMethod === "bank_transfer" && !isPaymentConfirmed(order.paymentStatus) ? (
+          {order.cashOnDeliveryFee > 0 ? (
+            <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              Este pedido incluye tarifa contra entrega porque el pago se realizará al recibir.
+            </p>
+          ) : null}
+
+          {order.paymentMethod === "bank_transfer" && order.paymentTiming === "before_delivery" && !isPaymentConfirmed(order.paymentStatus) ? (
             <div className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
               <p>
                 {order.hasBankReference

@@ -10,15 +10,16 @@ export type AdminOrdersPage = {
   pageSize: number;
 };
 
-export type AdminOrderTask = "new_orders" | "pending_payments" | "to_prepare";
+export type AdminOrderTask = "new_orders" | "pending_payments" | "to_prepare" | "expired_reservations";
 
 export const adminOrderTaskLabels: Record<AdminOrderTask, string> = {
   new_orders: "Pedidos nuevos por revisar",
   pending_payments: "Pagos pendientes de confirmar",
   to_prepare: "Pedidos listos para preparar",
+  expired_reservations: "Reservas vencidas por revisar",
 };
 
-const adminOrderTasks = new Set<AdminOrderTask>(["new_orders", "pending_payments", "to_prepare"]);
+const adminOrderTasks = new Set<AdminOrderTask>(["new_orders", "pending_payments", "to_prepare", "expired_reservations"]);
 
 export function normalizeAdminOrderTask(value: string | null | undefined): AdminOrderTask | null {
   return adminOrderTasks.has(value as AdminOrderTask) ? (value as AdminOrderTask) : null;
@@ -219,6 +220,7 @@ export async function getAdminOrdersPage({
       delivery_department,
       delivery_city,
       payment_method,
+      payment_timing,
       price_mode,
       subtotal,
       tax,
@@ -232,6 +234,8 @@ export async function getAdminOrdersPage({
       status,
       order_reservation_status,
       reservation_expires_at,
+      reservation_review_required,
+      reservation_review_detected_at,
       created_at,
       order_items(
         id,
@@ -246,6 +250,7 @@ export async function getAdminOrdersPage({
         wholesale_price_snapshot
       ),
       ${paymentRelation}(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
+      order_internal_notes(id, note, actor_role, created_at),
       invoices(id, invoice_number, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
       customers(tax_id)
     `,
@@ -267,6 +272,10 @@ export async function getAdminOrdersPage({
     ordersQuery = ordersQuery
       .in("status", ["confirmado", "confirmed", "paid", "preparacion", "preparing"])
       .eq("payments.payment_status", "approved");
+  }
+
+  if (task === "expired_reservations") {
+    ordersQuery = ordersQuery.eq("reservation_review_required", true);
   }
 
   const { data, error, count } = await ordersQuery

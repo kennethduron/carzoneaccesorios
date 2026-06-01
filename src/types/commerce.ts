@@ -52,5 +52,6 @@ export type CheckoutData = {
   city: string;
   address: string;
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo";
+  paymentTiming: "before_delivery" | "on_delivery";
   bankTransferReference: string;
 };

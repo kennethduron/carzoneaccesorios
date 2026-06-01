@@ -26,6 +26,8 @@ export type PublicTrackingOrder = {
   hasBankReference: boolean;
   createdAt: string;
   paymentMethod: string;
+  paymentTiming: "before_delivery" | "on_delivery";
+  cashOnDeliveryFee: number;
   total: number;
   customerNameMasked: string;
   phoneLast4: string;
@@ -43,6 +45,8 @@ type PublicTrackingRpcRow = {
   has_bank_reference: boolean | null;
   created_at: string | null;
   payment_method: string | null;
+  payment_timing: "before_delivery" | "on_delivery" | null;
+  cash_on_delivery_fee: unknown;
   total: unknown;
   customer_name_masked: string | null;
   phone_last4: string | null;
@@ -73,7 +77,7 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
   try {
     const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
-      .rpc("get_public_order_tracking", { raw_tracking_code: trackingCode })
+      .rpc("get_public_order_tracking_v2", { raw_tracking_code: trackingCode })
       .returns<PublicTrackingRpcRow[]>();
 
     if (error) {
@@ -127,6 +131,8 @@ export async function getPublicOrderTrackingAction(rawCode: string): Promise<Pub
         hasBankReference: Boolean(row.has_bank_reference),
         createdAt: row.created_at,
         paymentMethod: row.payment_method,
+        paymentTiming: row.payment_timing ?? "before_delivery",
+        cashOnDeliveryFee: Number(row.cash_on_delivery_fee ?? 0),
         total: Number(row.total ?? 0),
         customerNameMasked: row.customer_name_masked ?? "",
         phoneLast4: row.phone_last4 ?? "",

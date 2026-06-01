@@ -7,7 +7,7 @@ import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
-import { canMoveOrderToStatus, canonicalOrderStatus, hasTransferReceipt, isPaymentConfirmed } from "@/utils/order-workflow";
+import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 
 type PaymentStatus = "approved" | "rejected";
 type OrderStatus =
@@ -44,26 +44,6 @@ const allowedOrderStatuses = new Set<OrderStatus>([
   "delivered",
   "cancelled",
 ]);
-
-type OrderPaymentContext = {
-  id: string;
-  order_number: string;
-  status: string;
-  tracking_status: string | null;
-  payment_method: "bank_transfer" | "card" | "cash";
-  order_reservation_status: string | null;
-  payments: Array<{
-    id: string;
-    payment_status: string | null;
-    status: string | null;
-    paid_at: string | null;
-    amount: number;
-    bank_reference_number: string | null;
-    reference: string | null;
-    transfer_receipt_url: string | null;
-    transfer_receipt_public_id: string | null;
-  }> | null;
-};
 
 function safeAdminOrderMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -112,7 +92,7 @@ function revalidateOperationalPaths() {
 }
 
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
-  await requirePermission("payments:manage");
+  await requirePermission(status === "approved" ? "payments:confirm" : "payments:reject");
   const rejectionReason = reason.trim();
 
   if (status === "rejected" && rejectionReason.length < 4) {
@@ -120,155 +100,74 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
   }
 
   const supabase = await getSupabaseServerClient();
-  const { data: order, error: orderError } = await supabase
-    .from("orders")
-    .select(
-      `
-      id,
-      order_number,
-      status,
-      tracking_status,
-      payment_method,
-      order_reservation_status,
-      payments(
-        id,
-        payment_status,
-        status,
-        paid_at,
-        amount,
-        bank_reference_number,
-        reference,
-        transfer_receipt_url,
-        transfer_receipt_public_id
-      )
-    `,
-    )
-    .eq("id", orderId)
-    .single<OrderPaymentContext>();
+  const { error } =
+    status === "approved"
+      ? await supabase.rpc("confirm_manual_order_payment", { target_order_id: orderId })
+      : await supabase.rpc("reject_order_payment_and_release", {
+          target_order_id: orderId,
+          rejection_reason: rejectionReason,
+        });
 
-  if (orderError) {
-    return { ok: false, message: orderError.message };
+  if (error) {
+    return { ok: false, message: safeAdminOrderMessage(error.message) };
   }
-
-  const payment = order.payments?.[0] ?? null;
-  if (!payment) {
-    return { ok: false, message: "No hay pago registrado para este pedido." };
-  }
-
-  if (canonicalOrderStatus(order.status) === "cancelado") {
-    return { ok: false, message: "No se puede modificar el pago de un pedido cancelado." };
-  }
-
-  const paymentContext = {
-    status: order.status,
-    payment_method: order.payment_method,
-    payment_status: payment.payment_status ?? payment.status,
-    transfer_receipt_url: payment.transfer_receipt_url,
-    transfer_receipt_public_id: payment.transfer_receipt_public_id,
-    order_reservation_status: order.order_reservation_status,
-  };
-
-  if (status === "approved" && order.payment_method === "card") {
-    return { ok: false, message: "Los pagos con tarjeta solo deben confirmarse mediante pasarela o webhook autorizado." };
-  }
-
-  if (status === "approved" && order.payment_method === "cash" && canonicalOrderStatus(order.status) !== "entregado") {
-    return { ok: false, message: "El pago en efectivo solo se confirma cuando el pedido fue entregado." };
-  }
-
-  const paidAt = status === "approved" ? new Date().toISOString() : null;
-  const { error: updatePaymentError } = await supabase
-    .from("payments")
-    .update({
-      payment_status: status,
-      status,
-      paid_at: paidAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", payment.id);
-
-  if (updatePaymentError) {
-    return { ok: false, message: updatePaymentError.message };
-  }
-
-  const currentOrderStatus = canonicalOrderStatus(order.status);
-  const nextOrderStatus =
-    status === "rejected"
-      ? "cancelado"
-      : currentOrderStatus === "recibido"
-        ? "confirmado"
-        : currentOrderStatus;
-  const { error: updateOrderError } = await supabase
-    .from("orders")
-    .update({
-      status: nextOrderStatus,
-      tracking_status: nextOrderStatus,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", orderId);
-
-  if (updateOrderError) {
-    return { ok: false, message: updateOrderError.message };
-  }
-
-  await writeAuditLog({
-    tableName: "payments",
-    recordId: payment.id,
-    action: status === "approved" ? "fiscal.payment.approved" : "fiscal.payment.rejected",
-    oldData: {
-      order_id: order.id,
-      order_number: order.order_number,
-      order_status: order.status,
-      payment_method: order.payment_method,
-      payment_id: payment.id,
-      payment_status: payment.payment_status ?? payment.status,
-      paid_at: payment.paid_at,
-      amount: payment.amount,
-      bank_reference: payment.bank_reference_number ?? payment.reference,
-      has_transfer_receipt: hasTransferReceipt(paymentContext),
-      rejection_reason: status === "rejected" ? rejectionReason : null,
-    },
-    newData: {
-      order_id: order.id,
-      order_number: order.order_number,
-      order_status: nextOrderStatus,
-      payment_method: order.payment_method,
-      payment_id: payment.id,
-      payment_status: status,
-      paid_at: paidAt,
-      rejection_reason: status === "rejected" ? rejectionReason : null,
-      changes: {
-        payment_status: { from: payment.payment_status ?? payment.status, to: status },
-        order_status: { from: order.status, to: nextOrderStatus },
-        paid_at: { from: payment.paid_at, to: paidAt },
-      },
-    },
-  });
 
   revalidateOperationalPaths();
 
   return {
     ok: true,
-    message:
-      status === "approved"
-        ? order.payment_method === "cash"
-          ? "Pago recibido confirmado."
-          : "Pago confirmado. El pedido puede avanzar."
-        : "Pago rechazado. El pedido fue cancelado y la reserva debe quedar liberada.",
+    message: status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.",
   };
+}
+
+export async function extendOrderReservationAction(orderId: string, minutes: 720 | 1440 | 2880, reason: string) {
+  await requirePermission("orders:extend_reservation");
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("extend_order_reservation", {
+    target_order_id: orderId,
+    extension_minutes: minutes,
+    extension_reason: reason.trim(),
+  });
+
+  if (error) return { ok: false, message: safeAdminOrderMessage(error.message) };
+  revalidateOperationalPaths();
+  return { ok: true, message: "Reserva extendida correctamente." };
+}
+
+export async function addOrderInternalNoteAction(orderId: string, note: string) {
+  await requirePermission("reservations:review");
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("add_order_internal_note", {
+    target_order_id: orderId,
+    note_text: note.trim(),
+  });
+
+  if (error) return { ok: false, message: safeAdminOrderMessage(error.message) };
+  revalidateOperationalPaths();
+  return { ok: true, message: "Nota interna agregada." };
 }
 
 export async function updateOrderStatusAction(orderId: string, status: OrderStatus, reason = "") {
   const profile = await requirePermission("admin:access");
   const canManageOrders = hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email);
   const canManageLogistics = hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
+  const canCancelOrders = hasEffectivePermission(profile.role, profile.permissions, "orders:cancel", profile.email);
   const statusReason = reason.trim();
+  const normalizedStatus = canonicalOrderStatus(status);
 
-  if (!canManageOrders && (!canManageLogistics || !["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(status))) {
+  if (
+    normalizedStatus !== "cancelado" &&
+    !canManageOrders &&
+    (!canManageLogistics || !["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(status))
+  ) {
     return { ok: false, message: "Solo usuarios autorizados pueden realizar esta accion." };
   }
 
-  if (canonicalOrderStatus(status) === "cancelado" && statusReason.length < 8) {
+  if (normalizedStatus === "cancelado" && !canManageOrders && !canCancelOrders) {
+    return { ok: false, message: "Solo usuarios autorizados pueden cancelar pedidos." };
+  }
+
+  if (normalizedStatus === "cancelado" && statusReason.length < 8) {
     return { ok: false, message: "Ingresa un motivo de cancelacion de al menos 8 caracteres." };
   }
 
@@ -277,6 +176,17 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
   }
 
   const supabase = await getSupabaseServerClient();
+  if (normalizedStatus === "cancelado") {
+    const { error } = await supabase.rpc("cancel_order_and_release_reservation", {
+      target_order_id: orderId,
+      cancellation_reason: statusReason,
+    });
+
+    if (error) return { ok: false, message: safeAdminOrderMessage(error.message) };
+    revalidateOperationalPaths();
+    return { ok: true, message: "Pedido cancelado y reserva liberada." };
+  }
+
   const { data: previousOrder, error: previousError } = await supabase
     .from("orders")
     .select(
@@ -286,6 +196,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       status,
       tracking_status,
       payment_method,
+      payment_timing,
       order_reservation_status,
       payments(payment_status, status, transfer_receipt_url, transfer_receipt_public_id)
     `,
@@ -297,6 +208,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       status: string;
       tracking_status: string | null;
       payment_method: "bank_transfer" | "card" | "cash";
+      payment_timing: "before_delivery" | "on_delivery";
       order_reservation_status: string | null;
       payments: Array<{
         payment_status: string | null;
@@ -319,6 +231,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     {
       status: previousOrder.status,
       payment_method: previousOrder.payment_method,
+      payment_timing: previousOrder.payment_timing,
       payment_status: payment?.payment_status ?? payment?.status ?? null,
       transfer_receipt_url: payment?.transfer_receipt_url ?? null,
       transfer_receipt_public_id: payment?.transfer_receipt_public_id ?? null,

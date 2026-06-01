@@ -31,7 +31,9 @@ type ReportKey =
   | "paymentMethodDetails"
   | "topProducts"
   | "inventory"
-  | "lowStock";
+  | "lowStock"
+  | "orderFinancialStatus"
+  | "expiredReservations";
 
 type ReportRow = Record<string, string | number>;
 
@@ -90,6 +92,26 @@ const orderStatusLabels: Record<string, string> = {
   cancelled: "Cancelado",
 };
 
+const paymentStatusLabels: Record<string, string> = {
+  pending: "Pendiente",
+  review: "En revision",
+  under_review: "En revision",
+  approved: "Confirmado",
+  confirmed: "Confirmado",
+  paid: "Pagado",
+  rejected: "Rechazado",
+  refunded: "Reembolsado",
+};
+
+const reservationStatusLabels: Record<string, string> = {
+  not_required: "No aplica",
+  reserved: "Activa",
+  confirmed: "Convertida en venta",
+  released: "Liberada",
+  expired: "Vencida",
+  canceled: "Cancelada",
+};
+
 function formatDate(value: string | null) {
   return formatHnDate(value);
 }
@@ -103,7 +125,7 @@ function normalizeMonth(value: string) {
 }
 
 function isRevenueOrder(order: ReportOrder) {
-  return !["cancelado", "cancelled"].includes(order.status);
+  return !["cancelado", "cancelled"].includes(order.status) && ["approved", "confirmed", "paid"].includes(String(order.payment_status ?? ""));
 }
 
 function safeProductName(name: string, sku: string) {
@@ -216,6 +238,8 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     0,
   );
   const lowStockCount = data.products.filter((product) => product.available_stock <= product.min_stock).length;
+  const pendingPaymentCount = data.orders.filter((order) => ["pending", "review", "under_review"].includes(String(order.payment_status ?? ""))).length;
+  const expiredReservationCount = data.orders.filter((order) => order.reservation_review_required).length;
 
   const reportDefinitions = useMemo<ReportDefinition[]>(() => {
     const dailySales = new Map<string, { orders: number; units: number; subtotal: number; tax: number; shipping: number; cod: number; fees: number; discounts: number; total: number }>();
@@ -429,6 +453,43 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     }));
 
     const definitions: ReportDefinition[] = [
+      {
+        key: "orderFinancialStatus",
+        label: "Estado financiero de pedidos",
+        description: "Pedidos creados con estado logistico, pago y reserva separados. Solo un pago confirmado cuenta como venta real.",
+        columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Requiere revision", "Metodo de pago", "Total", "Venta real"],
+        rows: data.orders.map((order) => ({
+          Pedido: order.order_number,
+          Fecha: formatDate(order.created_at),
+          Cliente: order.customer_name,
+          "Estado pedido": orderStatusLabels[order.status] ?? order.status,
+          "Estado pago": paymentStatusLabels[String(order.payment_status ?? "")] ?? order.payment_status ?? "Sin estado",
+          Reserva: reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status,
+          "Requiere revision": order.reservation_review_required ? "Si" : "No",
+          "Metodo de pago": paymentLabels[order.payment_method] ?? order.payment_method,
+          Total: formatCurrency(order.total),
+          "Venta real": isRevenueOrder(order) ? "Si" : "No",
+        })),
+        financial: true,
+      },
+      {
+        key: "expiredReservations",
+        label: "Reservas vencidas",
+        description: "Reservas que conservan el stock retenido y requieren una decision humana.",
+        columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Total"],
+        rows: data.orders
+          .filter((order) => order.reservation_review_required)
+          .map((order) => ({
+            Pedido: order.order_number,
+            Fecha: formatDate(order.created_at),
+            Cliente: order.customer_name,
+            "Estado pedido": orderStatusLabels[order.status] ?? order.status,
+            "Estado pago": paymentStatusLabels[String(order.payment_status ?? "")] ?? order.payment_status ?? "Sin estado",
+            Reserva: "Vencida: requiere revision",
+            Total: formatCurrency(order.total),
+          })),
+        financial: true,
+      },
       {
         key: "daily",
         label: "Ventas del dia",
@@ -739,6 +800,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
   }, [
     accessMode,
     data.invoices,
+    data.orders,
     data.products,
     fiscalSettings,
     invoiceByOrder,
@@ -822,10 +884,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         params={reportParams(data.filters)}
       />
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Metric label="Total vendido" value={formatCurrency(totalSold)} />
         <Metric label="Total ISV" value={formatCurrency(totalIsv)} />
         <Metric label="Unidades vendidas" value={totalItems.toLocaleString("es-HN")} />
+        <Metric label="Pagos pendientes" value={pendingPaymentCount.toLocaleString("es-HN")} />
+        <Metric label="Reservas vencidas" value={expiredReservationCount.toLocaleString("es-HN")} />
         <Metric label="Bajo stock" value={lowStockCount.toLocaleString("es-HN")} />
       </div>
 

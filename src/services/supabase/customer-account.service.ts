@@ -53,6 +53,7 @@ export type CustomerOrderRow = Omit<
   | "invoice_cancelled_at"
   | "invoice_cancellation_reason"
   | "customer_rtn"
+  | "order_internal_notes"
 > & {
   order_items: AdminOrderItem[];
   invoices: CustomerOrderInvoice[];
@@ -402,6 +403,7 @@ export async function getCustomerOrdersPage(
       delivery_department,
       delivery_city,
       payment_method,
+      payment_timing,
       price_mode,
       subtotal,
       tax,
@@ -413,6 +415,10 @@ export async function getCustomerOrdersPage(
       additional_fees,
       total,
       status,
+      order_reservation_status,
+      reservation_expires_at,
+      reservation_review_required,
+      reservation_review_detected_at,
       created_at,
       order_items(
         id,

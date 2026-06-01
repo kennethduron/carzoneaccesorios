@@ -18,6 +18,7 @@ export type OrderWorkflowStatus =
 export type OrderWorkflowInput = {
   status: string;
   payment_method: "bank_transfer" | "card" | "cash";
+  payment_timing?: "before_delivery" | "on_delivery";
   payment_status: string | null;
   transfer_receipt_url?: string | null;
   transfer_receipt_public_id?: string | null;
@@ -133,7 +134,7 @@ export function getAllowedOrderStatusOptions(order: OrderWorkflowInput): OrderSt
     allowed.add("cancelado");
   }
 
-  if (order.payment_method === "cash") {
+  if (order.payment_method === "cash" || order.payment_timing === "on_delivery") {
     if (current === "recibido") {
       allowed.add("confirmado");
     } else {
@@ -173,7 +174,9 @@ export function canConfirmPayment(order: OrderWorkflowInput) {
   if (canonicalOrderStatus(order.status) === "cancelado") return false;
   if (isPaymentConfirmed(order.payment_status) || order.payment_status === "rejected") return false;
   if (order.payment_method === "card") return false;
-  if (order.payment_method === "cash") return canonicalOrderStatus(order.status) === "entregado";
+  if (order.payment_method === "cash" || order.payment_timing === "on_delivery") {
+    return canonicalOrderStatus(order.status) === "entregado";
+  }
   return order.payment_method === "bank_transfer";
 }
 
@@ -184,7 +187,7 @@ export function getContextualOrderActions(order: OrderWorkflowInput): Contextual
   if (current === "cancelado") return [];
 
   const actions: ContextualOrderAction[] = [];
-  if (current === "recibido" && (order.payment_method === "cash" || paymentConfirmed)) {
+  if (current === "recibido" && (order.payment_method === "cash" || order.payment_timing === "on_delivery" || paymentConfirmed)) {
     actions.push("accept_order");
   }
 
@@ -214,6 +217,7 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
   }
 
   if (order.payment_method === "bank_transfer") {
+    if (order.payment_timing === "on_delivery") return "Pago pendiente al recibir";
     return hasTransferReceipt(order) ? "Comprobante en revision" : "Pago en revision";
   }
 
@@ -239,6 +243,11 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
   }
 
   if (order.payment_method === "bank_transfer") {
+    if (order.payment_timing === "on_delivery") {
+      if (!paymentConfirmed && current === "entregado") return "Confirmar pago recibido para cerrar el pedido.";
+      if (!paymentConfirmed) return "Continuar seguimiento operativo y confirmar la transferencia cuando el cliente reciba el pedido.";
+      return "Transferencia recibida. Continuar seguimiento operativo.";
+    }
     if (!paymentConfirmed && hasTransferReceipt(order)) return "Revisar referencia y comprobante antes de confirmar o rechazar pago.";
     if (!paymentConfirmed) return "Revisar la referencia bancaria en la cuenta antes de confirmar o rechazar pago.";
     return "Pago confirmado. El pedido puede prepararse o facturarse.";

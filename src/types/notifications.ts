@@ -2,6 +2,7 @@ export type NotificationSettings = {
   notification_emails: string;
   notify_new_orders: boolean;
   notify_payment_confirmed: boolean;
+  notify_general_contact: boolean;
   notify_wholesale_requests: boolean;
   notify_transfer_receipt_uploaded: boolean;
   notify_customer_account_created: boolean;

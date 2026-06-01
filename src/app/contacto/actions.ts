@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { writeErrorLog } from "@/lib/error-logging";
+import { notifyPublicFormSubmission, getPublicRequestContext } from "@/lib/public-form-support";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { optionalText, requireText, validateHondurasPhone } from "@/utils/validation";
@@ -29,297 +30,205 @@ type ContactActionResult = {
   status?: "pending" | "approved" | "rejected" | "suspended";
 };
 
-function normalizeEmail(value: string) {
-  return value.trim().toLowerCase();
+type GeneralContactRpcRow = {
+  customer_id: string;
+  followup_id: string;
+  assigned_user_id: string | null;
+  due_at: string;
+};
+
+type WholesaleRequestRpcRow = GeneralContactRpcRow & {
+  outcome: "created" | "pending" | "approved" | "suspended" | "rejected_review";
+};
+
+function normalizeEmail(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function sanitizePublicText(value: unknown) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[<>]/g, "")
+    .replace(/\r\n/g, "\n")
+    .trim();
 }
 
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-async function findExistingCustomerId(supabase: SupabaseClient, email: string, normalizedPhone: string) {
-  const localPhone = normalizedPhone.startsWith("+504") ? normalizedPhone.slice(4) : normalizedPhone;
-  const phoneCandidates = Array.from(new Set([normalizedPhone, localPhone, `504${localPhone}`].filter(Boolean)));
-
-  const { data: emailMatch } = await supabase
-    .from("customers")
-    .select("id")
-    .ilike("email", email)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<{ id: string }>();
-
-  if (emailMatch?.id) {
-    return emailMatch.id;
-  }
-
-  const { data: phoneMatch } = await supabase
-    .from("customers")
-    .select("id")
-    .in("phone", phoneCandidates)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle<{ id: string }>();
-
-  return phoneMatch?.id ?? null;
+function revalidatePublicFormAdminPaths() {
+  revalidatePath("/admin");
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/clientes-mayoristas");
 }
 
 export async function submitGeneralContactAction(input: GeneralContactInput): Promise<ContactActionResult> {
+  const email = normalizeEmail(input.email);
+  const rawPhone = sanitizePublicText(input.phone);
   const contactLimit = await checkRateLimit({
     route: "/contacto",
     limit: 5,
     windowSeconds: 10 * 60,
-    key: input.email.trim().toLowerCase() || input.phone.trim(),
+    key: email || rawPhone,
   });
 
   if (!contactLimit.ok) {
     return { ok: false, message: getRateLimitMessage(contactLimit.retryAfter) };
   }
 
-  const name = requireText(input.name, "Nombre");
-  const phone = validateHondurasPhone(input.phone);
-  const message = requireText(input.message, "Mensaje", 1200);
-  const email = normalizeEmail(input.email);
+  const name = requireText(sanitizePublicText(input.name), "Nombre");
+  const phone = validateHondurasPhone(rawPhone);
+  const message = requireText(sanitizePublicText(input.message), "Mensaje", 1200);
 
-  for (const result of [name, phone, message]) {
-    if (!result.ok) {
-      return { ok: false, message: "Completa los campos requeridos." };
-    }
+  if (!name.ok || !phone.ok || !message.ok) {
+    return { ok: false, message: "Completa los campos requeridos." };
   }
 
-  const normalizedPhone = phone.ok ? phone.value : "";
   if (!isValidEmail(email)) {
     return { ok: false, message: "Completa los campos requeridos." };
   }
 
-  const supabase = getSupabaseAdminClient();
-  const note = ["[CONTACTO_GENERAL]", `Correo: ${email}`, `Mensaje: ${message.value}`].join("\n");
-  const existingCustomerId = await findExistingCustomerId(supabase, email, normalizedPhone);
+  const context = await getPublicRequestContext();
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin.rpc("submit_public_general_contact", {
+      p_contact_name: name.value,
+      p_email: email,
+      p_phone: phone.value,
+      p_message: message.value,
+      p_ip_address: context.ipAddress,
+      p_user_agent: context.userAgent,
+    });
+  const result = (data as GeneralContactRpcRow[] | null)?.[0];
 
-  if (existingCustomerId) {
-    const { data: existingCustomer } = await supabase
-      .from("customers")
-      .select("id, wholesale_status, is_wholesale, active, status")
-      .eq("id", existingCustomerId)
-      .maybeSingle<{
-        id: string;
-        wholesale_status: "none" | "pending" | "approved" | "rejected" | "suspended" | null;
-        is_wholesale: boolean;
-        active: boolean;
-        status: string;
-      }>();
-
-    const currentStatus =
-      existingCustomer?.wholesale_status ??
-      (existingCustomer?.is_wholesale && existingCustomer.active && existingCustomer.status === "active" ? "approved" : "none");
-
-    if (currentStatus === "pending") {
-      return { ok: false, message: "Tu solicitud mayorista está en revisión.", status: "pending" };
-    }
-
-    if (currentStatus === "approved") {
-      return { ok: false, message: "Ya tienes acceso mayorista.", status: "approved" };
-    }
-
-    if (currentStatus === "suspended") {
-      return { ok: false, message: "Tu acceso mayorista está suspendido. Contacta al equipo para más información.", status: "suspended" };
-    }
-
-    if (currentStatus === "rejected") {
-      return { ok: false, message: "Tu solicitud mayorista fue revisada. Puedes contactar al equipo para más información.", status: "rejected" };
-    }
-  }
-
-  const customerPayload = {
-    contact_name: name.value,
-    email,
-    phone: normalizedPhone,
-    notes: note,
-    lead_status: "prospecto",
-    estimated_value: 0,
-    monthly_amount: 0,
-    is_wholesale: false,
-    status: "active",
-    active: true,
-  };
-
-  const customerQuery = existingCustomerId
-    ? supabase
-        .from("customers")
-        .update({
-          contact_name: name.value,
-          email,
-          phone: normalizedPhone,
-          notes: note,
-          lead_status: "prospecto",
-          active: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingCustomerId)
-        .select("id")
-        .single<{ id: string }>()
-    : supabase.from("customers").insert(customerPayload).select("id").single<{ id: string }>();
-
-  const { data: customer, error: customerError } = await customerQuery;
-
-  if (customerError) {
+  if (error || !result) {
+    await writeErrorLog({
+      route: "/contacto",
+      action: "public_forms.contact_general_save_failed",
+      errorMessage: error?.message ?? "No se obtuvo confirmacion del formulario.",
+      userEmail: email,
+      metadata: { origin: "contacto_general", phone: phone.value },
+    });
     return { ok: false, message: "No pudimos guardar tu mensaje. Intenta nuevamente." };
   }
 
-  const { error: followupError } = await supabase.from("crm_followups").insert({
-    customer_id: customer.id,
-    title: "Contacto general desde la web",
-    interaction_type: "contacto_general",
-    next_action: "Responder consulta del cliente.",
-    priority: "media",
-    phone: normalizedPhone,
-    notes: note,
-    estimated_value: 0,
-    monthly_amount: 0,
-    status: "pending",
+  await notifyPublicFormSubmission({
+    kind: "contact_general",
+    customerId: result.customer_id,
+    followupId: result.followup_id,
+    name: name.value,
+    email,
+    phone: phone.value,
+    message: message.value,
+    context,
   });
-
-  if (followupError) {
-    return { ok: false, message: "El mensaje se recibio, pero no pudimos crear el seguimiento CRM." };
-  }
-
-  revalidatePath("/admin/crm");
-  revalidatePath("/admin/clientes");
+  revalidatePublicFormAdminPaths();
 
   return {
     ok: true,
-    message: "Mensaje enviado correctamente. Nuestro equipo te contactara pronto.",
+    message: "Mensaje enviado correctamente. Nuestro equipo te respondera pronto.",
   };
 }
 
 export async function submitWholesaleRequestAction(input: WholesaleRequestInput): Promise<ContactActionResult> {
+  const email = normalizeEmail(input.email);
+  const rawPhone = sanitizePublicText(input.phone);
   const wholesaleRequestLimit = await checkRateLimit({
     route: "/contacto/mayoreo",
     limit: 4,
     windowSeconds: 15 * 60,
-    key: input.email.trim().toLowerCase() || input.phone.trim(),
+    key: email || rawPhone,
   });
 
   if (!wholesaleRequestLimit.ok) {
     return { ok: false, message: getRateLimitMessage(wholesaleRequestLimit.retryAfter) };
   }
 
-  const businessName = requireText(input.businessName, "Nombre del negocio");
-  const contactName = requireText(input.contactName, "Nombre de contacto");
-  const phone = validateHondurasPhone(input.phone);
-  const city = requireText(input.city, "Ciudad");
-  const email = normalizeEmail(input.email);
+  const businessName = requireText(sanitizePublicText(input.businessName), "Nombre del negocio");
+  const contactName = requireText(sanitizePublicText(input.contactName), "Nombre de contacto");
+  const phone = validateHondurasPhone(rawPhone);
+  const city = requireText(sanitizePublicText(input.city), "Ciudad");
+  const taxId = optionalText(sanitizePublicText(input.taxId));
+  const comment = optionalText(sanitizePublicText(input.comment));
 
-  for (const result of [businessName, contactName, phone, city]) {
-    if (!result.ok) {
-      return { ok: false, message: "Completa los campos requeridos." };
-    }
+  if (!businessName.ok || !contactName.ok || !phone.ok || !city.ok) {
+    return { ok: false, message: "Completa los campos requeridos." };
   }
 
-  const normalizedPhone = phone.ok ? phone.value : "";
   if (!isValidEmail(email)) {
     return { ok: false, message: "Completa los campos requeridos." };
   }
 
-  const supabase = getSupabaseAdminClient();
-  const note = [
-    "[SOLICITUD_MAYOREO]",
-    `Ciudad: ${city.value}`,
-    input.taxId.trim() ? `RTN: ${input.taxId.trim()}` : null,
-    input.comment.trim() ? `Comentario: ${input.comment.trim()}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const existingCustomerId = await findExistingCustomerId(supabase, email, normalizedPhone);
+  const context = await getPublicRequestContext();
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin.rpc("submit_public_wholesale_request", {
+      p_business_name: businessName.value,
+      p_contact_name: contactName.value,
+      p_email: email,
+      p_phone: phone.value,
+      p_city: city.value,
+      p_tax_id: taxId,
+      p_comment: comment,
+      p_ip_address: context.ipAddress,
+      p_user_agent: context.userAgent,
+    });
+  const result = (data as WholesaleRequestRpcRow[] | null)?.[0];
 
-  const customerPayload = {
-    business_name: businessName.value,
-    company_name: businessName.value,
-    contact_name: contactName.value,
-    email,
-    phone: normalizedPhone,
-    tax_id: optionalText(input.taxId),
-    city: city.value,
-    notes: note,
-    lead_status: "prospecto",
-    estimated_value: 0,
-    monthly_amount: 0,
-    is_wholesale: false,
-    wholesale_status: "pending",
-    wholesale_requested_at: new Date().toISOString(),
-    wholesale_request_source: "formulario_publico",
-    wholesale_approved_notice_seen: false,
-    status: "pending_account",
-    active: true,
-  };
-
-  const customerQuery = existingCustomerId
-    ? supabase
-        .from("customers")
-        .update({
-          business_name: businessName.value,
-          company_name: businessName.value,
-          contact_name: contactName.value,
-          email,
-          phone: normalizedPhone,
-          tax_id: optionalText(input.taxId),
-          city: city.value,
-          notes: note,
-          lead_status: "prospecto",
-          wholesale_status: "pending",
-          wholesale_requested_at: new Date().toISOString(),
-          wholesale_request_source: "formulario_publico",
-          wholesale_approved_notice_seen: false,
-          status: "pending_account",
-          active: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingCustomerId)
-        .select("id")
-        .single<{ id: string }>()
-    : supabase.from("customers").insert(customerPayload).select("id").single<{ id: string }>();
-
-  const { data: customer, error: customerError } = await customerQuery;
-
-  if (customerError) {
+  if (error || !result) {
+    await writeErrorLog({
+      route: "/contacto/mayoreo",
+      action: "public_forms.wholesale_save_failed",
+      errorMessage: error?.message ?? "No se obtuvo confirmacion de la solicitud.",
+      userEmail: email,
+      metadata: { origin: "formulario_publico", phone: phone.value },
+    });
     return { ok: false, message: "No pudimos guardar tu solicitud. Intenta nuevamente." };
   }
 
-  const { data: existingFollowup } = await supabase
-    .from("crm_followups")
-    .select("id")
-    .eq("customer_id", customer.id)
-    .eq("interaction_type", "solicitud_mayorista")
-    .eq("status", "pending")
-    .limit(1)
-    .maybeSingle<{ id: string }>();
-
-  const { error: followupError } = existingFollowup?.id
-    ? { error: null }
-    : await supabase.from("crm_followups").insert({
-        customer_id: customer.id,
-        title: "Solicitud de cuenta mayorista",
-        interaction_type: "solicitud_mayorista",
-        next_action: "Revisar solicitud, validar datos y aprobar si corresponde.",
-        priority: "alta",
-        phone: normalizedPhone,
-        notes: note,
-        estimated_value: 0,
-        monthly_amount: 0,
-        status: "pending",
-      });
-
-  if (followupError) {
-    return { ok: false, message: "La solicitud se recibio, pero no pudimos crear el seguimiento CRM." };
+  if (result.outcome === "approved") {
+    return {
+      ok: false,
+      message: "Tu cuenta mayorista ya esta aprobada. Inicia sesion para comprar con precio mayorista.",
+      status: "approved",
+    };
   }
 
-  revalidatePath("/admin/crm");
-  revalidatePath("/admin/clientes");
+  if (result.outcome === "suspended") {
+    return {
+      ok: false,
+      message: "Tu acceso mayorista esta suspendido. Contacta a servicio al cliente.",
+      status: "suspended",
+    };
+  }
+
+  await notifyPublicFormSubmission({
+    kind: "wholesale",
+    customerId: result.customer_id,
+    followupId: result.followup_id,
+    name: contactName.value,
+    email,
+    phone: phone.value,
+    businessName: businessName.value,
+    taxId,
+    city: city.value,
+    comment,
+    outcome: result.outcome,
+    context,
+  });
+  revalidatePublicFormAdminPaths();
+
+  if (result.outcome === "pending") {
+    return { ok: true, message: "Tu solicitud ya esta pendiente de revision.", status: "pending" };
+  }
+
+  if (result.outcome === "rejected_review") {
+    return { ok: true, message: "Recibimos tu mensaje. Nuestro equipo revisara tu caso.", status: "rejected" };
+  }
 
   return {
     ok: true,
-    message:
-      "Recibimos tu solicitud. Nuestro equipo revisara tu cuenta y te notificaremos cuando tengas acceso a precios mayoristas.",
+    message: "Solicitud enviada correctamente. Revisaremos tu informacion.",
     status: "pending",
   };
 }

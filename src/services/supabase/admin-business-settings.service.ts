@@ -31,6 +31,7 @@ export const businessSettingsFields = [
   "notify_new_orders",
   "notify_payment_confirmed",
   "notify_transfer_receipt_uploaded",
+  "notify_general_contact",
   "notify_wholesale_requests",
   "notify_customer_account_created",
   "notify_low_stock",
@@ -80,6 +81,7 @@ export const defaultBusinessSettings: BusinessSettings = {
   notify_new_orders: true,
   notify_payment_confirmed: true,
   notify_transfer_receipt_uploaded: true,
+  notify_general_contact: true,
   notify_wholesale_requests: true,
   notify_customer_account_created: true,
   notify_low_stock: true,
@@ -135,6 +137,7 @@ export function normalizeBusinessSettings(row: BusinessSettingsRow | null | unde
     notify_payment_confirmed: row?.notify_payment_confirmed ?? defaultBusinessSettings.notify_payment_confirmed,
     notify_transfer_receipt_uploaded:
       row?.notify_transfer_receipt_uploaded ?? defaultBusinessSettings.notify_transfer_receipt_uploaded,
+    notify_general_contact: row?.notify_general_contact ?? defaultBusinessSettings.notify_general_contact,
     notify_wholesale_requests: row?.notify_wholesale_requests ?? defaultBusinessSettings.notify_wholesale_requests,
     notify_customer_account_created:
       row?.notify_customer_account_created ?? defaultBusinessSettings.notify_customer_account_created,

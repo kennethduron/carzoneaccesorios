@@ -77,6 +77,7 @@ type OrderQueryRow = Omit<
   | "invoices"
   | "customer_rtn"
   | "customer_business_name"
+  | "payment_status"
 > & {
   subtotal: unknown;
   tax: unknown;
@@ -95,6 +96,7 @@ type OrderQueryRow = Omit<
     wholesale_price_snapshot: unknown;
   }> | null;
   invoices: ReportInvoiceSummaryQuery[] | ReportInvoiceSummaryQuery | null;
+  payments: Array<{ payment_status: string | null; status: string | null }> | { payment_status: string | null; status: string | null } | null;
   customers: {
     tax_id: string | null;
     business_name: string | null;
@@ -171,9 +173,12 @@ type PaymentQueryRow = Omit<ReportPayment, "amount"> & {
 
 function normalizeOrder(row: OrderQueryRow): ReportOrder {
   const invoices = Array.isArray(row.invoices) ? row.invoices : row.invoices ? [row.invoices] : [];
+  const payments = Array.isArray(row.payments) ? row.payments : row.payments ? [row.payments] : [];
+  const payment = payments[0] ?? null;
 
   return {
     ...row,
+    payment_status: payment?.payment_status ?? payment?.status ?? null,
     customer_rtn: row.customers?.tax_id ?? null,
     customer_business_name: row.customers?.business_name ?? null,
     subtotal: toNumber(row.subtotal),
@@ -346,6 +351,8 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
       email,
       phone,
       payment_method,
+      order_reservation_status,
+      reservation_review_required,
       price_mode,
       subtotal,
       tax,
@@ -372,6 +379,7 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
         wholesale_price_snapshot
       ),
       invoices(id, invoice_number, issued_at, status, cancelled_at),
+      payments(payment_status, status),
       customers(tax_id, business_name, email, is_wholesale)
       `,
       { count: "exact" },
