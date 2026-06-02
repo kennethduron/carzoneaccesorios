@@ -21,6 +21,20 @@ export type AdminDashboardOverview = {
   latestCronAt: string | null;
   latestBackupStatus: string | null;
   latestBackupAt: string | null;
+  failedEmails: number;
+};
+
+export type WarehouseDashboardOverview = {
+  ordersToPrepare: number;
+  preparingOrders: number;
+  packedOrders: number;
+  shippedOrders: number;
+  routeOrders: number;
+  lowStockProducts: number;
+  outOfStockProducts: number;
+  activeReservations: number;
+  expiredReservations: number;
+  recentInventoryMovements: number;
 };
 
 type DashboardSummaryRow = {
@@ -67,6 +81,7 @@ const emptyOverview: AdminDashboardOverview = {
   latestCronAt: null,
   latestBackupStatus: null,
   latestBackupAt: null,
+  failedEmails: 0,
 };
 
 function toNumber(value: unknown) {
@@ -99,17 +114,91 @@ function normalizeOverview(row: DashboardSummaryRow | null | undefined): AdminDa
     latestCronAt: row.latest_cron_at,
     latestBackupStatus: row.latest_backup_status,
     latestBackupAt: row.latest_backup_at,
+    failedEmails: 0,
   };
 }
 
 export async function getAdminDashboardOverview(): Promise<AdminDashboardOverview> {
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin.rpc("get_admin_dashboard_operational_summary").returns<DashboardSummaryRow[]>();
+  const [{ data, error }, { count: failedEmails }] = await Promise.all([
+    admin.rpc("get_admin_dashboard_operational_summary").returns<DashboardSummaryRow[]>(),
+    admin.from("email_queue").select("id", { count: "exact", head: true }).eq("status", "failed"),
+  ]);
 
   if (error) {
     console.warn("Admin dashboard summary failed", error.message);
     return emptyOverview;
   }
 
-  return normalizeOverview(Array.isArray(data) ? data[0] : null);
+  return { ...normalizeOverview(Array.isArray(data) ? data[0] : null), failedEmails: failedEmails ?? 0 };
+}
+
+async function countWarehouseRows(label: string, query: PromiseLike<{ count: number | null; error: { message: string } | null }>) {
+  const { count, error } = await query;
+  if (error) {
+    console.warn(`Warehouse dashboard count failed for ${label}`, error.message);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
+async function countWarehouseStock(kind: "low" | "out") {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("products")
+    .select("available_stock, min_stock")
+    .returns<Array<{ available_stock: unknown; min_stock: unknown }>>();
+
+  if (error) {
+    console.warn("Warehouse dashboard stock count failed", error.message);
+    return 0;
+  }
+
+  return (data ?? []).filter((product) => {
+    const available = toNumber(product.available_stock);
+    const minStock = toNumber(product.min_stock);
+    return kind === "out" ? available <= 0 : available > 0 && available <= minStock;
+  }).length;
+}
+
+export async function getWarehouseDashboardOverview(): Promise<WarehouseDashboardOverview> {
+  const admin = getSupabaseAdminClient();
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [
+    ordersToPrepare,
+    preparingOrders,
+    packedOrders,
+    shippedOrders,
+    routeOrders,
+    lowStockProducts,
+    outOfStockProducts,
+    activeReservations,
+    expiredReservations,
+    recentInventoryMovements,
+  ] = await Promise.all([
+    countWarehouseRows("orders_to_prepare", admin.from("orders").select("id", { count: "exact", head: true }).in("status", ["confirmado", "confirmed", "paid"])),
+    countWarehouseRows("orders_preparing", admin.from("orders").select("id", { count: "exact", head: true }).eq("status", "preparacion")),
+    countWarehouseRows("orders_packed", admin.from("orders").select("id", { count: "exact", head: true }).eq("status", "empacado")),
+    countWarehouseRows("orders_shipped", admin.from("orders").select("id", { count: "exact", head: true }).eq("status", "enviado")),
+    countWarehouseRows("orders_route", admin.from("orders").select("id", { count: "exact", head: true }).eq("status", "en_ruta")),
+    countWarehouseStock("low"),
+    countWarehouseStock("out"),
+    countWarehouseRows("active_reservations", admin.from("inventory_reservations").select("id", { count: "exact", head: true }).eq("status", "reserved")),
+    countWarehouseRows("expired_reservations", admin.from("orders").select("id", { count: "exact", head: true }).eq("reservation_review_required", true)),
+    countWarehouseRows("recent_inventory_movements", admin.from("inventory_movements").select("id", { count: "exact", head: true }).gte("created_at", since)),
+  ]);
+
+  return {
+    ordersToPrepare,
+    preparingOrders,
+    packedOrders,
+    shippedOrders,
+    routeOrders,
+    lowStockProducts,
+    outOfStockProducts,
+    activeReservations,
+    expiredReservations,
+    recentInventoryMovements,
+  };
 }

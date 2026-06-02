@@ -199,9 +199,9 @@ function reportParams(filters: AdminReportsData["filters"]) {
 }
 
 export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechnicalExports }: ReportsDashboardProps) {
-  const [activeReport, setActiveReport] = useState<ReportKey>(accessMode === "full" ? "soldProductsDetail" : "topProducts");
+  const [activeReport, setActiveReport] = useState<ReportKey>(accessMode === "fiscal" ? "invoiceDetails" : accessMode === "full" ? "soldProductsDetail" : "topProducts");
   const [exportingPdf, setExportingPdf] = useState(false);
-  const canExport = accessMode === "full";
+  const canExport = accessMode === "full" || accessMode === "fiscal";
 
   const paymentByOrder = useMemo(() => {
     const map = new Map<string, AdminReportsData["payments"][number]>();
@@ -240,6 +240,14 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
   const lowStockCount = data.products.filter((product) => product.available_stock <= product.min_stock).length;
   const pendingPaymentCount = data.orders.filter((order) => ["pending", "review", "under_review"].includes(String(order.payment_status ?? ""))).length;
   const expiredReservationCount = data.orders.filter((order) => order.reservation_review_required).length;
+  const issuedInvoiceCount = data.invoices.filter((invoice) => !["anulada", "cancelled"].includes(String(invoice.status))).length;
+  const cancelledInvoiceCount = data.invoices.filter((invoice) => ["anulada", "cancelled"].includes(String(invoice.status))).length;
+  const fiscalInvoiceTotal = data.invoices
+    .filter((invoice) => !["anulada", "cancelled"].includes(String(invoice.status)))
+    .reduce((sum, invoice) => sum + invoice.total, 0);
+  const fiscalTaxTotal = data.invoices
+    .filter((invoice) => !["anulada", "cancelled"].includes(String(invoice.status)))
+    .reduce((sum, invoice) => sum + invoice.tax, 0);
 
   const reportDefinitions = useMemo<ReportDefinition[]>(() => {
     const dailySales = new Map<string, { orders: number; units: number; subtotal: number; tax: number; shipping: number; cod: number; fees: number; discounts: number; total: number }>();
@@ -796,6 +804,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       },
     ];
 
+    if (accessMode === "fiscal") {
+      return definitions.filter((report) =>
+        ["issuedInvoices", "cancelledInvoices", "fiscalCorrelatives", "missingCorrelatives", "invoiceDetails"].includes(report.key),
+      );
+    }
+
     return accessMode === "full" ? definitions : definitions.filter((report) => !report.financial || ["topProducts", "inventoryStatus", "inventory", "lowStock"].includes(report.key));
   }, [
     accessMode,
@@ -885,12 +899,23 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       />
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric label="Total vendido" value={formatCurrency(totalSold)} />
-        <Metric label="Total ISV" value={formatCurrency(totalIsv)} />
-        <Metric label="Unidades vendidas" value={totalItems.toLocaleString("es-HN")} />
-        <Metric label="Pagos pendientes" value={pendingPaymentCount.toLocaleString("es-HN")} />
-        <Metric label="Reservas vencidas" value={expiredReservationCount.toLocaleString("es-HN")} />
-        <Metric label="Bajo stock" value={lowStockCount.toLocaleString("es-HN")} />
+        {accessMode === "fiscal" ? (
+          <>
+            <Metric label="Total facturado" value={formatCurrency(fiscalInvoiceTotal)} />
+            <Metric label="ISV facturado" value={formatCurrency(fiscalTaxTotal)} />
+            <Metric label="Facturas emitidas" value={issuedInvoiceCount.toLocaleString("es-HN")} />
+            <Metric label="Facturas anuladas" value={cancelledInvoiceCount.toLocaleString("es-HN")} />
+          </>
+        ) : (
+          <>
+            <Metric label="Total vendido" value={formatCurrency(totalSold)} />
+            <Metric label="Total ISV" value={formatCurrency(totalIsv)} />
+            <Metric label="Unidades vendidas" value={totalItems.toLocaleString("es-HN")} />
+            <Metric label="Pagos pendientes" value={pendingPaymentCount.toLocaleString("es-HN")} />
+            <Metric label="Reservas vencidas" value={expiredReservationCount.toLocaleString("es-HN")} />
+            <Metric label="Bajo stock" value={lowStockCount.toLocaleString("es-HN")} />
+          </>
+        )}
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
@@ -908,29 +933,35 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           <Field label="Cliente">
             <Input name="customer" defaultValue={data.filters.customer} placeholder="Nombre, correo, RTN o telefono" />
           </Field>
-          <Field label="Producto">
-            <Input name="product" defaultValue={data.filters.product} placeholder="Nombre completo del producto" />
-          </Field>
-          <Field label="SKU">
-            <Input name="sku" defaultValue={data.filters.sku} placeholder="ACCU088053" />
-          </Field>
-          {accessMode === "full" ? (
+          {accessMode !== "fiscal" ? (
+            <>
+              <Field label="Producto">
+                <Input name="product" defaultValue={data.filters.product} placeholder="Nombre completo del producto" />
+              </Field>
+              <Field label="SKU">
+                <Input name="sku" defaultValue={data.filters.sku} placeholder="ACCU088053" />
+              </Field>
+            </>
+          ) : null}
+          {accessMode === "full" || accessMode === "fiscal" ? (
             <Field label="Factura">
               <Input name="invoice" defaultValue={data.filters.invoice} placeholder="000-001-01-00000001" />
             </Field>
           ) : null}
-          <SelectField label="Metodo de pago" name="paymentMethod" defaultValue={data.filters.paymentMethod}>
-            <option value="all">Todos</option>
-            <option value="cash">Efectivo</option>
-            <option value="bank_transfer">Transferencia</option>
-            <option value="card">BAC</option>
-          </SelectField>
+          {accessMode !== "fiscal" ? (
+            <SelectField label="Metodo de pago" name="paymentMethod" defaultValue={data.filters.paymentMethod}>
+              <option value="all">Todos</option>
+              <option value="cash">Efectivo</option>
+              <option value="bank_transfer">Transferencia</option>
+              <option value="card">BAC</option>
+            </SelectField>
+          ) : null}
           <SelectField label="Tipo cliente" name="priceMode" defaultValue={data.filters.priceMode}>
             <option value="all">Todos</option>
             <option value="retail">Detalle</option>
             <option value="wholesale">Mayorista</option>
           </SelectField>
-          {accessMode === "full" ? (
+          {accessMode === "full" || accessMode === "fiscal" ? (
             <SelectField label="Estado factura" name="invoiceStatus" defaultValue={data.filters.invoiceStatus}>
               <option value="all">Todos</option>
               <option value="emitida">Emitida</option>
@@ -939,14 +970,16 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               <option value="draft">Borrador</option>
             </SelectField>
           ) : null}
-          <SelectField label="Estado pedido" name="orderStatus" defaultValue={data.filters.orderStatus}>
-            <option value="all">Todos</option>
-            {Object.entries(orderStatusLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
+          {accessMode !== "fiscal" ? (
+            <SelectField label="Estado pedido" name="orderStatus" defaultValue={data.filters.orderStatus}>
+              <option value="all">Todos</option>
+              {Object.entries(orderStatusLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </SelectField>
+          ) : null}
           <div className="flex items-end gap-2">
             <Button type="submit" variant="dark">
               <Search size={16} />

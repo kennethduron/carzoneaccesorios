@@ -32,6 +32,7 @@ const emptyCheckout: CheckoutData = {
   paymentMethod: "Transferencia bancaria",
   paymentTiming: "before_delivery",
   bankTransferReference: "",
+  receiveOrderEmailUpdates: true,
 };
 
 const guestCheckoutAccount: CheckoutAccountInfo = {
@@ -760,6 +761,41 @@ export function CheckoutView({
               </div>
             </section>
           ) : null}
+
+          <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
+            <h2 className="font-semibold">Actualizaciones por correo</h2>
+            <p className="mt-1 text-sm text-black/60">
+              Siempre enviaremos el correo inicial de pedido recibido. Puedes elegir si quieres avisos adicionales de avance.
+            </p>
+            <div className="mt-3 grid gap-2">
+              <label className="flex gap-3 rounded-md border border-black/10 bg-white p-3 text-sm">
+                <input
+                  type="radio"
+                  name="receiveOrderEmailUpdates"
+                  checked={checkout.receiveOrderEmailUpdates}
+                  onChange={() => updateCheckoutField("receiveOrderEmailUpdates", true)}
+                  className="mt-1 accent-[#e4252c]"
+                />
+                <span>
+                  <span className="block font-semibold">Si, quiero recibir actualizaciones</span>
+                  <span className="mt-1 block text-black/55">Te enviaremos cambios importantes de estado y pago.</span>
+                </span>
+              </label>
+              <label className="flex gap-3 rounded-md border border-black/10 bg-white p-3 text-sm">
+                <input
+                  type="radio"
+                  name="receiveOrderEmailUpdates"
+                  checked={!checkout.receiveOrderEmailUpdates}
+                  onChange={() => updateCheckoutField("receiveOrderEmailUpdates", false)}
+                  className="mt-1 accent-[#e4252c]"
+                />
+                <span>
+                  <span className="block font-semibold">No, solo el correo inicial</span>
+                  <span className="mt-1 block text-black/55">Aun te escribiremos si el pedido se cancela o hay un cambio critico.</span>
+                </span>
+              </label>
+            </div>
+          </section>
 
           {checkoutMessage ? (
             <p

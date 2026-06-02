@@ -82,7 +82,7 @@ export default async function AdminOrdersPage({
   const canGenerateInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:create", profile.email);
   const canCancelInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:manage", profile.email);
   const canCorrectInvoices =
-    ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
+    ["technical_owner", "admin", "business_owner"].includes(profile.role) ||
     profile.permissions.includes("invoices:correct");
   const canViewFinancialData =
     profile.permissions.some((permission) =>

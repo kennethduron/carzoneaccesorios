@@ -35,13 +35,12 @@ assert.match(registeredWholesaleActions, /ensureRegisteredWholesaleFollowup/);
 assert.match(registeredWholesaleActions, /rejectedReview: true/);
 assert.match(registeredWholesaleActions, /writeRegisteredWholesaleAudit/);
 
-assert.match(notifications, /sendTransactionalEmail/);
+assert.match(notifications, /enqueueEmail/);
+assert.match(notifications, /queuePreferenceEmail/);
 assert.match(notifications, /notification_logs/);
 assert.match(notifications, /writeErrorLog/);
-assert.match(notifications, /car\.zone\.accesorioshn@gmail\.com/);
 assert.match(notifications, /notify_general_contact/);
 assert.match(notifications, /notify_wholesale_requests/);
 assert.match(settingsTypes, /notify_general_contact: boolean/);
 
 console.log("Public contact workflow structural checks passed.");
-

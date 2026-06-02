@@ -603,3 +603,109 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     filters,
   };
 }
+
+export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<AdminReportsData> {
+  const supabase = await getSupabaseServerClient();
+  const page = normalizePage(input.page);
+  const pageSize = normalizePageSize(input.pageSize);
+  const filters = normalizeFilters({
+    ...input,
+    product: "",
+    sku: "",
+    paymentMethod: "all",
+    orderStatus: "all",
+  });
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let invoicesQuery = supabase
+    .from("invoices")
+    .select(
+      `
+      id,
+      invoice_number,
+      order_id,
+      customer_id,
+      customer_name,
+      customer_email,
+      customer_phone,
+      rtn,
+      cai,
+      customer_rtn,
+      status,
+      price_mode,
+      subtotal,
+      tax,
+      shipping_fee,
+      cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
+      total,
+      issued_at,
+      cancelled_at,
+      created_at,
+      invoice_items(
+        id,
+        invoice_id,
+        order_item_id,
+        product_id,
+        sku,
+        product_name,
+        quantity,
+        unit_price,
+        line_total,
+        retail_price_snapshot,
+        wholesale_price_snapshot
+      ),
+      orders(order_number, payment_method, customers(business_name))
+      `,
+      { count: "exact" },
+    );
+
+  if (filters.startDate) {
+    invoicesQuery = invoicesQuery.gte("created_at", dateStart(filters.startDate));
+  }
+
+  if (filters.endDate) {
+    invoicesQuery = invoicesQuery.lte("created_at", dateEnd(filters.endDate));
+  }
+
+  if (filters.invoice) {
+    invoicesQuery = invoicesQuery.ilike("invoice_number", like(filters.invoice));
+  }
+
+  if (filters.invoiceStatus !== "all") {
+    invoicesQuery = invoicesQuery.eq("status", filters.invoiceStatus);
+  }
+
+  if (filters.priceMode !== "all") {
+    invoicesQuery = invoicesQuery.eq("price_mode", filters.priceMode);
+  }
+
+  if (filters.customer) {
+    const search = like(filters.customer);
+    invoicesQuery = invoicesQuery.or(`customer_name.ilike.${search},customer_email.ilike.${search},customer_phone.ilike.${search},customer_rtn.ilike.${search}`);
+  }
+
+  const { data: invoices, error: invoicesError, count } = await invoicesQuery
+    .order("created_at", { ascending: false })
+    .range(from, to)
+    .returns<InvoiceQueryRow[]>();
+
+  if (invoicesError) {
+    throw new Error(invoicesError.message);
+  }
+
+  return {
+    orders: [],
+    invoices: (invoices ?? []).map((invoice) => normalizeInvoice(invoice, new Map())),
+    products: [],
+    customers: [],
+    payments: [],
+    totalRecords: count ?? 0,
+    page,
+    pageSize,
+    filters,
+  };
+}

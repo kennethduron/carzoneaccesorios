@@ -38,10 +38,10 @@ alter table public.inventory_reservations
 grant select, insert, update, delete on public.inventory_reservations to service_role;
 
 alter table public.technical_alert_settings
-  add column if not exists service_account_email text not null default 'carzonetech@gmail.com';
+  add column if not exists service_account_email text not null default 'carzonetech0@gmail.com';
 
 update public.technical_alert_settings
-set service_account_email = 'carzonetech@gmail.com',
+set service_account_email = 'carzonetech0@gmail.com',
     updated_at = now()
 where id = true;
 

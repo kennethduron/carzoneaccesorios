@@ -28,7 +28,7 @@ Variables Brevo:
 
 - `EMAIL_PROVIDER=brevo`
 - `BREVO_API_KEY`
-- `BREVO_FROM_EMAIL`
+- `BREVO_SENDER_EMAIL`
 - `BREVO_SENDER_NAME=Car Zone Accesorios`
 
 Para Brevo, crear API key en Brevo > SMTP & API, autenticar dominio y verificar DKIM/DMARC antes de usar produccion.
@@ -51,7 +51,8 @@ Comparacion revisada el 21 de mayo de 2026:
 - Las entradas, salidas y ajustes administrativos deben pasar por RPC con bloqueo de fila.
 - El checkout reserva inventario al crear pedido pendiente.
 - La reserva se confirma como venta al aprobar pago.
-- La reserva se libera al cancelar pedido o al vencer.
+- La reserva se libera al cancelar el pedido mediante una decisión autorizada.
+- Si vence, se marca para revisión humana y se crea una alerta interna. No se libera automáticamente.
 - El stock disponible se calcula desde `stock - reserved_stock`.
 
 ## Facturacion
@@ -78,14 +79,18 @@ Comparacion revisada el 21 de mayo de 2026:
 
 Configurar en cron-job.org:
 
-- URL: `https://carzoneaccesorios.vercel.app/api/cron/release-expired-reservations`
-- Metodo: `POST`
+- Cuenta técnica administradora: `carzonetech0@gmail.com`.
+- URL: `https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations`
+- Metodo: `GET` o `POST`
 - Header: `Authorization: Bearer valor_de_CRON_SECRET`
-- Frecuencia recomendada: cada 15 minutos si hay alto volumen de checkout; cada 30 minutos si el volumen es moderado.
+- Frecuencia recomendada inicial: cada 1 hora.
+- Respuesta exitosa: `{"ok":true,"reviewRequiredOrders":0,"email":{"sent":0,"failed":0}}`.
+- Sin token válido: HTTP `401` con `{"message":"No autorizado."}`.
+- El endpoint es idempotente: no duplica alertas abiertas y no libera stock automáticamente.
 
 Endpoints disponibles:
 
-- `POST /api/cron/release-expired-reservations`
+- `GET|POST /api/cron/check-expired-reservations`
 - `POST /api/cron/cleanup-rate-limits`
 - `POST /api/cron/cleanup-logs`
 

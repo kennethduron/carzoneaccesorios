@@ -154,7 +154,7 @@ Variables criticas que deben inventariarse por nombre:
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
 - `BREVO_API_KEY`
-- `BREVO_FROM_EMAIL`
+- `BREVO_SENDER_EMAIL`
 - `BREVO_SENDER_NAME`
 
 No guardar valores en Git. Guardarlos en un administrador de secretos con acceso del `technical_owner`.
@@ -173,7 +173,7 @@ No guardar valores en Git. Guardarlos en un administrador de secretos con acceso
 Endpoint:
 
 ```http
-POST /api/cron/release-expired-reservations
+GET /api/cron/check-expired-reservations
 Authorization: Bearer CRON_SECRET
 ```
 
@@ -185,16 +185,17 @@ Configuracion recomendada:
 
 1. Crear cuenta en https://cron-job.org.
 2. Crear cron nuevo.
-3. URL: `https://carzoneaccesorios.vercel.app/api/cron/release-expired-reservations`.
-4. Metodo: `POST`.
-5. Header: `Authorization: Bearer valor_de_CRON_SECRET`.
-6. Frecuencia: cada 15 minutos si hay muchos pedidos pendientes; cada 30 minutos para operacion normal inicial.
-7. Activar notificaciones de fallo hacia el `technical_owner`.
-8. Revisar `/admin/uso` despues de la primera ejecucion.
+3. Iniciar sesión con la cuenta técnica `carzonetech0@gmail.com`.
+4. URL: `https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations`.
+5. Metodo: `GET` o `POST`.
+6. Header: `Authorization: Bearer valor_de_CRON_SECRET`.
+7. Frecuencia inicial: cada 1 hora.
+8. Activar notificaciones de fallo hacia el `technical_owner`.
+9. Revisar `/admin/uso` despues de la primera ejecucion.
 
 Endpoints cron disponibles:
 
-- `/api/cron/release-expired-reservations`: libera reservas vencidas y limpia rate limits antiguos.
+- `/api/cron/check-expired-reservations`: detecta reservas vencidas, crea alertas internas, registra auditoría y limpia rate limits antiguos. No libera stock automáticamente.
 - `/api/cron/cleanup-rate-limits`: limpia ventanas antiguas de rate limiting.
 - `/api/cron/cleanup-logs`: limpia `audit_logs`, `error_logs` y `notification_logs` con mas de 90 dias.
 
@@ -214,7 +215,7 @@ Brevo:
 
 - `EMAIL_PROVIDER=brevo`
 - `BREVO_API_KEY`
-- `BREVO_FROM_EMAIL`
+- `BREVO_SENDER_EMAIL`
 - `BREVO_SENDER_NAME`
 
 El sistema registra `notification_logs` como `sent`, `failed` o `skipped`. Si faltan variables, el pedido no se rompe; se registra el fallo operativo.

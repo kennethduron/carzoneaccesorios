@@ -6,7 +6,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { requireSession } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
-import { getAdminReports } from "@/services/supabase/admin-reports.service";
+import { getAdminFiscalReports, getAdminReports } from "@/services/supabase/admin-reports.service";
 import type { AppRole } from "@/types/auth";
 import type { ReportFilters, ReportPaymentMethod } from "@/types/reports";
 import { getFiscalAlerts } from "@/utils/fiscal";
@@ -24,8 +24,12 @@ export default async function AdminReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireSession();
-  const fullAccessRoles = new Set<AppRole>(["technical_owner", "admin", "business_owner", "contadora"]);
-  const accessMode = fullAccessRoles.has(profile.role) && profile.permissions.includes("reports:read") ? "full" : null;
+  const fullAccessRoles = new Set<AppRole>(["technical_owner", "admin", "business_owner"]);
+  const accessMode = fullAccessRoles.has(profile.role) && profile.permissions.includes("reports:read")
+    ? "full"
+    : profile.permissions.includes("reports:fiscal_read")
+      ? "fiscal"
+      : null;
   const canUseTechnicalExports =
     profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
     profile.role === "technical_owner" ||
@@ -44,16 +48,16 @@ export default async function AdminReportsPage({
     customer: readParam(params.customer),
     product: readParam(params.product),
     sku: readParam(params.sku),
-    invoice: accessMode === "full" ? readParam(params.invoice) : "",
+    invoice: accessMode === "full" || accessMode === "fiscal" ? readParam(params.invoice) : "",
     paymentMethod: readParam(params.paymentMethod) as ReportPaymentMethod | "all" | undefined,
     priceMode: readParam(params.priceMode) as ReportFilters["priceMode"],
-    invoiceStatus: accessMode === "full" ? (readParam(params.invoiceStatus) as ReportFilters["invoiceStatus"]) : "all",
+    invoiceStatus: accessMode === "full" || accessMode === "fiscal" ? (readParam(params.invoiceStatus) as ReportFilters["invoiceStatus"]) : "all",
     orderStatus: readParam(params.orderStatus) as ReportFilters["orderStatus"],
   };
 
   const [reports, fiscalSettings] = await Promise.all([
-    getAdminReports(filters),
-    accessMode === "full" ? getFiscalSettings() : Promise.resolve(null),
+    accessMode === "fiscal" ? getAdminFiscalReports(filters) : getAdminReports(filters),
+    accessMode === "full" || accessMode === "fiscal" ? getFiscalSettings() : Promise.resolve(null),
   ]);
   const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, reports.invoices) : [];
 

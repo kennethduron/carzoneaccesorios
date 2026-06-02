@@ -4,7 +4,7 @@ import type { InvoiceStatus } from "@/types/invoices";
 import type { OrderStatus } from "@/types/orders";
 
 export type ReportPaymentMethod = "bank_transfer" | "card" | "cash";
-export type ReportAccessMode = "full" | "limited";
+export type ReportAccessMode = "full" | "limited" | "fiscal";
 
 export type ReportFilters = {
   page?: number;

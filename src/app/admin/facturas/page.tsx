@@ -27,9 +27,7 @@ export default async function AdminInvoicesPage({
     profile.role === "technical_owner" ||
     profile.permissions.includes("technical:tools");
   const canCancelInvoices = profile.permissions.includes("invoices:manage");
-  const canCorrectInvoices =
-    ["technical_owner", "admin", "business_owner", "contadora"].includes(profile.role) ||
-    profile.permissions.includes("invoices:correct");
+  const canCorrectInvoices = profile.permissions.includes("invoices:correct");
   const [invoicesPage, fiscalSettings] = await Promise.all([
     getAdminInvoicesPage({ page: Number(params.page ?? 1), pageSize: 50, task }),
     getFiscalSettings(),

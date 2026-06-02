@@ -13,6 +13,8 @@ type CronRunInput = {
   errorMessage?: string | null;
 };
 
+type CronJobHandler = () => Promise<Record<string, unknown>>;
+
 export function verifyCronRequest(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   const authorization = request.headers.get("authorization");
@@ -39,5 +41,22 @@ export async function logCronRun(input: CronRunInput) {
 
   if (error) {
     console.error("Cron log failed", { jobName: input.jobName, message: error.message });
+  }
+}
+
+export async function runProtectedCronJob(request: NextRequest, jobName: string, handler: CronJobHandler) {
+  const unauthorized = verifyCronRequest(request);
+  if (unauthorized) return unauthorized;
+
+  const startedAt = Date.now();
+
+  try {
+    const result = await handler();
+    await logCronRun({ jobName, status: "success", startedAt, result });
+    return NextResponse.json({ ok: true, jobName, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo ejecutar el cron.";
+    await logCronRun({ jobName, status: "failed", startedAt, errorMessage: message });
+    return NextResponse.json({ ok: false, jobName, message }, { status: 500 });
   }
 }

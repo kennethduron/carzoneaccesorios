@@ -21,7 +21,7 @@ export default async function ContactoServicioClientePage() {
 
         <div className="mt-8 grid gap-4 md:grid-cols-2">
           <ContactCard icon={<Phone size={19} />} title="Teléfono" value={settings.customer_service_phone || "+504 0000-0000"} />
-          <ContactCard icon={<Mail size={19} />} title="Correo electrónico" value={settings.customer_service_email || "ventas@carzoneaccesorios.com"} />
+          <ContactCard icon={<Mail size={19} />} title="Correo electrónico" value={settings.customer_service_email || "Correo no configurado"} />
           <ContactCard icon={<MapPin size={19} />} title="Dirección" value={settings.business_address || "Honduras"} />
           <ContactCard icon={<Clock size={19} />} title="Horario de atención" value={settings.customer_service_hours || "Lunes a sábado, 8:00 a.m. a 6:00 p.m."} />
         </div>

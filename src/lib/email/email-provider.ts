@@ -24,12 +24,17 @@ const brevoEndpoint = "https://api.brevo.com/v3/smtp/email";
 
 function normalizeProvider(value: string | undefined): EmailProviderName {
   const provider = value?.trim().toLowerCase();
+  const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL;
+
+  if (process.env.EMAIL_ENABLED === "false") {
+    return "none";
+  }
 
   if (provider === "brevo" || provider === "resend") {
     return provider;
   }
 
-  if (process.env.BREVO_API_KEY && process.env.BREVO_FROM_EMAIL) {
+  if (process.env.BREVO_ENABLED === "true" && process.env.BREVO_API_KEY && brevoSenderEmail) {
     return "brevo";
   }
 
@@ -43,24 +48,30 @@ function normalizeProvider(value: string | undefined): EmailProviderName {
 export function getEmailProviderStatus() {
   const provider = normalizeProvider(process.env.EMAIL_PROVIDER);
   const resendConfigured = Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
-  const brevoConfigured = Boolean(process.env.BREVO_API_KEY && process.env.BREVO_FROM_EMAIL);
+  const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL;
+  const brevoEnabled = process.env.BREVO_ENABLED === "true";
+  const brevoConfigured = Boolean(brevoEnabled && process.env.BREVO_API_KEY && brevoSenderEmail);
 
   return {
     provider,
     resendConfigured,
+    brevoEnabled,
     brevoConfigured,
+    emailEnabled: process.env.EMAIL_ENABLED !== "false",
     configured:
       provider === "resend" ? resendConfigured : provider === "brevo" ? brevoConfigured : false,
   };
 }
 
 function getResendFromEmail() {
-  return process.env.RESEND_FROM_EMAIL || "Car Zone Accesorios <onboarding@resend.dev>";
+  const email = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const name = process.env.RESEND_FROM_NAME || "Car Zone Accesorios";
+  return email.includes("<") ? email : `${name} <${email}>`;
 }
 
 function getBrevoSender() {
   return {
-    email: process.env.BREVO_FROM_EMAIL ?? "",
+    email: process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM_EMAIL || "",
     name: process.env.BREVO_SENDER_NAME || "Car Zone Accesorios",
   };
 }
@@ -99,6 +110,7 @@ async function sendWithResend(input: SendEmailInput): Promise<SendEmailResult> {
       to: input.to,
       subject: input.subject,
       html: input.html,
+      reply_to: process.env.RESEND_REPLY_TO || undefined,
     }),
   });
 
@@ -129,14 +141,25 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.BREVO_API_KEY;
   const sender = getBrevoSender();
 
+  if (process.env.BREVO_ENABLED !== "true") {
+    return {
+      ok: false,
+      status: "skipped",
+      provider: "brevo",
+      providerMessageId: null,
+      errorMessage: "Brevo esta desactivado. Define BREVO_ENABLED=true cuando la cuenta este lista.",
+      technicalMessage: "BREVO_ENABLED is not true.",
+    };
+  }
+
   if (!apiKey || !sender.email) {
     return {
       ok: false,
       status: "skipped",
       provider: "brevo",
       providerMessageId: null,
-      errorMessage: "Brevo no está configurado. Define BREVO_API_KEY y BREVO_FROM_EMAIL.",
-      technicalMessage: "Missing BREVO_API_KEY or BREVO_FROM_EMAIL.",
+      errorMessage: "Brevo no esta configurado. Define BREVO_API_KEY y BREVO_SENDER_EMAIL.",
+      technicalMessage: "Missing BREVO_API_KEY or BREVO_SENDER_EMAIL.",
     };
   }
 
@@ -150,6 +173,7 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
     body: JSON.stringify({
       sender,
       to: [{ email: input.to }],
+      replyTo: process.env.BREVO_REPLY_TO ? { email: process.env.BREVO_REPLY_TO } : undefined,
       subject: input.subject,
       htmlContent: input.html,
       tags: ["car-zone", "transactional"],
@@ -197,8 +221,11 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
       status: "skipped",
       provider: "none",
       providerMessageId: null,
-      errorMessage: "No hay proveedor de correo configurado. Define EMAIL_PROVIDER con Resend o Brevo.",
-      technicalMessage: "EMAIL_PROVIDER, API key or from email are missing.",
+      errorMessage:
+        process.env.EMAIL_ENABLED === "false"
+          ? "El envio de correos esta deshabilitado por configuracion tecnica."
+          : "No hay proveedor de correo configurado. Define EMAIL_PROVIDER=resend y RESEND_API_KEY/RESEND_FROM_EMAIL.",
+      technicalMessage: "EMAIL_ENABLED, EMAIL_PROVIDER, API key or from email are missing.",
     };
   } catch (error) {
     return {

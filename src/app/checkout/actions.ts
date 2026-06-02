@@ -668,8 +668,29 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "No se pudo crear el pedido." };
   }
 
+  const admin = getSupabaseAdminClient();
+  const { error: emailPreferenceError } = await admin
+    .from("orders")
+    .update({
+      email_updates_opt_in: Boolean(input.checkout.receiveOrderEmailUpdates),
+      email_updates_preference_source: "checkout",
+      email_updates_updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", createdOrder.order_id);
+
+  if (emailPreferenceError) {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.email_updates_preference_failed",
+      errorMessage: emailPreferenceError.message,
+      metadata: {
+        order_id: createdOrder.order_id,
+      },
+    });
+  }
+
   if (transferReceipt) {
-    const admin = getSupabaseAdminClient();
     const { error: receiptMetadataError } = await admin
       .from("payments")
       .update({

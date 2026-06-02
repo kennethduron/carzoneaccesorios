@@ -15,7 +15,11 @@
     "test:role-hierarchy:rpcs": "node scripts/test-role-hierarchy-rpcs.mjs",
     "test:public-contact-workflow": "node scripts/test-public-contact-workflow.mjs",
     "test:public-contact-workflow:remote": "node scripts/test-public-contact-workflow-remote.mjs",
-    "test:payment-reservations:remote": "node scripts/test-payment-reservation-workflow-remote.mjs"
+    "test:payment-reservations:remote": "node scripts/test-payment-reservation-workflow-remote.mjs",
+    "audit:supabase-auth-config": "node scripts/audit-supabase-auth-config.mjs",
+    "configure:supabase-auth-resend-smtp": "node scripts/configure-supabase-auth-resend-smtp.mjs",
+    "test:supabase-auth-smtp-structure": "node scripts/test-supabase-auth-smtp-structure.mjs",
+    "test:supabase-auth-email:remote": "node scripts/test-supabase-auth-email-remote.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

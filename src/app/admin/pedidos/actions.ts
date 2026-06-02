@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
+import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
@@ -112,6 +113,13 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     return { ok: false, message: safeAdminOrderMessage(error.message) };
   }
 
+  await notifyCustomerOfOrderChange({
+    orderId,
+    eventType: status === "approved" ? "payment.confirmed" : "payment.rejected",
+    status,
+    force: status === "rejected",
+  });
+
   revalidateOperationalPaths();
 
   return {
@@ -183,6 +191,12 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     });
 
     if (error) return { ok: false, message: safeAdminOrderMessage(error.message) };
+    await notifyCustomerOfOrderChange({
+      orderId,
+      eventType: "order.cancelled",
+      status: "cancelado",
+      force: true,
+    });
     revalidateOperationalPaths();
     return { ok: true, message: "Pedido cancelado y reserva liberada." };
   }
@@ -286,6 +300,12 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
   });
 
   revalidateOperationalPaths();
+
+  await notifyCustomerOfOrderChange({
+    orderId,
+    eventType: "order.status_update",
+    status: transition.status,
+  });
 
   return { ok: true, message: "Estado del pedido actualizado." };
 }

@@ -72,7 +72,7 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
       <div className="mt-5 grid gap-3 text-sm md:grid-cols-3">
         <Info icon={<MapPin size={17} />} text={settings.business_address || "Honduras"} />
         <Info icon={<Phone size={17} />} text={settings.customer_service_phone || "+504 0000-0000"} />
-        <Info icon={<Mail size={17} />} text={settings.customer_service_email || "ventas@carzoneaccesorios.com"} />
+        <Info icon={<Mail size={17} />} text={settings.customer_service_email || "Correo no configurado"} />
       </div>
       <div className="mt-5">
         <p className="mb-2 text-sm font-semibold">Tarjetas aceptadas al activar la pasarela</p>

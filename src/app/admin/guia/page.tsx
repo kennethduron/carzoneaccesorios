@@ -1,94 +1,115 @@
 import Link from "next/link";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
+import type { AppRole, AuthProfile, Permission } from "@/types/auth";
 
 export const dynamic = "force-dynamic";
 
-const roleGuides = [
+type ScopedGuide = {
+  role: string;
+  roles?: AppRole[];
+  permissions?: Permission[];
+  description: string;
+  steps: Array<[string, string]>;
+};
+
+type ScopedStep = {
+  title: string;
+  href: string;
+  detail: string;
+  permissions: Permission[];
+};
+
+const roleGuides: ScopedGuide[] = [
   {
-    role: "Dueño",
-    description: "Supervisa ventas, reportes, clientes y mayoristas sin tocar configuración técnica.",
+    role: "Dueno / Administracion",
+    roles: ["technical_owner", "business_owner", "admin"],
+    description: "Supervisa ventas, pedidos, reportes, clientes y mayoristas segun sus permisos.",
     steps: [
       ["Ventas", "Entra a Pedidos para revisar pedidos nuevos, pagos pendientes y estados de entrega."],
       ["Reportes", "Consulta ventas, ISV, productos e inventario para tomar decisiones operativas."],
-      ["Clientes", "Revisa clientes activos, notas, seguimiento comercial y solicitudes de atención."],
+      ["Clientes", "Revisa clientes activos, notas, seguimiento comercial y solicitudes de atencion."],
       ["Mayoristas", "Aprueba, rechaza, suspende o reactiva cuentas con precios especiales."],
     ],
   },
   {
-    role: "Vendedor",
-    description: "Mantiene ordenada la relación con prospectos y clientes.",
+    role: "Vendedor / Soporte",
+    roles: ["vendedor", "soporte"],
+    description: "Mantiene ordenada la relacion con prospectos, clientes y seguimientos.",
     steps: [
-      ["CRM", "Crea prospectos, actualiza estados y registra oportunidades reales."],
-      ["Notas", "Guarda llamadas, acuerdos, dudas o información importante del cliente."],
+      ["CRM", "Actualiza estados, registra oportunidades reales y crea seguimientos."],
+      ["Notas", "Guarda llamadas, acuerdos, dudas o informacion importante del cliente."],
       ["Seguimientos", "Programa tareas pendientes para contactar o atender clientes."],
-      ["Clientes", "Verifica datos de contacto antes de crear pedidos o solicitudes mayoristas."],
+      ["Clientes", "Verifica datos de contacto antes de escalar una solicitud."],
     ],
   },
   {
     role: "Bodega",
-    description: "Controla stock, reservas y preparación de pedidos.",
+    roles: ["bodega"],
+    description: "Controla stock, reservas y preparacion logistica de pedidos.",
     steps: [
-      ["Inventario", "Revisa productos sin stock, bajo mínimo, reservas activas y movimientos recientes."],
-      ["Entrada", "Agrega stock recibido después de revisar físicamente el producto."],
+      ["Inventario", "Revisa productos sin stock, bajo minimo, reservas activas y movimientos recientes."],
+      ["Entrada", "Agrega stock recibido despues de revisar fisicamente el producto."],
       ["Salida", "Registra salidas manuales cuando no vienen de un pedido normal."],
-      ["Preparación", "Usa Pedidos para identificar qué debe empacarse y actualizar estados."],
+      ["Preparacion", "Usa Pedidos para identificar que debe empacarse y actualizar estados logisticos."],
     ],
   },
   {
     role: "Contadora",
-    description: "Valida pagos, facturas y reportes fiscales.",
+    roles: ["contadora"],
+    description: "Revisa facturas, CAI, rango fiscal, correlativos y reportes contables.",
     steps: [
-      ["Pagos", "Confirma o rechaza pagos solo cuando exista soporte suficiente."],
-      ["Facturas", "Emite, reimprime o anula según el flujo fiscal vigente."],
-      ["Reportes fiscales", "Revisa ISV, totales y documentos antes de cierre contable."],
-      ["CAI y rango", "Valida los datos fiscales antes de emitir facturas reales."],
-    ],
-  },
-  {
-    role: "Admin",
-    description: "Mantiene la operación y los accesos del equipo.",
-    steps: [
-      ["Productos", "Crea productos con SKU, precio, categoría, imágenes y estado correcto."],
-      ["Usuarios", "Asigna roles operativos, suspende cuentas y revisa auditoría."],
-      ["Configuración", "Actualiza datos públicos, redes, contacto, horarios y banners."],
-      ["Seguridad", "Revisa roles, permisos y cambios sensibles antes de entregar accesos."],
+      ["Facturas", "Revisa facturas emitidas, anuladas, PDF e historial fiscal."],
+      ["Reportes fiscales", "Consulta ventas facturadas, ISV, correlativos usados y exportaciones contables."],
+      ["CAI y rango", "Vigila vencimiento de CAI, correlativo actual y rango fiscal disponible."],
+      ["Alertas fiscales", "Atiende avisos de factura anulada, CAI proximo a vencer o errores fiscales."],
     ],
   },
 ];
 
-const processSteps = [
-  ["Crear producto", "/admin/productos", "Agrega nombre, SKU, categoría, precios, descripción, compatibilidad e imágenes."],
-  ["Cargar inventario", "/admin/inventario", "Registra entradas reales y revisa mínimos antes de vender."],
-  ["Revisar pedido", "/admin/pedidos", "Abre pedidos nuevos, confirma datos del cliente y prepara el siguiente estado."],
-  ["Confirmar pago", "/admin/pedidos", "Valida transferencia o estado BAC antes de aprobar."],
-  ["Generar factura", "/admin/facturas", "Emite solo con CAI, rango y datos fiscales correctos."],
-  ["Usar CRM", "/admin/clientes", "Registra notas, seguimientos y estado comercial del cliente."],
-  ["Aprobar mayorista", "/admin/clientes-mayoristas", "Revisa la solicitud y activa precios especiales si procede."],
-  ["Rastrear pedido", "/rastreo", "Busca código público para confirmar el estado visible al cliente."],
-  ["Configurar redes", "/admin/configuracion", "Mantén datos públicos, enlaces y contacto actualizados."],
-  ["Revisar BAC", "/admin/revision-bac", "Valida lo completado, pendientes, credenciales y revisión legal/contable."],
-  ["Backups y uso", "/admin/uso", "Revisa volumen, logs y tareas técnicas cuando tengas permiso."],
+const processSteps: ScopedStep[] = [
+  { title: "Crear producto", href: "/admin/productos", detail: "Agrega nombre, SKU, categoria, precios, compatibilidad e imagenes.", permissions: ["products:manage"] },
+  { title: "Cargar inventario", href: "/admin/inventario", detail: "Registra entradas reales y revisa minimos antes de vender.", permissions: ["inventory:manage"] },
+  { title: "Preparar pedido", href: "/admin/pedidos?task=to_prepare", detail: "Identifica pedidos confirmados y avanza preparacion, empaque o envio.", permissions: ["orders:manage_logistics"] },
+  { title: "Revisar reservas", href: "/admin/pedidos?task=expired_reservations", detail: "Revisa reservas vencidas desde el impacto de stock.", permissions: ["reservations:review"] },
+  { title: "Revisar pedido", href: "/admin/pedidos", detail: "Abre pedidos nuevos, confirma datos del cliente y prepara el siguiente estado.", permissions: ["orders:manage"] },
+  { title: "Confirmar pago", href: "/admin/pedidos?task=pending_payments", detail: "Valida transferencia o estado BAC antes de aprobar.", permissions: ["payments:confirm"] },
+  { title: "Generar factura", href: "/admin/facturas", detail: "Emite solo con pago confirmado, CAI, rango y datos fiscales correctos.", permissions: ["invoices:create"] },
+  { title: "Revisar facturas", href: "/admin/facturas", detail: "Consulta facturas emitidas, anuladas, PDF e historial fiscal.", permissions: ["invoices:read"] },
+  { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", detail: "Filtra facturas, ISV, anulaciones y correlativos para contabilidad.", permissions: ["reports:fiscal_read"] },
+  { title: "Usar CRM", href: "/admin/clientes", detail: "Registra notas, seguimientos y estado comercial del cliente.", permissions: ["crm:manage"] },
+  { title: "Aprobar mayorista", href: "/admin/clientes-mayoristas", detail: "Revisa la solicitud y activa precios especiales si procede.", permissions: ["wholesale:manage"] },
+  { title: "Configurar redes", href: "/admin/configuracion", detail: "Manten datos publicos, enlaces y contacto actualizados.", permissions: ["commercial_settings:manage"] },
+  { title: "Revisar BAC", href: "/admin/revision-bac", detail: "Valida checklist bancario y revision legal/contable.", permissions: ["commercial_settings:manage"] },
+  { title: "Backups y uso", href: "/admin/uso", detail: "Revisa volumen, logs y tareas tecnicas cuando tengas permiso.", permissions: ["technical:tools"] },
 ];
+
+function hasAnyPermission(profile: AuthProfile, permissions: Permission[]) {
+  return permissions.some((permission) => profile.permissions.includes(permission));
+}
+
+function guideIsVisible(profile: AuthProfile, guide: ScopedGuide) {
+  return Boolean(guide.roles?.includes(profile.role) || (guide.permissions && hasAnyPermission(profile, guide.permissions)));
+}
 
 export default async function AdminGuidePage() {
   const profile = await requirePermission("admin:access");
-  const canViewTechnical = profile.permissions.includes("technical:tools");
-  const visibleProcessSteps = canViewTechnical ? processSteps : processSteps.filter(([title]) => !/backup|backups/i.test(title));
+  const visibleRoleGuides = roleGuides.filter((guide) => guideIsVisible(profile, guide));
+  const visibleProcessSteps = processSteps.filter((step) => hasAnyPermission(profile, step.permissions));
 
   return (
-    <AdminShell title="Guía rápida">
+    <AdminShell title="Guia rapida">
       <section className="space-y-6">
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <p className="text-sm text-black/50">Onboarding interno</p>
-          <h1 className="mt-1 text-2xl font-semibold">Cómo operar Car Zone Accesorios</h1>
+          <h1 className="mt-1 text-2xl font-semibold">Como operar Car Zone Accesorios</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-            Esta guía resume las tareas más importantes para demo, operación controlada y preparación comercial real.
+            Esta guia muestra solo los flujos permitidos para tu rol.
           </p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {roleGuides.map((guide) => (
+          {visibleRoleGuides.map((guide) => (
             <article key={guide.role} className="rounded-lg border border-black/10 bg-white p-5">
               <p className="text-sm font-medium uppercase text-[#e4252c]">{guide.role}</p>
               <p className="mt-1 text-sm text-black/60">{guide.description}</p>
@@ -107,14 +128,14 @@ export default async function AdminGuidePage() {
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <h2 className="text-xl font-semibold">Flujos principales</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleProcessSteps.map(([title, href, detail]) => (
+            {visibleProcessSteps.map((step) => (
               <Link
-                key={title}
-                href={href}
+                key={step.title}
+                href={step.href}
                 className="rounded-lg border border-black/10 p-4 transition-colors hover:border-[#e4252c]"
               >
-                <p className="font-semibold">{title}</p>
-                <p className="mt-2 text-sm text-black/58">{detail}</p>
+                <p className="font-semibold">{step.title}</p>
+                <p className="mt-2 text-sm text-black/58">{step.detail}</p>
               </Link>
             ))}
           </div>

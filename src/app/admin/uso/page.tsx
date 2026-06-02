@@ -3,6 +3,7 @@ import { ArrowLeft, AlertTriangle, BarChart3, Database, FileArchive, HardDrive, 
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requireStrictPermission } from "@/lib/auth/session";
 import { getAdminUsageOverview } from "@/services/supabase/admin-usage.service";
+import { getTechnicalAlertSettings } from "@/services/supabase/holiday-banners.service";
 import { cleanupLogsAction, recordBackupReviewAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ const statusLabels = {
 
 export default async function AdminUsagePage() {
   await requireStrictPermission("technical:tools");
-  const usage = await getAdminUsageOverview();
+  const [usage, technicalAlertSettings] = await Promise.all([getAdminUsageOverview(), getTechnicalAlertSettings()]);
   const oldLogTotal = usage.logs
     .filter((log) => log.table !== "audit_logs")
     .reduce((sum, log) => sum + log.olderThan90Days, 0);
@@ -117,6 +118,13 @@ export default async function AdminUsagePage() {
         <div className="mb-4 flex items-center gap-2">
           <BarChart3 size={18} />
           <h2 className="font-semibold">Cron y notificaciones</h2>
+        </div>
+        <div className="mb-4 rounded-md border border-black/10 bg-[#f4f4f5] p-4">
+          <p className="text-sm font-semibold">Cuenta técnica oficial de servicios</p>
+          <p className="mt-1 text-lg font-semibold">{technicalAlertSettings.serviceAccountEmail}</p>
+          <p className="mt-2 text-xs leading-5 text-black/50">
+            Uso privado para Cron-Job.org, Cloudinary, Brevo, backups, alertas técnicas e integraciones futuras.
+          </p>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4">
@@ -180,6 +188,28 @@ export default async function AdminUsagePage() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
+        <div className="mb-4 flex items-center gap-2">
+          <AlertTriangle size={18} />
+          <h2 className="font-semibold">Cron-Job.org: reservas vencidas</h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm">
+            <p className="font-semibold">Solicitud recomendada</p>
+            <p className="mt-2 break-all text-black/65">https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations</p>
+            <p className="mt-2 text-black/65">Método: GET o POST</p>
+            <p className="mt-1 text-black/65">Frecuencia inicial: cada 1 hora</p>
+          </div>
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm">
+            <p className="font-semibold">Autorización</p>
+            <p className="mt-2 text-black/65">Header: Authorization: Bearer CRON_SECRET</p>
+            <p className="mt-2 text-xs leading-5 text-black/50">
+              El valor real vive en variables de entorno y nunca se muestra en esta pantalla. El endpoint es idempotente: conserva stock y evita alertas abiertas duplicadas.
+            </p>
           </div>
         </div>
       </section>

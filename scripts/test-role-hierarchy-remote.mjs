@@ -37,8 +37,14 @@ assert.equal(rolesByName.get("business_owner")?.includes("roles:assign_admin"), 
 assert.equal(rolesByName.get("admin")?.includes("roles:assign_admin"), false);
 assert.equal(rolesByName.get("bodega")?.includes("orders:manage_logistics"), true);
 assert.equal(rolesByName.get("bodega")?.includes("orders:manage"), false);
-assert.equal(rolesByName.get("contadora")?.includes("settings:fiscal"), true);
-assert.equal(rolesByName.get("contadora")?.includes("payments:manage"), true);
+assert.equal(rolesByName.get("contadora")?.includes("fiscal:read"), true);
+assert.equal(rolesByName.get("contadora")?.includes("reports:fiscal_read"), true);
+assert.equal(rolesByName.get("contadora")?.includes("invoices:read"), true);
+assert.equal(rolesByName.get("contadora")?.includes("payments:manage"), false);
+assert.equal(rolesByName.get("contadora")?.includes("payments:confirm"), false);
+assert.equal(rolesByName.get("contadora")?.includes("orders:read"), false);
+assert.equal(rolesByName.get("contadora")?.includes("crm:manage"), false);
+assert.equal(rolesByName.get("contadora")?.includes("inventory:manage"), false);
 
 for (const role of ["vendedor", "bodega", "contadora", "soporte", "cliente"]) {
   assert.equal(rolesByName.get(role)?.includes("security:read"), false, `${role} must not access security`);

@@ -5,12 +5,12 @@ import { LogoutButton } from "@/components/auth";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminBusinessSettings } from "@/services/supabase/admin-business-settings.service";
-import { getAdminDashboardOverview } from "@/services/supabase/admin-dashboard.service";
+import { getAdminDashboardOverview, getWarehouseDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminInvoices } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";
 import type { DashboardCardKey } from "@/types/settings";
-import { getFiscalAlerts } from "@/utils/fiscal";
+import { getFiscalAlerts, invoiceNumberValue } from "@/utils/fiscal";
 import { formatCurrency } from "@/utils/pricing";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +40,7 @@ const moduleGroups = [
     description: "Pedidos, inventario y catálogo operativo.",
     defaultOpen: true,
     modules: [
-      { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, pagos y facturación.", permissions: ["orders:read", "orders:manage"] },
+      { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, preparación y estados.", permissions: ["orders:read", "orders:manage"] },
       { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decisión humana.", permissions: ["reservations:review"] },
       { title: "Inventario", href: "/admin/inventario", description: "Entradas, salidas, ajustes e inventario bajo.", permissions: ["inventory:manage"] },
       { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:manage"] },
@@ -90,8 +90,8 @@ const moduleGroups = [
     defaultOpen: true,
     modules: [
       { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
-      { title: "Reportes", href: "/admin/reportes", description: "Reportes contables y exportaciones.", permissions: ["reports:read"] },
-      { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal"] },
+      { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", description: "Ventas facturadas, impuestos, facturas anuladas y correlativos.", permissions: ["reports:read", "reports:fiscal_read"] },
+      { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal", "fiscal:read"] },
     ],
   },
   {
@@ -172,20 +172,155 @@ function statusTone(status: string | null) {
   return "bg-[#fff7ed] text-[#7c2d12]";
 }
 
+function hnDateKey(value: string | Date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date(value));
+}
+
+function hnMonthKey(value: string | Date) {
+  return hnDateKey(value).slice(0, 7);
+}
+
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
+  const isAccountant = profile.role === "contadora" && !isTechnicalOwner(profile.role, profile.email);
+  const isWarehouse = profile.role === "bodega" && !isTechnicalOwner(profile.role, profile.email);
   const canViewTechnical = hasEffectivePermission(profile.role, profile.permissions, "technical:tools", profile.email);
   const canViewFiscalAlerts =
     hasEffectivePermission(profile.role, profile.permissions, "fiscal:read", profile.email) ||
     hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email) ||
-    hasEffectivePermission(profile.role, profile.permissions, "reports:read", profile.email);
+    hasEffectivePermission(profile.role, profile.permissions, "reports:read", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "reports:fiscal_read", profile.email);
   const canReadInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email);
   const [fiscalSettings, invoices] = canViewFiscalAlerts
     ? await Promise.all([getFiscalSettings(), canReadInvoices ? getAdminInvoices() : Promise.resolve([])])
     : [null, []];
+  const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, invoices) : [];
+
+  if (isAccountant) {
+    const todayKey = hnDateKey(new Date());
+    const monthKey = hnMonthKey(new Date());
+    const activeInvoices = invoices.filter((invoice) => !["anulada", "cancelled"].includes(String(invoice.status)));
+    const cancelledInvoices = invoices.filter((invoice) => ["anulada", "cancelled"].includes(String(invoice.status)));
+    const issuedToday = activeInvoices.filter((invoice) => hnDateKey(invoice.issued_at ?? invoice.created_at) === todayKey);
+    const issuedMonth = activeInvoices.filter((invoice) => hnMonthKey(invoice.issued_at ?? invoice.created_at) === monthKey);
+    const rangeEnd = invoiceNumberValue(fiscalSettings?.invoice_range_end ?? "");
+    const currentNumber = invoiceNumberValue(fiscalSettings?.current_invoice_number ?? "");
+    const availableInvoices = rangeEnd !== null && currentNumber !== null ? Math.max(rangeEnd - currentNumber + 1, 0) : null;
+    const visibleModuleGroups = moduleGroups
+      .filter((group) => group.id === "finanzas")
+      .map((group) => ({
+        ...group,
+        modules: group.modules.filter((module) => canAccessModule(profile.role, profile.email, profile.permissions, module.permissions)),
+      }))
+      .filter((group) => group.modules.length > 0);
+
+    return (
+      <AdminShell title="Panel contable">
+        <div className="mb-4 grid gap-3 rounded-lg border border-black/10 bg-white p-3 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <p className="text-xs uppercase text-black/45">Sesión activa</p>
+            <p className="font-semibold">{profile.full_name || profile.email}</p>
+            <p className="text-sm capitalize text-black/55">Rol: {profile.role}</p>
+          </div>
+          <LogoutButton />
+        </div>
+
+        {fiscalAlerts.length > 0 ? (
+          <div className="mb-4">
+            <FiscalAlertsPanel alerts={fiscalAlerts} />
+          </div>
+        ) : null}
+
+        <section className="mb-4 rounded-lg border border-black/10 bg-white p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm text-black/50">Vista fiscal</p>
+              <h2 className="text-2xl font-semibold">Resumen contable</h2>
+            </div>
+            <p className="text-sm text-black/55">Facturas, CAI, rango fiscal y reportes</p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Facturas emitidas hoy" value={issuedToday.length.toLocaleString("es-HN")} />
+            <MetricCard label="Facturas anuladas" value={cancelledInvoices.length.toLocaleString("es-HN")} />
+            <MetricCard label="Facturas del mes" value={issuedMonth.length.toLocaleString("es-HN")} />
+            <MetricCard label="Facturas disponibles" value={availableInvoices === null ? "Sin rango" : availableInvoices.toLocaleString("es-HN")} />
+            <MetricCard label="CAI vigente" value={fiscalSettings?.cai || "Sin CAI"} />
+            <MetricCard label="Rango fiscal" value={fiscalSettings ? `${fiscalSettings.invoice_range_start} a ${fiscalSettings.invoice_range_end}` : "Sin rango"} />
+            <MetricCard label="Correlativo actual" value={fiscalSettings?.current_invoice_number || "Sin correlativo"} />
+            <MetricCard label="Fecha límite CAI" value={fiscalSettings?.emission_deadline ? formatDate(fiscalSettings.emission_deadline) : "Sin fecha"} />
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          {visibleModuleGroups.map((group) => (
+            <ModuleGroup key={group.id} group={group} />
+          ))}
+        </section>
+      </AdminShell>
+    );
+  }
+
+  if (isWarehouse) {
+    const warehouse = await getWarehouseDashboardOverview();
+    const visibleModuleGroups = moduleGroups
+      .filter((group) => ["operacion", "inventario"].includes(group.id))
+      .map((group) => ({
+        ...group,
+        modules: group.modules.filter((module) => canAccessModule(profile.role, profile.email, profile.permissions, module.permissions)),
+      }))
+      .filter((group) => group.modules.length > 0);
+
+    return (
+      <AdminShell title="Panel de bodega">
+        <div className="mb-4 grid gap-3 rounded-lg border border-black/10 bg-white p-3 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <p className="text-xs uppercase text-black/45">Sesión activa</p>
+            <p className="font-semibold">{profile.full_name || profile.email}</p>
+            <p className="text-sm capitalize text-black/55">Rol: {profile.role}</p>
+          </div>
+          <LogoutButton />
+        </div>
+
+        <section className="mb-4 rounded-lg border border-black/10 bg-white p-4">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm text-black/50">Vista logística</p>
+              <h2 className="text-2xl font-semibold">Inventario y preparación</h2>
+            </div>
+            <p className="text-sm text-black/55">Sin pagos, facturación, CRM ni seguridad</p>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <MetricCard label="Por preparar" value={warehouse.ordersToPrepare.toLocaleString("es-HN")} />
+            <MetricCard label="En preparación" value={warehouse.preparingOrders.toLocaleString("es-HN")} />
+            <MetricCard label="Empacados" value={warehouse.packedOrders.toLocaleString("es-HN")} />
+            <MetricCard label="Enviados" value={warehouse.shippedOrders.toLocaleString("es-HN")} />
+            <MetricCard label="En ruta" value={warehouse.routeOrders.toLocaleString("es-HN")} />
+            <MetricCard label="Stock bajo" value={warehouse.lowStockProducts.toLocaleString("es-HN")} />
+            <MetricCard label="Agotados" value={warehouse.outOfStockProducts.toLocaleString("es-HN")} />
+            <MetricCard label="Reservas activas" value={warehouse.activeReservations.toLocaleString("es-HN")} />
+            <MetricCard label="Reservas por revisar" value={warehouse.expiredReservations.toLocaleString("es-HN")} />
+            <MetricCard label="Movimientos 24h" value={warehouse.recentInventoryMovements.toLocaleString("es-HN")} />
+          </div>
+        </section>
+
+        <section className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <WarehouseTask href="/admin/pedidos?task=to_prepare" label="Pedidos por preparar" value={warehouse.ordersToPrepare} />
+          <WarehouseTask href="/admin/inventario?filter=low_stock" label="Stock bajo / agotado" value={warehouse.lowStockProducts + warehouse.outOfStockProducts} />
+          <WarehouseTask href="/admin/pedidos?task=expired_reservations" label="Reservas a revisar" value={warehouse.expiredReservations} />
+          <WarehouseTask href="/admin/inventario" label="Movimientos recientes" value={warehouse.recentInventoryMovements} />
+        </section>
+
+        <section className="space-y-3">
+          {visibleModuleGroups.map((group) => (
+            <ModuleGroup key={group.id} group={group} />
+          ))}
+        </section>
+      </AdminShell>
+    );
+  }
+
   const [overview, businessSettings] = await Promise.all([getAdminDashboardOverview(), getAdminBusinessSettings()]);
   const visibleCards = businessSettings.dashboard_cards;
-  const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, invoices) : [];
 
   const todayTaskOptions = [
     {
@@ -423,6 +558,11 @@ export default async function AdminPage() {
                 detail={overview.latestCronJob ? `${overview.latestCronJob} - ${formatDate(overview.latestCronAt)}` : "Sin ejecuciones registradas"}
               />
               <OperationalStatus label="Backups" status={overview.latestBackupStatus} detail={formatDate(overview.latestBackupAt)} />
+              <OperationalStatus
+                label="Correos fallidos"
+                status={overview.failedEmails > 0 ? "failed" : "success"}
+                detail={`${overview.failedEmails.toLocaleString("es-HN")} correos en estado failed`}
+              />
             </div>
           ) : null}
         </div>
@@ -456,6 +596,31 @@ function MetricGroup({
         ))}
       </div>
     </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-black/10 bg-[#fafafa] p-3">
+      <p className="text-sm text-black/50">{label}</p>
+      <p className="mt-1 break-words text-xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function WarehouseTask({ href, label, value }: { href: string; label: string; value: number }) {
+  return (
+    <Link href={href} className="rounded-md border border-black/10 bg-white p-3 transition-colors hover:border-[#e4252c]">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold">{label}</p>
+        <span className="rounded-md bg-[#fff1f2] px-2 py-0.5 text-sm font-semibold text-[#e4252c]">
+          {value.toLocaleString("es-HN")}
+        </span>
+      </div>
+      <p className="mt-1 text-xs leading-5 text-black/55">
+        {value > 0 ? "Requiere revisión logística." : "Sin pendientes para este bloque."}
+      </p>
+    </Link>
   );
 }
 

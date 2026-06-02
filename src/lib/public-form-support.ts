@@ -2,7 +2,9 @@ import "server-only";
 
 import { isIP } from "node:net";
 import { headers } from "next/headers";
-import { sendTransactionalEmail } from "@/lib/email/email-provider";
+import { enqueueEmail } from "@/lib/notifications/email-queue";
+import { queuePreferenceEmail } from "@/lib/notifications/cron-jobs";
+import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { writeErrorLog } from "@/lib/error-logging";
 import { sanitizeLogText } from "@/lib/operational-errors";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -33,13 +35,9 @@ type PublicFormNotification = {
 };
 
 type NotificationSettingsRow = {
-  notification_emails: string | null;
-  customer_service_email: string | null;
   notify_general_contact: boolean | null;
   notify_wholesale_requests: boolean | null;
 };
-
-const internalFallbackEmail = "car.zone.accesorioshn@gmail.com";
 
 function firstForwardedIp(value: string | null) {
   return value?.split(",")[0]?.trim() || null;
@@ -54,19 +52,8 @@ function normalizeIp(value: string | null) {
   return isIP(withoutIpv6Brackets) ? withoutIpv6Brackets : null;
 }
 
-function normalizeEmail(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? "";
-}
-
 function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function parseEmailList(value: string | null | undefined) {
-  return (value ?? "")
-    .split(",")
-    .map(normalizeEmail)
-    .filter(isValidEmail);
 }
 
 function escapeHtml(value: string | null | undefined) {
@@ -244,17 +231,20 @@ async function sendAndLog(input: {
   form: PublicFormNotification;
   audience: "internal" | "requester";
 }) {
-  const result = await sendTransactionalEmail({
-    to: input.recipientEmail,
+  const result = await enqueueEmail({
+    toEmail: input.recipientEmail,
     subject: input.email.subject,
-    html: input.email.html,
-    idempotencyKey: `${input.eventType}-${input.form.customerId}-${input.form.followupId ?? "none"}-${input.recipientEmail}`,
-    metadata: {
+    templateKey: input.eventType,
+    payload: {
+      html: input.email.html,
       event_type: input.eventType,
       customer_id: input.form.customerId,
       followup_id: input.form.followupId,
       audience: input.audience,
     },
+    relatedModule: input.form.kind === "wholesale" ? "mayoristas" : "CRM",
+    relatedId: input.form.customerId,
+    idempotencyKey: `${input.eventType}-${input.form.customerId}-${input.form.followupId ?? "none"}-${input.recipientEmail}`,
   });
 
   await logNotification({
@@ -262,30 +252,29 @@ async function sendAndLog(input: {
     customerId: input.form.customerId,
     followupId: input.form.followupId,
     recipientEmail: input.recipientEmail,
-    status: result.status,
-    provider: result.provider,
-    providerMessageId: result.providerMessageId,
-    errorMessage: result.errorMessage,
+    status: result.queued || result.reason === "duplicate" ? "skipped" : "failed",
+    provider: "email_queue",
+    providerMessageId: result.id,
+    errorMessage: result.queued || result.reason === "duplicate" ? null : result.reason,
     metadata: {
       audience: input.audience,
       outcome: input.form.outcome ?? null,
-      technical_message: sanitizeLogText(result.technicalMessage, 500) || null,
+      queue_result: result.reason ?? "queued",
     },
     context: input.form.context,
   });
 
-  if (!result.ok) {
+  if (!result.queued && result.reason !== "duplicate") {
     await writeErrorLog({
       route: "/contacto",
-      action: `${input.eventType}.email_${result.status}`,
-      errorMessage: result.errorMessage ?? "No se pudo enviar el correo.",
+      action: `${input.eventType}.email_queue_failed`,
+      errorMessage: "No se pudo encolar el correo.",
       userEmail: input.recipientEmail,
       metadata: {
         customer_id: input.form.customerId,
         followup_id: input.form.followupId,
         audience: input.audience,
-        provider: result.provider,
-        technical_message: result.technicalMessage,
+        queue_result: result.reason,
       },
     });
   }
@@ -309,7 +298,7 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
   const admin = getSupabaseAdminClient();
   const { data: settings, error } = await admin
     .from("company_settings")
-    .select("notification_emails, customer_service_email, notify_general_contact, notify_wholesale_requests")
+    .select("notify_general_contact, notify_wholesale_requests")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle<NotificationSettingsRow>();
@@ -323,32 +312,46 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
     });
   }
 
-  const configuredRecipients = parseEmailList(settings?.notification_emails);
-  const customerServiceEmail = normalizeEmail(settings?.customer_service_email);
-  const internalRecipients = [
-    ...new Set(
-      configuredRecipients.length > 0
-        ? configuredRecipients
-        : [isValidEmail(customerServiceEmail) ? customerServiceEmail : internalFallbackEmail],
-    ),
-  ];
   const notifyInternal =
     input.kind === "wholesale" ? settings?.notify_wholesale_requests !== false : settings?.notify_general_contact !== false;
   const internalEmail = buildInternalEmail(input);
   const requesterEmail = buildRequesterEmail(input);
 
   if (notifyInternal) {
-    await Promise.all(
-      internalRecipients.map((recipientEmail) =>
-        sendAndLog({
-          eventType: `public_form.${input.kind}.internal`,
-          recipientEmail,
-          email: internalEmail,
-          form: input,
-          audience: "internal",
-        }),
-      ),
-    );
+    await createInternalNotification({
+      type: input.kind === "wholesale" ? "crm.wholesale_request" : "crm.general_contact",
+      title: input.kind === "wholesale" ? "Nueva solicitud mayorista" : "Nuevo contacto general",
+      message: input.kind === "wholesale" ? `${input.name} solicito cuenta mayorista.` : `${input.name} envio un mensaje de contacto.`,
+      severity: input.kind === "wholesale" ? "warning" : "info",
+      module: input.kind === "wholesale" ? "mayoristas" : "CRM",
+      customerId: input.customerId,
+      metadata: {
+        followup_id: input.followupId ?? null,
+        customer_name: input.name,
+        customer_email: input.email,
+        customer_phone: input.phone,
+        business_name: input.businessName ?? null,
+        action_path: input.kind === "wholesale" ? "/admin/clientes-mayoristas?status=pending" : "/admin/crm",
+      },
+      dedupeKey: `public_form.${input.kind}:${input.customerId}:${input.followupId ?? "none"}`,
+    });
+
+    await queuePreferenceEmail({
+      type: input.kind === "wholesale" ? "wholesale.request_new" : "crm.general_contact",
+      subject: internalEmail.subject,
+      payload: {
+        html: internalEmail.html,
+        event_type: `public_form.${input.kind}.internal`,
+        customer_id: input.customerId,
+        followup_id: input.followupId,
+        audience: "internal",
+      },
+      relatedModule: input.kind === "wholesale" ? "mayoristas" : "CRM",
+      relatedId: input.customerId,
+      fallbackRoles: input.kind === "wholesale" ? ["technical_owner", "business_owner", "admin"] : ["business_owner", "admin", "soporte", "vendedor"],
+      priority: 3,
+      idempotencyScope: `public-form-internal:${input.kind}:${input.customerId}:${input.followupId ?? "none"}`,
+    });
   } else {
     await logNotification({
       eventType: `public_form.${input.kind}.internal`,
@@ -480,4 +483,3 @@ export async function writeRegisteredWholesaleAudit(input: {
     },
   });
 }
-

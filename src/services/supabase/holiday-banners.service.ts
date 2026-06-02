@@ -1,8 +1,9 @@
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeAuditLog } from "@/lib/audit";
 import { requireStrictPermission } from "@/lib/auth/session";
-import { sendTransactionalEmail } from "@/lib/email/email-provider";
 import { writeErrorLog } from "@/lib/error-logging";
+import { enqueueEmail } from "@/lib/notifications/email-queue";
+import { createTechnicalNotification } from "@/lib/notifications/notification-center";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   BannerMediaType,
@@ -51,8 +52,8 @@ const technicalAuditActions = new Set([
 
 const defaultTechnicalAlertSettings: TechnicalAlertSettings = {
   enabled: true,
-  email: "kennethduron.paz@gmail.com",
-  serviceAccountEmail: "carzonetech@gmail.com",
+  email: process.env.TECHNICAL_ALERT_EMAIL ?? "",
+  serviceAccountEmail: process.env.TECHNICAL_SERVICE_ACCOUNT_EMAIL ?? "",
   cloudinaryStorageThresholdPercent: 70,
   lastAlertSentAt: null,
   lastCheckedAt: null,
@@ -373,15 +374,16 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
   }
 
   const sentAt = new Date().toISOString();
-  const result = await sendTransactionalEmail({
-    to: settings.email,
+  const result = await enqueueEmail({
+    toEmail: settings.email,
     subject: `Alerta tecnica Car Zone: almacenamiento al ${usedPercent}%`,
+    templateKey: "system.cloudinary_high_usage",
     idempotencyKey: `cloudinary-storage-${usedPercent}-${sentAt.slice(0, 10)}`,
-    metadata: {
+    relatedModule: "sistema",
+    payload: {
       event_type: "technical.cloudinary_storage_threshold",
       used_percent: usedPercent,
-    },
-    html: `
+      html: `
       <div style="font-family:Arial,sans-serif;color:#111827;padding:24px;">
         <h1 style="font-size:22px;margin:0 0 12px;">Alerta tecnica de almacenamiento</h1>
         <p>El uso reportado de almacenamiento esta en ${usedPercent}%.</p>
@@ -389,32 +391,46 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
         <p>Umbral configurado: ${settings.cloudinaryStorageThresholdPercent}%.</p>
       </div>
     `,
+    },
   });
 
-  await updateTechnicalAlertLastChecked(result.ok ? sentAt : undefined);
+  await createTechnicalNotification({
+    type: "system.cloudinary_high_usage",
+    title: "Uso alto de Cloudinary",
+    message: `El uso reportado de almacenamiento esta en ${usedPercent}%.`,
+    severity: "warning",
+    metadata: {
+      used_percent: usedPercent,
+      threshold_percent: settings.cloudinaryStorageThresholdPercent,
+      queue_id: result.id,
+    },
+    dedupeKey: `system.cloudinary_high_usage:${sentAt.slice(0, 10)}`,
+  });
+
+  await updateTechnicalAlertLastChecked(result.queued || result.reason === "duplicate" ? sentAt : undefined);
 
   await writeAuditLog({
     tableName: "technical_alert_settings",
     recordId: "true",
-    action: result.ok ? "technical_alert.cloudinary_storage_sent" : "technical_alert.cloudinary_storage_failed",
+    action: result.queued || result.reason === "duplicate" ? "technical_alert.cloudinary_storage_queued" : "technical_alert.cloudinary_storage_failed",
     newData: {
-      status: result.status,
-      provider: result.provider,
+      status: result.reason ?? "queued",
+      provider: "email_queue",
       recipient_email: settings.email,
       used_percent: usedPercent,
       threshold_percent: settings.cloudinaryStorageThresholdPercent,
-      error_message: result.errorMessage,
+      queue_id: result.id,
     },
   });
 
-  if (!result.ok) {
+  if (!result.queued && result.reason !== "duplicate") {
     await writeErrorLog({
       route: "/admin/banners",
       action: "technical_alert.cloudinary_storage_failed",
-      errorMessage: result.errorMessage ?? "No se pudo enviar la alerta tecnica.",
+      errorMessage: "No se pudo encolar la alerta tecnica.",
       metadata: {
-        provider: result.provider,
-        technical_message: result.technicalMessage,
+        provider: "email_queue",
+        queue_result: result.reason,
         used_percent: usedPercent,
       },
     });

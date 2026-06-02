@@ -54,4 +54,5 @@ export type CheckoutData = {
   paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo";
   paymentTiming: "before_delivery" | "on_delivery";
   bankTransferReference: string;
+  receiveOrderEmailUpdates: boolean;
 };

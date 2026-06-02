@@ -91,7 +91,7 @@ const roleDescriptions: Record<AppRole, string> = {
   business_owner: "Dueño operativo. Administra ventas, equipo, pedidos, clientes, pagos, facturas y reportes sin secretos técnicos.",
   vendedor: "Atiende clientes, pedidos y CRM operativo.",
   bodega: "Gestiona inventario, preparación y envíos.",
-  contadora: "Revisa pagos, facturas, fiscal y reportes financieros.",
+  contadora: "Revisa facturas fiscales, CAI, correlativos y reportes contables.",
   soporte: "Atiende soporte, consultas de clientes y seguimiento operativo limitado.",
   cliente: "Cuenta pública de compra y consulta de sus propios pedidos.",
 };

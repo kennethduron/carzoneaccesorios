@@ -22,7 +22,7 @@ export default async function ContactoPage() {
           <div className="mt-6 grid gap-3">
             {[
               [Phone, companySettings.customer_service_phone || "+504 0000-0000"],
-              [Mail, companySettings.customer_service_email || "ventas@carzoneaccesorios.com"],
+              [Mail, companySettings.customer_service_email || "Correo no configurado"],
               [MapPin, companySettings.business_address || "Honduras"],
             ].map(([Icon, text]) => (
               <div key={text as string} className="flex items-center gap-3 rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">

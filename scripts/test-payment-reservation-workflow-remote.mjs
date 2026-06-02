@@ -217,9 +217,11 @@ try {
     .in("name", ["technical_owner", "business_owner", "admin", "contadora", "bodega"]);
   assert.ifError(rolesError);
   const permissions = new Map(roles.map((role) => [role.name, role.permissions]));
-  for (const role of ["technical_owner", "business_owner", "admin", "contadora"]) {
+  for (const role of ["technical_owner", "business_owner", "admin"]) {
     assert.equal(permissions.get(role).includes("payments:confirm"), true, `${role} must confirm payments`);
   }
+  assert.equal(permissions.get("contadora").includes("payments:confirm"), false, "contadora must not confirm payments");
+  assert.equal(permissions.get("contadora").includes("payments:manage"), false, "contadora must not manage payments");
   assert.equal(permissions.get("bodega").includes("payments:confirm"), false);
   assert.equal(permissions.get("bodega").includes("reservations:review"), true);
 
@@ -229,7 +231,7 @@ try {
     .eq("id", true)
     .single();
   assert.ifError(technicalSettingsError);
-  assert.equal(technicalSettings.service_account_email, "carzonetech@gmail.com");
+  assert.equal(technicalSettings.service_account_email, "carzonetech0@gmail.com");
 
   console.log("Remote payment and reservation workflow checks passed.");
 } finally {

@@ -3,12 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { getSessionProfile } from "@/lib/auth/session";
+import { canRoleReceiveNotificationType, isAccountantNotificationType } from "@/lib/notifications/accountant-scope";
 import {
   getAdminBusinessSettings,
   saveAdminBusinessSettings,
   sanitizeBusinessSettings,
 } from "@/services/supabase/admin-business-settings.service";
+import {
+  getAdminNotificationPreferenceById,
+  getAdminNotificationPreferenceByType,
+  saveAdminNotificationUserPreference,
+  saveAdminNotificationPreference,
+} from "@/services/supabase/admin-notification-preferences.service";
 import type { AppRole } from "@/types/auth";
+import type { NotificationPreferenceUpdate, NotificationUserPreferenceUpdate } from "@/types/notifications";
 import type { BusinessSettings } from "@/types/settings";
 
 const allowedRoles: AppRole[] = ["business_owner", "admin", "technical_owner"];
@@ -124,4 +132,89 @@ export async function saveBusinessSettingsAction(input: BusinessSettings) {
         ? "Configuración empresarial guardada correctamente."
         : "No había cambios pendientes.",
   };
+}
+
+export async function saveNotificationPreferenceAction(input: NotificationPreferenceUpdate) {
+  const profile = await getSessionProfile();
+  if (!profile || !hasBusinessSettingsAccess(profile.role)) {
+    return { ok: false, message: "No tienes autorizacion para cambiar preferencias de notificacion." };
+  }
+
+  const existing = await getAdminNotificationPreferenceById(input.id);
+
+  if (!existing) {
+    return { ok: false, message: "Preferencia de notificacion no encontrada." };
+  }
+
+  const allowedRoles: AppRole[] = ["technical_owner", "business_owner", "admin", "contadora", "bodega", "vendedor", "soporte"];
+  const destinationRoles = input.destination_roles.filter(
+    (role): role is AppRole =>
+      allowedRoles.includes(role as AppRole) && canRoleReceiveNotificationType(role as AppRole, existing.notification_type),
+  );
+
+  if (existing.technical_only && profile.role !== "technical_owner") {
+    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones tecnicas." };
+  }
+
+  const saved = await saveAdminNotificationPreference({
+    ...input,
+    destination_roles: destinationRoles,
+  });
+
+  await writeAuditLog({
+    tableName: "notification_preferences",
+    recordId: saved.id,
+    action: "notification_preference.updated",
+    newData: {
+      changed_by: profile.id,
+      notification_type: saved.notification_type,
+      internal_enabled: saved.internal_enabled,
+      email_enabled: saved.email_enabled,
+      push_enabled: saved.push_enabled,
+      frequency: saved.frequency,
+      destination_roles: saved.destination_roles,
+    },
+  });
+
+  revalidatePath("/admin/configuracion");
+  return { ok: true, message: "Preferencia de notificacion guardada." };
+}
+
+export async function saveUserNotificationPreferenceAction(input: NotificationUserPreferenceUpdate) {
+  const profile = await getSessionProfile();
+  if (!profile) {
+    return { ok: false, message: "Debes iniciar sesion para cambiar tus notificaciones." };
+  }
+
+  const existing = await getAdminNotificationPreferenceByType(input.notification_type);
+  if (existing?.technical_only && profile.role !== "technical_owner") {
+    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones tecnicas." };
+  }
+
+  if (!existing) {
+    return { ok: false, message: "Preferencia de notificacion no encontrada." };
+  }
+
+  if (profile.role === "contadora" && !isAccountantNotificationType(existing.notification_type)) {
+    return { ok: false, message: "La contadora solo puede configurar notificaciones fiscales." };
+  }
+
+  const saved = await saveAdminNotificationUserPreference(profile.id, input);
+
+  await writeAuditLog({
+    tableName: "notification_user_preferences",
+    recordId: saved.id,
+    action: "notification_user_preference.updated",
+    newData: {
+      changed_by: profile.id,
+      notification_type: saved.notification_type,
+      internal_enabled: saved.internal_enabled,
+      email_enabled: saved.email_enabled,
+      push_enabled: saved.push_enabled,
+      frequency: saved.frequency,
+    },
+  });
+
+  revalidatePath("/admin/configuracion");
+  return { ok: true, message: "Tus preferencias de notificacion fueron guardadas." };
 }
