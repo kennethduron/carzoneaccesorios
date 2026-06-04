@@ -34,7 +34,7 @@ export function PushNotificationsDeviceCard() {
 
   async function requestPush() {
     if (!status?.configured) {
-      toast.warning("Firebase Cloud Messaging todavia no esta configurado.");
+      toast.warning("Firebase Cloud Messaging todavía no está configurado.");
       return;
     }
 
@@ -52,7 +52,7 @@ export function PushNotificationsDeviceCard() {
       return;
     }
 
-    toast.success("Permiso concedido. El token FCM se registrara cuando se agregue la configuracion web del cliente.");
+    toast.success("Permiso concedido. El token FCM se registrará cuando se agregue la configuración web del cliente.");
   }
 
   return (

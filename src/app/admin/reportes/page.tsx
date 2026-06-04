@@ -81,7 +81,7 @@ export default async function AdminReportsPage({
         <p className="font-semibold">Reportes paginados con filtros server-side</p>
         <p className="mt-1">
           Esta vista carga hasta {reports.pageSize} registros por tabla y aplica filtros antes de traer datos al panel.
-          Para cierres contables grandes, usa filtros por fecha, cliente, factura, producto o metodo de pago y exporta
+          Para cierres contables grandes, usa filtros por fecha, cliente, factura, producto o método de pago y exporta
           cada segmento.
         </p>
       </section>

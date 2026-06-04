@@ -30,7 +30,7 @@ export function LegalPage({
         <p className="mt-4 max-w-3xl text-base leading-7 text-black/65">{intro}</p>
 
         <div className="mt-6 rounded-lg border border-[#e4252c]/25 bg-[#fff7ed] p-4 text-sm leading-6 text-[#7c2d12]">
-          Estos textos son una base operativa para Honduras y pueden ser ajustados por el negocio. Recomendamos revision
+          Estos textos son una base operativa para Honduras y pueden ser ajustados por el negocio. Recomendamos revisión
           legal y contable antes de publicar cambios contractuales.
         </div>
 
@@ -75,7 +75,7 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
       </div>
       <div className="mt-5 rounded-md bg-[#f4f4f5] p-3 text-sm leading-6 text-black/60">
         Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp. No ingreses datos de tarjeta en esta
-        pagina.
+        página.
       </div>
     </section>
   );

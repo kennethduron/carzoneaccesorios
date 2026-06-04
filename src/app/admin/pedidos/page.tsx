@@ -81,9 +81,7 @@ export default async function AdminOrdersPage({
     canManageOrders || hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
   const canGenerateInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:create", profile.email);
   const canCancelInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:manage", profile.email);
-  const canCorrectInvoices =
-    ["technical_owner", "admin", "business_owner"].includes(profile.role) ||
-    profile.permissions.includes("invoices:correct");
+  const canCorrectInvoices = ["technical_owner", "admin", "business_owner"].includes(profile.role);
   const canViewFinancialData =
     profile.permissions.some((permission) =>
       ["payments:read", "payments:manage", "payments:confirm", "payments:reject", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),

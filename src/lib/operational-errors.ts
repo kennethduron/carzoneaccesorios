@@ -199,8 +199,8 @@ export function mapOperationalError(error: unknown, context: OperationalErrorCon
       ...base,
       severity: "critical",
       customerMessage:
-        "No pudimos enviar el correo de verificacion. Intenta nuevamente mas tarde o contacta al equipo de soporte.",
-      adminReason: "Supabase Auth no pudo enviar el correo de confirmacion desde el proveedor SMTP configurado.",
+        "No pudimos enviar el correo de verificación. Intenta nuevamente más tarde o contacta al equipo de soporte.",
+      adminReason: "Supabase Auth no pudo enviar el correo de confirmación desde el proveedor SMTP configurado.",
       recommendation:
         "Revisar SMTP de Supabase Auth: host, puerto, usuario, API key, remitente y dominio verificado en Resend.",
     };

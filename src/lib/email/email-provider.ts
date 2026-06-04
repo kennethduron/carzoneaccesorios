@@ -158,7 +158,7 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
       status: "skipped",
       provider: "brevo",
       providerMessageId: null,
-      errorMessage: "Brevo no esta configurado. Define BREVO_API_KEY y BREVO_SENDER_EMAIL.",
+      errorMessage: "Brevo no está configurado. Define BREVO_API_KEY y BREVO_SENDER_EMAIL.",
       technicalMessage: "Missing BREVO_API_KEY or BREVO_SENDER_EMAIL.",
     };
   }
@@ -223,7 +223,7 @@ export async function sendTransactionalEmail(input: SendEmailInput): Promise<Sen
       providerMessageId: null,
       errorMessage:
         process.env.EMAIL_ENABLED === "false"
-          ? "El envio de correos esta deshabilitado por configuracion tecnica."
+          ? "El envío de correos está deshabilitado por configuración técnica."
           : "No hay proveedor de correo configurado. Define EMAIL_PROVIDER=resend y RESEND_API_KEY/RESEND_FROM_EMAIL.",
       technicalMessage: "EMAIL_ENABLED, EMAIL_PROVIDER, API key or from email are missing.",
     };

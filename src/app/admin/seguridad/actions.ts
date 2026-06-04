@@ -82,7 +82,7 @@ function protectedTargetMessage(profile: AuthProfile, target?: TargetUserRecord 
   }
 
   if (target && isProtectedTechnicalSecurityUser(target)) {
-    return "Este usuario tecnico esta protegido.";
+    return "Este usuario técnico está protegido.";
   }
 
   if (target?.role === "business_owner") {
@@ -235,7 +235,7 @@ export async function requestBackupAction(
   const profile = await requirePermission("system:backups");
 
   if (!canRequestTechnicalBackups(profile)) {
-    return { ok: false, message: "Solo el administrador tecnico puede solicitar respaldos." };
+    return { ok: false, message: "Solo el administrador técnico puede solicitar respaldos." };
   }
 
   const allowedTypes: BackupType[] = ["manual", "scheduled", "pre_deploy"];

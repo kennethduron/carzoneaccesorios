@@ -149,7 +149,7 @@ export async function queuePendingReservationReviewEmails() {
   for (const notification of data ?? []) {
     const result = await queuePreferenceEmail({
       type: "reservation.expired_review_required",
-      subject: `Reserva vencida: requiere revision - ${safeString(notification.metadata.order_number, "pedido")}`,
+      subject: `Reserva vencida: requiere revisión - ${safeString(notification.metadata.order_number, "pedido")}`,
       payload: {
         title: notification.title,
         message: notification.message,
@@ -329,8 +329,8 @@ export async function checkPendingWholesaleRequestsJob() {
     const name = safeString(customer.business_name) || safeString(customer.contact_name, "Cliente mayorista");
     const created = await createInternalNotification({
       type: "wholesale.request_pending_24h",
-      title: "Solicitud mayorista pendiente mas de 24h",
-      message: `${name} sigue pendiente de revision mayorista.`,
+      title: "Solicitud mayorista pendiente más de 24h",
+      message: `${name} sigue pendiente de revisión mayorista.`,
       severity: "warning",
       module: "mayoristas",
       customerId,
@@ -350,7 +350,7 @@ export async function checkPendingWholesaleRequestsJob() {
       subject: "Solicitud mayorista pendiente - Car Zone Accesorios",
       payload: {
         title: "Solicitud mayorista pendiente",
-        message: `${name} lleva mas de 24 horas esperando revision.`,
+        message: `${name} lleva más de 24 horas esperando revisión.`,
         customer_name: name,
         customer_email: customer.email,
         customer_phone: customer.phone,
@@ -441,8 +441,8 @@ export async function createBackupJob() {
   if (failed) {
     await createTechnicalNotification({
       type: "system.backup_failed",
-      title: "Backup requiere revision",
-      message: stale ? "No hay backup reciente registrado en las ultimas 36 horas." : "El ultimo backup registrado fallo.",
+      title: "Backup requiere revisión",
+      message: stale ? "No hay backup reciente registrado en las últimas 36 horas." : "El último backup registrado falló.",
       severity: "critical",
       metadata: { latest_backup: data ?? null, stale },
       dedupeKey: `system.backup_failed:${new Date().toISOString().slice(0, 10)}`,
@@ -482,7 +482,7 @@ export async function systemHealthCheckJob() {
     await createTechnicalNotification({
       type: "system.cron_failed",
       title: "Cron fallido",
-      message: `El cron ${safeString(cron.job_name, "sin nombre")} fallo en las ultimas 24 horas.`,
+      message: `El cron ${safeString(cron.job_name, "sin nombre")} falló en las últimas 24 horas.`,
       severity: "critical",
       metadata: cron,
       dedupeKey: `system.cron_failed:${safeString(cron.job_name)}:${new Date(String(cron.created_at)).toISOString().slice(0, 13)}`,
@@ -493,7 +493,7 @@ export async function systemHealthCheckJob() {
     await createTechnicalNotification({
       type: "system.critical_error",
       title: "Errores operativos recientes",
-      message: `Se registraron ${criticalErrors} errores operativos en las ultimas 24 horas.`,
+      message: `Se registraron ${criticalErrors} errores operativos en las últimas 24 horas.`,
       severity: "warning",
       metadata: { error_count_24h: criticalErrors },
       dedupeKey: `system.critical_error:error_logs:${new Date().toISOString().slice(0, 10)}`,

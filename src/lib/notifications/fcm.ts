@@ -112,7 +112,7 @@ export async function registerFcmDeviceToken(input: {
 }) {
   const token = input.token.trim();
   if (!token || createHash("sha256").update(token).digest("hex").length !== 64) {
-    return { ok: false, message: "Token FCM invalido." };
+    return { ok: false, message: "Token FCM inválido." };
   }
 
   const admin = getSupabaseAdminClient();

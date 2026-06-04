@@ -106,7 +106,7 @@ export async function submitGeneralContactAction(input: GeneralContactInput): Pr
     await writeErrorLog({
       route: "/contacto",
       action: "public_forms.contact_general_save_failed",
-      errorMessage: error?.message ?? "No se obtuvo confirmacion del formulario.",
+      errorMessage: error?.message ?? "No se obtuvo confirmación del formulario.",
       userEmail: email,
       metadata: { origin: "contacto_general", phone: phone.value },
     });
@@ -127,7 +127,7 @@ export async function submitGeneralContactAction(input: GeneralContactInput): Pr
 
   return {
     ok: true,
-    message: "Mensaje enviado correctamente. Nuestro equipo te respondera pronto.",
+    message: "Mensaje enviado correctamente. Nuestro equipo te responderá pronto.",
   };
 }
 
@@ -179,7 +179,7 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
     await writeErrorLog({
       route: "/contacto/mayoreo",
       action: "public_forms.wholesale_save_failed",
-      errorMessage: error?.message ?? "No se obtuvo confirmacion de la solicitud.",
+      errorMessage: error?.message ?? "No se obtuvo confirmación de la solicitud.",
       userEmail: email,
       metadata: { origin: "formulario_publico", phone: phone.value },
     });
@@ -189,7 +189,7 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
   if (result.outcome === "approved") {
     return {
       ok: false,
-      message: "Tu cuenta mayorista ya esta aprobada. Inicia sesion para comprar con precio mayorista.",
+      message: "Tu cuenta mayorista ya está aprobada. Inicia sesión para comprar con precio mayorista.",
       status: "approved",
     };
   }
@@ -197,7 +197,7 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
   if (result.outcome === "suspended") {
     return {
       ok: false,
-      message: "Tu acceso mayorista esta suspendido. Contacta a servicio al cliente.",
+      message: "Tu acceso mayorista está suspendido. Contacta a servicio al cliente.",
       status: "suspended",
     };
   }
@@ -219,16 +219,16 @@ export async function submitWholesaleRequestAction(input: WholesaleRequestInput)
   revalidatePublicFormAdminPaths();
 
   if (result.outcome === "pending") {
-    return { ok: true, message: "Tu solicitud ya esta pendiente de revision.", status: "pending" };
+    return { ok: true, message: "Tu solicitud ya está pendiente de revisión.", status: "pending" };
   }
 
   if (result.outcome === "rejected_review") {
-    return { ok: true, message: "Recibimos tu mensaje. Nuestro equipo revisara tu caso.", status: "rejected" };
+    return { ok: true, message: "Recibimos tu mensaje. Nuestro equipo revisará tu caso.", status: "rejected" };
   }
 
   return {
     ok: true,
-    message: "Solicitud enviada correctamente. Revisaremos tu informacion.",
+    message: "Solicitud enviada correctamente. Revisaremos tu información.",
     status: "pending",
   };
 }

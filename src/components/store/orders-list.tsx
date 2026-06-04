@@ -292,7 +292,7 @@ function FinancialSummary({
         <Info label="ISV" value={formatCurrency(tax)} />
         <Info label="Envio" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
         <Info label="Contra entrega" value={formatCurrency(cashOnDeliveryFee)} />
-        <Info label="Recargo minimo" value={formatCurrency(smallOrderFee)} />
+        <Info label="Recargo mínimo" value={formatCurrency(smallOrderFee)} />
         <Info label="Descuentos" value={discountTotal > 0 ? `-${formatCurrency(discountTotal)}` : formatCurrency(0)} />
         <Info label="Otros cargos" value={formatCurrency(additionalFeesValue)} />
         <Info label="Total final" value={formatCurrency(total)} strong />

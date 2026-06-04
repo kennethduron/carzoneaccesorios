@@ -320,7 +320,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     });
     return {
       ok: false,
-      message: "Tu cuenta mayorista ya esta aprobada. Inicia sesion para comprar con precio mayorista.",
+      message: "Tu cuenta mayorista ya está aprobada. Inicia sesión para comprar con precio mayorista.",
       state: {
         kind: "approved",
         title: "Ya tienes acceso mayorista.",
@@ -349,7 +349,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       outcome: "pending",
       context: requestContext,
     });
-    return { ok: false, message: "Tu solicitud ya esta pendiente de revision.", state: pendingWholesaleState() };
+    return { ok: false, message: "Tu solicitud ya está pendiente de revisión.", state: pendingWholesaleState() };
   }
 
   if (customers.some((customer) => getWholesaleStatus(customer) === "suspended")) {
@@ -373,7 +373,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       "[SOLICITUD_MAYOREO]",
       "Origen: Cuenta registrada",
       `Fecha: ${requestContext.submittedAt}`,
-      "El cliente solicito revision manual despues de un rechazo.",
+      "El cliente solicitó revisión manual después de un rechazo.",
     ].join("\n");
     const followup = await ensureRegisteredWholesaleFollowup({
       customerId: rejectedCustomer.id,
@@ -401,7 +401,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       businessName: rejectedCustomer.business_name ?? rejectedCustomer.company_name,
       taxId: rejectedCustomer.tax_id,
       city: rejectedCustomer.city,
-      comment: "El cliente solicito revision manual despues de un rechazo.",
+      comment: "El cliente solicitó revisión manual después de un rechazo.",
       outcome: "rejected_review",
       context: requestContext,
     });

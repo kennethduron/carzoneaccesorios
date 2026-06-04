@@ -188,7 +188,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                 className="object-contain object-left"
               />
             </span>
-            <span className="min-w-0 leading-tight">
+            <span className="hidden min-w-0 leading-tight md:block">
               <span className="block truncate text-base font-semibold sm:text-lg">Car Zone Accesorios</span>
               <span className="block truncate text-[11px] text-black/55 sm:text-xs">Accesorios automotrices</span>
             </span>
@@ -359,7 +359,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           <div>
             <p className="font-semibold">{tradeName}</p>
             <p className="mt-2 max-w-xl text-sm text-black/55">
-              Tienda profesional de accesorios automotrices con precios al detalle y mayoristas reales.
+              Tienda profesional de accesorios automotrices con precios para clientes finales y cuentas mayoristas reales.
             </p>
             <div className="mt-4 space-y-1 text-sm text-black/55">
               {companySettings?.business_address ? <p>{companySettings.business_address}</p> : null}

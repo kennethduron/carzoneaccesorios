@@ -65,20 +65,20 @@ export function renderEmailTemplate(templateKey: string, payload: Record<string,
     return payload.html;
   }
 
-  const title = String(payload.title ?? payload.subject ?? "Notificacion de Car Zone Accesorios");
-  const intro = String(payload.message ?? payload.intro ?? "Hay una actualizacion importante.");
+  const title = String(payload.title ?? payload.subject ?? "Notificación de Car Zone Accesorios");
+  const intro = String(payload.message ?? payload.intro ?? "Hay una actualización importante.");
   const actionPath = String(payload.action_path ?? "/admin");
   const actionLabel = String(payload.action_label ?? "Abrir panel");
   const rows = [
     row("Pedido", payload.order_number),
     row("Cliente", payload.customer_name),
     row("Correo", payload.customer_email),
-    row("Telefono", payload.customer_phone),
-    row("Metodo de pago", payload.payment_method),
+    row("Teléfono", payload.customer_phone),
+    row("Método de pago", payload.payment_method),
     row("Estado", payload.status ?? payload.payment_status),
     row("Producto", payload.product_name),
     row("Stock disponible", payload.available_stock),
-    row("Stock minimo", payload.min_stock),
+    row("Stock mínimo", payload.min_stock),
     row("Fecha", payload.created_at ? formatDate(payload.created_at) : payload.due_at ? formatDate(payload.due_at) : null),
   ].join("");
 
@@ -298,7 +298,7 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
       await createTechnicalNotification({
         type: "system.email_failed",
         title: "Correo fallido",
-        message: `El correo ${item.template_key} no pudo enviarse despues de ${nextAttempts} intentos.`,
+        message: `El correo ${item.template_key} no pudo enviarse después de ${nextAttempts} intentos.`,
         severity: "critical",
         metadata: { queue_id: item.id, to_email: item.to_email, error: result.errorMessage ?? result.technicalMessage },
         dedupeKey: `system.email_failed:${item.id}`,

@@ -110,7 +110,7 @@ function buildInternalEmail(input: PublicFormNotification) {
             ${row("Nombre", input.name)}
             ${row("Empresa", input.businessName)}
             ${row("Correo", input.email)}
-            ${row("Telefono", input.phone)}
+            ${row("Teléfono", input.phone)}
             ${row("RTN", input.taxId)}
             ${row("Ciudad", input.city)}
             ${row("Mensaje", input.message ?? input.comment)}
@@ -129,8 +129,8 @@ function buildRequesterEmail(input: PublicFormNotification) {
   const isWholesale = input.kind === "wholesale";
   const title = isWholesale ? "Hemos recibido tu solicitud mayorista" : "Hemos recibido tu mensaje";
   const message = isWholesale
-    ? "Gracias por solicitar una cuenta mayorista. Nuestro equipo revisara tu solicitud y te notificara cuando sea aprobada o si necesitamos mas informacion."
-    : "Gracias por contactar a Car Zone Accesorios. Nuestro equipo revisara tu mensaje y te respondera pronto.";
+    ? "Gracias por solicitar una cuenta mayorista. Nuestro equipo revisará tu solicitud y te notificará cuando sea aprobada o si necesitamos más información."
+    : "Gracias por contactar a Car Zone Accesorios. Nuestro equipo revisará tu mensaje y te responderá pronto.";
 
   return {
     subject: title,
@@ -321,7 +321,7 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
     await createInternalNotification({
       type: input.kind === "wholesale" ? "crm.wholesale_request" : "crm.general_contact",
       title: input.kind === "wholesale" ? "Nueva solicitud mayorista" : "Nuevo contacto general",
-      message: input.kind === "wholesale" ? `${input.name} solicito cuenta mayorista.` : `${input.name} envio un mensaje de contacto.`,
+      message: input.kind === "wholesale" ? `${input.name} solicitó cuenta mayorista.` : `${input.name} envió un mensaje de contacto.`,
       severity: input.kind === "wholesale" ? "warning" : "info",
       module: input.kind === "wholesale" ? "mayoristas" : "CRM",
       customerId: input.customerId,
@@ -451,7 +451,7 @@ export async function ensureRegisteredWholesaleFollowup(input: {
     customer_id: input.customerId,
     user_id: input.userId,
     note_type: "wholesale_status",
-    note: "No se pudo crear el seguimiento automatico. Requiere revision manual.",
+    note: "No se pudo crear el seguimiento automático. Requiere revisión manual.",
   });
   await writeErrorLog({
     route: "/contacto",

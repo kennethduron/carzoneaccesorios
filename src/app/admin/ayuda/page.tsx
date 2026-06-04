@@ -24,7 +24,7 @@ const roleSections: ScopedSection[] = [
   {
     role: "Dueno / Administracion",
     roles: ["technical_owner", "business_owner", "admin"],
-    focus: "Ver salud diaria del negocio y tomar decisiones segun permisos.",
+    focus: "Ver salud diaria del negocio y tomar decisiones según permisos.",
     items: [
       "Revisar ventas de hoy y del mes en el panel principal.",
       "Entrar a Pedidos para pendientes, pagos y preparacion.",
@@ -38,7 +38,7 @@ const roleSections: ScopedSection[] = [
     focus: "Atender clientes, dar seguimiento y ordenar el CRM.",
     items: [
       "Crear o actualizar clientes desde Clientes.",
-      "Agregar notas con acuerdos, dudas, llamadas o informacion importante.",
+      "Agregar notas con acuerdos, dudas, llamadas o información importante.",
       "Crear seguimientos con fecha y prioridad.",
       "Cerrar seguimientos cuando el contacto ya se realizo.",
     ],
@@ -50,8 +50,8 @@ const roleSections: ScopedSection[] = [
     items: [
       "Buscar producto por SKU, codigo o nombre antes de cargar movimiento.",
       "Registrar entradas cuando se recibe mercaderia fisica.",
-      "Usar ajustes solo para correcciones reales despues de conteo.",
-      "Revisar productos sin stock, bajo minimo y reservas activas.",
+      "Usar ajustes solo para correcciones reales después de conteo.",
+      "Revisar productos sin stock, bajo mínimo y reservas activas.",
       "Actualizar estado logistico cuando el pedido este preparado o despachado.",
     ],
   },
@@ -79,13 +79,13 @@ const workflows: ScopedWorkflow[] = [
     title: "Cargar inventario",
     href: "/admin/inventario",
     permissions: ["inventory:manage"],
-    steps: ["Busca el producto.", "Elige entrada, salida, devolucion o ajuste.", "Registra cantidad.", "Agrega nota cuando sea una correccion."],
+    steps: ["Busca el producto.", "Elige entrada, salida, devolución o ajuste.", "Registra cantidad.", "Agrega nota cuando sea una corrección."],
   },
   {
     title: "Preparar pedidos",
     href: "/admin/pedidos?task=to_prepare",
     permissions: ["orders:manage_logistics"],
-    steps: ["Filtra pedidos listos.", "Revisa productos y stock reservado.", "Avanza a preparacion.", "Actualiza empaque, envio o ruta segun el caso."],
+    steps: ["Filtra pedidos listos.", "Revisa productos y stock reservado.", "Avanza a preparación.", "Actualiza empaque, envío o ruta según el caso."],
   },
   {
     title: "Revisar reservas",
@@ -109,7 +109,7 @@ const workflows: ScopedWorkflow[] = [
     title: "Revisar facturas fiscales",
     href: "/admin/facturas",
     permissions: ["invoices:read"],
-    steps: ["Filtra facturas.", "Revisa emitidas y anuladas.", "Descarga PDF si aplica.", "Exporta informacion fiscal permitida."],
+    steps: ["Filtra facturas.", "Revisa emitidas y anuladas.", "Descarga PDF si aplica.", "Exporta información fiscal permitida."],
   },
   {
     title: "Reportes fiscales",
@@ -121,7 +121,7 @@ const workflows: ScopedWorkflow[] = [
     title: "Usar CRM",
     href: "/admin/clientes",
     permissions: ["crm:manage"],
-    steps: ["Busca cliente.", "Abre perfil.", "Revisa notas y seguimientos.", "Agenda proxima accion si falta atencion."],
+    steps: ["Busca cliente.", "Abre perfil.", "Revisa notas y seguimientos.", "Agenda próxima acción si falta atención."],
   },
   {
     title: "Aprobar mayoristas",
@@ -133,13 +133,13 @@ const workflows: ScopedWorkflow[] = [
     title: "Crear usuarios del equipo",
     href: "/admin/seguridad",
     permissions: ["security:manage"],
-    steps: ["Crea usuario.", "Asigna rol minimo necesario.", "Verifica correo.", "Suspende cuentas que ya no deben operar."],
+    steps: ["Crea usuario.", "Asigna rol mínimo necesario.", "Verifica correo.", "Suspende cuentas que ya no deben operar."],
   },
   {
     title: "Revisar backups y cron",
     href: "/admin/uso",
     permissions: ["technical:tools"],
-    steps: ["Revisa ultimas ejecuciones cron.", "Registra revision manual de backup.", "Limpia logs antiguos cuando aplique.", "Escala antes de saturar base."],
+    steps: ["Revisa últimas ejecuciones cron.", "Registra revisión manual de backup.", "Limpia logs antiguos cuando aplique.", "Escala antes de saturar base."],
   },
 ];
 

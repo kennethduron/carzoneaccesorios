@@ -181,14 +181,14 @@ export default async function CuentaPage({
               <div className="mt-4">
                 <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Info label="Total final minimo" value={formatCurrency(firstPurchaseRequirement.minimum)} />
+                  <Info label="Total final mínimo" value={formatCurrency(firstPurchaseRequirement.minimum)} />
                   <Info label="Total final acumulado" value={formatCurrency(firstPurchaseRequirement.accumulated)} />
                   <Info label="Total final faltante" value={formatCurrency(firstPurchaseRequirement.missing)} />
                 </div>
               </div>
             ) : (
               <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
-                Primera compra completada. Tus compras mayoristas posteriores no tienen monto minimo.
+                Primera compra completada. Tus compras mayoristas posteriores no tienen monto mínimo.
               </p>
             )}
           </section>

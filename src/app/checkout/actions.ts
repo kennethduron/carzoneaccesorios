@@ -429,7 +429,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     .filter((item) => item.productId && item.quantity > 0);
 
   if (normalizedItems.length === 0) {
-    return { ok: false, message: "Agrega productos validos para crear el pedido." };
+    return { ok: false, message: "Agrega productos válidos para crear el pedido." };
   }
 
   if (normalizedItems.some((item) => !isUuid(item.productId))) {

@@ -24,7 +24,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0 ${variantClasses[variant]} ${className}`}
+      className={`inline-flex max-w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-center text-sm font-semibold leading-snug whitespace-normal transition-all duration-200 [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:translate-y-0 [&>svg]:shrink-0 ${variantClasses[variant]} ${className}`}
       {...props}
     >
       {children}

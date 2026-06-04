@@ -1014,7 +1014,7 @@ function CheckoutTotals({
         </div>
       ) : null}
       <div className="flex justify-between">
-        <span>Recargo pedido minimo</span>
+        <span>Recargo pedido mínimo</span>
         <span>{formatCurrency(smallOrderFee)}</span>
       </div>
       <div className="flex justify-between">

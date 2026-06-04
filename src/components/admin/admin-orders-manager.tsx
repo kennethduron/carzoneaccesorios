@@ -15,12 +15,16 @@ import {
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
+import { OfficialInvoiceDocument } from "@/components/invoices/official-invoice-document";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
+import type { AdminInvoiceDetail } from "@/types/invoices";
 import type { AdminOrderRow } from "@/types/orders";
 import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
+import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
+import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
 import { formatHnDateTime } from "@/utils/format";
 import {
   canonicalOrderStatus,
@@ -80,11 +84,13 @@ const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
 };
 
 const fiscalCorrectionWarning =
-  "Esta acción actualizará datos fiscales del cliente. Si la factura ya fue emitida, conservará el mismo número fiscal y quedará registrada en auditoría.";
+  "Esta acción actualizará únicamente el nombre fiscal y el RTN del pedido antes de emitir factura. La auditoría quedará registrada automáticamente.";
+const fiscalCorrectionIssuedInvoiceWarning =
+  "Este pedido ya tiene factura emitida. Para cambios fiscales, utiliza el proceso fiscal correspondiente.";
 
 function buildOrderWhatsappMessage(order: AdminOrderRow) {
   const visibleItems = order.order_items.slice(0, 8);
-  const productLines = visibleItems.map((item) => `* ${item.quantity} x ${item.product_name} - ${formatCurrency(item.line_total)}`);
+  const productLines = visibleItems.map((item) => `* ${item.quantity} x ${item.product_name} — ${formatCurrency(item.line_total)}`);
   const remainingItems = order.order_items.length - visibleItems.length;
 
   if (remainingItems > 0) {
@@ -105,20 +111,30 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
     "",
     `Total a pagar: ${formatCurrency(order.total)}`,
     "",
-    `Metodo de pago seleccionado: ${paymentMethod}.`,
+    `Método de pago seleccionado: ${paymentMethod}.`,
   ];
 
   if (order.payment_method === "card") {
     return [
-      ...commonIntro,
+      "Hola, gracias por contactar con Car Zone Accesorios.",
       "",
-      "Seleccionaste pago con tarjeta de credito o debito.",
+      "Te compartimos el resumen de tu pedido:",
       "",
-      "Puedes realizar tu pago de forma segura por medio del siguiente link:",
+      `Pedido: #${order.order_number}`,
       "",
-      "Link de pago: ",
+      "Productos:",
       "",
-      "Cuando completes el pago, por favor envianos la confirmacion o comprobante por este chat para continuar con tu pedido.",
+      productLines.length > 0 ? productLines.join("\n") : "* Productos registrados en el pedido.",
+      "",
+      `Total a pagar: ${formatCurrency(order.total)}`,
+      "",
+      "Método de pago seleccionado: Tarjeta de crédito o débito por link de pago.",
+      "",
+      "Puedes realizar tu pago de forma segura por medio del siguiente enlace:",
+      "",
+      "Link de pago:",
+      "",
+      "Cuando completes el pago, por favor envíanos la confirmación o el comprobante por este chat para continuar con tu pedido.",
       "",
       "Gracias por comprar en Car Zone Accesorios.",
     ].join("\n");
@@ -130,7 +146,7 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
       "",
       order.payment_timing === "on_delivery"
         ? "Coordinaremos la entrega y la transferencia al recibir tu pedido."
-        : "Por favor envianos la confirmacion, referencia o comprobante de transferencia por este chat para validar tu pago.",
+        : "Por favor envíanos la confirmación, referencia o comprobante de transferencia por este chat para validar tu pago.",
       "",
       "Gracias por comprar en Car Zone Accesorios.",
     ].join("\n");
@@ -169,6 +185,7 @@ export function AdminOrdersManager({
   const [orderToCancel, setOrderToCancel] = useState<AdminOrderRow | null>(null);
   const [paymentToReject, setPaymentToReject] = useState<AdminOrderRow | null>(null);
   const [invoiceToCancel, setInvoiceToCancel] = useState<AdminOrderRow | null>(null);
+  const [invoicePreview, setInvoicePreview] = useState<AdminInvoiceDetail | null>(null);
   const [orderToCorrectFiscalData, setOrderToCorrectFiscalData] = useState<AdminOrderRow | null>(null);
   const [orderToExtend, setOrderToExtend] = useState<AdminOrderRow | null>(null);
   const [message, setMessage] = useState("");
@@ -203,6 +220,27 @@ export function AdminOrdersManager({
   );
 
   function generateInvoice(order: AdminOrderRow) {
+    if (orderHasActiveInvoice(order)) {
+      if (!order.invoice_id) {
+        showAdminMessage("Este pedido ya tiene una factura emitida, pero no se pudo ubicar el registro fiscal.", false);
+        return;
+      }
+
+      startTransition(async () => {
+        const detail = await getInvoiceDetailAction(order.invoice_id ?? "");
+        showAdminMessage("Este pedido ya tiene una factura emitida. Se abrirá la factura existente.", Boolean(detail.ok && detail.invoice));
+        if (detail.ok && detail.invoice) {
+          setInvoicePreview(detail.invoice);
+        }
+      });
+      return;
+    }
+
+    if (!isPaymentConfirmed(order.payment_status)) {
+      showAdminMessage("La factura solo puede generarse cuando el pago esté confirmado.", false);
+      return;
+    }
+
     if (!canIssueInvoice(order)) {
       showAdminMessage("No se puede emitir factura: valida pago confirmado, pedido activo e inventario no liberado.", false);
       return;
@@ -212,7 +250,7 @@ export function AdminOrdersManager({
       const result = await generateInvoiceFromOrderAction(order.id);
       showAdminMessage(result.message, result.ok);
       if (result.ok && result.invoice) {
-        await exportAdminInvoicePdf(result.invoice);
+        setInvoicePreview(result.invoice);
         router.refresh();
       }
     });
@@ -269,13 +307,38 @@ export function AdminOrdersManager({
         return;
       }
 
-      const result = await logInvoiceReprintAction(order.invoice_id ?? "");
+      setInvoicePreview(detail.invoice);
+      showAdminMessage("Factura cargada para vista previa.", true);
+    });
+  }
+
+  function downloadInvoicePdf(invoice: AdminInvoiceDetail) {
+    startTransition(async () => {
+      const result = await logInvoiceReprintAction(invoice.id);
       showAdminMessage(result.message, result.ok);
       if (result.ok) {
-        await exportAdminInvoicePdf(detail.invoice);
+        await exportAdminInvoicePdf(invoice);
         router.refresh();
       }
     });
+  }
+
+  async function copyInvoiceWhatsappMessage(invoice: AdminInvoiceDetail) {
+    const text = [
+      "Hola, gracias por comprar en Car Zone Accesorios.",
+      "",
+      `Te compartimos tu factura correspondiente al pedido #${invoice.order_number}.`,
+      "Adjuntamos el documento PDF en este chat para que puedas revisarlo y guardarlo.",
+      "",
+      "Gracias por tu compra.",
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Mensaje copiado. Ahora puedes pegarlo en WhatsApp y adjuntar el PDF.");
+    } catch {
+      toast.error("No se pudo copiar el mensaje. Intenta nuevamente.");
+    }
   }
 
   function cancelInvoice(order: AdminOrderRow, reason: string) {
@@ -295,10 +358,6 @@ export function AdminOrdersManager({
     orderId: string;
     customerName: string;
     customerRtn: string;
-    customerPhone: string;
-    customerEmail: string;
-    customerAddress: string;
-    correctionReason: string;
   }) {
     startTransition(async () => {
       const result = await correctOrderFiscalCustomerDataAction(input);
@@ -347,7 +406,7 @@ export function AdminOrdersManager({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar por pedido, cliente, telefono, referencia o factura"
+              placeholder="Buscar por pedido, cliente, teléfono, referencia o factura"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             />
           </label>
@@ -361,11 +420,11 @@ export function AdminOrdersManager({
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-        <div className="rounded-lg border border-black/10 bg-white">
+      <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-black/10 bg-white">
           <div className="border-b border-black/10 p-4">
             <h2 className="font-semibold">Pedidos</h2>
-            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta pagina</p>
+            <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta página</p>
           </div>
           <div className="divide-y divide-black/10">
             {filteredOrders.length === 0 ? <p className="p-4 text-sm text-black/55">No se encontraron resultados.</p> : null}
@@ -378,12 +437,18 @@ export function AdminOrdersManager({
                   selectedOrder?.id === order.id ? "bg-[#fff1f2]" : "bg-white hover:bg-[#f4f4f5]"
                 }`}
               >
-                <p className="font-semibold">{order.order_number}</p>
-                {order.tracking_code ? <p className="mt-1 text-xs text-[#b91c25]">{order.tracking_code}</p> : null}
-                <p className="mt-1 text-sm text-black/55">{order.customer_name}</p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="break-words font-semibold [overflow-wrap:anywhere]">{order.order_number}</p>
+                  <span className="rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold text-black/65">
+                    {orderStatusLabels[canonicalOrderStatus(order.status)] ?? order.status}
+                  </span>
+                </div>
+                {order.tracking_code ? <p className="mt-1 break-words text-xs text-[#b91c25] [overflow-wrap:anywhere]">{order.tracking_code}</p> : null}
+                <p className="mt-1 break-words text-sm text-black/55 [overflow-wrap:anywhere]">{order.customer_name}</p>
                 {canViewFinancialData ? <p className="mt-1 text-sm font-medium">{formatCurrency(order.total)}</p> : null}
+                <p className="mt-1 text-xs text-black/50">{paymentDisplayLabel(order)}</p>
                 {canViewFinancialData && order.invoice_number ? (
-                  <p className="mt-1 text-xs font-medium text-[#b91c25]">
+                  <p className="mt-1 break-words text-xs font-medium text-[#b91c25] [overflow-wrap:anywhere]">
                     Factura {order.invoice_number}
                     {order.invoice_status === "anulada" || order.invoice_status === "cancelled" ? " anulada" : ""}
                   </p>
@@ -461,6 +526,16 @@ export function AdminOrdersManager({
           onCorrect={correctFiscalCustomerData}
         />
       ) : null}
+      {invoicePreview ? (
+        <InvoicePreviewModal
+          invoice={invoicePreview}
+          isPending={isPending}
+          onClose={() => setInvoicePreview(null)}
+          onDownload={() => downloadInvoicePdf(invoicePreview)}
+          onPrint={() => printInvoiceDocument(invoicePreview)}
+          onCopyWhatsapp={() => void copyInvoiceWhatsappMessage(invoicePreview)}
+        />
+      ) : null}
       {orderToExtend ? (
         <ExtendReservationModal
           order={orderToExtend}
@@ -478,8 +553,38 @@ function canIssueInvoice(order: AdminOrderRow) {
   const normalizedStatus = canonicalOrderStatus(order.status);
   const orderReady = ["confirmado", "preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(normalizedStatus);
   const reservationReleased = ["released", "expired", "canceled"].includes(order.order_reservation_status);
-  const activeInvoice = Boolean(order.invoice_number && !["anulada", "cancelled"].includes(String(order.invoice_status ?? "")));
-  return paymentConfirmed && orderReady && normalizedStatus !== "cancelado" && !reservationReleased && !activeInvoice;
+  return paymentConfirmed && orderReady && normalizedStatus !== "cancelado" && !reservationReleased && !orderHasActiveInvoice(order);
+}
+
+function OrderItemCard({
+  item,
+  canViewFinancialData,
+}: {
+  item: AdminOrderRow["order_items"][number];
+  canViewFinancialData: boolean;
+}) {
+  return (
+    <article className="rounded-md border border-black/10 bg-white p-3 text-sm">
+      <p className="break-words font-semibold [overflow-wrap:anywhere]">{item.product_name}</p>
+      <p className="mt-1 break-words text-xs text-black/50 [overflow-wrap:anywhere]">SKU: {item.sku || "-"}</p>
+      <div className="mt-3 grid gap-2 text-xs text-black/60">
+        <div className="flex items-center justify-between gap-3">
+          <span>Cantidad</span>
+          <span className="shrink-0 font-medium">{item.quantity}</span>
+        </div>
+        {canViewFinancialData ? (
+          <div className="flex items-center justify-between gap-3">
+            <span>Total</span>
+            <span className="shrink-0 font-semibold">{formatCurrency(item.line_total)}</span>
+          </div>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function orderHasActiveInvoice(order: AdminOrderRow) {
+  return Boolean(order.invoice_number && !["anulada", "cancelled"].includes(String(order.invoice_status ?? "")));
 }
 
 function OrderDetail({
@@ -570,15 +675,15 @@ function OrderDetail({
   const nextStatusActions = nextStatusActionOptions.filter((action) => allowedStatuses.some((option) => option.value === action.status));
 
   return (
-    <article className="rounded-lg border border-black/10 bg-white">
+    <article className="min-w-0 overflow-hidden rounded-lg border border-black/10 bg-white">
       <div className="flex flex-col justify-between gap-3 border-b border-black/10 p-4 sm:flex-row sm:items-start">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-black/50">{formatHnDateTime(order.created_at)}</p>
-          <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
-            <PackageCheck size={22} />
+          <h2 className="mt-1 flex min-w-0 items-center gap-2 break-words text-xl font-semibold [overflow-wrap:anywhere]">
+            <PackageCheck size={22} className="shrink-0" />
             {order.order_number}
           </h2>
-          <p className="mt-1 text-sm text-black/60">
+          <p className="mt-1 break-words text-sm text-black/60 [overflow-wrap:anywhere]">
             {order.customer_name} / {order.phone}
           </p>
         </div>
@@ -599,7 +704,7 @@ function OrderDetail({
       <div className="space-y-4 p-4">
         {normalizedStatus === "cancelado" ? (
           <div className="rounded-md border border-[#9b341b]/25 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            Este pedido esta cancelado. No requiere avance operativo.
+            Este pedido está cancelado. No requiere avance operativo.
           </div>
         ) : null}
 
@@ -619,13 +724,13 @@ function OrderDetail({
           <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
           <ContactActions phone={order.phone} customerName={order.customer_name} whatsappMessage={buildOrderWhatsappMessage(order)} />
           {order.tracking_code ? (
             <button
               type="button"
               onClick={async () => navigator.clipboard.writeText(order.tracking_code ?? "")}
-              className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium sm:w-auto"
             >
               <Copy size={15} />
               Copiar tracking
@@ -633,57 +738,57 @@ function OrderDetail({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
           {canManageOrders && canAcceptOrder ? (
-            <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary">
+            <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary" className="w-full sm:w-auto">
               <CheckCircle2 size={17} />
               Aceptar pedido
             </Button>
           ) : null}
           {canManageLogistics ? nextStatusActions.map((action) => (
-            <Button key={action.status} onClick={() => onUpdateOrderStatus(action.status)} disabled={isPending} variant="ghost">
+            <Button key={action.status} onClick={() => onUpdateOrderStatus(action.status)} disabled={isPending} variant="ghost" className="w-full sm:w-auto">
               <CheckCircle2 size={17} />
               {action.label}
             </Button>
           )) : null}
           {canConfirmPayment ? (
-            <Button onClick={onApprovePayment} disabled={isPending} variant="primary">
+            <Button onClick={onApprovePayment} disabled={isPending} variant="primary" className="w-full sm:w-auto">
               <CheckCircle2 size={17} />
               {isPending ? "Procesando..." : paymentActionLabel}
             </Button>
           ) : null}
           {canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
-            <Button onClick={onRejectPayment} disabled={isPending} variant="secondary">
+            <Button onClick={onRejectPayment} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
               <XCircle size={17} />
               Rechazar pago
             </Button>
           ) : null}
           {canGenerateInvoices && !order.invoice_number ? (
-            <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark">
+            <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark" className="w-full sm:w-auto">
               <FileText size={17} />
               {isPending ? "Generando..." : "Generar factura"}
             </Button>
           ) : null}
           {canViewFinancialData && order.invoice_number ? (
-            <Button onClick={onReprintInvoice} variant="ghost">
-              <Printer size={17} />
-              {invoiceIsCancelled ? "Reimprimir anulada" : "Reimprimir factura"}
+            <Button onClick={onReprintInvoice} variant="ghost" className="w-full sm:w-auto">
+              <FileText size={17} />
+              {invoiceIsCancelled ? "Ver factura anulada" : "Ver factura"}
             </Button>
           ) : null}
           {canCancelInvoices && hasActiveInvoice ? (
-            <Button onClick={onCancelInvoice} disabled={isPending} variant="secondary">
+            <Button onClick={onCancelInvoice} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
               <Ban size={17} />
               Anular factura
             </Button>
           ) : null}
           {canCorrectInvoices && canViewFinancialData ? (
-            <Button onClick={onCorrectFiscalData} disabled={isPending || invoiceIsCancelled} variant="ghost">
+            <Button onClick={onCorrectFiscalData} disabled={isPending || invoiceIsCancelled} variant="ghost" className="w-full sm:w-auto">
               <FilePenLine size={17} />
               Editar datos fiscales
             </Button>
           ) : null}
           {canCancelOrders && canCancelOrder ? (
-            <Button onClick={onCancelOrder} disabled={isPending} variant="secondary">
+            <Button onClick={onCancelOrder} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
               <XCircle size={17} />
               Cancelar pedido
             </Button>
@@ -709,8 +814,8 @@ function OrderDetail({
 
           <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <CompactInfo label="Cliente" value={order.customer_name} />
-            <CompactInfo label="Telefono" value={order.phone} />
-            {order.tracking_code ? <CompactInfo label="Codigo" value={order.tracking_code} /> : null}
+            <CompactInfo label="Teléfono" value={order.phone} />
+            {order.tracking_code ? <CompactInfo label="Código" value={order.tracking_code} /> : null}
             {canViewFinancialData ? <CompactInfo label="RTN" value={order.fiscal_customer_rtn ?? "Sin RTN"} /> : null}
           </div>
         </div>
@@ -720,19 +825,19 @@ function OrderDetail({
             <summary className="cursor-pointer text-sm font-semibold">Detalles operativos y fiscales</summary>
             <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
-              <CompactInfo label="Metodo de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
+              <CompactInfo label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
               <CompactInfo label="Momento del pago" value={paymentTimingLabels[order.payment_timing] ?? order.payment_timing} />
               <CompactInfo label="Subtotal" value={formatCurrency(order.subtotal)} />
               <CompactInfo label="ISV" value={formatCurrency(order.tax)} />
               <CompactInfo label="Total" value={formatCurrency(order.total)} />
-              <CompactInfo label="Envio" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
+              <CompactInfo label="Envío" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
               <CompactInfo label="Contra entrega" value={formatCurrency(order.cash_on_delivery_fee)} />
-              <CompactInfo label="Recargo minimo" value={formatCurrency(order.small_order_fee)} />
+              <CompactInfo label="Recargo mínimo" value={formatCurrency(order.small_order_fee)} />
               <CompactInfo label="Descuentos" value={order.discount_total > 0 ? `-${formatCurrency(order.discount_total)}` : formatCurrency(0)} />
               <CompactInfo label="Otros cargos" value={formatCurrency(order.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))} />
               <CompactInfo label="Nombre fiscal" value={order.fiscal_customer_name} />
               <CompactInfo label="RTN fiscal" value={order.fiscal_customer_rtn ?? "Sin RTN"} />
-              <CompactInfo label="Direccion fiscal" value={order.fiscal_customer_address ?? "Sin direccion"} />
+              <CompactInfo label="Dirección fiscal" value={order.fiscal_customer_address ?? "Sin dirección"} />
               <CompactInfo label="Factura fiscal" value={order.invoice_number ?? "Sin factura"} />
               <CompactInfo label="Estado factura" value={invoiceIsCancelled ? "Factura anulada" : order.invoice_number ? "Factura emitida" : "Sin factura"} />
             </div>
@@ -759,7 +864,7 @@ function OrderDetail({
             ) : null}
             {invoiceIsCancelled ? (
               <p className="mt-3 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-                Factura anulada. Motivo: {order.invoice_cancellation_reason ?? "motivo registrado en auditoria"}.
+                Factura anulada. Motivo: {order.invoice_cancellation_reason ?? "motivo registrado en auditoría"}.
               </p>
             ) : null}
           </details>
@@ -769,24 +874,29 @@ function OrderDetail({
 
         {isCard && !paymentIsApproved ? (
           <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            Pago con tarjeta por link pendiente de enviar/confirmar. Usa WhatsApp para enviar el link y confirma manualmente cuando el pago sea verificado.
+            Pago con tarjeta por link pendiente de enviar o confirmar. Usa WhatsApp para enviar el link y confirma manualmente cuando el pago sea verificado.
           </p>
         ) : null}
         {isCash && !paymentIsApproved && normalizedStatus !== "entregado" && normalizedStatus !== "cancelado" ? (
           <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            El pago en efectivo se confirma despues de marcar el pedido como entregado.
+            El pago en efectivo se confirma después de marcar el pedido como entregado.
           </p>
         ) : null}
         {canGenerateInvoices && !order.invoice_number && !invoiceCanBeIssued ? (
           <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            La factura se habilita solo con pago confirmado, pedido activo e inventario no liberado.
+            La factura solo puede generarse cuando el pago esté confirmado. También debe ser un pedido activo con inventario no liberado.
           </p>
         ) : null}
         {message ? <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
 
         <div className="overflow-hidden rounded-lg border border-black/10">
           <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos</div>
-          <div className="overflow-x-auto">
+          <div className="grid gap-3 p-3 md:hidden">
+            {order.order_items.map((item) => (
+              <OrderItemCard key={`${order.id}-${item.id}-card`} item={item} canViewFinancialData={canViewFinancialData} />
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[620px] text-left text-sm">
               <thead className="text-xs uppercase text-black/50">
                 <tr>
@@ -799,8 +909,8 @@ function OrderDetail({
               <tbody className="divide-y divide-black/10">
                 {order.order_items.map((item) => (
                   <tr key={`${order.id}-${item.id}`}>
-                    <td className="px-3 py-2">{item.product_name}</td>
-                    <td className="px-3 py-2 text-black/55">{item.sku}</td>
+                    <td className="px-3 py-2 break-words [overflow-wrap:anywhere]">{item.product_name}</td>
+                    <td className="px-3 py-2 break-words text-black/55 [overflow-wrap:anywhere]">{item.sku}</td>
                     <td className="px-3 py-2">{item.quantity}</td>
                     {canViewFinancialData ? <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.line_total)}</td> : null}
                   </tr>
@@ -812,7 +922,7 @@ function OrderDetail({
 
         {canViewFinancialData ? (
           <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            Validar tratamiento fiscal de envio y comision con la contadora.
+            Validar tratamiento fiscal de envío y comisión con la contadora.
           </p>
         ) : null}
       </div>
@@ -839,8 +949,8 @@ function CancelOrderModal({
     <ConfirmReasonModal
       title="Cancelar pedido"
       identifier={order.order_number}
-      reasonLabel="Motivo de cancelacion"
-      description="El pedido quedara como estado final y la reserva se liberara si aplica."
+      reasonLabel="Motivo de cancelación"
+      description="El pedido quedará como estado final y la reserva se liberará si aplica."
       icon={<XCircle size={18} />}
       reason={reason}
       confirmation={confirmation}
@@ -878,9 +988,9 @@ function ReservationReviewPanel({
       <p className="mt-1">
         El stock sigue reservado. Revisa el pago y el avance del pedido antes de confirmar, extender o cancelar.
       </p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
         {canExtendReservations ? (
-          <Button onClick={onExtendReservation} disabled={isPending} variant="ghost">
+          <Button onClick={onExtendReservation} disabled={isPending} variant="ghost" className="w-full sm:w-auto">
             Extender reserva
           </Button>
         ) : null}
@@ -895,6 +1005,7 @@ function ReservationReviewPanel({
             }}
             disabled={isPending || note.trim().length < 3}
             variant="ghost"
+            className="w-full sm:w-auto"
           >
             Guardar nota
           </Button>
@@ -928,8 +1039,8 @@ function ExtendReservationModal({
   const [reason, setReason] = useState("");
 
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <h2 className="text-xl font-semibold">Extender reserva</h2>
         <p className="mt-1 text-sm text-black/60">{order.order_number}</p>
         <label className="mt-4 block">
@@ -952,17 +1063,98 @@ function ExtendReservationModal({
             className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm"
           />
         </label>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={onClose} variant="ghost">
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Button onClick={onClose} variant="ghost" className="w-full sm:w-auto">
             Cancelar
           </Button>
-          <Button onClick={() => onExtend(minutes, reason)} disabled={isPending || reason.trim().length < 4} variant="primary">
+          <Button onClick={() => onExtend(minutes, reason)} disabled={isPending || reason.trim().length < 4} variant="primary" className="w-full sm:w-auto">
             Extender reserva
           </Button>
         </div>
       </section>
     </div>
   );
+}
+
+function InvoicePreviewModal({
+  invoice,
+  isPending,
+  onDownload,
+  onPrint,
+  onCopyWhatsapp,
+  onClose,
+}: {
+  invoice: AdminInvoiceDetail;
+  isPending: boolean;
+  onDownload: () => void;
+  onPrint: () => void;
+  onCopyWhatsapp: () => void;
+  onClose: () => void;
+}) {
+  const officialInvoice = adminInvoiceToOfficialInvoice(invoice);
+
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-hidden bg-black/45 p-0 print:static print:bg-white print:p-0 sm:p-4">
+      <section className="mx-auto flex h-[100dvh] w-full max-w-full flex-col overflow-hidden rounded-none bg-white text-[#080808] shadow-xl print:my-0 print:max-w-none print:rounded-none print:shadow-none sm:my-6 sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-6xl sm:rounded-lg">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-black/10 p-4 print:hidden sm:flex-row sm:items-start sm:justify-between sm:p-5">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-semibold text-[#b91c25]">
+              <FileText size={18} />
+              Factura emitida
+            </p>
+            <h2 className="mt-1 break-words text-xl font-semibold [overflow-wrap:anywhere] sm:text-2xl">{invoice.invoice_number}</h2>
+            <p className="mt-1 text-sm text-black/55">Pedido #{invoice.order_number}</p>
+          </div>
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:flex-wrap">
+            <Button onClick={onDownload} variant="primary" disabled={isPending} className="w-full whitespace-normal px-3 sm:w-auto">
+              <FileText size={16} />
+              Descargar PDF
+            </Button>
+            <Button onClick={onPrint} variant="ghost" className="w-full whitespace-normal px-3 sm:w-auto">
+              <Printer size={16} />
+              Imprimir
+            </Button>
+            <Button onClick={onCopyWhatsapp} variant="ghost" className="w-full whitespace-normal px-3 sm:w-auto">
+              <Copy size={16} />
+              Copiar mensaje WhatsApp
+            </Button>
+            <Button onClick={onClose} variant="secondary" className="w-full whitespace-normal px-3 sm:w-auto">
+              Volver al pedido
+            </Button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#d4d4d4]">
+          <OfficialInvoiceDocument invoice={officialInvoice} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function printInvoiceDocument(invoice: AdminInvoiceDetail) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.srcdoc = buildOfficialInvoicePrintHtml(adminInvoiceToOfficialInvoice(invoice), { baseUrl: window.location.origin });
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) {
+      iframe.remove();
+      return;
+    }
+
+    printWindow.focus();
+    printWindow.print();
+    window.setTimeout(() => iframe.remove(), 1000);
+  };
 }
 
 function CorrectOrderFiscalDataModal({
@@ -977,41 +1169,27 @@ function CorrectOrderFiscalDataModal({
     orderId: string;
     customerName: string;
     customerRtn: string;
-    customerPhone: string;
-    customerEmail: string;
-    customerAddress: string;
-    correctionReason: string;
   }) => void;
   onClose: () => void;
 }) {
   const [customerName, setCustomerName] = useState(order.fiscal_customer_name);
   const [customerRtn, setCustomerRtn] = useState(order.fiscal_customer_rtn ?? "");
-  const [customerPhone, setCustomerPhone] = useState(order.fiscal_customer_phone ?? order.phone ?? "");
-  const [customerEmail, setCustomerEmail] = useState(order.fiscal_customer_email ?? order.email ?? "");
-  const [customerAddress, setCustomerAddress] = useState(order.fiscal_customer_address ?? order.delivery_address ?? "");
-  const [correctionReason, setCorrectionReason] = useState("");
-  const [confirmingCorrection, setConfirmingCorrection] = useState(false);
   const normalizedRtn = customerRtn.trim().replace(/[\s-]/g, "");
   const rtnIsValid = normalizedRtn.length === 0 || /^\d{14}$/.test(normalizedRtn);
-  const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
-  const canSubmit = customerName.trim().length > 0 && correctionReason.trim().length >= 10 && rtnIsValid && !invoiceIsCancelled;
+  const hasIssuedInvoice = Boolean(order.invoice_number);
+  const canSubmit = customerName.trim().length >= 2 && rtnIsValid && !hasIssuedInvoice;
 
   function submitCorrection() {
     onCorrect({
       orderId: order.id,
       customerName,
       customerRtn,
-      customerPhone,
-      customerEmail,
-      customerAddress,
-      correctionReason,
     });
-    setConfirmingCorrection(false);
   }
 
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-8 max-w-3xl rounded-lg bg-white p-5 text-[#080808]">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
         <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold text-[#b91c25]">
@@ -1023,14 +1201,14 @@ function CorrectOrderFiscalDataModal({
               {order.invoice_number ? `Factura ${order.invoice_number}` : "Pedido sin factura emitida"}
             </p>
           </div>
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} variant="ghost" className="w-full sm:w-auto">
             Cerrar
           </Button>
         </div>
 
-        {invoiceIsCancelled ? (
+        {hasIssuedInvoice ? (
           <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            No se pueden corregir datos de una factura anulada.
+            {fiscalCorrectionIssuedInvoiceWarning}
           </p>
         ) : (
           <>
@@ -1039,57 +1217,27 @@ function CorrectOrderFiscalDataModal({
             </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Nombre / Razon social</span>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Nombre / Razón social</span>
                 <Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+                {customerName.trim().length > 0 && customerName.trim().length < 2 ? (
+                  <p className="mt-1 text-xs font-medium text-[#b91c25]">Ingresa un nombre fiscal válido.</p>
+                ) : null}
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN del cliente</span>
-                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
+                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 dígitos o vacío" />
                 {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 dígitos.</p> : null}
               </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Telefono</span>
-                <Input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
-                <Input value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
-              </label>
-              <label className="md:col-span-2">
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Direccion fiscal</span>
-                <Input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
-              </label>
-              <label className="md:col-span-2">
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de correccion</span>
-                <textarea
-                  value={correctionReason}
-                  onChange={(event) => setCorrectionReason(event.target.value)}
-                  className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
-                  placeholder="Ej. Cliente solicito corregir RTN."
-                />
-              </label>
             </div>
-            {confirmingCorrection ? (
-              <div className="mt-4 rounded-md border border-[#f59e0b]/35 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
-                <p>{fiscalCorrectionWarning}</p>
-                <div className="mt-3 flex flex-wrap justify-end gap-2">
-                  <Button onClick={() => setConfirmingCorrection(false)} variant="ghost">
-                    Cancelar
-                  </Button>
-                  <Button onClick={submitCorrection} disabled={isPending || !canSubmit} variant="primary">
-                    Guardar corrección
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <Button onClick={onClose} variant="ghost">
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <Button onClick={onClose} variant="ghost" className="w-full sm:w-auto">
                 Cancelar
               </Button>
               <Button
-                onClick={() => setConfirmingCorrection(true)}
+                onClick={submitCorrection}
                 disabled={isPending || !canSubmit}
                 variant="primary"
+                className="w-full sm:w-auto"
               >
                 {isPending ? "Guardando..." : "Guardar corrección"}
               </Button>
@@ -1109,7 +1257,7 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
         <p className="mt-2 text-sm text-black/55">Sin correcciones fiscales registradas.</p>
       ) : (
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-3 py-2">Fecha</th>
@@ -1117,7 +1265,6 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
                 <th className="px-3 py-2">Campo</th>
                 <th className="px-3 py-2">Valor anterior</th>
                 <th className="px-3 py-2">Valor nuevo</th>
-                <th className="px-3 py-2">Motivo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
@@ -1136,7 +1283,6 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
                     <td className="px-3 py-2">{fiscalCorrectionFieldLabels[field] ?? field}</td>
                     <td className="px-3 py-2">{entry.old_values[field] || "-"}</td>
                     <td className="px-3 py-2">{entry.new_values[field] || "-"}</td>
-                    <td className="px-3 py-2">{entry.correction_reason ?? "-"}</td>
                   </tr>
                 ));
               })}
@@ -1168,7 +1314,7 @@ function RejectPaymentModal({
       title="Rechazar pago"
       identifier={order.order_number}
       reasonLabel="Motivo del rechazo"
-      description="El pago rechazado cancelara el pedido y liberara la reserva segun la logica de inventario."
+      description="El pago rechazado cancelará el pedido y liberará la reserva según la lógica de inventario."
       icon={<XCircle size={18} />}
       reason={reason}
       confirmation={confirmation}
@@ -1203,8 +1349,8 @@ function CancelOrderInvoiceModal({
     <ConfirmReasonModal
       title="Anular factura"
       identifier={invoiceNumber}
-      reasonLabel="Motivo de anulacion"
-      description="No se elimina la factura: conserva numero fiscal, CAI, fecha, motivo y auditoria."
+      reasonLabel="Motivo de anulación"
+      description="No se elimina la factura: conserva número fiscal, CAI, fecha, motivo y auditoría."
       icon={<Ban size={18} />}
       reason={reason}
       confirmation={confirmation}
@@ -1251,8 +1397,8 @@ function ConfirmReasonModal({
   onClose: () => void;
 }) {
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-[#9b341b]">
             {icon}
@@ -1270,7 +1416,7 @@ function ConfirmReasonModal({
           />
         </label>
         <label className="mt-4 block">
-          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmacion fuerte</span>
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmación fuerte</span>
           <input
             value={confirmation}
             onChange={(event) => onConfirmationChange(event.target.value)}
@@ -1278,11 +1424,11 @@ function ConfirmReasonModal({
             className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
           />
         </label>
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <Button onClick={onClose} variant="ghost">
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+          <Button onClick={onClose} variant="ghost" className="w-full sm:w-auto">
             Cerrar
           </Button>
-          <Button onClick={onSubmit} disabled={isPending || !canSubmit} variant="secondary">
+          <Button onClick={onSubmit} disabled={isPending || !canSubmit} variant="secondary" className="w-full sm:w-auto">
             {submitLabel}
           </Button>
         </div>
@@ -1295,7 +1441,7 @@ function CompactInfo({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
       <p className="text-xs uppercase text-black/45">{label}</p>
-      <p className="mt-1 truncate font-medium" title={value}>
+      <p className="mt-1 break-words font-medium [overflow-wrap:anywhere]" title={value}>
         {value}
       </p>
     </div>
@@ -1317,5 +1463,5 @@ function Badge({
     neutral: "bg-[#f4f4f5] text-black/70",
   };
 
-  return <span className={`w-fit rounded-md px-3 py-2 text-sm font-medium ${classes[tone]}`}>{children}</span>;
+  return <span className={`w-fit max-w-full rounded-md px-3 py-2 text-sm font-medium whitespace-normal [overflow-wrap:anywhere] ${classes[tone]}`}>{children}</span>;
 }

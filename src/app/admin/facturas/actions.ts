@@ -47,7 +47,7 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
   const reason = cancellationReason.trim();
 
   if (reason.length < 8) {
-    return { ok: false, message: "El motivo de anulacion es obligatorio." };
+    return { ok: false, message: "El motivo de anulación es obligatorio." };
   }
 
   const supabase = await getSupabaseServerClient();
@@ -142,5 +142,5 @@ export async function logInvoiceReprintAction(invoiceId: string) {
 
   revalidatePath("/admin/facturas");
   revalidatePath("/admin/seguridad");
-  return { ok: true, message: "Reimpresion fiscal registrada en auditoria." };
+  return { ok: true, message: "Reimpresión fiscal registrada en auditoría." };
 }

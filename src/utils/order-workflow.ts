@@ -62,7 +62,7 @@ const canonicalStatusMap: Record<string, OrderWorkflowStatus> = {
 export const orderStatusLabels: Record<string, string> = {
   recibido: "Pedido recibido",
   confirmado: "Pedido aceptado",
-  preparacion: "En preparacion",
+  preparacion: "En preparación",
   empacado: "Empacado",
   enviado: "Enviado",
   en_ruta: "En ruta",
@@ -71,7 +71,7 @@ export const orderStatusLabels: Record<string, string> = {
   pending: "Pedido recibido",
   confirmed: "Pedido aceptado",
   paid: "Pedido aceptado",
-  preparing: "En preparacion",
+  preparing: "En preparación",
   shipped: "Enviado",
   delivered: "Entregado",
   cancelled: "Cancelado",
@@ -80,7 +80,7 @@ export const orderStatusLabels: Record<string, string> = {
 const orderStatusOptions: OrderStatusOption[] = [
   { value: "recibido", label: "Pedido recibido" },
   { value: "confirmado", label: "Pedido aceptado" },
-  { value: "preparacion", label: "En preparacion" },
+  { value: "preparacion", label: "En preparación" },
   { value: "empacado", label: "Empacado" },
   { value: "enviado", label: "Enviado" },
   { value: "en_ruta", label: "En ruta" },
@@ -217,7 +217,7 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
 
   if (order.payment_method === "bank_transfer") {
     if (order.payment_timing === "on_delivery") return "Pago pendiente al recibir";
-    return hasTransferReceipt(order) ? "Comprobante en revision" : "Pago en revision";
+    return hasTransferReceipt(order) ? "Comprobante en revisión" : "Pago en revisión";
   }
 
   if (order.payment_method === "card") {
@@ -237,7 +237,7 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
   if (order.payment_method === "cash") {
     if (current === "recibido") return "Revisar y aceptar el pedido antes de prepararlo.";
     if (!paymentConfirmed && current === "entregado") return "Confirmar pago recibido para cerrar el pedido.";
-    if (!paymentConfirmed) return "Continuar preparacion solo si el pedido ya fue aceptado; confirmar pago al recibir el dinero.";
+    if (!paymentConfirmed) return "Continuar preparación solo si el pedido ya fue aceptado; confirmar pago al recibir el dinero.";
     return "Pago recibido. Continuar seguimiento operativo.";
   }
 
@@ -257,6 +257,6 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
     return "Pago con tarjeta confirmado manualmente. Preparar pedido.";
   }
 
-  if (!paymentConfirmed) return "Esperar confirmacion real del pago antes de preparar.";
+  if (!paymentConfirmed) return "Esperar confirmación real del pago antes de preparar.";
   return "Pago aprobado. Preparar pedido.";
 }

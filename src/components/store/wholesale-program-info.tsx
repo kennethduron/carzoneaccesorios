@@ -11,7 +11,7 @@ const conditionItems = [
   ["Atencion personalizada", Handshake],
   ["Beneficios exclusivos", Sparkles],
   ["Primera compra minima de L 10,000", ShoppingBag],
-  ["Compras posteriores sin monto minimo", Repeat],
+  ["Compras posteriores sin monto mínimo", Repeat],
 ] as const;
 
 export function WholesaleProgramConditionsCard({ compact = false }: { compact?: boolean }) {
@@ -24,8 +24,8 @@ export function WholesaleProgramConditionsCard({ compact = false }: { compact?: 
         <div className="min-w-0">
           <h3 className="font-semibold">Condiciones del programa mayorista</h3>
           <p className="mt-1 text-sm leading-6 text-black/60">
-            Tu primera compra mayorista debe alcanzar un total final de L 10,000 o mas. Despues de completar esa compra, puedes
-            realizar pedidos sin monto minimo.
+            Tu primera compra mayorista debe alcanzar un total final de L 10,000 o más. Después de completar esa compra, puedes
+            realizar pedidos sin monto mínimo.
           </p>
         </div>
       </div>
@@ -56,8 +56,8 @@ export function WholesaleSignupInfo() {
         </div>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <InfoItem icon={<BadgePercent size={15} />} text="Primera compra mayorista con total final minimo: L 10,000." />
-        <InfoItem icon={<Repeat size={15} />} text="Compras posteriores sin monto minimo." />
+        <InfoItem icon={<BadgePercent size={15} />} text="Primera compra mayorista con total final mínimo: L 10,000." />
+        <InfoItem icon={<Repeat size={15} />} text="Compras posteriores sin monto mínimo." />
       </div>
       <Link href="/contacto#mayoreo" className="mt-3 inline-flex text-sm font-semibold text-[#b91c25]">
         Conocer programa mayorista

@@ -137,13 +137,13 @@ export async function saveBusinessSettingsAction(input: BusinessSettings) {
 export async function saveNotificationPreferenceAction(input: NotificationPreferenceUpdate) {
   const profile = await getSessionProfile();
   if (!profile || !hasBusinessSettingsAccess(profile.role)) {
-    return { ok: false, message: "No tienes autorizacion para cambiar preferencias de notificacion." };
+    return { ok: false, message: "No tienes autorización para cambiar preferencias de notificación." };
   }
 
   const existing = await getAdminNotificationPreferenceById(input.id);
 
   if (!existing) {
-    return { ok: false, message: "Preferencia de notificacion no encontrada." };
+    return { ok: false, message: "Preferencia de notificación no encontrada." };
   }
 
   const allowedRoles: AppRole[] = ["technical_owner", "business_owner", "admin", "contadora", "bodega", "vendedor", "soporte"];
@@ -153,7 +153,7 @@ export async function saveNotificationPreferenceAction(input: NotificationPrefer
   );
 
   if (existing.technical_only && profile.role !== "technical_owner") {
-    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones tecnicas." };
+    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones técnicas." };
   }
 
   const saved = await saveAdminNotificationPreference({
@@ -177,22 +177,22 @@ export async function saveNotificationPreferenceAction(input: NotificationPrefer
   });
 
   revalidatePath("/admin/configuracion");
-  return { ok: true, message: "Preferencia de notificacion guardada." };
+  return { ok: true, message: "Preferencia de notificación guardada." };
 }
 
 export async function saveUserNotificationPreferenceAction(input: NotificationUserPreferenceUpdate) {
   const profile = await getSessionProfile();
   if (!profile) {
-    return { ok: false, message: "Debes iniciar sesion para cambiar tus notificaciones." };
+    return { ok: false, message: "Debes iniciar sesión para cambiar tus notificaciones." };
   }
 
   const existing = await getAdminNotificationPreferenceByType(input.notification_type);
   if (existing?.technical_only && profile.role !== "technical_owner") {
-    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones tecnicas." };
+    return { ok: false, message: "Solo technical_owner puede gestionar notificaciones técnicas." };
   }
 
   if (!existing) {
-    return { ok: false, message: "Preferencia de notificacion no encontrada." };
+    return { ok: false, message: "Preferencia de notificación no encontrada." };
   }
 
   if (profile.role === "contadora" && !isAccountantNotificationType(existing.notification_type)) {
@@ -216,5 +216,5 @@ export async function saveUserNotificationPreferenceAction(input: NotificationUs
   });
 
   revalidatePath("/admin/configuracion");
-  return { ok: true, message: "Tus preferencias de notificacion fueron guardadas." };
+  return { ok: true, message: "Tus preferencias de notificación fueron guardadas." };
 }

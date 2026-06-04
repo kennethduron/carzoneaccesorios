@@ -2041,7 +2041,7 @@ const customerProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
 
 const internalProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
   { id: "resumen", label: "Resumen operativo" },
-  { id: "informacion", label: "Informacion" },
+  { id: "informacion", label: "Información" },
   { id: "compras", label: "Compras personales" },
   { id: "facturas", label: "Facturas vinculadas" },
   { id: "acciones", label: "Seguridad" },
@@ -2338,7 +2338,7 @@ function CustomerProfileInfo({ customer, compact = false }: { customer: CrmCusto
           <InfoLine label="Nombre" value={customerDisplayName(customer)} />
           <InfoLine label="Usuario" value={customer.account_full_name ?? customerDisplayName(customer)} />
           <InfoLine label="Correo" value={customer.account_email ?? customer.email ?? "Sin correo"} />
-          <InfoLine label="Telefono" value={customer.account_phone ?? customer.phone ?? "Sin telefono"} />
+        <InfoLine label="Teléfono" value={customer.account_phone ?? customer.phone ?? "Sin teléfono"} />
           <InfoLine label="Rol" value={customer.account_role ? roleLabels[customer.account_role] : customer.profile_label} />
           <InfoLine label="Estado" value={customer.account_active === false || !customer.active ? "Suspendido" : "Activo"} />
           <InfoLine label="Fecha de creacion" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
@@ -2401,7 +2401,7 @@ function CustomerProfilePurchases({
   orders,
   compact = false,
   title = "Historial de compras",
-  empty = "Este cliente todavia no tiene compras.",
+  empty = "Este cliente todavía no tiene compras.",
 }: {
   orders: CrmCustomerProfile["orders"];
   compact?: boolean;

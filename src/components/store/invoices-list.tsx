@@ -65,7 +65,7 @@ export function InvoicesList({
               <p>ISV: {formatCurrency(invoice.isv)}</p>
               <p>Envio: {invoice.shippingFee === 0 ? "Gratis" : formatCurrency(invoice.shippingFee)}</p>
               <p>Contra entrega: {formatCurrency(invoice.cashOnDeliveryFee)}</p>
-              <p>Recargo minimo: {formatCurrency(invoice.smallOrderFee)}</p>
+              <p>Recargo mínimo: {formatCurrency(invoice.smallOrderFee)}</p>
               <p>Descuentos: {invoice.discountTotal > 0 ? `-${formatCurrency(invoice.discountTotal)}` : formatCurrency(0)}</p>
               <p>Otros cargos: {formatCurrency(additionalFeesTotal(invoice.additionalFees))}</p>
               <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>

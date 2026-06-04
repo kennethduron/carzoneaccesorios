@@ -12,6 +12,7 @@ import {
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+import { OfficialInvoiceDocument } from "@/components/invoices/official-invoice-document";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -19,6 +20,8 @@ import type { FiscalAlert } from "@/types/fiscal";
 import type { AdminInvoiceDetail, AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
 import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { formatHnDate } from "@/utils/format";
+import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
+import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
 import { formatCurrency } from "@/utils/pricing";
 import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 
@@ -173,7 +176,7 @@ export function AdminInvoicesManager({
       "Referencia bancaria",
       "Subtotal",
       "ISV",
-      "Recargo minimo",
+      "Recargo mínimo",
       "Descuentos",
       "Otros cargos",
       "Envío",
@@ -289,6 +292,10 @@ export function AdminInvoicesManager({
       showInvoiceMessage(result.message || "Factura reimpresa correctamente.", true);
       router.refresh();
     });
+  }
+
+  function printInvoice(invoice: AdminInvoiceDetail) {
+    printInvoiceDocument(invoice);
   }
 
   async function cancelInvoice(invoice: AdminInvoiceRow) {
@@ -540,6 +547,7 @@ export function AdminInvoicesManager({
           isPending={isPending}
           onCorrect={correctInvoiceCustomerData}
           onReprint={() => reprintInvoice(selectedInvoice)}
+          onPrint={() => printInvoice(selectedInvoice)}
           onClose={() => setSelectedInvoice(null)}
         />
       ) : null}
@@ -561,6 +569,7 @@ function InvoiceModal({
   isPending,
   onCorrect,
   onReprint,
+  onPrint,
   onClose,
 }: {
   invoice: AdminInvoiceDetail;
@@ -576,6 +585,7 @@ function InvoiceModal({
     correctionReason: string;
   }) => void;
   onReprint: () => void;
+  onPrint: () => void;
   onClose: () => void;
 }) {
   const [customerName, setCustomerName] = useState(invoice.customer_name);
@@ -588,6 +598,7 @@ function InvoiceModal({
   const normalizedRtn = customerRtn.trim().replace(/[\s-]/g, "");
   const rtnIsValid = normalizedRtn.length === 0 || /^\d{14}$/.test(normalizedRtn);
   const canSubmitCorrection = customerName.trim().length > 0 && correctionReason.trim().length >= 10 && rtnIsValid;
+  const officialInvoice = adminInvoiceToOfficialInvoice(invoice);
 
   function submitCorrection() {
     onCorrect({
@@ -603,30 +614,39 @@ function InvoiceModal({
   }
 
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-8 max-w-4xl rounded-lg bg-white p-5 text-[#080808]">
-        <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
-          <div>
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
+        <div className="flex flex-col gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
             <p className="text-sm text-black/50">{invoice.company_legal_name || "Car Zone Accesorios"}</p>
-            <h2 className="text-2xl font-semibold">{invoice.invoice_number}</h2>
-            <p className="mt-1 text-sm text-black/55">CAI: {invoice.cai || "-"}</p>
+            <h2 className="break-words text-2xl font-semibold [overflow-wrap:anywhere]">{invoice.invoice_number}</h2>
+            <p className="mt-1 break-words text-sm text-black/55 [overflow-wrap:anywhere]">CAI: {invoice.cai || "-"}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={onReprint} variant="dark">
-              <Printer size={16} />
-              Reimprimir factura
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+            <Button onClick={onReprint} variant="dark" className="w-full">
+              <FileText size={16} />
+              Descargar PDF
             </Button>
-            <Button onClick={onClose} variant="ghost">Cerrar</Button>
+            <Button onClick={onPrint} variant="ghost" className="w-full">
+              <Printer size={16} />
+              Imprimir
+            </Button>
+            <Button onClick={onClose} variant="ghost" className="w-full">Cerrar</Button>
           </div>
         </div>
 
+        <section className="-mx-4 bg-[#d4d4d4] sm:-mx-5">
+          <OfficialInvoiceDocument invoice={officialInvoice} />
+        </section>
+
+        <h3 className="mt-5 font-semibold">Datos internos y correcciones</h3>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="Número fiscal" value={invoice.invoice_number} />
           <Info label="CAI" value={invoice.cai ?? "-"} />
           <Info label="Rango autorizado desde" value={invoice.fiscal_range_start ?? "-"} />
           <Info label="Rango autorizado hasta" value={invoice.fiscal_range_end ?? "-"} />
-          <Info label="Fecha limite de emision" value={formatDate(invoice.due_at)} />
-          <Info label="Fecha de emision" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
+          <Info label="Fecha límite de emisión" value={formatDate(invoice.due_at)} />
+          <Info label="Fecha de emisión" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
           <Info label="Cliente" value={invoice.customer_name} />
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
           <Info label="Correo" value={invoice.customer_email ?? "-"} />
@@ -672,7 +692,7 @@ function InvoiceModal({
               </label>
               <label>
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">RTN</span>
-                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 digitos o vacio" />
+                <Input value={customerRtn} onChange={(event) => setCustomerRtn(event.target.value)} placeholder="14 dígitos o vacío" />
                 {!rtnIsValid ? <p className="mt-1 text-xs font-medium text-[#b91c25]">El RTN debe contener 14 dígitos.</p> : null}
               </label>
               <label>
@@ -688,7 +708,7 @@ function InvoiceModal({
                 <Input value={customerAddress} onChange={(event) => setCustomerAddress(event.target.value)} />
               </label>
               <label className="md:col-span-2">
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de correccion</span>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de corrección</span>
                 <textarea
                   value={correctionReason}
                   onChange={(event) => setCorrectionReason(event.target.value)}
@@ -700,7 +720,7 @@ function InvoiceModal({
             {confirmingCorrection ? (
               <div className="mt-4 rounded-md border border-[#f59e0b]/35 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
                 <p>{fiscalCorrectionWarning}</p>
-                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                   <Button onClick={() => setConfirmingCorrection(false)} variant="ghost">
                     Cancelar
                   </Button>
@@ -710,7 +730,7 @@ function InvoiceModal({
                 </div>
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
               <Button onClick={onClose} variant="ghost">Cancelar</Button>
               <Button
                 onClick={() => setConfirmingCorrection(true)}
@@ -730,7 +750,13 @@ function InvoiceModal({
         {canCorrectInvoices ? <FiscalCorrectionHistory history={invoice.fiscal_correction_history} /> : null}
 
         <div className="mt-5 overflow-hidden rounded-lg border border-black/10">
-          <table className="w-full text-left text-sm">
+          <div className="grid gap-3 p-3 md:hidden">
+            {invoice.items.map((item) => (
+              <InvoiceItemCard key={`${item.id}-card`} item={item} />
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-4 py-3">SKU</th>
@@ -744,8 +770,8 @@ function InvoiceModal({
             <tbody className="divide-y divide-black/10">
               {invoice.items.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-4 py-3">{item.sku}</td>
-                  <td className="px-4 py-3">{item.product_name}</td>
+                  <td className="px-4 py-3 break-words [overflow-wrap:anywhere]">{item.sku}</td>
+                  <td className="px-4 py-3 break-words [overflow-wrap:anywhere]">{item.product_name}</td>
                   <td className="px-4 py-3">{item.quantity}</td>
                   <td className="px-4 py-3">{formatCurrency(item.unit_price)}</td>
                   <td className="px-4 py-3">{formatCurrency(item.line_total)}</td>
@@ -754,6 +780,7 @@ function InvoiceModal({
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
@@ -765,7 +792,7 @@ function InvoiceModal({
           <p>ISV: {formatCurrency(invoice.tax)}</p>
           <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
           <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
-          <p>Recargo minimo: {formatCurrency(invoice.small_order_fee)}</p>
+          <p>Recargo mínimo: {formatCurrency(invoice.small_order_fee)}</p>
           <p>Descuentos: {invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0)}</p>
           <p>Otros cargos: {formatCurrency(invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))}</p>
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
@@ -773,6 +800,49 @@ function InvoiceModal({
       </section>
     </div>
   );
+}
+
+function InvoiceItemCard({ item }: { item: AdminInvoiceDetail["items"][number] }) {
+  return (
+    <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-words font-semibold [overflow-wrap:anywhere]">{item.product_name}</p>
+          <p className="mt-1 break-words text-xs text-black/55 [overflow-wrap:anywhere]">SKU: {item.sku}</p>
+        </div>
+        <span className="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-semibold">x{item.quantity}</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-black/65">
+        <p>Precio: {formatCurrency(item.unit_price)}</p>
+        <p className="text-right font-semibold text-black">Total: {formatCurrency(item.line_total)}</p>
+      </div>
+    </div>
+  );
+}
+
+function printInvoiceDocument(invoice: AdminInvoiceDetail) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("aria-hidden", "true");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.srcdoc = buildOfficialInvoicePrintHtml(adminInvoiceToOfficialInvoice(invoice), { baseUrl: window.location.origin });
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    const printWindow = iframe.contentWindow;
+    if (!printWindow) {
+      iframe.remove();
+      return;
+    }
+
+    printWindow.focus();
+    printWindow.print();
+    window.setTimeout(() => iframe.remove(), 1000);
+  };
 }
 
 function CancelInvoiceModal({
@@ -791,8 +861,8 @@ function CancelInvoiceModal({
   const canSubmit = reason.trim().length >= 8 && confirmation.trim() === invoice.invoice_number;
 
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-10 max-w-xl rounded-lg bg-white p-5 text-[#080808]">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
           <p className="text-sm font-semibold text-[#9b341b]">Anular factura</p>
           <h2 className="mt-1 text-2xl font-semibold">{invoice.invoice_number}</h2>
@@ -801,7 +871,7 @@ function CancelInvoiceModal({
           </p>
         </div>
         <label className="mt-4 block">
-          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de anulacion</span>
+          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de anulación</span>
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
@@ -816,7 +886,7 @@ function CancelInvoiceModal({
             placeholder={`Escribe ${invoice.invoice_number}`}
           />
         </label>
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <Button onClick={onClose} variant="ghost">Cerrar</Button>
           <Button onClick={() => onCancel(invoice, reason)} disabled={isPending || !canSubmit} variant="secondary">
             <Ban size={16} />
@@ -879,7 +949,7 @@ function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
       <p className="text-sm text-black/50">{label}</p>
-      <p className="mt-1 font-semibold">{value}</p>
+      <p className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{value}</p>
     </div>
   );
 }

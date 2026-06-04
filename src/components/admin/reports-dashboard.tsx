@@ -94,8 +94,8 @@ const orderStatusLabels: Record<string, string> = {
 
 const paymentStatusLabels: Record<string, string> = {
   pending: "Pendiente",
-  review: "En revision",
-  under_review: "En revision",
+  review: "En revisión",
+  under_review: "En revisión",
   approved: "Confirmado",
   confirmed: "Confirmado",
   paid: "Pagado",
@@ -390,7 +390,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         "Precio unitario": formatCurrency(item.unit_price),
         Subtotal: formatCurrency(item.line_total),
         "Tipo de precio": priceModeLabels[item.applied_price_mode] ?? priceModeLabels[order.price_mode] ?? order.price_mode,
-        "Metodo de pago": paymentLabels[payment?.payment_method ?? order.payment_method] ?? order.payment_method,
+        "Método de pago": paymentLabels[payment?.payment_method ?? order.payment_method] ?? order.payment_method,
         Estado: orderStatusLabels[order.status] ?? order.status,
       }));
     });
@@ -403,9 +403,9 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       Pedido: invoice.order_number ?? "-",
       Subtotal: formatCurrency(invoice.subtotal),
       ISV: formatCurrency(invoice.tax),
-      Envio: formatCurrency(invoice.shipping_fee),
+      Envío: formatCurrency(invoice.shipping_fee),
       "Contra entrega": formatCurrency(invoice.cash_on_delivery_fee),
-      "Recargo minimo": formatCurrency(invoice.small_order_fee),
+      "Recargo mínimo": formatCurrency(invoice.small_order_fee),
       Descuentos: invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0),
       "Otros cargos": formatCurrency(additionalFeesTotal(invoice.additional_fees)),
       Total: formatCurrency(invoice.total),
@@ -421,12 +421,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           Cliente: invoice.customer_name ?? "-",
           RTN: invoice.customer_rtn ?? invoice.rtn ?? "-",
           Pedido: invoice.order_number ?? "-",
-          "Metodo de pago": invoice.payment_method ? paymentLabels[invoice.payment_method] ?? invoice.payment_method : "-",
+          "Método de pago": invoice.payment_method ? paymentLabels[invoice.payment_method] ?? invoice.payment_method : "-",
           "Referencia bancaria": invoice.bank_reference_number ?? invoice.reference ?? "-",
           Estado: invoiceStatusLabels[invoice.status] ?? invoice.status,
           Subtotal: formatCurrency(invoice.subtotal),
           ISV: formatCurrency(invoice.tax),
-          Envio: formatCurrency(invoice.shipping_fee),
+          Envío: formatCurrency(invoice.shipping_fee),
           "Contra entrega": formatCurrency(invoice.cash_on_delivery_fee),
           Recargos: formatCurrency(invoice.small_order_fee + additionalFeesTotal(invoice.additional_fees)),
           Descuentos: invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0),
@@ -456,7 +456,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       "Stock actual": product.stock,
       Reservado: product.reserved_stock,
       Disponible: product.available_stock,
-      "Stock minimo": product.min_stock,
+      "Stock mínimo": product.min_stock,
       Estado: product.available_stock <= 0 ? "Sin stock" : product.available_stock <= product.min_stock ? "Bajo stock" : "Normal",
     }));
 
@@ -465,7 +465,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "orderFinancialStatus",
         label: "Estado financiero de pedidos",
         description: "Pedidos creados con estado logistico, pago y reserva separados. Solo un pago confirmado cuenta como venta real.",
-        columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Requiere revision", "Metodo de pago", "Total", "Venta real"],
+        columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Requiere revisión", "Método de pago", "Total", "Venta real"],
         rows: data.orders.map((order) => ({
           Pedido: order.order_number,
           Fecha: formatDate(order.created_at),
@@ -473,17 +473,17 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           "Estado pedido": orderStatusLabels[order.status] ?? order.status,
           "Estado pago": paymentStatusLabels[String(order.payment_status ?? "")] ?? order.payment_status ?? "Sin estado",
           Reserva: reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status,
-          "Requiere revision": order.reservation_review_required ? "Si" : "No",
-          "Metodo de pago": paymentLabels[order.payment_method] ?? order.payment_method,
+          "Requiere revisión": order.reservation_review_required ? "Sí" : "No",
+          "Método de pago": paymentLabels[order.payment_method] ?? order.payment_method,
           Total: formatCurrency(order.total),
-          "Venta real": isRevenueOrder(order) ? "Si" : "No",
+          "Venta real": isRevenueOrder(order) ? "Sí" : "No",
         })),
         financial: true,
       },
       {
         key: "expiredReservations",
         label: "Reservas vencidas",
-        description: "Reservas que conservan el stock retenido y requieren una decision humana.",
+        description: "Reservas que conservan el stock retenido y requieren una decisión humana.",
         columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Total"],
         rows: data.orders
           .filter((order) => order.reservation_review_required)
@@ -493,7 +493,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             Cliente: order.customer_name,
             "Estado pedido": orderStatusLabels[order.status] ?? order.status,
             "Estado pago": paymentStatusLabels[String(order.payment_status ?? "")] ?? order.payment_status ?? "Sin estado",
-            Reserva: "Vencida: requiere revision",
+            Reserva: "Vencida: requiere revisión",
             Total: formatCurrency(order.total),
           })),
         financial: true,
@@ -502,7 +502,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "daily",
         label: "Ventas del dia",
         description: "Ventas agrupadas por dia dentro del rango seleccionado.",
-        columns: ["Fecha", "Pedidos", "Unidades", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total"],
+        columns: ["Fecha", "Pedidos", "Unidades", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: Array.from(dailySales.entries())
           .sort(([left], [right]) => right.localeCompare(left))
           .map(([date, value]) => ({
@@ -511,7 +511,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             Unidades: value.units,
             Subtotal: formatCurrency(value.subtotal),
             ISV: formatCurrency(value.tax),
-            Envio: formatCurrency(value.shipping),
+            Envío: formatCurrency(value.shipping),
             "Contra entrega": formatCurrency(value.cod),
             Recargos: formatCurrency(value.fees),
             Descuentos: value.discounts > 0 ? `-${formatCurrency(value.discounts)}` : formatCurrency(0),
@@ -522,15 +522,15 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "range",
         label: "Ventas por rango",
-        description: "Resumen de ventas filtrado por fecha inicial, fecha final, cliente, producto y metodo de pago.",
+        description: "Resumen de ventas filtrado por fecha inicial, fecha final, cliente, producto y método de pago.",
         columns: ["Concepto", "Valor"],
         rows: [
           { Concepto: "Total vendido", Valor: formatCurrency(totalSold) },
           { Concepto: "Total ISV", Valor: formatCurrency(totalIsv) },
           { Concepto: "Total neto", Valor: formatCurrency(totalNet) },
-          { Concepto: "Costo de envio", Valor: formatCurrency(totalShipping) },
+          { Concepto: "Costo de envío", Valor: formatCurrency(totalShipping) },
           { Concepto: "Cargo contra entrega", Valor: formatCurrency(totalCashOnDelivery) },
-          { Concepto: "Recargo pedido minimo", Valor: formatCurrency(totalSmallOrderFees) },
+          { Concepto: "Recargo pedido mínimo", Valor: formatCurrency(totalSmallOrderFees) },
           { Concepto: "Otros cargos", Valor: formatCurrency(totalOtherFees) },
           { Concepto: "Ingresos por recargos", Valor: formatCurrency(totalSurcharges) },
           { Concepto: "Descuentos", Valor: totalDiscounts > 0 ? `-${formatCurrency(totalDiscounts)}` : formatCurrency(0) },
@@ -543,7 +543,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "monthly",
         label: "Ventas por mes",
         description: "Ventas agrupadas por mes para revisar tendencia contable.",
-        columns: ["Mes", "Pedidos", "Unidades", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total"],
+        columns: ["Mes", "Pedidos", "Unidades", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: Array.from(monthlySales.entries())
           .sort(([left], [right]) => right.localeCompare(left))
           .map(([month, value]) => ({
@@ -552,7 +552,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             Unidades: value.units,
             Subtotal: formatCurrency(value.subtotal),
             ISV: formatCurrency(value.tax),
-            Envio: formatCurrency(value.shipping),
+            Envío: formatCurrency(value.shipping),
             "Contra entrega": formatCurrency(value.cod),
             Recargos: formatCurrency(value.fees),
             Descuentos: value.discounts > 0 ? `-${formatCurrency(value.discounts)}` : formatCurrency(0),
@@ -564,7 +564,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "issuedInvoices",
         label: "Facturas emitidas",
         description: "Facturas fiscales emitidas dentro de los filtros seleccionados.",
-        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Metodo de pago", "Referencia bancaria", "Estado", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total"],
+        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Método de pago", "Referencia bancaria", "Estado", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: invoiceRows("emitida"),
         financial: true,
       },
@@ -572,14 +572,14 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "cancelledInvoices",
         label: "Facturas anuladas",
         description: "Facturas anuladas dentro de los filtros seleccionados.",
-        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Metodo de pago", "Referencia bancaria", "Estado", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total"],
+        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Método de pago", "Referencia bancaria", "Estado", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: invoiceRows("anulada"),
         financial: true,
       },
       {
         key: "fiscalCorrelatives",
         label: "Correlativos usados",
-        description: "Numeros fiscales utilizados, con estado, CAI, ISV y total para revision fiscal.",
+        description: "Números fiscales utilizados, con estado, CAI, ISV y total para revisión fiscal.",
         columns: ["Correlativo", "Factura", "Fecha", "CAI", "Estado", "ISV", "Total"],
         rows: data.invoices
           .map((invoice) => ({
@@ -599,8 +599,8 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         label: "Correlativos faltantes",
         description:
           rangeStart !== null && rangeEnd !== null && rangeEnd - rangeStart > 5000
-            ? "El rango autorizado es demasiado amplio para listar faltantes en pantalla. Filtra por periodos mas pequenos."
-            : "Numeros dentro del rango autorizado que todavia no tienen factura emitida o anulada en el sistema.",
+            ? "El rango autorizado es demasiado amplio para listar faltantes en pantalla. Filtra por períodos más pequeños."
+            : "Números dentro del rango autorizado que todavía no tienen factura emitida o anulada en el sistema.",
         columns: ["Correlativo faltante", "Rango autorizado", "CAI"],
         rows: missingCorrelatives.map((value) => ({
           "Correlativo faltante": value,
@@ -611,15 +611,15 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       },
       {
         key: "paymentMethods",
-        label: "Ventas por metodo de pago",
-        description: "Totales de venta agrupados por metodo de pago.",
-        columns: ["Metodo de pago", "Pedidos", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total"],
+        label: "Ventas por método de pago",
+        description: "Totales de venta agrupados por método de pago.",
+        columns: ["Método de pago", "Pedidos", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
-          "Metodo de pago": paymentLabels[method] ?? method,
+          "Método de pago": paymentLabels[method] ?? method,
           Pedidos: value.orders.size,
           Subtotal: formatCurrency(value.subtotal),
           ISV: formatCurrency(value.tax),
-          Envio: formatCurrency(value.shipping),
+          Envío: formatCurrency(value.shipping),
           "Contra entrega": formatCurrency(value.cod),
           Recargos: formatCurrency(value.fees),
           Descuentos: value.discounts > 0 ? `-${formatCurrency(value.discounts)}` : formatCurrency(0),
@@ -630,7 +630,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "bankTransfers",
         label: "Transferencias bancarias",
-        description: "Transferencias con numero de referencia para conciliacion contable.",
+        description: "Transferencias con número de referencia para conciliación contable.",
         columns: ["Pedido", "Fecha", "Cliente", "Factura", "Referencia bancaria", "Monto"],
         rows: revenueOrders
           .filter((order) => order.payment_method === "bank_transfer")
@@ -651,7 +651,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "soldProductsDetail",
         label: "Detalle de productos vendidos",
-        description: "Linea por linea de productos vendidos con cliente, factura, pedido, precio y metodo de pago.",
+        description: "Línea por línea de productos vendidos con cliente, factura, pedido, precio y método de pago.",
         columns: [
           "Fecha",
           "Pedido",
@@ -665,7 +665,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           "Precio unitario",
           "Subtotal",
           "Tipo de precio",
-          "Metodo de pago",
+          "Método de pago",
           "Estado",
         ],
         rows: soldProductRows,
@@ -675,7 +675,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "customerSales",
         label: "Ventas por cliente",
         description: "Consolidado por cliente con facturas, pedidos, total comprado y tipo de cliente.",
-        columns: ["Cliente", "Empresa", "RTN", "Correo", "Telefono", "Pedidos realizados", "Facturas emitidas", "Total comprado", "Ultima compra", "Tipo cliente"],
+        columns: ["Cliente", "Empresa", "RTN", "Correo", "Teléfono", "Pedidos realizados", "Facturas emitidas", "Total comprado", "Última compra", "Tipo cliente"],
         rows: Array.from(customerSales.values())
           .sort((left, right) => right.total - left.total)
           .map((customer) => ({
@@ -683,7 +683,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             Empresa: customer.company,
             RTN: customer.rtn,
             Correo: customer.email,
-            Telefono: customer.phone,
+            Teléfono: customer.phone,
             "Pedidos realizados": customer.orders.size,
             "Facturas emitidas": customer.invoices.size,
             "Total comprado": formatCurrency(customer.total),
@@ -696,7 +696,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "invoiceDetails",
         label: "Detalle de facturas",
         description: "Detalle fiscal de facturas emitidas y anuladas.",
-        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Subtotal", "ISV", "Envio", "Contra entrega", "Recargo minimo", "Descuentos", "Otros cargos", "Total", "Estado"],
+        columns: ["Factura", "Fecha", "Cliente", "RTN", "Pedido", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargo mínimo", "Descuentos", "Otros cargos", "Total", "Estado"],
         rows: invoiceDetailRows,
         financial: true,
       },
@@ -728,18 +728,18 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "inventoryStatus",
         label: "Estado del inventario",
         description: "Stock actual, reservado y disponible con estado operativo.",
-        columns: ["Producto", "SKU", "Stock actual", "Reservado", "Disponible", "Stock minimo", "Estado"],
+        columns: ["Producto", "SKU", "Stock actual", "Reservado", "Disponible", "Stock mínimo", "Estado"],
         rows: inventoryRows,
       },
       {
         key: "paymentMethodDetails",
-        label: "Detalle por metodo de pago",
-        description: "Pedidos, total vendido y total facturado por metodo: efectivo, transferencia, tarjeta por link y otros.",
-        columns: ["Metodo", "Pedidos", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total vendido", "Total facturado"],
+        label: "Detalle por método de pago",
+        description: "Pedidos, total vendido y total facturado por método: efectivo, transferencia, tarjeta por link y otros.",
+        columns: ["Método", "Pedidos", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total vendido", "Total facturado"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
-          Metodo: paymentLabels[method] ?? "Otros",
+          Método: paymentLabels[method] ?? "Otros",
           Pedidos: value.orders.size,
-          Envio: formatCurrency(value.shipping),
+          Envío: formatCurrency(value.shipping),
           "Contra entrega": formatCurrency(value.cod),
           Recargos: formatCurrency(value.fees),
           Descuentos: value.discounts > 0 ? `-${formatCurrency(value.discounts)}` : formatCurrency(0),
@@ -750,7 +750,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       },
       {
         key: "topProducts",
-        label: "Productos mas vendidos",
+        label: "Productos más vendidos",
         description: "Ranking operativo por cantidad vendida e ingresos generados.",
         columns: ["Producto", "SKU", "Cantidad vendida", "Total vendido"],
         rows: Array.from(productSales.values())
@@ -768,7 +768,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "inventory",
         label: "Inventario actual",
         description: "Existencias actuales y valor de inventario por costo.",
-        columns: ["Producto", "SKU", "Codigo interno", "Marca", "Stock", "Reservado", "Disponible", "Stock minimo", "Costo", "Valor inventario"],
+        columns: ["Producto", "SKU", "Código interno", "Marca", "Stock", "Reservado", "Disponible", "Stock mínimo", "Costo", "Valor inventario"],
         rows: data.products.map((product) => ({
           Producto: product.name,
           SKU: product.sku,
@@ -777,7 +777,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           Stock: product.stock,
           Reservado: product.reserved_stock,
           Disponible: product.available_stock,
-          "Stock minimo": product.min_stock,
+          "Stock mínimo": product.min_stock,
           Costo: formatCurrency(product.cost_price),
           "Valor inventario": formatCurrency(product.cost_price * product.stock),
         })),
@@ -785,8 +785,8 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "lowStock",
         label: "Productos con bajo stock",
-        description: "Productos que llegaron al stock minimo o estan por debajo.",
-        columns: ["Producto", "SKU", "Codigo interno", "Marca", "Stock", "Reservado", "Disponible", "Stock minimo", "Estado"],
+        description: "Productos que llegaron al stock mínimo o están por debajo.",
+        columns: ["Producto", "SKU", "Código interno", "Marca", "Stock", "Reservado", "Disponible", "Stock mínimo", "Estado"],
         rows: data.products
           .filter((product) => product.available_stock <= product.min_stock)
           .sort((left, right) => left.available_stock - right.available_stock)
@@ -798,7 +798,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             Stock: product.stock,
             Reservado: product.reserved_stock,
             Disponible: product.available_stock,
-            "Stock minimo": product.min_stock,
+            "Stock mínimo": product.min_stock,
             Estado: product.available_stock <= 0 ? "Sin stock" : "Bajo stock",
           })),
       },
@@ -931,7 +931,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             <Input name="endDate" type="date" defaultValue={data.filters.endDate} />
           </Field>
           <Field label="Cliente">
-            <Input name="customer" defaultValue={data.filters.customer} placeholder="Nombre, correo, RTN o telefono" />
+            <Input name="customer" defaultValue={data.filters.customer} placeholder="Nombre, correo, RTN o teléfono" />
           </Field>
           {accessMode !== "fiscal" ? (
             <>
@@ -949,7 +949,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             </Field>
           ) : null}
           {accessMode !== "fiscal" ? (
-            <SelectField label="Metodo de pago" name="paymentMethod" defaultValue={data.filters.paymentMethod}>
+            <SelectField label="Método de pago" name="paymentMethod" defaultValue={data.filters.paymentMethod}>
               <option value="all">Todos</option>
               <option value="cash">Efectivo</option>
               <option value="bank_transfer">Transferencia</option>
@@ -998,7 +998,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             <p className="text-sm font-semibold">Exportaciones</p>
             <p className="mt-1 text-sm text-black/55">
               Excel y PDF exportan las columnas visibles del reporte activo con encabezados claros, fechas legibles y moneda en lempiras.
-              CSV tecnico solo aparece para Kenneth/admin tecnico.
+              CSV técnico solo aparece para Kenneth/admin técnico.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

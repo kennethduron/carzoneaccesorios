@@ -7,13 +7,13 @@ type AdminShellProps = {
 
 export function AdminShell({ title, children }: AdminShellProps) {
   return (
-    <section className="min-h-screen bg-[#f4f4f5] px-5 py-6 text-[#080808]">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-6 rounded-lg bg-[#080808] px-5 py-4 text-white shadow-lg shadow-black/10">
+    <section className="min-h-screen overflow-x-hidden bg-[#f4f4f5] px-3 py-4 text-[#080808] sm:px-5 sm:py-6">
+      <div className="mx-auto w-full max-w-7xl min-w-0">
+        <div className="mb-4 rounded-lg bg-[#080808] px-4 py-4 text-white shadow-lg shadow-black/10 sm:mb-6 sm:px-5">
           <p className="text-xs font-semibold uppercase text-[#e4252c]">Panel administrativo</p>
-          <h1 className="mt-1 text-2xl font-semibold">{title}</h1>
+          <h1 className="mt-1 break-words text-2xl font-semibold [overflow-wrap:anywhere]">{title}</h1>
         </div>
-        <div className="mt-6">{children}</div>
+        <div className="mt-6 min-w-0">{children}</div>
       </div>
     </section>
   );

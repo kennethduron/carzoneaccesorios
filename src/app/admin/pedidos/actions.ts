@@ -168,7 +168,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     !canManageOrders &&
     (!canManageLogistics || !["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(status))
   ) {
-    return { ok: false, message: "Solo usuarios autorizados pueden realizar esta accion." };
+    return { ok: false, message: "Solo usuarios autorizados pueden realizar esta acción." };
   }
 
   if (normalizedStatus === "cancelado" && !canManageOrders && !canCancelOrders) {
@@ -176,7 +176,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
   }
 
   if (normalizedStatus === "cancelado" && statusReason.length < 8) {
-    return { ok: false, message: "Ingresa un motivo de cancelacion de al menos 8 caracteres." };
+    return { ok: false, message: "Ingresa un motivo de cancelación de al menos 8 caracteres." };
   }
 
   if (!allowedOrderStatuses.has(status)) {
@@ -237,7 +237,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
   }
 
   if (canonicalOrderStatus(previousOrder.status) === "cancelado" && canonicalOrderStatus(status) !== "cancelado") {
-    return { ok: false, message: "Este pedido esta cancelado. No requiere avance operativo." };
+    return { ok: false, message: "Este pedido está cancelado. No requiere avance operativo." };
   }
 
   const payment = previousOrder.payments?.[0] ?? null;
@@ -315,14 +315,14 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, order_reservation_status, payments(payment_status, status), invoices(id, status)")
+    .select("id, status, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
       status: string;
       order_reservation_status: string | null;
       payments: Array<{ payment_status: string | null; status: string | null }> | null;
-      invoices: Array<{ id: string; status: string | null }> | null;
+      invoices: Array<{ id: string; invoice_number: string | null; status: string | null }> | null;
     }>();
 
   if (orderError) {
@@ -343,12 +343,24 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
 
   const activeInvoice = (order.invoices ?? []).find((invoice) => !["anulada", "cancelled"].includes(String(invoice.status ?? "")));
   if (activeInvoice) {
-    return { ok: false, message: "Este pedido ya tiene una factura fiscal activa." };
+    const invoiceDetail = await getAdminInvoiceDetail(activeInvoice.id);
+    if (!invoiceDetail) {
+      return { ok: false, message: "Este pedido ya tiene factura, pero no se pudo cargar el detalle fiscal." };
+    }
+
+    return {
+      ok: true,
+      message: "Este pedido ya tiene una factura emitida. Se abrirá la factura existente.",
+      invoiceId: activeInvoice.id,
+      invoiceNumber: activeInvoice.invoice_number ?? "",
+      invoice: invoiceDetail,
+      bankReference: null,
+    };
   }
 
   const payment = order.payments?.[0] ?? null;
   if (!isPaymentConfirmed(payment?.payment_status ?? payment?.status ?? null)) {
-    return { ok: false, message: "No se puede emitir factura porque el pago aún no ha sido confirmado." };
+    return { ok: false, message: "La factura solo puede generarse cuando el pago esté confirmado." };
   }
 
   const { data, error } = await supabase
@@ -368,6 +380,11 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     return { ok: false, message: "Error fiscal: no se pudo crear la factura." };
   }
 
+  const invoiceDetail = await getAdminInvoiceDetail(invoice.invoice_id);
+  if (!invoiceDetail) {
+    return { ok: false, message: "La factura fue generada, pero no se pudo cargar la vista previa." };
+  }
+
   revalidateOperationalPaths();
   revalidatePath("/admin/configuracion-fiscal");
 
@@ -376,7 +393,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     message: `Factura ${invoice.invoice_number} generada correctamente.`,
     invoiceId: invoice.invoice_id,
     invoiceNumber: invoice.invoice_number,
-    invoice: await getAdminInvoiceDetail(invoice.invoice_id),
+    invoice: invoiceDetail,
     bankReference: null,
   };
 }
@@ -385,41 +402,91 @@ export async function correctOrderFiscalCustomerDataAction(input: {
   orderId: string;
   customerName: string;
   customerRtn: string;
-  customerPhone: string;
-  customerEmail: string;
-  customerAddress: string;
-  correctionReason: string;
 }) {
-  await requirePermission("invoices:correct");
+  const profile = await requirePermission("admin:access");
+  const canCorrectFiscalData =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "invoices:correct", profile.email);
+
+  if (!canCorrectFiscalData) {
+    return { ok: false, message: "No tienes permiso para corregir datos fiscales del pedido." };
+  }
+
   const customerName = input.customerName.trim();
-  const customerPhone = input.customerPhone.trim();
-  const customerEmail = input.customerEmail.trim().toLowerCase();
-  const customerAddress = input.customerAddress.trim();
-  const correctionReason = input.correctionReason.trim();
   const customerRtn = normalizeOptionalRtn(input.customerRtn);
 
-  if (!customerName) {
-    return { ok: false, message: "El nombre o razon social es obligatorio." };
+  if (customerName.length < 2) {
+    return { ok: false, message: "El nombre o razón social es obligatorio." };
   }
 
   if (typeof customerRtn === "object" && customerRtn?.error) {
     return { ok: false, message: customerRtn.error };
   }
 
-  if (correctionReason.length < 10) {
-    return { ok: false, message: "El motivo de corrección es obligatorio y debe tener al menos 10 caracteres." };
+  const supabase = await getSupabaseServerClient();
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select(
+      `
+      id,
+      order_number,
+      fiscal_customer_name,
+      fiscal_customer_rtn,
+      fiscal_customer_phone,
+      fiscal_customer_email,
+      fiscal_customer_address,
+      invoices(id, invoice_number, status)
+    `,
+    )
+    .eq("id", input.orderId)
+    .maybeSingle<{
+      id: string;
+      order_number: string;
+      fiscal_customer_name: string | null;
+      fiscal_customer_rtn: string | null;
+      fiscal_customer_phone: string | null;
+      fiscal_customer_email: string | null;
+      fiscal_customer_address: string | null;
+      invoices: Array<{ id: string; invoice_number: string | null; status: string | null }> | null;
+    }>();
+
+  if (orderError) {
+    return { ok: false, message: safeAdminOrderMessage(orderError.message) };
   }
 
-  const supabase = await getSupabaseServerClient();
+  if (!order) {
+    return { ok: false, message: "Pedido no encontrado." };
+  }
+
+  const invoices = Array.isArray(order.invoices) ? order.invoices : order.invoices ? [order.invoices] : [];
+  const issuedInvoice = invoices.find((invoice) => invoice.invoice_number);
+  if (issuedInvoice) {
+    return {
+      ok: false,
+      message: "Este pedido ya tiene factura emitida. Para cambios fiscales, utiliza el proceso fiscal correspondiente.",
+    };
+  }
+
+  const normalizedCustomerRtn = typeof customerRtn === "string" ? customerRtn : null;
+  const changedFields = [
+    order.fiscal_customer_name !== customerName ? "customer_name" : null,
+    (order.fiscal_customer_rtn ?? null) !== normalizedCustomerRtn ? "customer_rtn" : null,
+  ].filter((field): field is "customer_name" | "customer_rtn" => Boolean(field));
+
+  if (changedFields.length === 0) {
+    return { ok: true, message: "No hubo cambios fiscales que guardar." };
+  }
+
   const auditMetadata = await getAuditRequestMetadata();
+  const automaticCorrectionReason = "Corrección operativa automática desde Admin > Pedidos.";
   const { error } = await supabase.rpc("correct_order_fiscal_customer_data", {
     target_order_id: input.orderId,
     corrected_customer_name: customerName,
-    corrected_customer_rtn: customerRtn,
-    corrected_customer_phone: customerPhone || null,
-    corrected_customer_email: customerEmail || null,
-    corrected_customer_address: customerAddress || null,
-    correction_reason: correctionReason,
+    corrected_customer_rtn: normalizedCustomerRtn,
+    corrected_customer_phone: order.fiscal_customer_phone,
+    corrected_customer_email: order.fiscal_customer_email,
+    corrected_customer_address: order.fiscal_customer_address,
+    correction_reason: automaticCorrectionReason,
     actor_ip: auditMetadata.ipAddress,
     actor_user_agent: auditMetadata.userAgent,
   });
@@ -428,11 +495,34 @@ export async function correctOrderFiscalCustomerDataAction(input: {
     return { ok: false, message: error.message || "No se pudieron corregir los datos fiscales del pedido." };
   }
 
+  await writeAuditLog({
+    tableName: "orders",
+    recordId: input.orderId,
+    action: "fiscal_data_corrected",
+    oldData: {
+      order_id: order.id,
+      order_number: order.order_number,
+      fields_modified: changedFields,
+      customer_name: order.fiscal_customer_name,
+      customer_rtn: order.fiscal_customer_rtn,
+    },
+    newData: {
+      order_id: order.id,
+      order_number: order.order_number,
+      fields_modified: changedFields,
+      customer_name: customerName,
+      customer_rtn: normalizedCustomerRtn,
+      audit_mode: "automatic",
+    },
+    ipAddress: auditMetadata.ipAddress,
+    userAgent: auditMetadata.userAgent,
+  });
+
   revalidateOperationalPaths();
 
   return {
     ok: true,
-    message: "Datos fiscales corregidos. Si la factura ya existia, conserva el mismo numero fiscal.",
+    message: "Datos fiscales corregidos. La auditoría quedó registrada automáticamente.",
   };
 }
 

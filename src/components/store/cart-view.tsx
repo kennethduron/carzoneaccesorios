@@ -116,14 +116,17 @@ export function CartView() {
                       Mínimo mayorista: {item.product.wholesale_min_quantity} unidades
                     </p>
                   ) : null}
-                  <p className="mt-1 text-xs text-black/45">
-                    Fuente:{" "}
-                    {priceMode === "wholesale"
-                      ? hasValidWholesalePrice(item.product)
-                        ? "precio mayorista"
-                        : "precio disponible"
-                      : getProductPriceLabel(item.product, priceMode).toLowerCase()}
-                  </p>
+                  {priceMode === "wholesale" ? (
+                    <p className="mt-1 text-xs text-black/45">
+                      {hasValidWholesalePrice(item.product)
+                        ? "Precio mayorista aplicado"
+                        : "Precio disponible aplicado para este producto"}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-black/45">
+                      Fuente: {getProductPriceLabel(item.product, priceMode).toLowerCase()}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={() => updateQuantity(item.product.id, -1)} className="grid size-9 place-items-center rounded-md border border-black/10">
@@ -214,7 +217,7 @@ export function Totals({
         <span>{formatCurrency(0)}</span>
       </div>
       <div className="flex justify-between">
-        <span>Recargo pedido minimo</span>
+        <span>Recargo pedido mínimo</span>
         <span>{formatCurrency(0)}</span>
       </div>
       <div className="flex justify-between">

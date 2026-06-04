@@ -29,5 +29,9 @@ export function getAuthorizedProductPrice(product: Pick<Product, "retail_price" 
 }
 
 export function getProductPriceLabel(product: Product, mode: PriceMode) {
-  return mode === "wholesale" && hasValidWholesalePrice(product) ? "Precio mayorista" : "Precio al detalle";
+  if (mode === "wholesale") {
+    return hasValidWholesalePrice(product) ? "Precio mayorista" : "Precio disponible";
+  }
+
+  return "Precio al detalle";
 }

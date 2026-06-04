@@ -22,8 +22,8 @@ const checklistGroups = [
     title: "No activo",
     status: "pending",
     items: [
-      "No hay integracion directa activa dentro del sitio.",
-      "No hay proceso automatico de pago activo para tarjeta.",
+      "No hay integración directa activa dentro del sitio.",
+      "No hay proceso automático de pago activo para tarjeta.",
       "La tarjeta se gestiona por link externo enviado manualmente por WhatsApp.",
       "La confirmación del pago se registra manualmente desde pedidos.",
     ],

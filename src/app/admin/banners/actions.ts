@@ -261,7 +261,7 @@ async function destroyBannerMedia(publicId: string | null | undefined, resourceT
 async function assertBannerMediaExists(publicId: string | null | undefined, resourceType: BannerResourceType | null | undefined) {
   const cleanPublicId = cleanOptional(publicId);
   if (!cleanPublicId) {
-    throw new Error("Sube un archivo valido antes de guardar el banner.");
+    throw new Error("Sube un archivo válido antes de guardar el banner.");
   }
 
   try {
@@ -597,7 +597,6 @@ export async function updateHolidayBannerPriorityAction(id: string, priority: nu
 
 export async function deleteHolidayBannerAction(id: string): Promise<BannerMutationResult> {
   const profile = await requirePermission("commercial_settings:manage");
-  const canViewTechnical = profile.permissions.includes("technical:tools");
   const supabase = await getSupabaseServerClient();
   const { data: banner, error: bannerError } = await supabase
     .from("holiday_banners")
@@ -609,18 +608,14 @@ export async function deleteHolidayBannerAction(id: string): Promise<BannerMutat
     return { ok: false, message: bannerError?.message ?? "Banner no encontrado." };
   }
 
+  let mediaDeletionFailed = false;
   try {
     await destroyBannerMedia(banner.media_public_id, banner.media_resource_type, {
       banner_id: id,
       reason: "holiday_banner_deleted",
     });
   } catch {
-    return {
-      ok: false,
-      message: canViewTechnical
-        ? "No se elimino el banner porque Cloudinary no confirmo la eliminacion del archivo."
-        : "No se elimino el banner porque el proveedor de archivos no confirmo la eliminacion.",
-    };
+    mediaDeletionFailed = true;
   }
 
   const { error } = await supabase.from("holiday_banners").delete().eq("id", id);
@@ -639,13 +634,16 @@ export async function deleteHolidayBannerAction(id: string): Promise<BannerMutat
       actor_role: profile.role,
       deleted_media_public_id: banner.media_public_id,
       deleted_media_type: banner.media_type,
+      media_deletion_failed: mediaDeletionFailed,
     },
   });
 
   revalidateBanners();
   return {
     ok: true,
-    message: canViewTechnical ? "Banner, archivo y derivados de Cloudinary eliminados correctamente." : "Banner y archivo eliminados correctamente.",
+    message: mediaDeletionFailed
+      ? "El banner fue eliminado. El sistema revisará los archivos asociados automáticamente."
+      : "Banner eliminado correctamente.",
   };
 }
 
@@ -653,7 +651,7 @@ export async function uploadHolidayBannerMediaAction(): Promise<BannerMediaUploa
   await requirePermission("commercial_settings:manage");
   return {
     ok: false,
-    message: "La carga de banners ahora se realiza directamente a Cloudinary. Actualiza la pagina e intenta nuevamente.",
+    message: "La carga de banners ahora se realiza directamente a Cloudinary. Actualiza la página e intenta nuevamente.",
   };
 }
 
@@ -885,8 +883,8 @@ export async function reviewHolidayBannerIntegrityAction(deleteOrphans = false):
     return {
       ok: true,
       message: deleteOrphans
-        ? `Revision completa. Archivos huerfanos eliminados: ${deletedOrphans}. Registros invalidos: ${invalidRecords}.`
-        : `Revision completa. Huerfanos en Cloudinary: ${orphans.length}. Registros invalidos: ${invalidRecords}.`,
+        ? `Revisión completa. Archivos huérfanos eliminados: ${deletedOrphans}. Registros inválidos: ${invalidRecords}.`
+        : `Revisión completa. Huérfanos en Cloudinary: ${orphans.length}. Registros inválidos: ${invalidRecords}.`,
       orphanCloudinaryFiles: orphans.length,
       invalidRecords,
       deletedOrphans,
@@ -904,7 +902,7 @@ export async function saveTechnicalAlertSettingsAction(
   try {
     const email = cleanText(input.email).toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return { ok: false, message: "Ingresa un correo tecnico valido." };
+      return { ok: false, message: "Ingresa un correo técnico válido." };
     }
 
     await saveTechnicalAlertSettings({
@@ -915,6 +913,6 @@ export async function saveTechnicalAlertSettingsAction(
     revalidatePath("/admin/banners");
     return { ok: true, message: "Configuracion tecnica de alertas actualizada." };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la configuracion tecnica." };
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la configuración técnica." };
   }
 }

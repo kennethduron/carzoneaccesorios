@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !apiKey || !apiSecret) {
-    return NextResponse.json({ ok: false, message: "Cloudinary no esta configurado para banners." }, { status: 500 });
+    return NextResponse.json({ ok: false, message: "Cloudinary no está configurado para banners." }, { status: 500 });
   }
 
   const cloudinary = configureCloudinary();

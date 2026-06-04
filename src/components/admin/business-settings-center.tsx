@@ -383,7 +383,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
           <div className="grid gap-3 md:grid-cols-3">
             <TechnicalLink href="/admin/uso" title="Uso y monitoreo" text="Volumen de datos, logs antiguos y referencias técnicas." />
             <TechnicalLink href="/admin/seguridad" title="Seguridad" text="Auditoría, usuarios, roles y controles administrativos." />
-            <TechnicalLink href="/admin/revision-bac" title="Pagos por link" text="Checklist tecnico/comercial del flujo manual por WhatsApp." />
+            <TechnicalLink href="/admin/revision-bac" title="Pagos por link" text="Checklist técnico/comercial del flujo manual por WhatsApp." />
           </div>
           <div className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
             Las variables de Vercel, Supabase, Cloudinary, Resend, Brevo y cron no se exponen ni se editan desde

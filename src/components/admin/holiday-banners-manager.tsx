@@ -293,6 +293,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
   const [selectedMediaPreviewUrl, setSelectedMediaPreviewUrl] = useState("");
   const [selectedMediaError, setSelectedMediaError] = useState("");
+  const [bannerToDelete, setBannerToDelete] = useState<HolidayBanner | null>(null);
   const [mediaInputKey, setMediaInputKey] = useState(0);
   const toast = useToast();
   const posterUrl = useMemo(() => (selectedMediaPreviewUrl ? "" : previewPoster(form)), [form, selectedMediaPreviewUrl]);
@@ -524,14 +525,9 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
     });
   }
 
-  function deleteBanner(id: string) {
-    const message = canViewTechnical
-      ? "Esto eliminara el banner y su archivo en Cloudinary. Continuar?"
-      : "Esto eliminara el banner y su archivo. Continuar?";
-    if (!window.confirm(message)) {
-      return;
-    }
-
+  function confirmDeleteBanner() {
+    if (!bannerToDelete) return;
+    const id = bannerToDelete.id;
     startTransition(async () => {
       const result = await deleteHolidayBannerAction(id);
       if (result.ok) {
@@ -539,6 +535,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
         if (form.id === id) {
           resetForm();
         }
+        setBannerToDelete(null);
       } else {
         toast.error(result.message);
       }
@@ -547,7 +544,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
 
   function reviewIntegrity(deleteOrphans: boolean) {
     if (!canViewTechnical) {
-      toast.error("Esta accion solo esta disponible para administracion tecnica.");
+      toast.error("Esta acción solo está disponible para administración técnica.");
       return;
     }
 
@@ -607,14 +604,14 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                     <span className="block font-medium">{slotCopy[slot]}</span>
                     <span className="mt-0.5 block text-xs leading-4 text-black/55">
                       {slot === "main"
-                        ? "Banner principal: aparece como el banner mas importante del inicio. Solo puede haber 1 banner principal activo por fecha."
+                        ? "Banner principal: aparece como el banner más importante del inicio. Solo puede haber 1 banner principal activo por fecha."
                         : "Banner secundario: aparece como promocion adicional. Puedes tener hasta 3 secundarios activos por fecha."}
                     </span>
                   </span>
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-xs text-black/50">Usa Principal para la promocion mas importante y Secundario para ofertas adicionales.</p>
+            <p className="mt-1 text-xs text-black/50">Usa Principal para la promoción más importante y Secundario para ofertas adicionales.</p>
           </div>
 
           <div>
@@ -641,7 +638,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
               onChange={(event) => void selectMediaFile(event.target.files?.[0] ?? null)}
             />
             <p className="mt-1 text-xs text-black/50">
-              {form.media_type === "video" ? "MP4 o WEBM, maximo 25 MB y 60 segundos." : "JPG, JPEG, PNG o WEBP, maximo 5 MB. Se optimiza a WEBP."}
+              {form.media_type === "video" ? "MP4 o WEBM, máximo 25 MB y 60 segundos." : "JPG, JPEG, PNG o WEBP, máximo 5 MB. Se optimiza a WEBP."}
             </p>
             {selectedMediaFile ? (
               <p className="mt-1 text-xs text-black/55">
@@ -662,7 +659,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
               )}
               <div className="grid gap-1 border-t border-black/10 bg-white p-3 text-xs text-black/55">
                 <span>{bytesLabel(form.media_bytes)}</span>
-                {form.media_duration_seconds ? <span>Duracion: {Math.round(form.media_duration_seconds)} segundos</span> : null}
+                {form.media_duration_seconds ? <span>Duración: {Math.round(form.media_duration_seconds)} segundos</span> : null}
                 {canViewTechnical && form.media_public_id ? <span>public_id: {form.media_public_id}</span> : null}
               </div>
             </div>
@@ -712,7 +709,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                   }
                 }}
               />
-              <p className="mt-1 text-xs text-black/50">Recomendado: /catalogo para enviar al cliente al catalogo de productos.</p>
+              <p className="mt-1 text-xs text-black/50">Recomendado: /catalogo para enviar al cliente al catálogo de productos.</p>
             </Field>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -810,7 +807,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                     <Button onClick={() => toggle(banner.id, !banner.is_active)} variant="secondary" disabled={isPending}>
                       {banner.is_active ? "Deshabilitar" : "Habilitar"}
                     </Button>
-                    <Button onClick={() => deleteBanner(banner.id)} variant="secondary" disabled={isPending}>
+                    <Button onClick={() => setBannerToDelete(banner)} variant="secondary" disabled={isPending}>
                       Eliminar
                     </Button>
                   </div>
@@ -822,6 +819,58 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
 
         <BannerAuditPanel entries={auditEntries} />
       </div>
+      {bannerToDelete ? (
+        <DeleteBannerModal
+          banner={bannerToDelete}
+          isPending={isPending}
+          onClose={() => setBannerToDelete(null)}
+          onConfirm={confirmDeleteBanner}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function DeleteBannerModal({
+  banner,
+  isPending,
+  onConfirm,
+  onClose,
+}: {
+  banner: HolidayBanner;
+  isPending: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 text-[#080808] shadow-xl sm:my-10 sm:p-5">
+        <div className="border-b border-black/10 pb-4">
+          <p className="text-sm font-semibold text-[#b91c25]">Eliminar banner</p>
+          <h2 className="mt-1 text-2xl font-semibold">{banner.title}</h2>
+        </div>
+        <p className="mt-4 text-sm text-black/65">
+          ¿Estás seguro de que deseas eliminar este banner? Esta acción no se puede deshacer.
+        </p>
+        <div className="mt-4 grid gap-2 rounded-md bg-[#f4f4f5] p-3 text-sm sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase text-black/45">Tipo</p>
+            <p className="font-medium">{banner.media_type === "video" ? "Video" : "Imagen"}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase text-black/45">Estado</p>
+            <p className="font-medium">{banner.is_active ? "Activo" : "Inactivo"}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={onClose} variant="ghost" disabled={isPending}>
+            Cancelar
+          </Button>
+          <Button onClick={onConfirm} variant="secondary" disabled={isPending}>
+            {isPending ? "Eliminando..." : "Eliminar banner"}
+          </Button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -864,7 +913,7 @@ function auditActionLabel(action: string) {
     "holiday_banner.priority_updated": "Cambio de prioridad",
     "holiday_banner.integrity_review": "Revision de integridad",
     "holiday_banner.integrity_cleanup": "Limpieza de huerfanos",
-    "holiday_banner.cloudinary_asset_deleted": "Archivo tecnico eliminado",
+    "holiday_banner.cloudinary_asset_deleted": "Archivo técnico eliminado",
     "technical_alert.cloudinary_storage_sent": "Alerta tecnica enviada",
     "technical_alert.cloudinary_storage_failed": "Alerta tecnica fallida",
     "technical_alert_settings.updated": "Configuracion tecnica actualizada",
@@ -979,7 +1028,7 @@ function TechnicalAlertsPanel({
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]">
-        <Field label="Correo tecnico">
+        <Field label="Correo técnico">
           <Input value={settings.email} onChange={(event) => onChange({ ...settings, email: event.target.value })} />
         </Field>
         <Field label="Umbral Cloudinary">

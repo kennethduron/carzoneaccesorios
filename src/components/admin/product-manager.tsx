@@ -1037,7 +1037,7 @@ export function ProductManager({
       "Radio Android con pantalla tactil para Hilux.",
       "Radio Android con pantalla táctil, Bluetooth y soporte para cámara de retroceso.",
       "Bluetooth; USB; pantalla táctil; cámara de retroceso",
-      "Pantalla 9 pulgadas; Android; memoria segun lote",
+      "Pantalla 9 pulgadas; Android; memoria según lote",
       "Validar arnes y moldura antes de instalar.",
       categories[0]?.name ?? "",
       "10",
@@ -1990,8 +1990,8 @@ function ProductEditor({
   }
 
   return (
-    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-4">
-      <section className="mx-auto my-6 w-full max-w-6xl rounded-lg bg-white text-[#080808]">
+    <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] sm:my-6">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">{product.id ? "Editar producto" : "Crear producto"}</p>

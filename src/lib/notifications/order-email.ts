@@ -149,16 +149,16 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
       <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e4e1d8;border-radius:8px;padding:28px;">
         <p style="margin:0 0 8px;color:#e4252c;font-size:13px;font-weight:700;text-transform:uppercase;">Car Zone Accesorios</p>
         <h1 style="margin:0 0 16px;font-size:25px;line-height:1.25;">Pedido recibido</h1>
-        <p style="margin:0 0 18px;color:#555;line-height:1.6;">Hola ${escapeHtml(order.customer_name)}. Hemos recibido tu pedido. Nuestro equipo lo revisara pronto.</p>
+        <p style="margin:0 0 18px;color:#555;line-height:1.6;">Hola ${escapeHtml(order.customer_name)}. Hemos recibido tu pedido. Nuestro equipo lo revisará pronto.</p>
         ${
           order.payment_method === "card"
-            ? '<p style="margin:0 0 18px;color:#555;line-height:1.6;">Nuestro equipo te contactara por WhatsApp para enviarte el link de pago seguro. No ingreses datos de tarjeta en esta pagina.</p>'
+            ? '<p style="margin:0 0 18px;color:#555;line-height:1.6;">Nuestro equipo te contactará por WhatsApp para enviarte el link de pago seguro. No ingreses datos de tarjeta en esta página.</p>'
             : ""
         }
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           ${row("Pedido", order.order_number)}
           ${row("Fecha", formatDate(order.created_at))}
-          ${row("Metodo de pago", paymentMethodLabel(order.payment_method))}
+          ${row("Método de pago", paymentMethodLabel(order.payment_method))}
           ${row("Estado inicial", paymentStatus)}
           ${row("Total", formatCurrency(Number(order.total ?? 0)))}
         </table>
@@ -182,8 +182,8 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
         <div style="margin-top:24px;">
           <a href="${trackingUrl}" style="display:inline-block;background:#e4252c;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Rastrear pedido activo</a>
         </div>
-        <p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5;">El rastreo publico solo muestra pedidos activos. Si tu pedido ya fue entregado y pagado, cancelado o cerrado, dejara de aparecer en el rastreo publico.</p>
-        <p style="margin:14px 0 0;color:#666;font-size:13px;">Contacto: WhatsApp y telefono oficial publicados en carzoneaccesorios.vercel.app.</p>
+        <p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5;">El rastreo público solo muestra pedidos activos. Si tu pedido ya fue entregado y pagado, cancelado o cerrado, dejará de aparecer en el rastreo público.</p>
+        <p style="margin:14px 0 0;color:#666;font-size:13px;">Contacto: WhatsApp y teléfono oficial publicados en carzoneaccesorios.vercel.app.</p>
       </div>
     </div>
   `;
@@ -323,7 +323,7 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
   await createInternalNotification({
     type: "order.created",
     title: "Nuevo pedido recibido",
-    message: `El pedido ${order.order_number} fue creado y requiere revision operativa.`,
+    message: `El pedido ${order.order_number} fue creado y requiere revisión operativa.`,
     severity: "info",
     module: "pedidos",
     orderId: createdOrder.orderId,
@@ -344,8 +344,8 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
   if (order.payment_method === "bank_transfer") {
     await createInternalNotification({
       type: paymentStatus === "pending" ? "payment.transfer_review" : "payment.pending",
-      title: order.payment_method === "bank_transfer" ? "Transferencia en revision" : "Pago pendiente",
-      message: `El pedido ${order.order_number} tiene pago pendiente de revision.`,
+      title: order.payment_method === "bank_transfer" ? "Transferencia en revisión" : "Pago pendiente",
+      message: `El pedido ${order.order_number} tiene pago pendiente de revisión.`,
       severity: "warning",
       module: "pagos",
       orderId: createdOrder.orderId,
@@ -361,7 +361,7 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
     await createInternalNotification({
       type: "payment.pending",
       title: "Pedido contra entrega",
-      message: `El pedido ${order.order_number} sera cobrado contra entrega.`,
+      message: `El pedido ${order.order_number} será cobrado contra entrega.`,
       severity: "info",
       module: "pagos",
       orderId: createdOrder.orderId,
@@ -426,8 +426,8 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
         title: "Hemos recibido tu pedido",
         message:
           order.payment_method === "card"
-            ? "Recibimos tu pedido. Nuestro equipo te contactara por WhatsApp para enviarte el link de pago seguro."
-            : "Hemos recibido tu pedido. Nuestro equipo lo revisara pronto.",
+            ? "Recibimos tu pedido. Nuestro equipo te contactará por WhatsApp para enviarte el link de pago seguro."
+            : "Hemos recibido tu pedido. Nuestro equipo lo revisará pronto.",
         order_number: order.order_number,
         customer_name: order.customer_name,
         created_at: order.created_at,
@@ -480,7 +480,7 @@ export async function notifyCustomerOfOrderChange(input: {
       ? `Pedido cancelado ${order.order_number} - Car Zone Accesorios`
       : input.eventType === "payment.rejected"
         ? `Pago rechazado ${order.order_number} - Car Zone Accesorios`
-        : `Actualizacion de pedido ${order.order_number} - Car Zone Accesorios`;
+        : `Actualización de pedido ${order.order_number} - Car Zone Accesorios`;
 
   const result = await enqueueEmail({
     toEmail: order.email,
@@ -488,8 +488,8 @@ export async function notifyCustomerOfOrderChange(input: {
     subject,
     templateKey: input.eventType === "order.cancelled" ? "customer.order_cancelled" : "customer.order_status_update",
     payload: {
-      title: input.eventType === "order.cancelled" ? "Tu pedido fue cancelado" : "Actualizacion de tu pedido",
-      message: `El pedido ${order.order_number} ahora esta ${label}.`,
+      title: input.eventType === "order.cancelled" ? "Tu pedido fue cancelado" : "Actualización de tu pedido",
+      message: `El pedido ${order.order_number} ahora está ${label}.`,
       order_number: order.order_number,
       status: label,
       customer_name: order.customer_name,

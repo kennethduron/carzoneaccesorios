@@ -22,7 +22,7 @@ export function validateUsername(value: string) {
   if (!/^[a-z0-9._-]+$/.test(username)) {
     return {
       ok: false as const,
-      message: "El usuario solo puede usar letras, numeros, punto, guion bajo o guion.",
+      message: "El usuario solo puede usar letras, números, punto, guion bajo o guion.",
     };
   }
 

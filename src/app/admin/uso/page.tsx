@@ -147,7 +147,7 @@ export default async function AdminUsagePage() {
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="rounded-md border border-black/10 p-4">
-            <p className="text-sm font-semibold">Notificaciones ultimas 24h</p>
+            <p className="text-sm font-semibold">Notificaciones últimas 24h</p>
             <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <p>Enviadas: {formatNumber(usage.notificationStatus.sent24h)}</p>
               <p>Fallidas: {formatNumber(usage.notificationStatus.failed24h)}</p>
@@ -159,7 +159,7 @@ export default async function AdminUsagePage() {
             </p>
           </div>
           <div className="overflow-x-auto rounded-md border border-black/10 p-4">
-            <p className="text-sm font-semibold">Ultimas ejecuciones cron</p>
+            <p className="text-sm font-semibold">Últimas ejecuciones cron</p>
             <table className="mt-3 w-full min-w-[640px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase text-black/45">
                 <tr>
@@ -379,7 +379,7 @@ export default async function AdminUsagePage() {
               <p className="mt-1 text-black/60">{formatDate(usage.latestBackupCheck?.checked_at)}</p>
               <p className="mt-1 text-xs text-black/50">
                 Plan registrado: {usage.latestBackupCheck?.plan_name ?? "free_or_unverified"} / Estado:{" "}
-                {usage.latestBackupCheck?.status ?? "sin_revision"}
+                {usage.latestBackupCheck?.status ?? "sin revisión"}
               </p>
             </div>
             <form action={recordBackupReviewAction} className="mt-3">
