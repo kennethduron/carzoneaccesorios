@@ -6,6 +6,7 @@ const auditScript = await readFile(new URL("./audit-supabase-auth-config.mjs", i
 const configureScript = await readFile(new URL("./configure-supabase-auth-resend-smtp.mjs", import.meta.url), "utf8");
 const authActions = await readFile(new URL("../src/app/auth/actions.ts", import.meta.url), "utf8");
 const authCallback = await readFile(new URL("../src/app/auth/callback/route.ts", import.meta.url), "utf8");
+const operationalErrors = await readFile(new URL("../src/lib/operational-errors.ts", import.meta.url), "utf8");
 const securityActions = await readFile(new URL("../src/app/admin/seguridad/actions.ts", import.meta.url), "utf8");
 
 for (const key of [
@@ -39,8 +40,18 @@ assert.match(configureScript, /mailer_subjects_invite: "Acceso al sistema admini
 assert.doesNotMatch(configureScript, /smtpPassword: payload\.smtp_pass/);
 
 assert.match(authActions, /supabase\.auth\.signUp/);
+assert.match(authActions, /needsEmailConfirmation: true/);
+assert.doesNotMatch(authActions, /AUTH_TEST_CREATE_UNCONFIRMED_USERS/);
+assert.doesNotMatch(authActions, /AUTH_TEST_BYPASS_EMAIL_CONFIRMATION/);
+assert.doesNotMatch(authActions, /auth\.admin\.createUser/);
+assert.doesNotMatch(authActions, /email_confirm: true/);
+assert.doesNotMatch(authActions, /email_confirm: false/);
+assert.doesNotMatch(authActions, /temporary-unconfirmed/);
+assert.doesNotMatch(authActions, /temporary-test-bypass/);
+assert.doesNotMatch(authActions, /signInWithPassword\.after_test_registration/);
 assert.match(authActions, /supabase\.auth\.resend/);
 assert.match(authActions, /resetPasswordForEmail/);
+assert.match(operationalErrors, /Debes confirmar tu correo antes de iniciar sesiÃ³n|Debes confirmar tu correo antes de iniciar sesión/);
 assert.match(authCallback, /exchangeCodeForSession/);
 assert.match(authCallback, /verifyOtp/);
 assert.match(securityActions, /auth\.admin\.createUser/);

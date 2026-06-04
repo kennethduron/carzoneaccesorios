@@ -8,13 +8,12 @@ type ContactActionsProps = {
   phone: string | null | undefined;
   customerName: string | null | undefined;
   className?: string;
+  whatsappMessage?: string;
 };
 
-const whatsappMessage = encodeURIComponent(
-  "Hola, le saludamos de Car Zone Accesorios. Queremos darle seguimiento a su solicitud.",
-);
+const defaultWhatsappMessage = "Hola, le saludamos de Car Zone Accesorios. Queremos darle seguimiento a su solicitud.";
 
-export function ContactActions({ phone, customerName, className = "" }: ContactActionsProps) {
+export function ContactActions({ phone, customerName, className = "", whatsappMessage: customWhatsappMessage }: ContactActionsProps) {
   const phoneResult = phone ? validateHondurasPhone(phone) : null;
   const contactLabel = customerName?.trim() || "cliente";
 
@@ -24,11 +23,12 @@ export function ContactActions({ phone, customerName, className = "" }: ContactA
 
   const normalizedPhone = phoneResult.value;
   const whatsappPhone = normalizedPhone.replace(/\D/g, "");
+  const encodedWhatsappMessage = encodeURIComponent(customWhatsappMessage?.trim() || defaultWhatsappMessage);
 
   return (
     <div className={`flex flex-wrap gap-2 ${className}`}>
       <a
-        href={`https://wa.me/${whatsappPhone}?text=${whatsappMessage}`}
+        href={`https://wa.me/${whatsappPhone}?text=${encodedWhatsappMessage}`}
         target="_blank"
         rel="noreferrer"
         aria-label={`Contactar por WhatsApp a ${contactLabel}`}

@@ -55,7 +55,7 @@ type ReportsDashboardProps = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia",
-  card: "BAC",
+  card: "Tarjeta por link",
   cash: "Efectivo",
 };
 
@@ -734,7 +734,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "paymentMethodDetails",
         label: "Detalle por metodo de pago",
-        description: "Pedidos, total vendido y total facturado por metodo: efectivo, transferencia, BAC y otros.",
+        description: "Pedidos, total vendido y total facturado por metodo: efectivo, transferencia, tarjeta por link y otros.",
         columns: ["Metodo", "Pedidos", "Envio", "Contra entrega", "Recargos", "Descuentos", "Total vendido", "Total facturado"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
           Metodo: paymentLabels[method] ?? "Otros",
@@ -953,7 +953,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               <option value="all">Todos</option>
               <option value="cash">Efectivo</option>
               <option value="bank_transfer">Transferencia</option>
-              <option value="card">BAC</option>
+              <option value="card">Tarjeta por link</option>
             </SelectField>
           ) : null}
           <SelectField label="Tipo cliente" name="priceMode" defaultValue={data.filters.priceMode}>

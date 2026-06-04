@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  createHolidayBannerMediaTokenAction,
   deleteHolidayBannerAction,
   deleteUploadedHolidayBannerMediaAction,
   reviewHolidayBannerIntegrityAction,
@@ -10,12 +11,12 @@ import {
   saveHolidayBannerAction,
   toggleHolidayBannerAction,
   updateHolidayBannerPriorityAction,
-  uploadHolidayBannerMediaAction,
 } from "@/app/admin/banners/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type {
   BannerMediaType,
+  BannerResourceType,
   BannerSlot,
   BannerStatus,
   HolidayBanner,
@@ -34,7 +35,46 @@ type HolidayBannersManagerProps = {
   canViewTechnical: boolean;
 };
 
+type CloudinarySignatureResponse =
+  | {
+      ok: true;
+      apiKey: string;
+      cloudName: string;
+      signature: string;
+      params: Record<string, string>;
+      folder: string;
+      resourceType: BannerResourceType;
+      uploadUrl: string;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+type CloudinaryUploadResponse = {
+  public_id?: string;
+  secure_url?: string;
+  resource_type?: string;
+  bytes?: number;
+  created_at?: string;
+  format?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  eager?: Array<{ secure_url?: string; format?: string; bytes?: number; width?: number; height?: number }>;
+  error?: { message?: string };
+};
+
 const today = new Date().toISOString().slice(0, 10);
+const defaultButtonText = "Ver catálogo";
+const defaultButtonUrl = "/catalogo";
+const imageMaxBytes = 5 * 1024 * 1024;
+const videoMaxBytes = 25 * 1024 * 1024;
+const videoMaxDurationSeconds = 60;
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const allowedImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
+const allowedVideoTypes = new Set(["video/mp4", "video/webm"]);
+const allowedVideoExtensions = new Set(["mp4", "webm"]);
 
 const emptyBanner: HolidayBannerInput = {
   title: "",
@@ -57,8 +97,8 @@ const emptyBanner: HolidayBannerInput = {
   end_date: today,
   is_active: true,
   priority: 1,
-  button_text: "Ver catalogo",
-  button_url: "/catalogo",
+  button_text: defaultButtonText,
+  button_url: defaultButtonUrl,
 };
 
 const statusCopy: Record<BannerStatus, { label: string; className: string }> = {
@@ -96,8 +136,8 @@ function fromBanner(banner: HolidayBanner): HolidayBannerInput {
     end_date: banner.end_date,
     is_active: banner.is_active,
     priority: banner.priority,
-    button_text: banner.button_text ?? "",
-    button_url: banner.button_url ?? "",
+    button_text: banner.button_text ?? defaultButtonText,
+    button_url: banner.button_url ?? defaultButtonUrl,
   };
 }
 
@@ -126,19 +166,196 @@ function previewPoster(form: HolidayBannerInput) {
   return "";
 }
 
+function fileExtension(file: File) {
+  const name = file.name.toLowerCase();
+  const index = name.lastIndexOf(".");
+  return index >= 0 ? name.slice(index + 1) : "";
+}
+
+function validateSelectedMediaFile(file: File, mediaType: BannerMediaType) {
+  const extension = fileExtension(file);
+  const mimeType = file.type.toLowerCase();
+
+  if (mediaType === "video") {
+    if (!allowedVideoTypes.has(mimeType) || !allowedVideoExtensions.has(extension)) {
+      return "Solo se permiten videos MP4 o WEBM.";
+    }
+
+    if (file.size > videoMaxBytes) {
+      return "El video supera 25 MB.";
+    }
+
+    return "";
+  }
+
+  if (!allowedImageTypes.has(mimeType) || !allowedImageExtensions.has(extension)) {
+    return "Formato no permitido. Usa JPG, JPEG, PNG o WEBP.";
+  }
+
+  if (file.size > imageMaxBytes) {
+    return "La imagen no puede superar 5 MB.";
+  }
+
+  return "";
+}
+
+function readVideoDuration(previewUrl: string) {
+  return new Promise<number | null>((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.onloadedmetadata = () => {
+      const duration = Number(video.duration);
+      resolve(Number.isFinite(duration) ? duration : null);
+    };
+    video.onerror = () => resolve(null);
+    video.src = previewUrl;
+  });
+}
+
+function withButtonDefaults(input: HolidayBannerInput): HolidayBannerInput {
+  return {
+    ...input,
+    button_text: input.button_text.trim() || defaultButtonText,
+    button_url: input.button_url.trim() || defaultButtonUrl,
+  };
+}
+
+function cloudinaryErrorMessage(mediaType: BannerMediaType) {
+  return mediaType === "video" ? "No se pudo subir el video. Intenta nuevamente." : "No se pudo subir la imagen. Intenta nuevamente.";
+}
+
+async function requestCloudinarySignature(file: File, mediaType: BannerMediaType) {
+  const response = await fetch("/api/admin/banners/cloudinary-signature", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mediaType,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+    }),
+  });
+  const payload = (await response.json().catch(() => ({ ok: false, message: "No se pudo preparar la subida." }))) as CloudinarySignatureResponse;
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.ok ? "No se pudo preparar la subida." : payload.message);
+  }
+
+  return payload;
+}
+
+async function uploadFileToCloudinary(file: File, signature: Extract<CloudinarySignatureResponse, { ok: true }>) {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("api_key", signature.apiKey);
+  formData.set("signature", signature.signature);
+
+  for (const [key, value] of Object.entries(signature.params)) {
+    formData.set(key, value);
+  }
+
+  const response = await fetch(signature.uploadUrl, {
+    method: "POST",
+    body: formData,
+  });
+  const payload = (await response.json().catch(() => ({ error: { message: "Cloudinary no devolvio una respuesta valida." } }))) as CloudinaryUploadResponse;
+
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message || "Cloudinary no pudo subir el archivo.");
+  }
+
+  return payload;
+}
+
+function directUploadMediaUrl(mediaType: BannerMediaType, upload: CloudinaryUploadResponse) {
+  if (mediaType === "video") {
+    return upload.eager?.find((item) => item.format === "mp4" && item.secure_url)?.secure_url ?? upload.secure_url ?? "";
+  }
+
+  return upload.secure_url ?? "";
+}
+
+function directUploadThumbnailUrl(mediaType: BannerMediaType, upload: CloudinaryUploadResponse) {
+  if (mediaType === "video") {
+    return upload.eager?.find((item) => item.format === "jpg" && item.secure_url)?.secure_url ?? "";
+  }
+
+  return upload.secure_url ?? "";
+}
+
 export function HolidayBannersManager({ banners, auditEntries, storageSummary, technicalAlertSettings, canViewTechnical }: HolidayBannersManagerProps) {
   const [form, setForm] = useState<HolidayBannerInput>(emptyBanner);
   const [alertSettings, setAlertSettings] = useState<TechnicalAlertSettings | null>(technicalAlertSettings);
   const [isPending, startTransition] = useTransition();
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
+  const [selectedMediaPreviewUrl, setSelectedMediaPreviewUrl] = useState("");
+  const [selectedMediaError, setSelectedMediaError] = useState("");
+  const [mediaInputKey, setMediaInputKey] = useState(0);
   const toast = useToast();
-  const previewUrl = useMemo(() => previewPoster(form), [form]);
+  const posterUrl = useMemo(() => (selectedMediaPreviewUrl ? "" : previewPoster(form)), [form, selectedMediaPreviewUrl]);
+  const mediaPreviewUrl = selectedMediaPreviewUrl || form.media_url;
+
+  useEffect(() => {
+    return () => {
+      if (selectedMediaPreviewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(selectedMediaPreviewUrl);
+      }
+    };
+  }, [selectedMediaPreviewUrl]);
 
   function update<K extends keyof HolidayBannerInput>(field: K, value: HolidayBannerInput[K]) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function clearSelectedMediaFile() {
+    if (selectedMediaPreviewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(selectedMediaPreviewUrl);
+    }
+    setSelectedMediaFile(null);
+    setSelectedMediaPreviewUrl("");
+    setSelectedMediaError("");
+    setUploadStatus("");
+    setMediaInputKey((current) => current + 1);
+  }
+
+  function resetForm() {
+    clearSelectedMediaFile();
+    setForm(emptyBanner);
+  }
+
+  function clearUploadedMediaReferences(assetToken: string) {
+    setForm((current) => {
+      if (current.media_asset_token !== assetToken) {
+        return current;
+      }
+
+      return {
+        ...current,
+        media_url: "",
+        media_public_id: "",
+        media_bytes: 0,
+        media_created_at: "",
+        media_format: "",
+        media_width: null,
+        media_height: null,
+        media_duration_seconds: null,
+        media_thumbnail_url: "",
+        media_asset_token: "",
+        image_url: "",
+      };
+    });
+  }
+
+  function editBanner(banner: HolidayBanner) {
+    clearSelectedMediaFile();
+    setForm(fromBanner(banner));
+  }
+
   function changeMediaType(mediaType: BannerMediaType) {
+    clearSelectedMediaFile();
     setForm((current) => ({
       ...current,
       media_type: mediaType,
@@ -157,13 +374,129 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
     }));
   }
 
+  async function selectMediaFile(file: File | null) {
+    if (!file) {
+      clearSelectedMediaFile();
+      return;
+    }
+
+    const nextPreviewUrl = URL.createObjectURL(file);
+    if (selectedMediaPreviewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(selectedMediaPreviewUrl);
+    }
+
+    const validationMessage = validateSelectedMediaFile(file, form.media_type);
+    setSelectedMediaFile(file);
+    setSelectedMediaPreviewUrl(nextPreviewUrl);
+    setSelectedMediaError(validationMessage);
+    setUploadStatus("");
+    setForm((current) => ({
+      ...current,
+      media_bytes: file.size,
+      media_format: fileExtension(file),
+      media_duration_seconds: current.media_type === "video" ? null : current.media_duration_seconds,
+    }));
+
+    if (form.media_type === "video" && !validationMessage) {
+      const duration = await readVideoDuration(nextPreviewUrl);
+      if (duration !== null) {
+        setForm((current) => ({ ...current, media_duration_seconds: duration }));
+        if (duration > videoMaxDurationSeconds) {
+          setSelectedMediaError("El video supera 60 segundos.");
+        }
+      }
+    }
+  }
+
+  async function uploadSelectedMedia(input: HolidayBannerInput): Promise<{ input: HolidayBannerInput; uploadedToken: string } | null> {
+    if (!selectedMediaFile) {
+      return { input, uploadedToken: "" };
+    }
+
+    const validationMessage = selectedMediaError || validateSelectedMediaFile(selectedMediaFile, input.media_type);
+    if (validationMessage) {
+      toast.error(validationMessage);
+      return null;
+    }
+
+    setUploading(true);
+    setUploadStatus(input.media_type === "video" ? "Subiendo video a Cloudinary..." : "Subiendo imagen a Cloudinary...");
+    try {
+      const signature = await requestCloudinarySignature(selectedMediaFile, input.media_type);
+      const upload = await uploadFileToCloudinary(selectedMediaFile, signature);
+      const publicId = upload.public_id ?? "";
+      const resourceType = upload.resource_type === "video" ? "video" : "image";
+
+      if (!publicId) {
+        toast.error(cloudinaryErrorMessage(input.media_type));
+        return null;
+      }
+
+      setUploadStatus("Validando archivo subido...");
+      const result = await createHolidayBannerMediaTokenAction({
+        mediaType: input.media_type,
+        resourceType,
+        publicId,
+        secureUrl: directUploadMediaUrl(input.media_type, upload),
+        bytes: upload.bytes ?? selectedMediaFile.size,
+        createdAt: upload.created_at ?? "",
+        format: upload.format ?? fileExtension(selectedMediaFile),
+        width: upload.width ?? null,
+        height: upload.height ?? null,
+        durationSeconds: upload.duration ?? input.media_duration_seconds ?? null,
+        thumbnailUrl: directUploadThumbnailUrl(input.media_type, upload),
+      });
+
+      if (!result.ok || !result.mediaUrl || !result.assetToken || !result.mediaType) {
+        toast.error(result.message || cloudinaryErrorMessage(input.media_type));
+        return null;
+      }
+
+      const nextInput: HolidayBannerInput = {
+        ...input,
+        media_type: result.mediaType,
+        media_url: result.mediaUrl,
+        media_public_id: "",
+        media_resource_type: result.mediaType,
+        media_bytes: result.bytes ?? selectedMediaFile.size,
+        media_created_at: result.createdAt ?? "",
+        media_format: result.format ?? fileExtension(selectedMediaFile),
+        media_width: result.width ?? null,
+        media_height: result.height ?? null,
+        media_duration_seconds: result.durationSeconds ?? null,
+        media_thumbnail_url: result.thumbnailUrl ?? "",
+        media_asset_token: result.assetToken,
+        image_url: result.mediaType === "image" ? result.mediaUrl : "",
+      };
+
+      setForm(nextInput);
+      clearSelectedMediaFile();
+      return { input: nextInput, uploadedToken: result.assetToken };
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : cloudinaryErrorMessage(input.media_type));
+      return null;
+    } finally {
+      setUploading(false);
+      setUploadStatus("");
+    }
+  }
+
   function save() {
     startTransition(async () => {
-      const result = await saveHolidayBannerAction(form);
+      const prepared = await uploadSelectedMedia(withButtonDefaults(form));
+      if (!prepared) {
+        return;
+      }
+
+      const result = await saveHolidayBannerAction(prepared.input);
       if (result.ok) {
         toast.success(result.message);
-        setForm(emptyBanner);
+        resetForm();
       } else {
+        if (prepared.uploadedToken) {
+          await deleteUploadedHolidayBannerMediaAction(prepared.uploadedToken);
+          clearUploadedMediaReferences(prepared.uploadedToken);
+        }
         toast.error(result.message);
       }
     });
@@ -204,7 +537,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
       if (result.ok) {
         toast.success(result.message);
         if (form.id === id) {
-          setForm(emptyBanner);
+          resetForm();
         }
       } else {
         toast.error(result.message);
@@ -243,48 +576,6 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
     });
   }
 
-  async function uploadMedia(file: File | null) {
-    if (!file) {
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const previousUnsavedToken = !form.id ? form.media_asset_token ?? "" : "";
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("mediaType", form.media_type);
-      const result = await uploadHolidayBannerMediaAction(formData);
-
-      if (result.ok && result.mediaUrl && result.assetToken && result.mediaType) {
-        setForm((current) => ({
-          ...current,
-          media_type: result.mediaType ?? current.media_type,
-          media_url: result.mediaUrl ?? "",
-          media_public_id: "",
-          media_resource_type: result.mediaType ?? current.media_resource_type,
-          media_bytes: result.bytes ?? 0,
-          media_created_at: result.createdAt ?? "",
-          media_format: result.format ?? "",
-          media_width: result.width ?? null,
-          media_height: result.height ?? null,
-          media_duration_seconds: result.durationSeconds ?? null,
-          media_thumbnail_url: result.thumbnailUrl ?? "",
-          media_asset_token: result.assetToken ?? "",
-          image_url: result.mediaType === "image" ? result.mediaUrl ?? "" : "",
-        }));
-        if (previousUnsavedToken && previousUnsavedToken !== result.assetToken) {
-          await deleteUploadedHolidayBannerMediaAction(previousUnsavedToken);
-        }
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
-      }
-    } finally {
-      setUploading(false);
-    }
-  }
-
   return (
     <div className="grid gap-5 xl:grid-cols-[440px_1fr]">
       <section className="h-fit rounded-lg border border-black/10 bg-white p-5">
@@ -312,11 +603,18 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                   }`}
                 >
                   <input type="radio" checked={form.banner_slot === slot} onChange={() => update("banner_slot", slot)} />
-                  {slotCopy[slot]}
+                  <span>
+                    <span className="block font-medium">{slotCopy[slot]}</span>
+                    <span className="mt-0.5 block text-xs leading-4 text-black/55">
+                      {slot === "main"
+                        ? "Banner principal: aparece como el banner mas importante del inicio. Solo puede haber 1 banner principal activo por fecha."
+                        : "Banner secundario: aparece como promocion adicional. Puedes tener hasta 3 secundarios activos por fecha."}
+                    </span>
+                  </span>
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-xs text-black/50">Solo puede haber 1 principal y hasta 3 secundarios activos por rango de fechas.</p>
+            <p className="mt-1 text-xs text-black/50">Usa Principal para la promocion mas importante y Secundario para ofertas adicionales.</p>
           </div>
 
           <div>
@@ -335,23 +633,32 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
 
           <Field label={form.media_type === "video" ? "Subir video" : "Subir imagen"}>
             <input
+              key={mediaInputKey}
               type="file"
               accept={form.media_type === "video" ? "video/mp4,video/webm" : "image/jpeg,image/png,image/webp"}
               className="w-full rounded-md border border-black/10 px-3 py-2 text-sm"
               disabled={uploading || isPending}
-              onChange={(event) => uploadMedia(event.target.files?.[0] ?? null)}
+              onChange={(event) => void selectMediaFile(event.target.files?.[0] ?? null)}
             />
             <p className="mt-1 text-xs text-black/50">
               {form.media_type === "video" ? "MP4 o WEBM, maximo 25 MB y 60 segundos." : "JPG, JPEG, PNG o WEBP, maximo 5 MB. Se optimiza a WEBP."}
             </p>
+            {selectedMediaFile ? (
+              <p className="mt-1 text-xs text-black/55">
+                Archivo listo para guardar: {selectedMediaFile.name}. {uploadStatus || "Se subira directamente a Cloudinary al guardar el banner."}
+              </p>
+            ) : null}
+            {selectedMediaError ? <p className="mt-1 text-xs font-medium text-[#e4252c]">{selectedMediaError}</p> : null}
           </Field>
 
-          {form.media_url ? (
+          {mediaPreviewUrl ? (
             <div className="overflow-hidden rounded-md border border-black/10 bg-[#f4f4f5]">
               {form.media_type === "video" ? (
-                <video src={form.media_url} poster={previewUrl || undefined} controls className="aspect-video w-full object-cover" />
+                <video src={mediaPreviewUrl} poster={posterUrl || undefined} controls className="aspect-video w-full object-cover">
+                  Tu navegador no puede reproducir este video.
+                </video>
               ) : (
-                <Image src={form.media_url} alt={form.title || "Preview de banner"} width={900} height={500} className="aspect-video w-full object-cover" />
+                <BannerImagePreview src={mediaPreviewUrl} alt={form.title || "Preview de banner"} />
               )}
               <div className="grid gap-1 border-t border-black/10 bg-white p-3 text-xs text-black/55">
                 <span>{bytesLabel(form.media_bytes)}</span>
@@ -361,7 +668,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
             </div>
           ) : null}
 
-          <HomeBannerPreview form={form} posterUrl={previewUrl} />
+          <HomeBannerPreview form={form} mediaUrl={mediaPreviewUrl} posterUrl={posterUrl} />
 
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Fecha de inicio">
@@ -384,6 +691,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                   </option>
                 ))}
               </select>
+              <p className="mt-1 text-xs text-black/50">1 aparece primero. 5 aparece despues. Si solo tienes un banner, deja 1.</p>
             </Field>
             <label className="flex items-center gap-2 pt-6 text-sm">
               <input type="checkbox" checked={form.is_active} onChange={(event) => update("is_active", event.target.checked)} />
@@ -395,14 +703,23 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
               <Input value={form.button_text} onChange={(event) => update("button_text", event.target.value)} />
             </Field>
             <Field label="URL boton">
-              <Input value={form.button_url} onChange={(event) => update("button_url", event.target.value)} />
+              <Input
+                value={form.button_url}
+                onChange={(event) => update("button_url", event.target.value)}
+                onBlur={(event) => {
+                  if (!event.target.value.trim()) {
+                    update("button_url", defaultButtonUrl);
+                  }
+                }}
+              />
+              <p className="mt-1 text-xs text-black/50">Recomendado: /catalogo para enviar al cliente al catalogo de productos.</p>
             </Field>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={save} disabled={isPending || uploading} variant="primary">
+            <Button onClick={save} disabled={isPending || uploading || Boolean(selectedMediaError)} variant="primary">
               {isPending ? "Guardando..." : uploading ? "Subiendo..." : "Guardar banner"}
             </Button>
-            <Button onClick={() => setForm(emptyBanner)} variant="ghost">
+            <Button onClick={resetForm} variant="ghost">
               Nuevo
             </Button>
           </div>
@@ -487,7 +804,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                         </option>
                       ))}
                     </select>
-                    <Button onClick={() => setForm(fromBanner(banner))} variant="ghost">
+                    <Button onClick={() => editBanner(banner)} variant="ghost">
                       Editar
                     </Button>
                     <Button onClick={() => toggle(banner.id, !banner.is_active)} variant="secondary" disabled={isPending}>
@@ -556,8 +873,17 @@ function auditActionLabel(action: string) {
   return labels[action] ?? action;
 }
 
-function HomeBannerPreview({ form, posterUrl }: { form: HolidayBannerInput; posterUrl: string }) {
-  const hasMedia = Boolean(form.media_url);
+function BannerImagePreview({ src, alt }: { src: string; alt: string }) {
+  if (src.startsWith("blob:")) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt={alt} className="aspect-video w-full object-cover" />;
+  }
+
+  return <Image src={src} alt={alt} width={900} height={500} className="aspect-video w-full object-cover" />;
+}
+
+function HomeBannerPreview({ form, mediaUrl, posterUrl }: { form: HolidayBannerInput; mediaUrl: string; posterUrl: string }) {
+  const hasMedia = Boolean(mediaUrl);
 
   return (
     <div>
@@ -565,9 +891,16 @@ function HomeBannerPreview({ form, posterUrl }: { form: HolidayBannerInput; post
       <div className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
         <div className="relative bg-[#080808]">
           {hasMedia && form.media_type === "video" ? (
-            <video src={form.media_url} poster={posterUrl || undefined} muted loop playsInline controls className="aspect-video w-full object-cover" />
+            <video src={mediaUrl} poster={posterUrl || undefined} muted loop playsInline controls className="aspect-video w-full object-cover">
+              Tu navegador no puede reproducir este video.
+            </video>
           ) : hasMedia ? (
-            <Image src={getBannerPosterUrl(form.media_url)} alt={form.title || "Preview de banner"} width={1400} height={760} className="aspect-video w-full object-cover" />
+            mediaUrl.startsWith("blob:") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl} alt={form.title || "Preview de banner"} className="aspect-video w-full object-cover" />
+            ) : (
+              <Image src={getBannerPosterUrl(mediaUrl)} alt={form.title || "Preview de banner"} width={1400} height={760} className="aspect-video w-full object-cover" />
+            )
           ) : (
             <div className="grid aspect-video w-full place-items-center text-sm text-white/55">Vista previa del archivo</div>
           )}

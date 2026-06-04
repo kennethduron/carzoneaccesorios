@@ -1,8 +1,7 @@
 "use server";
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
-import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission, requireStrictPermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
@@ -27,6 +26,20 @@ type BannerMediaUploadResult = BannerMutationResult & {
   height?: number | null;
   durationSeconds?: number | null;
   thumbnailUrl?: string;
+};
+
+type CloudinaryDirectUploadInput = {
+  mediaType: BannerMediaType;
+  resourceType: BannerResourceType;
+  publicId: string;
+  secureUrl?: string | null;
+  bytes?: number | null;
+  createdAt?: string | null;
+  format?: string | null;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+  thumbnailUrl?: string | null;
 };
 
 type BannerIntegrityResult = BannerMutationResult & {
@@ -77,13 +90,14 @@ type BannerAssetTokenPayload = {
   expiresAt: number;
 };
 
-const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const allowedImageExtensions = new Set(["jpg", "jpeg", "png", "webp"]);
-const allowedVideoTypes = new Set(["video/mp4", "video/webm"]);
 const allowedVideoExtensions = new Set(["mp4", "webm"]);
 const imageMaxBytes = 5 * 1024 * 1024;
 const videoMaxBytes = 25 * 1024 * 1024;
 const videoMaxDurationSeconds = 60;
+const defaultBannerButtonText = "Ver catálogo";
+const defaultBannerButtonUrl = "/catalogo";
+const bannerMediaFolder = "car-zone/banners";
 const bannerSlotLimits: Record<BannerSlot, number> = {
   main: 1,
   secondary: 3,
@@ -99,10 +113,10 @@ function cleanOptional(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function fileExtension(file: File) {
-  const name = file.name.toLowerCase();
-  const index = name.lastIndexOf(".");
-  return index >= 0 ? name.slice(index + 1) : "";
+function publicIdExtension(publicId: string) {
+  const cleanId = publicId.toLowerCase().split("?")[0] ?? "";
+  const index = cleanId.lastIndexOf(".");
+  return index >= 0 ? cleanId.slice(index + 1) : "";
 }
 
 function clampPriority(value: unknown) {
@@ -122,41 +136,36 @@ function normalizeBannerSlot(value: unknown): BannerSlot {
   return value === "secondary" ? "secondary" : "main";
 }
 
-function validateUploadFile(file: File, mediaType: BannerMediaType) {
-  const extension = fileExtension(file);
-
-  if (mediaType === "image") {
-    if (!allowedImageTypes.has(file.type) || !allowedImageExtensions.has(extension)) {
-      throw new Error("Formato no permitido. Usa JPG, JPEG, PNG o WEBP. No se aceptan SVG, TIFF ni BMP.");
-    }
-
-    if (file.size > imageMaxBytes) {
-      throw new Error("La imagen no puede superar 5 MB.");
-    }
-
-    return;
-  }
-
-  if (!allowedVideoTypes.has(file.type) || !allowedVideoExtensions.has(extension)) {
-    throw new Error("Formato no permitido. Usa video MP4 o WEBM. No se aceptan AVI, MOV ni formatos pesados.");
-  }
-
-  if (file.size > videoMaxBytes) {
-    throw new Error("El video no puede superar 25 MB.");
-  }
-}
-
 function revalidateBanners() {
   revalidatePath("/");
   revalidatePath("/admin/banners");
 }
 
-function cloudinaryBannerPublicId(mediaType: BannerMediaType) {
-  return `${mediaType}-${randomUUID()}`;
+function cloudinaryOptimizedImageUrl(publicId: string) {
+  const cloudinary = configureCloudinary();
+  return cloudinary.url(publicId, {
+    resource_type: "image",
+    secure: true,
+    transformation: [{ width: 1920, height: 900, crop: "limit", quality: "auto", fetch_format: "webp" }],
+  });
 }
 
-function cloudinaryVideoPosterUrl(secureUrl: string) {
-  return secureUrl.replace("/video/upload/", "/video/upload/so_0,w_900,h_500,c_fill,g_auto,q_auto,f_jpg/").replace(/\.(mp4|webm)(\?.*)?$/i, ".jpg$2");
+function cloudinaryOptimizedVideoUrl(publicId: string) {
+  const cloudinary = configureCloudinary();
+  return cloudinary.url(publicId, {
+    resource_type: "video",
+    secure: true,
+    transformation: [{ width: 1600, crop: "limit", quality: "auto", format: "mp4" }],
+  });
+}
+
+function cloudinaryPosterFromPublicId(publicId: string) {
+  const cloudinary = configureCloudinary();
+  return cloudinary.url(publicId, {
+    resource_type: "video",
+    secure: true,
+    transformation: [{ start_offset: "0", width: 900, height: 500, crop: "fill", gravity: "auto", quality: "auto", format: "jpg" }],
+  });
 }
 
 function getAssetTokenKey() {
@@ -249,6 +258,22 @@ async function destroyBannerMedia(publicId: string | null | undefined, resourceT
   }
 }
 
+async function assertBannerMediaExists(publicId: string | null | undefined, resourceType: BannerResourceType | null | undefined) {
+  const cleanPublicId = cleanOptional(publicId);
+  if (!cleanPublicId) {
+    throw new Error("Sube un archivo valido antes de guardar el banner.");
+  }
+
+  try {
+    const cloudinary = configureCloudinary();
+    await cloudinary.api.resource(cleanPublicId, {
+      resource_type: normalizeResourceType(resourceType),
+    });
+  } catch {
+    throw new Error("El archivo del banner ya no existe en Cloudinary. Vuelve a subirlo antes de guardar.");
+  }
+}
+
 function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: HolidayBanner | null) {
   const title = cleanText(input.title);
   const message = cleanText(input.message);
@@ -260,6 +285,7 @@ function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: H
   const mediaPublicId = cleanOptional(tokenPayload?.publicId ?? input.media_public_id) ?? existing?.media_public_id ?? null;
   const resourceType = normalizeResourceType(tokenPayload?.resourceType ?? input.media_resource_type ?? existing?.media_resource_type ?? mediaType);
   const bannerSlot = normalizeBannerSlot(input.banner_slot);
+  const videoDuration = Number(tokenPayload?.durationSeconds ?? input.media_duration_seconds ?? existing?.media_duration_seconds ?? 0);
 
   if (!title || !message || !startDate || !endDate) {
     throw new Error("Titulo, mensaje y fechas son obligatorios.");
@@ -273,8 +299,8 @@ function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: H
     throw new Error(mediaType === "video" ? "Sube un video antes de guardar el banner." : "Sube una imagen antes de guardar el banner.");
   }
 
-  if (mediaType === "video" && Number(input.media_duration_seconds ?? 0) > videoMaxDurationSeconds) {
-    throw new Error("El video no puede durar mas de 60 segundos.");
+  if (mediaType === "video" && videoDuration > videoMaxDurationSeconds) {
+    throw new Error("El video supera 60 segundos.");
   }
 
   return {
@@ -297,8 +323,8 @@ function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: H
     end_date: endDate,
     is_active: Boolean(input.is_active),
     priority: clampPriority(input.priority),
-    button_text: cleanOptional(input.button_text),
-    button_url: cleanOptional(input.button_url),
+    button_text: cleanOptional(input.button_text) ?? defaultBannerButtonText,
+    button_url: cleanOptional(input.button_url) ?? defaultBannerButtonUrl,
     updated_by: actorId,
     updated_at: new Date().toISOString(),
   };
@@ -343,6 +369,43 @@ async function assertBannerSlotCapacity(input: {
   }
 }
 
+async function assertBannerPriorityAvailable(input: {
+  id?: string;
+  bannerSlot: BannerSlot;
+  priority: number;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
+}) {
+  if (!input.isActive) {
+    return;
+  }
+
+  const supabase = await getSupabaseServerClient();
+  let query = supabase
+    .from("holiday_banners")
+    .select("id", { count: "exact", head: true })
+    .eq("is_active", true)
+    .eq("banner_slot", input.bannerSlot)
+    .eq("priority", clampPriority(input.priority))
+    .lte("start_date", input.endDate)
+    .gte("end_date", input.startDate);
+
+  if (input.id) {
+    query = query.neq("id", input.id);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if ((count ?? 0) > 0) {
+    throw new Error("Ya existe un banner activo con esta prioridad para ese rango de fechas. Elige otra prioridad o edita el banner existente.");
+  }
+}
+
 async function getExistingBanner(id: string) {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
@@ -370,9 +433,18 @@ export async function saveHolidayBannerAction(input: HolidayBannerInput): Promis
     }
 
     const payload = normalizeBanner(input, profile.id, existing);
+    await assertBannerMediaExists(payload.media_public_id, payload.media_resource_type);
     await assertBannerSlotCapacity({
       id: input.id,
       bannerSlot: payload.banner_slot,
+      startDate: payload.start_date,
+      endDate: payload.end_date,
+      isActive: payload.is_active,
+    });
+    await assertBannerPriorityAvailable({
+      id: input.id,
+      bannerSlot: payload.banner_slot,
+      priority: payload.priority,
       startDate: payload.start_date,
       endDate: payload.end_date,
       isActive: payload.is_active,
@@ -428,9 +500,9 @@ export async function toggleHolidayBannerAction(id: string, isActive: boolean): 
   const supabase = await getSupabaseServerClient();
   const { data: banner, error: bannerError } = await supabase
     .from("holiday_banners")
-    .select("id, banner_slot, start_date, end_date")
+    .select("id, banner_slot, priority, start_date, end_date")
     .eq("id", id)
-    .maybeSingle<{ id: string; banner_slot: BannerSlot | null; start_date: string; end_date: string }>();
+    .maybeSingle<{ id: string; banner_slot: BannerSlot | null; priority: number | null; start_date: string; end_date: string }>();
 
   if (bannerError || !banner) {
     return { ok: false, message: bannerError?.message ?? "Banner no encontrado." };
@@ -440,6 +512,14 @@ export async function toggleHolidayBannerAction(id: string, isActive: boolean): 
     await assertBannerSlotCapacity({
       id,
       bannerSlot: normalizeBannerSlot(banner.banner_slot),
+      startDate: banner.start_date,
+      endDate: banner.end_date,
+      isActive,
+    });
+    await assertBannerPriorityAvailable({
+      id,
+      bannerSlot: normalizeBannerSlot(banner.banner_slot),
+      priority: banner.priority ?? 1,
       startDate: banner.start_date,
       endDate: banner.end_date,
       isActive,
@@ -472,6 +552,29 @@ export async function updateHolidayBannerPriorityAction(id: string, priority: nu
   const profile = await requirePermission("commercial_settings:manage");
   const nextPriority = clampPriority(priority);
   const supabase = await getSupabaseServerClient();
+  const { data: banner, error: bannerError } = await supabase
+    .from("holiday_banners")
+    .select("id, banner_slot, start_date, end_date, is_active")
+    .eq("id", id)
+    .maybeSingle<{ id: string; banner_slot: BannerSlot | null; start_date: string; end_date: string; is_active: boolean | null }>();
+
+  if (bannerError || !banner) {
+    return { ok: false, message: bannerError?.message ?? "Banner no encontrado." };
+  }
+
+  try {
+    await assertBannerPriorityAvailable({
+      id,
+      bannerSlot: normalizeBannerSlot(banner.banner_slot),
+      priority: nextPriority,
+      startDate: banner.start_date,
+      endDate: banner.end_date,
+      isActive: Boolean(banner.is_active),
+    });
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar la prioridad." };
+  }
+
   const { error } = await supabase
     .from("holiday_banners")
     .update({ priority: nextPriority, updated_by: profile.id, updated_at: new Date().toISOString() })
@@ -546,205 +649,173 @@ export async function deleteHolidayBannerAction(id: string): Promise<BannerMutat
   };
 }
 
-export async function uploadHolidayBannerMediaAction(formData: FormData): Promise<BannerMediaUploadResult> {
+export async function uploadHolidayBannerMediaAction(): Promise<BannerMediaUploadResult> {
+  await requirePermission("commercial_settings:manage");
+  return {
+    ok: false,
+    message: "La carga de banners ahora se realiza directamente a Cloudinary. Actualiza la pagina e intenta nuevamente.",
+  };
+}
+
+function validateDirectUploadInput(input: CloudinaryDirectUploadInput) {
+  const mediaType = normalizeMediaType(input.mediaType);
+  const resourceType = normalizeResourceType(input.resourceType);
+  const publicId = cleanText(input.publicId);
+  const format = cleanText(input.format).toLowerCase() || publicIdExtension(publicId);
+  const bytes = Math.max(0, Math.trunc(Number(input.bytes ?? 0) || 0));
+  const durationSeconds = input.durationSeconds !== null && input.durationSeconds !== undefined ? Number(input.durationSeconds) : null;
+
+  if (mediaType !== resourceType) {
+    throw new Error("El tipo de archivo no coincide con la firma de Cloudinary.");
+  }
+
+  if (!publicId.startsWith(`${bannerMediaFolder}/`)) {
+    throw new Error("El archivo debe subirse a la carpeta autorizada de banners.");
+  }
+
+  if (mediaType === "video") {
+    if (!allowedVideoExtensions.has(format)) {
+      throw new Error("Solo se permiten videos MP4 o WEBM.");
+    }
+
+    if (bytes > videoMaxBytes) {
+      throw new Error("El video supera 25 MB.");
+    }
+
+    if (durationSeconds !== null && durationSeconds > videoMaxDurationSeconds) {
+      throw new Error("El video supera 60 segundos.");
+    }
+  } else {
+    if (!allowedImageExtensions.has(format)) {
+      throw new Error("Formato no permitido. Usa JPG, JPEG, PNG o WEBP. No se aceptan SVG, TIFF ni BMP.");
+    }
+
+    if (bytes > imageMaxBytes) {
+      throw new Error("La imagen no puede superar 5 MB.");
+    }
+  }
+
+  return { mediaType, resourceType, publicId, format, bytes, durationSeconds };
+}
+
+async function verifiedCloudinaryResource(input: CloudinaryDirectUploadInput) {
+  const normalized = validateDirectUploadInput(input);
+  const cloudinary = configureCloudinary();
+  const resource = (await cloudinary.api.resource(normalized.publicId, {
+    resource_type: normalized.resourceType,
+  })) as CloudinaryUploadResult;
+  const resourceBytes = Math.max(0, Math.trunc(Number(resource.bytes ?? normalized.bytes) || 0));
+  const resourceFormat = cleanText(resource.format ?? normalized.format).toLowerCase();
+  const resourceDuration = normalized.mediaType === "video" ? Number(resource.duration ?? normalized.durationSeconds ?? 0) : null;
+
+  validateDirectUploadInput({
+    ...input,
+    bytes: resourceBytes,
+    format: resourceFormat,
+    durationSeconds: resourceDuration,
+  });
+
+  const mediaUrl =
+    normalized.mediaType === "video"
+      ? cleanOptional(input.secureUrl) ?? cloudinaryOptimizedVideoUrl(normalized.publicId)
+      : cleanOptional(input.secureUrl) ?? cleanOptional(resource.secure_url) ?? cloudinaryOptimizedImageUrl(normalized.publicId);
+  const thumbnailUrl =
+    normalized.mediaType === "video"
+      ? cleanOptional(input.thumbnailUrl) ?? cloudinaryPosterFromPublicId(normalized.publicId)
+      : mediaUrl;
+
+  if (!mediaUrl) {
+    throw new Error("Cloudinary no devolvio una URL valida.");
+  }
+
+  return {
+    ...normalized,
+    mediaUrl,
+    bytes: resourceBytes,
+    createdAt: cleanOptional(resource.created_at ?? input.createdAt) ?? new Date().toISOString(),
+    format: resourceFormat,
+    width: resource.width ?? input.width ?? null,
+    height: resource.height ?? input.height ?? null,
+    durationSeconds: resourceDuration && Number.isFinite(resourceDuration) ? resourceDuration : null,
+    thumbnailUrl: thumbnailUrl ?? "",
+  };
+}
+
+export async function createHolidayBannerMediaTokenAction(input: CloudinaryDirectUploadInput): Promise<BannerMediaUploadResult> {
   const profile = await requirePermission("commercial_settings:manage");
 
   try {
-    const mediaType = normalizeMediaType(formData.get("mediaType"));
-    const file = formData.get("file");
+    const media = await verifiedCloudinaryResource(input);
+    return {
+      ok: true,
+      message: media.mediaType === "video" ? "Video subido y validado correctamente." : "Imagen subida y validada correctamente.",
+      mediaUrl: media.mediaUrl,
+      assetToken: createAssetToken({
+        publicId: media.publicId,
+        resourceType: media.resourceType,
+        mediaType: media.mediaType,
+        mediaUrl: media.mediaUrl,
+        imageUrl: media.mediaType === "image" ? media.mediaUrl : "",
+        bytes: media.bytes,
+        createdAt: media.createdAt,
+        format: media.format,
+        width: media.width,
+        height: media.height,
+        durationSeconds: media.durationSeconds,
+        thumbnailUrl: media.thumbnailUrl,
+      }),
+      mediaType: media.mediaType,
+      bytes: media.bytes,
+      createdAt: media.createdAt,
+      format: media.format,
+      width: media.width,
+      height: media.height,
+      durationSeconds: media.durationSeconds,
+      thumbnailUrl: media.thumbnailUrl,
+    };
+  } catch (error) {
+    const mediaType = normalizeMediaType(input.mediaType);
+    const resourceType = normalizeResourceType(input.resourceType);
+    const publicId = cleanText(input.publicId);
+    const message = error instanceof Error ? error.message : "No se pudo validar el archivo de Cloudinary.";
 
-    if (!(file instanceof File) || file.size === 0) {
-      return { ok: false, message: mediaType === "video" ? "Selecciona un video para subir." : "Selecciona una imagen para subir." };
+    if (publicId.startsWith(`${bannerMediaFolder}/`)) {
+      try {
+        await destroyBannerMedia(publicId, resourceType, {
+          reason: "holiday_banner_direct_upload_rejected",
+          validation_error: message,
+        });
+      } catch {
+        // destroyBannerMedia already records the provider error.
+      }
     }
 
-    validateUploadFile(file, mediaType);
-
-    return mediaType === "video"
-      ? await uploadBannerVideo(file, profile.id)
-      : await uploadBannerImage(file, profile.id);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
-    const publicMessage = profile.permissions.includes("technical:tools") ? message : message.replaceAll("Cloudinary", "el proveedor de archivos");
     await writeErrorLog({
       route: "/admin/banners",
-      action: "holiday_banner.media_upload_failed",
+      action: "holiday_banner.direct_upload_validation_failed",
       errorMessage: message,
       errorStack: error instanceof Error ? error.stack : null,
       metadata: {
         user_id: profile.id,
-        file_name: formData.get("file") instanceof File ? (formData.get("file") as File).name : null,
-        media_type: String(formData.get("mediaType") ?? ""),
+        public_id: publicId,
+        media_type: mediaType,
       },
     });
-    return { ok: false, message: publicMessage };
+
+    return {
+      ok: false,
+      message:
+        message === "Solo se permiten videos MP4 o WEBM." ||
+        message === "El video supera 25 MB." ||
+        message === "El video supera 60 segundos." ||
+        message === "La imagen no puede superar 5 MB." ||
+        message.startsWith("Formato no permitido")
+          ? message
+          : mediaType === "video"
+            ? "No se pudo subir el video. Intenta nuevamente."
+            : "No se pudo subir la imagen. Intenta nuevamente.",
+    };
   }
-}
-
-async function uploadBannerImage(file: File, actorId: string): Promise<BannerMediaUploadResult> {
-  const cloudinary = configureCloudinary();
-  const buffer = Buffer.from(await file.arrayBuffer());
-  let optimizedBuffer: Buffer;
-  let width = 0;
-  let height = 0;
-
-  try {
-    const metadata = await sharp(buffer, { animated: false, limitInputPixels: 18_000_001 }).rotate().metadata();
-    width = metadata.width ?? 0;
-    height = metadata.height ?? 0;
-
-    if (!width || !height) {
-      return { ok: false, message: "La imagen no es valida o esta danada." };
-    }
-
-    optimizedBuffer = await sharp(buffer, { animated: false })
-      .rotate()
-      .resize({ width: 1920, height: 900, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 82, effort: 5 })
-      .toBuffer();
-  } catch {
-    return { ok: false, message: "La imagen no es valida o usa un formato no permitido." };
-  }
-
-  const result = await new Promise<CloudinaryUploadResult>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: "car-zone/banners",
-        public_id: cloudinaryBannerPublicId("image"),
-        resource_type: "image",
-        format: "webp",
-        overwrite: false,
-        invalidate: true,
-        context: {
-          source: "holiday_banner_admin",
-          actor_id: actorId,
-          original_bytes: String(file.size),
-          optimized_bytes: String(optimizedBuffer.length),
-        },
-      },
-      (error, uploadResult) => {
-        if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
-          reject(error ?? new Error("Cloudinary no devolvio una URL valida."));
-          return;
-        }
-
-        resolve(uploadResult as CloudinaryUploadResult);
-      },
-    );
-
-    stream.end(optimizedBuffer);
-  });
-
-  const publicId = result.public_id;
-  const secureUrl = result.secure_url;
-  if (!publicId || !secureUrl) {
-    return { ok: false, message: "El proveedor de archivos no devolvio los datos completos." };
-  }
-
-  return {
-    ok: true,
-    message: "Imagen optimizada y subida correctamente.",
-    mediaUrl: secureUrl,
-    assetToken: createAssetToken({
-      publicId,
-      resourceType: "image",
-      mediaType: "image",
-      mediaUrl: secureUrl,
-      imageUrl: secureUrl,
-      bytes: Number(result.bytes ?? optimizedBuffer.length),
-      createdAt: result.created_at ?? new Date().toISOString(),
-      format: result.format ?? "webp",
-      width: result.width ?? width,
-      height: result.height ?? height,
-      durationSeconds: null,
-      thumbnailUrl: secureUrl,
-    }),
-    mediaType: "image",
-    bytes: Number(result.bytes ?? optimizedBuffer.length),
-    createdAt: result.created_at ?? new Date().toISOString(),
-    format: result.format ?? "webp",
-    width: result.width ?? width,
-    height: result.height ?? height,
-    durationSeconds: null,
-    thumbnailUrl: secureUrl,
-  };
-}
-
-async function uploadBannerVideo(file: File, actorId: string): Promise<BannerMediaUploadResult> {
-  const cloudinary = configureCloudinary();
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const result = await new Promise<CloudinaryUploadResult>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: "car-zone/banners",
-        public_id: cloudinaryBannerPublicId("video"),
-        resource_type: "video",
-        overwrite: false,
-        invalidate: true,
-        eager: [
-          { width: 1600, crop: "limit", quality: "auto", format: "mp4" },
-          { width: 900, height: 500, crop: "fill", gravity: "auto", quality: "auto", format: "jpg", start_offset: "0" },
-        ],
-        eager_async: false,
-        context: {
-          source: "holiday_banner_admin",
-          actor_id: actorId,
-          original_bytes: String(file.size),
-        },
-      },
-      (error, uploadResult) => {
-        if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
-          reject(error ?? new Error("Cloudinary no devolvio una URL valida para el video."));
-          return;
-        }
-
-        resolve(uploadResult as CloudinaryUploadResult);
-      },
-    );
-
-    stream.end(buffer);
-  });
-
-  const duration = Number(result.duration ?? 0);
-  const publicId = result.public_id;
-  if (!publicId || !result.secure_url) {
-    return { ok: false, message: "El proveedor de archivos no devolvio los datos completos del video." };
-  }
-
-  if (duration > videoMaxDurationSeconds) {
-    await destroyBannerMedia(publicId, "video", { reason: "holiday_banner_video_duration_rejected" });
-    return { ok: false, message: "El video no puede durar mas de 60 segundos." };
-  }
-
-  const optimizedVideo = result.eager?.find((item) => item.format === "mp4" && item.secure_url)?.secure_url ?? result.secure_url;
-  const thumbnail = result.eager?.find((item) => item.format === "jpg" && item.secure_url)?.secure_url ?? (result.secure_url ? cloudinaryVideoPosterUrl(result.secure_url) : undefined);
-
-  return {
-    ok: true,
-    message: "Video subido y optimizado correctamente.",
-    mediaUrl: optimizedVideo,
-    assetToken: createAssetToken({
-      publicId,
-      resourceType: "video",
-      mediaType: "video",
-      mediaUrl: optimizedVideo,
-      imageUrl: "",
-      bytes: Number(result.bytes ?? file.size),
-      createdAt: result.created_at ?? new Date().toISOString(),
-      format: result.format ?? fileExtension(file),
-      width: result.width ?? null,
-      height: result.height ?? null,
-      durationSeconds: duration || null,
-      thumbnailUrl: thumbnail ?? "",
-    }),
-    mediaType: "video",
-    bytes: Number(result.bytes ?? file.size),
-    createdAt: result.created_at ?? new Date().toISOString(),
-    format: result.format ?? fileExtension(file),
-    width: result.width ?? null,
-    height: result.height ?? null,
-    durationSeconds: duration || null,
-    thumbnailUrl: thumbnail,
-  };
 }
 
 export async function deleteUploadedHolidayBannerMediaAction(mediaReference: string, resourceType?: BannerResourceType): Promise<BannerMutationResult> {

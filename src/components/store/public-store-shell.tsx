@@ -6,7 +6,6 @@ import { CheckCircle2, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound
 import { useEffect, useRef, useState } from "react";
 import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
 import { getWholesaleAccessStateAction, markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
-import { CardBrandList } from "@/components/store/card-brand-list";
 import { SocialLinks } from "@/components/store/social-links";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
@@ -387,8 +386,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               <SocialLinks settings={companySettings} />
             </div>
             <p className="mb-2 text-sm font-semibold">Pagos seguros</p>
-            <p className="mb-3 text-sm text-black/55">Pagos seguros procesados mediante pasarela bancaria autorizada.</p>
-            <CardBrandList compact />
+            <p className="mb-3 text-sm text-black/55">Efectivo, transferencia bancaria y tarjeta por link de pago enviado por WhatsApp.</p>
           </div>
         </div>
         <div className="border-t border-black/10 px-5 py-4">

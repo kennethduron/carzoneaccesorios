@@ -417,10 +417,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, message: "El pago contra entrega no está disponible en este momento." };
   }
 
-  if (paymentMethod === "card" && settings.bac_card_status !== "active") {
-    return { ok: false, message: "El pago con tarjeta no está disponible hasta activar la pasarela BAC." };
-  }
-
   if (!bankReferenceResult.ok) {
     return { ok: false, message: bankReferenceResult.message };
   }
@@ -669,6 +665,27 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const admin = getSupabaseAdminClient();
+  if (paymentMethod === "card") {
+    const { error: cardPaymentMetadataError } = await admin
+      .from("payments")
+      .update({
+        provider: "manual_payment_link",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("order_id", createdOrder.order_id);
+
+    if (cardPaymentMetadataError) {
+      await writeErrorLog({
+        route: "/checkout",
+        action: "checkout.card_payment_link_metadata_failed",
+        errorMessage: cardPaymentMetadataError.message,
+        metadata: {
+          order_id: createdOrder.order_id,
+        },
+      });
+    }
+  }
+
   const { error: emailPreferenceError } = await admin
     .from("orders")
     .update({
@@ -744,7 +761,10 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   return {
     ok: true,
-    message: "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",
+    message:
+      paymentMethod === "card"
+        ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
+        : "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,
     transferReceiptUrl: null,

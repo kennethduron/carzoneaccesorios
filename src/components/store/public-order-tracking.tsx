@@ -32,6 +32,7 @@ const transferProgressSteps = [
 
 const cardProgressSteps = [
   { key: "recibido", label: "Pedido recibido" },
+  { key: "link_pago", label: "Link de pago por WhatsApp" },
   { key: "pago_aprobado", label: "Pago aprobado" },
   { key: "preparacion", label: "En preparación" },
   { key: "empacado", label: "Empacado" },
@@ -42,7 +43,7 @@ const cardProgressSteps = [
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta",
+  card: "Tarjeta por link de pago",
   cash: "Efectivo",
 };
 
@@ -78,7 +79,7 @@ function customerPaymentLabel(order: PublicTrackingOrder) {
     if (order.paymentTiming === "on_delivery") return "Pago pendiente al recibir";
     return "Pago en revisión";
   }
-  if (order.paymentMethod === "card") return "Pendiente de pasarela";
+  if (order.paymentMethod === "card") return "Pago pendiente por link";
   return "Pendiente de confirmación";
 }
 
@@ -107,13 +108,13 @@ function activeProgressIndex(order: PublicTrackingOrder) {
     return 1;
   }
 
-  if (status === "entregado") return 6;
-  if (status === "en_ruta") return 5;
-  if (status === "enviado") return 4;
-  if (status === "empacado") return 3;
-  if (status === "preparacion") return 2;
-  if (isPaymentConfirmed(order.paymentStatus)) return 1;
-  return 0;
+  if (status === "entregado") return 7;
+  if (status === "en_ruta") return 6;
+  if (status === "enviado") return 5;
+  if (status === "empacado") return 4;
+  if (status === "preparacion") return 3;
+  if (isPaymentConfirmed(order.paymentStatus)) return 2;
+  return 1;
 }
 
 export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string }) {

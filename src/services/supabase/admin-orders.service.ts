@@ -263,7 +263,7 @@ export async function getAdminOrdersPage({
 
   if (task === "pending_payments") {
     ordersQuery = ordersQuery
-      .in("payment_method", ["bank_transfer", "cash"])
+      .in("payment_method", ["bank_transfer", "card", "cash"])
       .eq("payments.payment_status", "pending")
       .not("status", "in", "(cancelado,cancelled)");
   }

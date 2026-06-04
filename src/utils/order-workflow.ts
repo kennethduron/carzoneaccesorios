@@ -173,11 +173,10 @@ export function canMoveOrderToStatus(order: OrderWorkflowInput, targetStatus: st
 export function canConfirmPayment(order: OrderWorkflowInput) {
   if (canonicalOrderStatus(order.status) === "cancelado") return false;
   if (isPaymentConfirmed(order.payment_status) || order.payment_status === "rejected") return false;
-  if (order.payment_method === "card") return false;
   if (order.payment_method === "cash" || order.payment_timing === "on_delivery") {
     return canonicalOrderStatus(order.status) === "entregado";
   }
-  return order.payment_method === "bank_transfer";
+  return order.payment_method === "bank_transfer" || order.payment_method === "card";
 }
 
 export function getContextualOrderActions(order: OrderWorkflowInput): ContextualOrderAction[] {
@@ -198,7 +197,7 @@ export function getContextualOrderActions(order: OrderWorkflowInput): Contextual
   if (current === "en_ruta") actions.push("mark_delivered");
 
   if (canConfirmPayment(order)) actions.push("confirm_payment");
-  if (order.payment_method === "bank_transfer" && !paymentConfirmed && order.payment_status !== "rejected") {
+  if ((order.payment_method === "bank_transfer" || order.payment_method === "card") && !paymentConfirmed && order.payment_status !== "rejected") {
     actions.push("reject_payment");
   }
   if (canCancelOrder(order)) actions.push("cancel_order");
@@ -222,7 +221,7 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
   }
 
   if (order.payment_method === "card") {
-    return "Pendiente de pasarela";
+    return "Pago pendiente por link";
   }
 
   return "Pendiente";
@@ -253,6 +252,11 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
     return "Pago confirmado. El pedido puede prepararse o facturarse.";
   }
 
-  if (!paymentConfirmed) return "Esperar confirmacion real de la pasarela antes de preparar.";
-  return "Pago aprobado por pasarela. Preparar pedido.";
+  if (order.payment_method === "card") {
+    if (!paymentConfirmed) return "Enviar link de pago por WhatsApp y confirmar manualmente cuando el cliente pague.";
+    return "Pago con tarjeta confirmado manualmente. Preparar pedido.";
+  }
+
+  if (!paymentConfirmed) return "Esperar confirmacion real del pago antes de preparar.";
+  return "Pago aprobado. Preparar pedido.";
 }

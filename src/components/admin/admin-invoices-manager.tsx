@@ -46,7 +46,7 @@ const statusLabels: Record<InvoiceStatus, string> = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta",
+  card: "Tarjeta por link",
   cash: "Efectivo",
 };
 
@@ -429,7 +429,7 @@ export function AdminInvoicesManager({
             >
               <option value="all">Todos</option>
               <option value="bank_transfer">Transferencia bancaria</option>
-              <option value="card">Tarjeta</option>
+              <option value="card">Tarjeta por link</option>
               <option value="cash">Efectivo</option>
             </select>
           </label>

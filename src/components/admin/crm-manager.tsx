@@ -137,7 +137,7 @@ const orderStatusLabels: Record<string, string> = {
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta",
+  card: "Tarjeta por link",
   cash: "Efectivo",
 };
 

@@ -191,8 +191,7 @@ try {
   const cardProduct = await createProduct("card");
   const cardOrder = await createOrder(cardProduct, { method: "card", timing: "before_delivery", reference: null, phone: "99990005" });
   assert.ifError(cardOrder.error);
-  assert.ok((await manager.rpc("confirm_manual_order_payment", { target_order_id: cardOrder.order.order_id })).error, "Card cannot be confirmed manually");
-  assert.ifError((await admin.rpc("confirm_card_payment_from_backend", { target_order_id: cardOrder.order.order_id, provider_reference: "BAC-TEST-123" })).error);
+  assert.ifError((await manager.rpc("confirm_manual_order_payment", { target_order_id: cardOrder.order.order_id })).error);
   state = await orderState(cardOrder.order.order_id);
   assert.equal(state.payments[0].payment_status, "approved");
   assert.equal(state.order_reservation_status, "confirmed");

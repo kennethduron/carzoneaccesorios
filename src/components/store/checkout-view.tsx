@@ -9,7 +9,6 @@ import {
   getWholesalePurchaseStatusAction,
   type CheckoutAccountInfo,
 } from "@/app/checkout/actions";
-import { CardBrandList } from "@/components/store/card-brand-list";
 import type { CheckoutData } from "@/types/commerce";
 import type { PublicCompanySettings } from "@/types/settings";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -143,14 +142,12 @@ export function CheckoutView({
     if (settings.allow_bank_transfer) {
       methods.push(["Transferencia bancaria", Banknote]);
     }
-    if (settings.bac_card_status === "active") {
-      methods.push(["Tarjeta", CreditCard]);
-    }
+    methods.push(["Tarjeta", CreditCard]);
     if (settings.allow_cash_on_delivery) {
       methods.push(["Efectivo", Store]);
     }
     return methods;
-  }, [settings.allow_bank_transfer, settings.allow_cash_on_delivery, settings.bac_card_status]);
+  }, [settings.allow_bank_transfer, settings.allow_cash_on_delivery]);
   const smallOrderFee = 0;
   const discountTotal = 0;
   const additionalFees: [] = [];
@@ -316,11 +313,6 @@ export function CheckoutView({
       return;
     }
 
-    if (checkout.paymentMethod === "Tarjeta" && settings.bac_card_status !== "active") {
-      showCheckoutError("paymentMethod", "El pago con tarjeta no está disponible hasta activar la pasarela BAC.");
-      return;
-    }
-
     const bankReferenceError = isBankTransferNow ? validateBankReference(bankTransferReference) : "";
     if (bankReferenceError) {
       showCheckoutError("bankTransferReference", bankReferenceError);
@@ -428,10 +420,14 @@ export function CheckoutView({
               : "Tu pedido está pendiente de revisión de pago."
             : checkout.paymentMethod === "Efectivo"
               ? "Tu pedido está pendiente de confirmación."
-              : "Tu pedido será procesado cuando el pago sea aprobado.",
+              : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago.",
       });
       setFieldErrors({});
-      toast.success("Pedido creado correctamente. Te contactaremos para confirmar el pago.");
+      toast.success(
+        checkout.paymentMethod === "Tarjeta"
+          ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
+          : "Pedido creado correctamente. Te contactaremos para confirmar el pago.",
+      );
       setProofFile(null);
       setProofFileName("");
       setProofMessage("");
@@ -728,22 +724,16 @@ export function CheckoutView({
               <div className="flex items-start gap-3">
                 <CreditCard size={19} className="mt-0.5 text-[#e4252c]" />
                 <div>
-                  <h2 className="font-semibold">Pago seguro con tarjeta</h2>
+                  <h2 className="font-semibold">Tarjeta de crédito o débito</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    {settings.bac_card_status === "active"
-                      ? "Opción activa para procesarse mediante BAC Credomatic o su proveedor autorizado."
-                      : "Pendiente de activación BAC. Esta opción queda preparada para procesarse mediante BAC Credomatic o su proveedor autorizado."}
+                    Al finalizar tu pedido, nuestro equipo te enviará un link de pago seguro por WhatsApp para que puedas pagar con tarjeta.
                   </p>
                 </div>
               </div>
               <div className="mt-4 rounded-md border border-[#e4252c]/20 bg-white p-3 text-sm leading-6 text-black/65">
-                <p>No guardamos número de tarjeta, CVV ni fecha de vencimiento en nuestra base de datos.</p>
-                <p>Compatible con validación bancaria y 3D Secure cuando BAC lo requiera y entregue la documentación técnica.</p>
-                <p>El pedido quedará pendiente de aprobación hasta recibir la respuesta de la pasarela.</p>
-              </div>
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-medium uppercase text-black/50">Tarjetas aceptadas al activar la pasarela</p>
-                <CardBrandList />
+                <p>Tu pedido será registrado y nuestro equipo te enviará un link de pago seguro por WhatsApp.</p>
+                <p>No ingresas datos de tarjeta en esta página.</p>
+                <p>No debes escribir número de tarjeta, CVV ni fecha de vencimiento aquí.</p>
               </div>
             </section>
           ) : null}

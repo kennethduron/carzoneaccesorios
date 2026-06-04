@@ -6,7 +6,7 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
-import { formatCurrency, getProductPriceLabel } from "@/utils/pricing";
+import { formatCurrency, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { defaultPublicCompanySettings, getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
 import type { PublicCompanySettings } from "@/types/settings";
@@ -117,7 +117,12 @@ export function CartView() {
                     </p>
                   ) : null}
                   <p className="mt-1 text-xs text-black/45">
-                    Fuente: {getProductPriceLabel(item.product, priceMode).toLowerCase()}
+                    Fuente:{" "}
+                    {priceMode === "wholesale"
+                      ? hasValidWholesalePrice(item.product)
+                        ? "precio mayorista"
+                        : "precio disponible"
+                      : getProductPriceLabel(item.product, priceMode).toLowerCase()}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

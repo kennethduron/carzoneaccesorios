@@ -125,7 +125,7 @@ export async function getActiveHolidayBanners(limit = 4): Promise<HolidayBanner[
     .lte("start_date", today)
     .gte("end_date", today)
     .order("banner_slot", { ascending: true })
-    .order("priority", { ascending: false })
+    .order("priority", { ascending: true })
     .order("updated_at", { ascending: false })
     .limit(Math.min(limit, 4))
     .returns<HolidayBanner[]>();
@@ -152,7 +152,7 @@ export async function getAdminHolidayBanners(): Promise<HolidayBanner[]> {
     .select("*")
     .order("start_date", { ascending: false })
     .order("banner_slot", { ascending: true })
-    .order("priority", { ascending: false })
+    .order("priority", { ascending: true })
     .returns<HolidayBanner[]>();
 
   if (error) {

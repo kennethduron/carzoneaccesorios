@@ -19,7 +19,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Pagos seguros",
-        body: "Los pagos con tarjeta serán procesados por una pasarela bancaria autorizada cuando la integración esté activa. Car Zone Accesorios no almacena número de tarjeta, CVV ni fecha de vencimiento.",
+        body: "Los pagos con tarjeta se coordinan mediante un link de pago externo enviado por WhatsApp por el equipo de Car Zone Accesorios. La página no solicita ni almacena número de tarjeta, CVV ni fecha de vencimiento.",
       },
     ],
   },
@@ -37,7 +37,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Datos de tarjeta",
-        body: "No almacenamos datos sensibles de tarjeta. La información de tarjeta será procesada únicamente por BAC Credomatic o el proveedor autorizado cuando la pasarela esté activa.",
+        body: "No solicitamos ni almacenamos datos sensibles de tarjeta en esta página. Si eliges tarjeta, el equipo enviará un link de pago externo por WhatsApp.",
       },
       {
         title: "Seguridad",
@@ -103,7 +103,7 @@ export const legalPages: Record<string, { title: string; intro: string; sections
       },
       {
         title: "Pagos con tarjeta",
-        body: "Cuando la pasarela BAC esté activa, las anulaciones o reversos se procesarán según las reglas del banco, la marca de tarjeta y el estado de la transacción.",
+        body: "Los pagos con tarjeta por link externo se revisarán con el equipo de atención según el comprobante o confirmación del pago recibido.",
       },
       {
         title: "Pagos por transferencia",

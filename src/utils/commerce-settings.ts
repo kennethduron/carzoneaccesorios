@@ -89,13 +89,19 @@ export function calculateCheckoutFees({
   settings,
 }: {
   subtotal: number;
-  paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Efectivo" | "bank_transfer" | "card" | "cash";
+  paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Tarjeta por link de pago" | "Efectivo" | "bank_transfer" | "card" | "cash";
   paymentTiming?: "before_delivery" | "on_delivery";
   settings: CommerceSettings;
 }) {
   const normalized = normalizeCommerceSettings(settings);
   const normalizedPaymentMethod =
-    paymentMethod === "Transferencia bancaria" ? "bank_transfer" : paymentMethod === "Efectivo" ? "cash" : paymentMethod;
+    paymentMethod === "Transferencia bancaria"
+      ? "bank_transfer"
+      : paymentMethod === "Efectivo"
+        ? "cash"
+        : paymentMethod === "Tarjeta por link de pago"
+          ? "card"
+          : paymentMethod;
   const safeSubtotal = toPositiveMoney(subtotal, 0);
   const shippingFee = safeSubtotal >= normalized.free_shipping_threshold ? 0 : normalized.standard_shipping_fee;
   const cashOnDeliveryFee =

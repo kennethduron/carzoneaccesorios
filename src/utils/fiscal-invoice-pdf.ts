@@ -117,7 +117,7 @@ function paymentLabel(method: string) {
   }
 
   if (method === "card" || method === "Tarjeta") {
-    return "Tarjeta";
+    return "Tarjeta por link de pago";
   }
 
   if (method === "cash" || method === "Efectivo") {

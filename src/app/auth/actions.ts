@@ -471,12 +471,14 @@ export async function registerWithEmailAction(input: {
   }
 
   const supabase = await getSupabaseServerClient();
+
   const siteUrl = await getSiteUrl();
+  const emailRedirectTo = buildAuthCallbackUrl(siteUrl, nextPath, email);
   const { data, error } = await supabase.auth.signUp({
     email,
     password: input.password,
     options: {
-      emailRedirectTo: buildAuthCallbackUrl(siteUrl, nextPath, email),
+      emailRedirectTo,
       data: {
         full_name: fullName,
         username: username.username,
@@ -493,7 +495,14 @@ export async function registerWithEmailAction(input: {
       category: "auth",
     });
     await writeMappedAuthError(mapped, email, {
+      stage: "supabase.auth.signUp",
+      email_redirect_origin: new URL(emailRedirectTo).origin,
+      email_redirect_path: new URL(emailRedirectTo).pathname,
+      auth_email_provider: "supabase-auth-smtp",
       username_present: Boolean(username.username),
+      phone_present: Boolean(phone),
+      sign_up_returned_user: Boolean(data.user),
+      sign_up_returned_session: Boolean(data.session),
     });
     return { ok: false, message: getRegisterErrorMessage(error.message) };
   }

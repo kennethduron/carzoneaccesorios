@@ -14,18 +14,18 @@ const checklistGroups = [
       "Carrito de compras.",
       "Datos de contacto visibles.",
       "Políticas públicas de entrega, devoluciones, cancelación, privacidad y términos.",
-      "Páginas de resultado de pago: aprobado, rechazado, cancelado y pendiente.",
+      "Páginas informativas de pago: aprobado, rechazado, cancelado y pendiente.",
       "HTTPS/TLS activo en producción.",
     ],
   },
   {
-    title: "Pendiente",
+    title: "No activo",
     status: "pending",
     items: [
-      "Código oficial de integración BAC.",
-      "Webhook seguro con validación bancaria real.",
-      "Pruebas bancarias de aprobación, rechazo, cancelación y pendiente.",
-      "Confirmación final del flujo de anulaciones y reembolsos.",
+      "No hay integracion directa activa dentro del sitio.",
+      "No hay proceso automatico de pago activo para tarjeta.",
+      "La tarjeta se gestiona por link externo enviado manualmente por WhatsApp.",
+      "La confirmación del pago se registra manualmente desde pedidos.",
     ],
   },
   {
@@ -39,13 +39,13 @@ const checklistGroups = [
     ],
   },
   {
-    title: "Requiere credenciales BAC",
+    title: "Referencia historica",
     status: "credentials",
     items: [
-      "Credenciales productivas de BAC Credomatic.",
-      "Credenciales de pruebas, si BAC entrega sandbox.",
-      "Llaves o parámetros oficiales indicados por BAC.",
-      "Reglas de 3D Secure según documentación final de BAC.",
+      "Esta sección queda como referencia futura no activa.",
+      "No usar credenciales ni llaves bancarias para el flujo actual.",
+      "No solicitar datos de tarjeta dentro del sitio.",
+      "Confirmar pagos de tarjeta solo tras verificar el link externo.",
     ],
   },
   {
@@ -80,16 +80,17 @@ export default async function RevisionBacPage() {
   const visibleChecklistGroups = canViewTechnical ? checklistGroups : checklistGroups.filter((group) => group.status !== "credentials");
 
   return (
-    <AdminShell title="Revisión BAC Credomatic">
+    <AdminShell title="Tarjeta por link externo">
       <section className="grid gap-6">
         <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-sm text-black/50">Preparación bancaria</p>
-              <h1 className="mt-1 text-2xl font-semibold">Checklist para tarjeta real con BAC</h1>
+              <p className="text-sm text-black/50">Flujo activo sin integracion directa</p>
+              <h1 className="mt-1 text-2xl font-semibold">Tarjeta por link de pago externo</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-                Esta pantalla separa lo que ya está preparado en la web de lo que depende de BAC, datos reales del
-                comercio y revisión legal/contable. El sistema no guarda números de tarjeta, CVV ni fecha de vencimiento.
+                El checkout no procesa tarjetas dentro del sitio. El equipo envía manualmente un link externo por
+                WhatsApp y confirma el pago desde pedidos cuando lo verifica. El sistema no guarda números de tarjeta,
+                CVV ni fecha de vencimiento.
               </p>
             </div>
             <span className="inline-flex w-fit items-center gap-2 rounded-md bg-[#ecfdf5] px-3 py-2 text-sm font-semibold text-[#166534]">
@@ -107,16 +108,16 @@ export default async function RevisionBacPage() {
 
         <div className={`grid gap-4 ${canViewTechnical ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
           <InfoCard
-            title="Qué falta para tarjeta real"
-            text="BAC debe autorizar el flujo productivo y las pruebas bancarias antes de activar cobro con tarjeta."
+            title="Flujo activo"
+            text="Crear pedido, enviar link externo por WhatsApp, verificar pago y confirmar manualmente desde pedidos."
           />
           <InfoCard
-            title="Qué no debe hacerse todavía"
-            text="No activar tarjeta como método real hasta completar pruebas bancarias, validación contable y confirmación técnica."
+            title="Qué no debe hacerse"
+            text="No pedir datos de tarjeta en la web, no guardar CVV, no marcar pagos como confirmados sin verificación externa."
           />
           <InfoCard
-            title="3D Secure"
-            text="La validación bancaria debe manejarse únicamente por el flujo autorizado antes de abrir tarjeta a clientes."
+            title="Confirmación manual"
+            text="El dueño o rol autorizado confirma o rechaza el pago después de revisar el resultado del link externo."
           />
         </div>
 
@@ -137,8 +138,8 @@ export default async function RevisionBacPage() {
         </div>
 
         {canViewTechnical ? <div className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-5 text-sm leading-6 text-[#7f1d1d]">
-          Las credenciales BAC, llaves privadas y secretos deben vivir solo en variables seguras de Vercel. Ningún usuario
-          operativo debe ver o modificar API keys, secretos de cron ni configuración técnica sensible.
+          No hay credenciales bancarias activas para tarjeta dentro del sitio. Ningun usuario operativo debe ver o
+          modificar API keys, secretos de cron ni configuración técnica sensible.
         </div> : null}
       </section>
     </AdminShell>
@@ -157,7 +158,7 @@ function ChecklistCard({ title, items, status }: { title: string; items: string[
     completed: "Completado",
     pending: "Pendiente",
     real_data: "Requiere datos reales",
-    credentials: "Requiere credenciales BAC",
+    credentials: "Integracion no activa",
     legal: "Revisión legal/contable",
   };
   const iconByStatus = {

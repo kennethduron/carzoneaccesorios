@@ -40,7 +40,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
     <section className="rounded-lg border border-black/10 bg-white p-5 shadow-sm transition-all hover:shadow-md">
       <div className="mb-4">
         <h2 className="font-semibold">Configuración comercial</h2>
-        <p className="mt-1 text-sm text-black/55">Envío, pago al recibir, mínimo mayorista, datos BAC y redes sociales.</p>
+        <p className="mt-1 text-sm text-black/55">Envío, pago al recibir, mínimo mayorista, contacto del comercio y redes sociales.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -64,9 +64,9 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
       </label>
 
       <div className="mt-6">
-        <h3 className="font-semibold">Datos del comercio para BAC</h3>
+        <h3 className="font-semibold">Datos del comercio</h3>
         <p className="mt-1 text-sm text-black/55">
-          Estos datos se muestran en el footer, páginas legales y servicio al cliente. Revíselos antes de enviarlos a BAC.
+          Estos datos se muestran en el footer, páginas legales y servicio al cliente.
         </p>
       </div>
 
@@ -118,7 +118,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
       </div>
 
       <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Validar tratamiento fiscal de envío y comisión con la contadora. Validar textos legales con asesoría legal antes de producción bancaria final.
+        Validar tratamiento fiscal de envío y comisión con la contadora. Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp.
       </p>
 
       {canEdit ? (

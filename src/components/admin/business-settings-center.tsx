@@ -24,7 +24,7 @@ const dashboardCards: Array<[DashboardCardKey, string, string]> = [
   ["wholesale_requests", "Solicitudes mayoristas", "Cuentas mayoristas por revisar."],
   ["customers_attention", "Clientes por atender", "Seguimientos CRM vencidos o para hoy."],
   ["pending_invoices", "Facturas pendientes", "Documentos pendientes de emisión."],
-  ["bac_alerts", "Alertas BAC", "Preparación bancaria y pendientes de pasarela."],
+  ["bac_alerts", "Pagos por link", "Seguimiento de pagos con tarjeta por link externo."],
   ["backup_cron_status", "Backups/cron", "Estado técnico visible solo para perfiles técnicos."],
 ];
 
@@ -249,16 +249,17 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
             />
           </SwitchGrid>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Tarjeta BAC">
+            <Field label="Tarjeta por link de pago">
               <select
                 value={form.bac_card_status}
                 onChange={(event) => update("bac_card_status", event.target.value as BusinessSettings["bac_card_status"])}
                 className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
               >
-                <option value="hidden">Oculta</option>
-                <option value="pending">Visible como pendiente</option>
-                <option value="active">Activa</option>
+                <option value="hidden">No mostrar en configuraciones antiguas</option>
+                <option value="pending">Link manual pendiente</option>
+                <option value="active">Link manual activo</option>
               </select>
+              <p className="mt-1 text-xs text-black/50">El checkout usa link externo por WhatsApp; no procesa tarjetas dentro del sitio.</p>
             </Field>
             <Field label="Comprobante de transferencia">
               <select
@@ -382,7 +383,7 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
           <div className="grid gap-3 md:grid-cols-3">
             <TechnicalLink href="/admin/uso" title="Uso y monitoreo" text="Volumen de datos, logs antiguos y referencias técnicas." />
             <TechnicalLink href="/admin/seguridad" title="Seguridad" text="Auditoría, usuarios, roles y controles administrativos." />
-            <TechnicalLink href="/admin/revision-bac" title="BAC" text="Checklist técnico/comercial de pasarela sin credenciales visibles." />
+            <TechnicalLink href="/admin/revision-bac" title="Pagos por link" text="Checklist tecnico/comercial del flujo manual por WhatsApp." />
           </div>
           <div className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
             Las variables de Vercel, Supabase, Cloudinary, Resend, Brevo y cron no se exponen ni se editan desde

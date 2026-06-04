@@ -39,6 +39,22 @@ Comparacion revisada el 21 de mayo de 2026:
 - Brevo Free: 300 correos/dia; sirve para transaccional y API/SMTP; conviene si el volumen gratis diario importa mas.
 - Recomendacion: mantener Resend si ya esta autenticado y el volumen es bajo; cambiar a Brevo cuando se quiera mas margen gratis o unificar CRM/email, despues de autenticar dominio.
 
+### Registro Auth mientras se verifica el dominio
+
+Mientras el dominio definitivo no este verificado en Resend, el registro publico debe usar el mailer nativo de Supabase Auth. No activar Custom SMTP con `onboarding@resend.dev` para Auth porque Resend no permite enviar confirmaciones a correos externos desde ese remitente.
+
+El modo temporal `AUTH_TEST_CREATE_UNCONFIRMED_USERS` queda retirado del flujo publico. El registro debe llamar `supabase.auth.signUp`, enviar `emailRedirectTo` a `/auth/callback` y mantener la cuenta sin sesion hasta que el usuario confirme el correo.
+
+La configuracion de Resend, plantillas, callbacks, scripts SMTP y `email_queue` se conserva para futuro. Solo Auth debe permanecer temporalmente con el mailer nativo de Supabase.
+
+Cuando el dominio este comprado y verificado en Resend, configurar `SUPABASE_AUTH_SMTP_FROM_EMAIL=notificaciones@carzoneaccesorios.com` y restaurar/verificar el flujo SMTP preparado con `npm run configure:supabase-auth-resend-smtp`.
+
+Antes y despues de cada cambio, auditar la configuracion con:
+
+```bash
+npm run audit:supabase-auth-config
+```
+
 ## Mayoristas
 
 - Un visitante no autenticado no debe activar precio mayorista.

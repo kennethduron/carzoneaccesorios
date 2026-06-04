@@ -53,7 +53,7 @@ type AdminOrdersManagerProps = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta",
+  card: "Tarjeta por link de pago",
   cash: "Efectivo",
 };
 
@@ -81,6 +81,69 @@ const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
 
 const fiscalCorrectionWarning =
   "Esta acción actualizará datos fiscales del cliente. Si la factura ya fue emitida, conservará el mismo número fiscal y quedará registrada en auditoría.";
+
+function buildOrderWhatsappMessage(order: AdminOrderRow) {
+  const visibleItems = order.order_items.slice(0, 8);
+  const productLines = visibleItems.map((item) => `* ${item.quantity} x ${item.product_name} - ${formatCurrency(item.line_total)}`);
+  const remainingItems = order.order_items.length - visibleItems.length;
+
+  if (remainingItems > 0) {
+    productLines.push(`* ${remainingItems} productos adicionales. Ver detalle completo en el pedido.`);
+  }
+
+  const paymentMethod = paymentLabels[order.payment_method] ?? order.payment_method;
+  const commonIntro = [
+    "Hola, gracias por contactar con Car Zone Accesorios.",
+    "",
+    "Te compartimos el resumen de tu pedido:",
+    "",
+    `Pedido: #${order.order_number}`,
+    "",
+    "Productos:",
+    "",
+    productLines.length > 0 ? productLines.join("\n") : "* Productos registrados en el pedido.",
+    "",
+    `Total a pagar: ${formatCurrency(order.total)}`,
+    "",
+    `Metodo de pago seleccionado: ${paymentMethod}.`,
+  ];
+
+  if (order.payment_method === "card") {
+    return [
+      ...commonIntro,
+      "",
+      "Seleccionaste pago con tarjeta de credito o debito.",
+      "",
+      "Puedes realizar tu pago de forma segura por medio del siguiente link:",
+      "",
+      "Link de pago: ",
+      "",
+      "Cuando completes el pago, por favor envianos la confirmacion o comprobante por este chat para continuar con tu pedido.",
+      "",
+      "Gracias por comprar en Car Zone Accesorios.",
+    ].join("\n");
+  }
+
+  if (order.payment_method === "bank_transfer") {
+    return [
+      ...commonIntro,
+      "",
+      order.payment_timing === "on_delivery"
+        ? "Coordinaremos la entrega y la transferencia al recibir tu pedido."
+        : "Por favor envianos la confirmacion, referencia o comprobante de transferencia por este chat para validar tu pago.",
+      "",
+      "Gracias por comprar en Car Zone Accesorios.",
+    ].join("\n");
+  }
+
+  return [
+    ...commonIntro,
+    "",
+    "Coordinaremos contigo la entrega y el pago en efectivo.",
+    "",
+    "Gracias por comprar en Car Zone Accesorios.",
+  ].join("\n");
+}
 
 export function AdminOrdersManager({
   orders,
@@ -487,10 +550,9 @@ function OrderDetail({
     canConfirmPayments &&
     !paymentIsApproved &&
     !paymentIsRejected &&
-    !isCard &&
     normalizedStatus !== "cancelado" &&
     (order.payment_timing !== "on_delivery" || normalizedStatus === "entregado");
-  const paymentActionLabel = isCard ? "Confirmar por pasarela" : "Confirmar pago recibido";
+  const paymentActionLabel = isCard ? "Confirmar pago por link" : "Confirmar pago recibido";
   const visibleManualStatuses = canManageOrders
     ? manualStatuses
     : manualStatuses.filter((option) => ["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(option.value));
@@ -558,7 +620,7 @@ function OrderDetail({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <ContactActions phone={order.phone} customerName={order.customer_name} />
+          <ContactActions phone={order.phone} customerName={order.customer_name} whatsappMessage={buildOrderWhatsappMessage(order)} />
           {order.tracking_code ? (
             <button
               type="button"
@@ -590,7 +652,7 @@ function OrderDetail({
               {isPending ? "Procesando..." : paymentActionLabel}
             </Button>
           ) : null}
-          {canRejectPayments && isBankTransfer && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
+          {canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
             <Button onClick={onRejectPayment} disabled={isPending} variant="secondary">
               <XCircle size={17} />
               Rechazar pago
@@ -707,7 +769,7 @@ function OrderDetail({
 
         {isCard && !paymentIsApproved ? (
           <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            Los pagos con tarjeta quedan pendientes hasta integrar una pasarela real; no se confirman manualmente.
+            Pago con tarjeta por link pendiente de enviar/confirmar. Usa WhatsApp para enviar el link y confirma manualmente cuando el pago sea verificado.
           </p>
         ) : null}
         {isCash && !paymentIsApproved && normalizedStatus !== "entregado" && normalizedStatus !== "cancelado" ? (

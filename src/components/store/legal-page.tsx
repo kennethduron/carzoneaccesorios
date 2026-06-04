@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Mail, MapPin, Phone } from "lucide-react";
-import { CardBrandList } from "@/components/store/card-brand-list";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import type { PublicCompanySettings } from "@/types/settings";
 
@@ -31,8 +30,8 @@ export function LegalPage({
         <p className="mt-4 max-w-3xl text-base leading-7 text-black/65">{intro}</p>
 
         <div className="mt-6 rounded-lg border border-[#e4252c]/25 bg-[#fff7ed] p-4 text-sm leading-6 text-[#7c2d12]">
-          Estos textos son una base operativa para Honduras y pueden ser ajustados por el negocio. Recomendamos revisión
-          legal, contable y bancaria antes de la aprobación final de la pasarela.
+          Estos textos son una base operativa para Honduras y pueden ser ajustados por el negocio. Recomendamos revision
+          legal y contable antes de publicar cambios contractuales.
         </div>
 
         <div className="mt-8 grid gap-4">
@@ -58,7 +57,7 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
           <h2 className="text-lg font-semibold">Datos del comercio</h2>
           <p className="mt-1 text-sm text-black/55">{settings.trade_name || settings.company_name}</p>
           {settings.legal_business_name ? (
-            <p className="mt-1 text-sm text-black/55">Razón social: {settings.legal_business_name}</p>
+            <p className="mt-1 text-sm text-black/55">Razon social: {settings.legal_business_name}</p>
           ) : null}
           {settings.business_rtn ? <p className="mt-1 text-sm text-black/55">RTN: {settings.business_rtn}</p> : null}
         </div>
@@ -74,9 +73,9 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
         <Info icon={<Phone size={17} />} text={settings.customer_service_phone || "+504 0000-0000"} />
         <Info icon={<Mail size={17} />} text={settings.customer_service_email || "Correo no configurado"} />
       </div>
-      <div className="mt-5">
-        <p className="mb-2 text-sm font-semibold">Tarjetas aceptadas al activar la pasarela</p>
-        <CardBrandList />
+      <div className="mt-5 rounded-md bg-[#f4f4f5] p-3 text-sm leading-6 text-black/60">
+        Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp. No ingreses datos de tarjeta en esta
+        pagina.
       </div>
     </section>
   );

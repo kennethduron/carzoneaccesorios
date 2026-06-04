@@ -194,6 +194,18 @@ export function mapOperationalError(error: unknown, context: OperationalErrorCon
     };
   }
 
+  if (message.includes("error sending confirmation email") || message.includes("sending confirmation email")) {
+    return {
+      ...base,
+      severity: "critical",
+      customerMessage:
+        "No pudimos enviar el correo de verificacion. Intenta nuevamente mas tarde o contacta al equipo de soporte.",
+      adminReason: "Supabase Auth no pudo enviar el correo de confirmacion desde el proveedor SMTP configurado.",
+      recommendation:
+        "Revisar SMTP de Supabase Auth: host, puerto, usuario, API key, remitente y dominio verificado en Resend.",
+    };
+  }
+
   if (status === 429 || message.includes("rate limit") || message.includes("too many")) {
     return {
       ...base,
@@ -230,7 +242,7 @@ export function mapOperationalError(error: unknown, context: OperationalErrorCon
     return {
       ...base,
       severity: "warning",
-      customerMessage: "Tu cuenta aún no ha sido verificada. Revisa tu correo o solicita un nuevo enlace.",
+      customerMessage: "Debes confirmar tu correo antes de iniciar sesión.",
       adminReason: "Inicio de sesión bloqueado porque el correo no está verificado.",
       recommendation: "Reenviar enlace de verificación si el cliente no lo encuentra.",
     };

@@ -47,7 +47,7 @@ function paymentMethodLabel(value: string) {
   const labels: Record<string, string> = {
     bank_transfer: "Transferencia bancaria",
     cash: "Efectivo",
-    card: "Tarjeta",
+    card: "Tarjeta por link de pago",
   };
 
   return labels[value] ?? value;
@@ -150,6 +150,11 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
         <p style="margin:0 0 8px;color:#e4252c;font-size:13px;font-weight:700;text-transform:uppercase;">Car Zone Accesorios</p>
         <h1 style="margin:0 0 16px;font-size:25px;line-height:1.25;">Pedido recibido</h1>
         <p style="margin:0 0 18px;color:#555;line-height:1.6;">Hola ${escapeHtml(order.customer_name)}. Hemos recibido tu pedido. Nuestro equipo lo revisara pronto.</p>
+        ${
+          order.payment_method === "card"
+            ? '<p style="margin:0 0 18px;color:#555;line-height:1.6;">Nuestro equipo te contactara por WhatsApp para enviarte el link de pago seguro. No ingreses datos de tarjeta en esta pagina.</p>'
+            : ""
+        }
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           ${row("Pedido", order.order_number)}
           ${row("Fecha", formatDate(order.created_at))}
@@ -368,6 +373,25 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
       },
       dedupeKey: `payment.cash_on_delivery:${createdOrder.orderId}`,
     });
+  } else if (order.payment_method === "card") {
+    await createInternalNotification({
+      type: "payment.pending",
+      title: "Pago con tarjeta por link pendiente",
+      message: `El pedido ${order.order_number} requiere enviar link de pago por WhatsApp y confirmar manualmente.`,
+      severity: "warning",
+      module: "pagos",
+      orderId: createdOrder.orderId,
+      metadata: {
+        order_number: order.order_number,
+        customer_name: order.customer_name,
+        customer_phone: order.phone,
+        payment_method: order.payment_method,
+        payment_status: paymentStatus,
+        total: order.total,
+        action_path: "/admin/pedidos?task=pending_payments",
+      },
+      dedupeKey: `payment.card_link:${createdOrder.orderId}`,
+    });
   }
 
   await queuePreferenceEmail({
@@ -400,7 +424,10 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
       payload: {
         html: buildCustomerOrderReceivedHtml(order),
         title: "Hemos recibido tu pedido",
-        message: "Hemos recibido tu pedido. Nuestro equipo lo revisara pronto.",
+        message:
+          order.payment_method === "card"
+            ? "Recibimos tu pedido. Nuestro equipo te contactara por WhatsApp para enviarte el link de pago seguro."
+            : "Hemos recibido tu pedido. Nuestro equipo lo revisara pronto.",
         order_number: order.order_number,
         customer_name: order.customer_name,
         created_at: order.created_at,

@@ -27,6 +27,8 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
   const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
   const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
   const displayPrice = getProductPrice(product, priceMode);
+  const priceLabel =
+    priceMode === "wholesale" ? (hasWholesalePrice ? "Precio mayorista" : "Precio disponible") : getProductPriceLabel(product, priceMode);
 
   useEffect(() => {
     registerProducts([product, ...relatedProducts]);
@@ -57,13 +59,11 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-black/10 bg-white p-4">
-              <p className="text-sm text-black/45">{getProductPriceLabel(product, priceMode)}</p>
+              <p className="text-sm text-black/45">{priceLabel}</p>
               <p className="mt-1 text-3xl font-semibold">{formatCurrency(displayPrice)}</p>
-              {isWholesalePriceVisible ? (
-                <p className="mt-1 text-sm text-black/55">Precio al detalle: {formatCurrency(product.retail_price)}</p>
-              ) : (
+              {!isWholesalePriceVisible && priceMode === "retail" ? (
                 <p className="mt-1 text-sm text-black/55">Precio público del catálogo</p>
-              )}
+              ) : null}
               {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
                 <p className="mt-2 text-sm font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
               ) : null}
@@ -88,9 +88,9 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
               </div>
             ) : (
               <div className="rounded-lg border border-black/10 bg-white p-4">
-                <p className="text-sm text-black/45">Precio al detalle</p>
+                <p className="text-sm text-black/45">Precio disponible</p>
                 <p className="mt-1 text-lg font-semibold">Este producto no tiene precio mayorista activo.</p>
-                <p className="mt-2 text-sm text-black/55">Se aplicará el precio normal.</p>
+                <p className="mt-2 text-sm text-black/55">Se aplicará el precio disponible para este producto.</p>
               </div>
             )}
           </div>
@@ -129,7 +129,7 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
 
           <div className="grid gap-3 sm:grid-cols-3">
             {[
-              ["Pago seguro", "No guardamos datos de tarjeta.", ShieldCheck],
+              ["Pago seguro", "Tarjeta por link externo enviado por WhatsApp.", ShieldCheck],
               ["Entrega", "Despacho coordinado por pedido.", Truck],
               ["Inventario", "Stock conectado al catálogo.", PackageCheck],
             ].map(([title, text, Icon]) => (

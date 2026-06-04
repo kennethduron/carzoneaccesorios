@@ -104,7 +104,7 @@ const moduleGroups = [
       { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["security:read"] },
       { title: "Configuración empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
       { title: "Banners festivos", href: "/admin/banners", description: "Flyers, promociones y mensajes por días festivos de Honduras.", permissions: ["settings:manage", "commercial_settings:manage"] },
-      { title: "Revisión BAC", href: "/admin/revision-bac", description: "Checklist web para pasarela BAC Credomatic.", permissions: ["commercial_settings:manage", "settings:manage"] },
+      { title: "Tarjeta por link", href: "/admin/revision-bac", description: "Referencia operativa; el flujo activo usa link externo por WhatsApp.", permissions: ["commercial_settings:manage", "settings:manage"] },
     ],
   },
   {
@@ -114,8 +114,8 @@ const moduleGroups = [
     description: "Material operativo para resolver dudas rápido.",
     defaultOpen: false,
     modules: [
-      { title: "Guía rápida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y BAC.", permissions: ["admin:access"] },
-      { title: "Ayuda interna", href: "/admin/ayuda", description: "Manual operativo por rol para productos, pedidos, facturas, CRM y BAC.", permissions: ["admin:access"] },
+      { title: "Guía rápida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y pagos por link.", permissions: ["admin:access"] },
+      { title: "Ayuda interna", href: "/admin/ayuda", description: "Manual operativo por rol para productos, pedidos, facturas, CRM y pagos por link.", permissions: ["admin:access"] },
     ],
   },
   {
@@ -625,7 +625,7 @@ function WarehouseTask({ href, label, value }: { href: string; label: string; va
 }
 
 function BacStatus({ status }: { status: string }) {
-  const label = status === "active" ? "BAC activo" : status === "pending" ? "BAC pendiente" : "BAC oculto";
+  const label = status === "active" ? "Link activo" : status === "pending" ? "Link manual" : "Link oculto";
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(status)}`}>{label}</span>;
 }
 

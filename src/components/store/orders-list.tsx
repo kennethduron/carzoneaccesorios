@@ -35,7 +35,7 @@ const paymentStatusLabels: Record<string, string> = {
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia",
   cash: "Efectivo",
-  card: "Tarjeta",
+  card: "Tarjeta por link",
 };
 
 const reservationLabels: Record<string, string> = {
@@ -66,7 +66,7 @@ function invoiceStatusMessage(order: CustomerOrderRow) {
     return "Factura pendiente. Estara disponible cuando el pago sea confirmado.";
   }
 
-  return "Factura pendiente. Disponible despues de confirmar pago.";
+  return "Factura pendiente. Disponible despues de confirmar el pago por link.";
 }
 
 function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
@@ -127,7 +127,7 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     total: invoice.total,
     priceMode: invoice.price_mode ?? order.price_mode,
     paymentMethod:
-      order.payment_method === "bank_transfer" ? "Transferencia bancaria" : order.payment_method === "card" ? "Tarjeta" : "Efectivo",
+      order.payment_method === "bank_transfer" ? "Transferencia bancaria" : order.payment_method === "card" ? "Tarjeta por link de pago" : "Efectivo",
     paymentReference: order.bank_reference_number,
     status: invoice.status,
     issuedAt: invoice.issued_at ?? order.created_at,

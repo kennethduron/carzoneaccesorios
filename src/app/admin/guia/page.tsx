@@ -73,14 +73,14 @@ const processSteps: ScopedStep[] = [
   { title: "Preparar pedido", href: "/admin/pedidos?task=to_prepare", detail: "Identifica pedidos confirmados y avanza preparacion, empaque o envio.", permissions: ["orders:manage_logistics"] },
   { title: "Revisar reservas", href: "/admin/pedidos?task=expired_reservations", detail: "Revisa reservas vencidas desde el impacto de stock.", permissions: ["reservations:review"] },
   { title: "Revisar pedido", href: "/admin/pedidos", detail: "Abre pedidos nuevos, confirma datos del cliente y prepara el siguiente estado.", permissions: ["orders:manage"] },
-  { title: "Confirmar pago", href: "/admin/pedidos?task=pending_payments", detail: "Valida transferencia o estado BAC antes de aprobar.", permissions: ["payments:confirm"] },
+  { title: "Confirmar pago", href: "/admin/pedidos?task=pending_payments", detail: "Valida transferencia, efectivo entregado o tarjeta por link antes de aprobar.", permissions: ["payments:confirm"] },
   { title: "Generar factura", href: "/admin/facturas", detail: "Emite solo con pago confirmado, CAI, rango y datos fiscales correctos.", permissions: ["invoices:create"] },
   { title: "Revisar facturas", href: "/admin/facturas", detail: "Consulta facturas emitidas, anuladas, PDF e historial fiscal.", permissions: ["invoices:read"] },
   { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", detail: "Filtra facturas, ISV, anulaciones y correlativos para contabilidad.", permissions: ["reports:fiscal_read"] },
   { title: "Usar CRM", href: "/admin/clientes", detail: "Registra notas, seguimientos y estado comercial del cliente.", permissions: ["crm:manage"] },
   { title: "Aprobar mayorista", href: "/admin/clientes-mayoristas", detail: "Revisa la solicitud y activa precios especiales si procede.", permissions: ["wholesale:manage"] },
   { title: "Configurar redes", href: "/admin/configuracion", detail: "Manten datos publicos, enlaces y contacto actualizados.", permissions: ["commercial_settings:manage"] },
-  { title: "Revisar BAC", href: "/admin/revision-bac", detail: "Valida checklist bancario y revision legal/contable.", permissions: ["commercial_settings:manage"] },
+  { title: "Tarjeta por link", href: "/admin/revision-bac", detail: "Referencia operativa; el flujo activo usa link externo por WhatsApp.", permissions: ["commercial_settings:manage"] },
   { title: "Backups y uso", href: "/admin/uso", detail: "Revisa volumen, logs y tareas tecnicas cuando tengas permiso.", permissions: ["technical:tools"] },
 ];
 

@@ -22,6 +22,8 @@ export function CatalogProductCard({ product }: { product: Product }) {
   const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
   const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
   const displayPrice = getProductPrice(product, priceMode);
+  const priceLabel =
+    priceMode === "wholesale" ? (hasWholesalePrice ? "Precio mayorista" : "Precio disponible") : getProductPriceLabel(product, priceMode);
   const isLowStock = product.stock > 0 && product.stock <= 3;
   const cardDescription = getProductCardDescription(product);
 
@@ -74,11 +76,8 @@ export function CatalogProductCard({ product }: { product: Product }) {
           {cardDescription ? <p className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-black/60">{cardDescription}</p> : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs text-black/45">{getProductPriceLabel(product, priceMode)}</p>
+              <p className="text-xs text-black/45">{priceLabel}</p>
               <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(displayPrice)}</p>
-              {isWholesalePriceVisible ? (
-                <p className="text-xs text-black/45">Precio al detalle: {formatCurrency(product.retail_price)}</p>
-              ) : null}
               {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
                 <p className="mt-1 text-xs font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
               ) : null}
