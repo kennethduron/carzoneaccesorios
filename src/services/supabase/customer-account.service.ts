@@ -593,3 +593,73 @@ export async function getCustomerIssuedInvoices(userId: string, limit = 20) {
   const page = await getCustomerIssuedInvoicesPage(userId, { page: 1, pageSize: limit });
   return page.invoices;
 }
+
+export async function getCustomerInvoiceDetail(userId: string, invoiceId: string): Promise<StoreInvoice | null> {
+  const admin = getSupabaseAdminClient();
+  const orderIds = await getCustomerOrderIds(userId, 5000);
+
+  if (orderIds.length === 0) {
+    return null;
+  }
+
+  const { data, error } = await admin
+    .from("invoices")
+    .select(
+      `
+      id,
+      invoice_number,
+      order_id,
+      customer_id,
+      rtn,
+      cai,
+      customer_rtn,
+      customer_name,
+      customer_phone,
+      customer_email,
+      customer_address,
+      company_legal_name,
+      company_rtn,
+      company_address,
+      company_phone,
+      company_email,
+      company_logo_url,
+      fiscal_range_start,
+      fiscal_range_end,
+      due_at,
+      status,
+      price_mode,
+      subtotal,
+      tax,
+      shipping_fee,
+      cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
+      total,
+      issued_at,
+      cancelled_at,
+      created_at,
+      orders(order_number, customer_name, payment_method, payments(bank_reference_number, reference)),
+      invoice_items(
+        id,
+        sku,
+        product_name,
+        quantity,
+        unit_price,
+        line_total,
+        retail_price_snapshot,
+        wholesale_price_snapshot
+      )
+    `,
+    )
+    .eq("id", invoiceId)
+    .in("order_id", orderIds)
+    .in("status", ["emitida", "issued", "paid", "anulada", "cancelled"])
+    .maybeSingle<CustomerInvoiceQueryRow>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ? normalizeInvoice(data) : null;
+}

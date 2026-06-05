@@ -6,7 +6,6 @@ import { Ban, Download, ExternalLink, Eye, FilePenLine, FileSpreadsheet, FileTex
 import {
   cancelInvoiceAction,
   getInvoiceDetailAction,
-  logInvoiceReprintAction,
   updateInvoiceCustomerDataAction,
 } from "@/app/admin/facturas/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
@@ -18,7 +17,6 @@ import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalAlert } from "@/types/fiscal";
 import type { AdminInvoiceDetail, AdminInvoiceRow, InvoiceStatus } from "@/types/invoices";
-import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { formatHnDate } from "@/utils/format";
 import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
 import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
@@ -80,6 +78,11 @@ function downloadBlob(content: string, fileName: string, type: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function adminInvoicePdfHref(invoiceId: string, download = false) {
+  const href = `/api/admin/facturas/${encodeURIComponent(invoiceId)}/pdf`;
+  return download ? `${href}?download=1` : href;
 }
 
 function htmlEscape(value: string | number) {
@@ -226,72 +229,6 @@ export function AdminInvoicesManager({
       "car-zone-facturas.xlsx.xls",
       "application/vnd.ms-excel;charset=utf-8",
     );
-  }
-
-  async function exportInvoicePdf(invoice: AdminInvoiceRow) {
-    const detail = await getInvoiceDetailAction(invoice.id);
-    if (!detail.ok || !detail.invoice) {
-      showInvoiceMessage(detail.message || "No se pudo cargar el detalle de la factura.", false);
-      return;
-    }
-
-    await exportAdminInvoicePdf(detail.invoice);
-    /*
-    const { doc, autoTable } = await createPdfDocument();
-    doc.setFontSize(14);
-    doc.text(fiscalSettings.legal_name || "Car Zone Accesorios", 14, 16);
-    doc.setFontSize(9);
-    doc.text(`RTN: ${fiscalSettings.rtn || invoice.rtn || "-"}`, 14, 23);
-    doc.text(`CAI: ${fiscalSettings.cai || invoice.cai || "-"}`, 14, 29);
-    doc.text(`Factura: ${invoice.invoice_number}`, 140, 16);
-    doc.text(`Fecha: ${formatDate(invoice.issued_at ?? invoice.created_at)}`, 140, 23);
-    doc.text(`Cliente: ${invoice.customer_name}`, 14, 42);
-    doc.text(`RTN cliente: ${invoice.customer_rtn ?? "-"}`, 14, 48);
-    doc.text(`Teléfono: ${invoice.customer_phone ?? "-"}`, 14, 54);
-    doc.text(`Dirección: ${invoice.customer_address ?? "-"}`, 14, 60);
-    doc.text(`Pago: ${paymentLabels[invoice.payment_method] ?? invoice.payment_method}`, 14, 66);
-    if (invoice.bank_reference_number) {
-      doc.text(`Referencia bancaria: ${invoice.bank_reference_number}`, 14, 72);
-    }
-    if (invoice.transfer_receipt_url) {
-      doc.text("Comprobante transferencia: disponible como referencia interna", 14, invoice.bank_reference_number ? 78 : 72);
-    }
-    autoTable(doc, {
-      startY: invoice.transfer_receipt_url ? (invoice.bank_reference_number ? 86 : 80) : invoice.bank_reference_number ? 80 : 74,
-      head: [["SKU", "Producto", "Cantidad", "Precio", "Total"]],
-      body: invoice.items.map((item) => [
-        item.sku,
-        item.product_name,
-        item.quantity,
-        formatCurrency(item.unit_price),
-        formatCurrency(item.line_total),
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [228, 37, 44] },
-    });
-    const finalY = getLastAutoTableY(doc);
-    doc.text(`Subtotal: ${formatCurrency(invoice.subtotal)}`, 140, finalY + 10);
-    doc.text(`ISV: ${formatCurrency(invoice.tax)}`, 140, finalY + 16);
-    doc.text(`Envío: ${formatCurrency(invoice.shipping_fee)}`, 140, finalY + 22);
-    doc.text(`Comisión entrega: ${formatCurrency(invoice.cash_on_delivery_fee)}`, 140, finalY + 28);
-    doc.text(`Total: ${formatCurrency(invoice.total)}`, 140, finalY + 34);
-    doc.text("Validar tratamiento fiscal de envío y comisión con la contadora.", 14, finalY + 34);
-    doc.save(`${invoice.invoice_number}.pdf`);
-    */
-  }
-
-  function reprintInvoice(invoice: AdminInvoiceRow) {
-    startTransition(async () => {
-      const result = await logInvoiceReprintAction(invoice.id);
-      if (!result.ok) {
-        showInvoiceMessage(result.message, false);
-        return;
-      }
-
-      await exportInvoicePdf(invoice);
-      showInvoiceMessage(result.message || "Factura reimpresa correctamente.", true);
-      router.refresh();
-    });
   }
 
   function printInvoice(invoice: AdminInvoiceDetail) {
@@ -518,9 +455,12 @@ export function AdminInvoicesManager({
                         <IconButton label="Ver detalle" onClick={() => openInvoiceDetail(invoice.id)} disabled={loadingDetailId === invoice.id}>
                           <Eye size={16} />
                         </IconButton>
-        <IconButton label="Reimprimir factura" onClick={() => reprintInvoice(invoice)}>
-                          <Printer size={16} />
-                        </IconButton>
+                        <IconLink label="Abrir factura PDF" href={adminInvoicePdfHref(invoice.id)}>
+                          <ExternalLink size={16} />
+                        </IconLink>
+                        <IconLink label="Descargar PDF" href={adminInvoicePdfHref(invoice.id, true)}>
+                          <Download size={16} />
+                        </IconLink>
                         {canCancelInvoices ? (
                           <IconButton
                             label="Anular factura"
@@ -546,7 +486,6 @@ export function AdminInvoicesManager({
           canCorrectInvoices={canCorrectInvoices}
           isPending={isPending}
           onCorrect={correctInvoiceCustomerData}
-          onReprint={() => reprintInvoice(selectedInvoice)}
           onPrint={() => printInvoice(selectedInvoice)}
           onClose={() => setSelectedInvoice(null)}
         />
@@ -568,7 +507,6 @@ function InvoiceModal({
   canCorrectInvoices,
   isPending,
   onCorrect,
-  onReprint,
   onPrint,
   onClose,
 }: {
@@ -584,7 +522,6 @@ function InvoiceModal({
     customerAddress: string;
     correctionReason: string;
   }) => void;
-  onReprint: () => void;
   onPrint: () => void;
   onClose: () => void;
 }) {
@@ -622,11 +559,25 @@ function InvoiceModal({
             <h2 className="break-words text-2xl font-semibold [overflow-wrap:anywhere]">{invoice.invoice_number}</h2>
             <p className="mt-1 break-words text-sm text-black/55 [overflow-wrap:anywhere]">CAI: {invoice.cai || "-"}</p>
           </div>
-          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
-            <Button onClick={onReprint} variant="dark" className="w-full">
+          <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-4">
+            <a
+              href={adminInvoicePdfHref(invoice.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-4 py-2 text-center text-sm font-semibold leading-snug text-[#080808] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
+            >
+              <ExternalLink size={16} />
+              Abrir factura
+            </a>
+            <a
+              href={adminInvoicePdfHref(invoice.id, true)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-2 text-center text-sm font-semibold leading-snug text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1f1f1f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
+            >
               <FileText size={16} />
               Descargar PDF
-            </Button>
+            </a>
             <Button onClick={onPrint} variant="ghost" className="w-full">
               <Printer size={16} />
               Imprimir
@@ -634,6 +585,9 @@ function InvoiceModal({
             <Button onClick={onClose} variant="ghost" className="w-full">Cerrar</Button>
           </div>
         </div>
+        <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+          En celular, abre la factura y usa Compartir o Guardar PDF si la descarga no inicia automáticamente.
+        </p>
 
         <section className="-mx-4 bg-[#d4d4d4] sm:-mx-5">
           <OfficialInvoiceDocument invoice={officialInvoice} />
@@ -994,6 +948,29 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+function IconLink({
+  label,
+  href,
+  children,
+}: {
+  label: string;
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={label}
+      aria-label={label}
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5]"
+    >
+      {children}
+    </a>
   );
 }
 

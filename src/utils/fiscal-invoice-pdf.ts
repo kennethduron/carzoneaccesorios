@@ -1,5 +1,3 @@
-"use client";
-
 import type jsPDF from "jspdf";
 import { createPdfDocument, getLastAutoTableY } from "@/utils/pdf-client";
 import { formatCurrency } from "@/utils/pricing";
@@ -32,16 +30,27 @@ async function imageUrlToDataUrl(url: string | null | undefined) {
     const response = await fetch(url, { cache: "force-cache" });
     if (!response.ok) return null;
 
-    const blob = await response.blob();
-    return await new Promise<string | null>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
+    const contentType = response.headers.get("content-type") || "image/jpeg";
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return `data:${contentType};base64,${bytesToBase64(bytes)}`;
   } catch {
     return null;
   }
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
 }
 
 function imageFormatFromDataUrl(dataUrl: string) {
@@ -51,6 +60,10 @@ function imageFormatFromDataUrl(dataUrl: string) {
 }
 
 async function getImageSize(dataUrl: string) {
+  if (typeof Image === "undefined") {
+    return null;
+  }
+
   return await new Promise<{ width: number; height: number } | null>((resolve) => {
     const image = new Image();
     image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
@@ -322,4 +335,9 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
 export async function downloadFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
   const doc = await generateFiscalInvoicePdf(invoice);
   doc.save(`${invoice.invoiceNumber}.pdf`);
+}
+
+export async function generateFiscalInvoicePdfArrayBuffer(invoice: FiscalInvoicePdfInput) {
+  const doc = await generateFiscalInvoicePdf(invoice);
+  return doc.output("arraybuffer");
 }

@@ -2,8 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCircle2, Copy, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
-import { cancelInvoiceAction, getInvoiceDetailAction, logInvoiceReprintAction } from "@/app/admin/facturas/actions";
+import { Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { cancelInvoiceAction, getInvoiceDetailAction } from "@/app/admin/facturas/actions";
 import {
   correctOrderFiscalCustomerDataAction,
   addOrderInternalNoteAction,
@@ -22,7 +22,6 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 import type { AdminInvoiceDetail } from "@/types/invoices";
 import type { AdminOrderRow } from "@/types/orders";
-import { exportAdminInvoicePdf } from "@/utils/admin-invoice-pdf";
 import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
 import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
 import { formatHnDateTime } from "@/utils/format";
@@ -87,6 +86,11 @@ const fiscalCorrectionWarning =
   "Esta acción actualizará únicamente el nombre fiscal y el RTN del pedido antes de emitir factura. La auditoría quedará registrada automáticamente.";
 const fiscalCorrectionIssuedInvoiceWarning =
   "Este pedido ya tiene factura emitida. Para cambios fiscales, utiliza el proceso fiscal correspondiente.";
+
+function adminInvoicePdfHref(invoiceId: string, download = false) {
+  const href = `/api/admin/facturas/${encodeURIComponent(invoiceId)}/pdf`;
+  return download ? `${href}?download=1` : href;
+}
 
 function buildOrderWhatsappMessage(order: AdminOrderRow) {
   const visibleItems = order.order_items.slice(0, 8);
@@ -312,17 +316,6 @@ export function AdminOrdersManager({
     });
   }
 
-  function downloadInvoicePdf(invoice: AdminInvoiceDetail) {
-    startTransition(async () => {
-      const result = await logInvoiceReprintAction(invoice.id);
-      showAdminMessage(result.message, result.ok);
-      if (result.ok) {
-        await exportAdminInvoicePdf(invoice);
-        router.refresh();
-      }
-    });
-  }
-
   async function copyInvoiceWhatsappMessage(invoice: AdminInvoiceDetail) {
     const text = [
       "Hola, gracias por comprar en Car Zone Accesorios.",
@@ -529,9 +522,7 @@ export function AdminOrdersManager({
       {invoicePreview ? (
         <InvoicePreviewModal
           invoice={invoicePreview}
-          isPending={isPending}
           onClose={() => setInvoicePreview(null)}
-          onDownload={() => downloadInvoicePdf(invoicePreview)}
           onPrint={() => printInvoiceDocument(invoicePreview)}
           onCopyWhatsapp={() => void copyInvoiceWhatsappMessage(invoicePreview)}
         />
@@ -1078,15 +1069,11 @@ function ExtendReservationModal({
 
 function InvoicePreviewModal({
   invoice,
-  isPending,
-  onDownload,
   onPrint,
   onCopyWhatsapp,
   onClose,
 }: {
   invoice: AdminInvoiceDetail;
-  isPending: boolean;
-  onDownload: () => void;
   onPrint: () => void;
   onCopyWhatsapp: () => void;
   onClose: () => void;
@@ -1106,10 +1093,24 @@ function InvoicePreviewModal({
             <p className="mt-1 text-sm text-black/55">Pedido #{invoice.order_number}</p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:flex-wrap">
-            <Button onClick={onDownload} variant="primary" disabled={isPending} className="w-full whitespace-normal px-3 sm:w-auto">
-              <FileText size={16} />
+            <a
+              href={adminInvoicePdfHref(invoice.id)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-center text-sm font-semibold leading-snug text-[#080808] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
+            >
+              <ExternalLink size={16} />
+              Abrir factura
+            </a>
+            <a
+              href={adminInvoicePdfHref(invoice.id, true)}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-3 py-2 text-center text-sm font-semibold leading-snug text-white shadow-sm shadow-[#e4252c]/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#b91c25] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
+            >
+              <Download size={16} />
               Descargar PDF
-            </Button>
+            </a>
             <Button onClick={onPrint} variant="ghost" className="w-full whitespace-normal px-3 sm:w-auto">
               <Printer size={16} />
               Imprimir
@@ -1123,6 +1124,9 @@ function InvoicePreviewModal({
             </Button>
           </div>
         </div>
+        <p className="mx-4 mb-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60 sm:mx-5">
+          En celular, abre la factura y usa Compartir o Guardar PDF si la descarga no inicia automáticamente.
+        </p>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#d4d4d4]">
           <OfficialInvoiceDocument invoice={officialInvoice} />
