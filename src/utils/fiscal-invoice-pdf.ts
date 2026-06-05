@@ -50,20 +50,53 @@ function imageFormatFromDataUrl(dataUrl: string) {
   return "JPEG";
 }
 
+async function getImageSize(dataUrl: string) {
+  return await new Promise<{ width: number; height: number } | null>((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => resolve(null);
+    image.src = dataUrl;
+  });
+}
+
+function containSize(width: number, height: number, maxWidth: number, maxHeight: number) {
+  const ratio = Math.min(maxWidth / width, maxHeight / height);
+  return {
+    width: width * ratio,
+    height: height * ratio,
+  };
+}
+
 function drawWrappedLine(doc: jsPDF, text: string, x: number, y: number, width: number, lineHeight = 3.6) {
   const lines = doc.splitTextToSize(text, width);
   doc.text(lines, x, y);
   return y + Math.max(lineHeight, lines.length * lineHeight);
 }
 
-function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUrl: string | null) {
+async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUrl: string | null) {
   const dates = getOfficialInvoiceDates(invoice);
   const companyName = invoice.companyLegalName || "CAR ZONE ACCESORIOS S. DE R.L. DE C.V.";
   const companyRtn = invoice.companyRtn || "-";
   const address = valueOrDash(invoice.companyAddress);
 
   if (logoDataUrl) {
-    doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 17, 24, 43, 20, undefined, "FAST");
+    const logoAreaWidth = 130 - marginX;
+    const logoMaxWidth = logoAreaWidth * 0.43;
+    const logoMaxHeight = 26;
+    let logoSize = await getImageSize(logoDataUrl);
+    if (!logoSize) {
+      try {
+        const properties = doc.getImageProperties(logoDataUrl);
+        logoSize = { width: properties.width, height: properties.height };
+      } catch {
+        logoSize = null;
+      }
+    }
+
+    if (logoSize) {
+      const fittedLogo = containSize(logoSize.width, logoSize.height, logoMaxWidth, logoMaxHeight);
+      doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 17, 22, fittedLogo.width, fittedLogo.height, undefined, "FAST");
+    }
   }
 
   doc.setFont("helvetica", "bold");
@@ -140,6 +173,7 @@ function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number)
   const leftX = marginX;
   const labelsX = 126;
   const valuesX = 164;
+  const summaryLabelTextX = labelsX + 1;
   const boxW = pageWidth - marginX * 2;
   const boxH = 47;
 
@@ -166,7 +200,7 @@ function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number)
     const isTotalRow = index === labels.length - 1;
     const y = isTotalRow ? totalTextY : summaryTextY + index * summaryRowGap;
     doc.setFont("helvetica", index === labels.length - 1 ? "bold" : "normal");
-    doc.text(label, valuesX - 3, y, { align: "right" });
+    doc.text(label, summaryLabelTextX, y);
     doc.text(values[index], pageWidth - marginX - 2, y, { align: "right" });
   });
 
@@ -224,7 +258,7 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
-  drawHeader(doc, invoice, logoDataUrl);
+  await drawHeader(doc, invoice, logoDataUrl);
   drawCustomer(doc, invoice, 126);
 
   autoTable(doc, {
