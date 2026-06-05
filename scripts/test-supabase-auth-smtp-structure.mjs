@@ -51,7 +51,7 @@ assert.doesNotMatch(authActions, /temporary-test-bypass/);
 assert.doesNotMatch(authActions, /signInWithPassword\.after_test_registration/);
 assert.match(authActions, /supabase\.auth\.resend/);
 assert.match(authActions, /resetPasswordForEmail/);
-assert.match(operationalErrors, /Debes confirmar tu correo antes de iniciar sesiÃ³n|Debes confirmar tu correo antes de iniciar sesión/);
+assert.match(operationalErrors, /Debes confirmar tu correo antes de iniciar sesión/);
 assert.match(authCallback, /exchangeCodeForSession/);
 assert.match(authCallback, /verifyOtp/);
 assert.match(securityActions, /auth\.admin\.createUser/);

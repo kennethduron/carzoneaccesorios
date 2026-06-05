@@ -605,7 +605,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                     <span className="mt-0.5 block text-xs leading-4 text-black/55">
                       {slot === "main"
                         ? "Banner principal: aparece como el banner más importante del inicio. Solo puede haber 1 banner principal activo por fecha."
-                        : "Banner secundario: aparece como promocion adicional. Puedes tener hasta 3 secundarios activos por fecha."}
+                        : "Banner secundario: aparece como promoción adicional. Puedes tener hasta 3 secundarios activos por fecha."}
                     </span>
                   </span>
                 </label>
@@ -688,7 +688,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                   </option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-black/50">1 aparece primero. 5 aparece despues. Si solo tienes un banner, deja 1.</p>
+              <p className="mt-1 text-xs text-black/50">1 aparece primero. 5 aparece después. Si solo tienes un banner, deja 1.</p>
             </Field>
             <label className="flex items-center gap-2 pt-6 text-sm">
               <input type="checkbox" checked={form.is_active} onChange={(event) => update("is_active", event.target.checked)} />

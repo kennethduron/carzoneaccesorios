@@ -56,11 +56,11 @@ assert(!manager.includes("uploadHolidayBannerMediaAction"), "El cliente no debe 
 assert(manager.includes("URL.createObjectURL(file)"), "El preview debe usar el archivo local seleccionado.");
 assert(manager.includes("Archivo listo para guardar"), "Debe indicar que el archivo seleccionado se subira al guardar.");
 assert(manager.includes("Recomendado: /catalogo"), "Debe explicar la URL recomendada del boton.");
-assert(manager.includes("Banner principal: aparece como el banner mas importante"), "Debe explicar Principal.");
-assert(manager.includes("Banner secundario: aparece como promocion adicional"), "Debe explicar Secundario.");
+assert(manager.includes("Banner principal: aparece como el banner más importante"), "Debe explicar Principal.");
+assert(manager.includes("Banner secundario: aparece como promoción adicional"), "Debe explicar Secundario.");
 assert(manager.includes("deleteUploadedHolidayBannerMediaAction(prepared.uploadedToken)"), "Debe limpiar el upload nuevo si el guardado falla.");
 assert(manager.includes("clearUploadedMediaReferences(prepared.uploadedToken)"), "Debe quitar referencias locales si se borra un upload tras fallo de guardado.");
-assert(manager.includes("1 aparece primero. 5 aparece despues"), "Debe explicar el orden de prioridad.");
+assert(manager.includes("1 aparece primero. 5 aparece después"), "Debe explicar el orden de prioridad.");
 
 assert(popup.includes("autoPlay") && popup.includes("muted") && popup.includes("playsInline"), "El home debe renderizar video con autoplay seguro.");
 assert(popup.includes('preload="metadata"'), "El home debe cargar solo metadata del video.");

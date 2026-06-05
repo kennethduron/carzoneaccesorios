@@ -1421,7 +1421,7 @@ export async function deleteTestAccountAction(input: TestAccountDeletionInput): 
   const profile = await requirePermission("technical:tools");
 
   if (!isTechnicalOwner(profile.role, profile.email)) {
-    return { ok: false, message: "Solo el administrador tÃ©cnico puede eliminar cuentas TEST." };
+    return { ok: false, message: "Solo el administrador técnico puede eliminar cuentas TEST." };
   }
 
   const email = normalizeAccountEmail(input.email);

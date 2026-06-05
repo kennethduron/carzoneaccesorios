@@ -14,10 +14,10 @@ assert.match(contactActions, /rpc\("submit_public_general_contact"/);
 assert.match(contactActions, /rpc\("submit_public_wholesale_request"/);
 assert.doesNotMatch(contactActions, /currentStatus === "approved"/);
 assert.doesNotMatch(contactActions, /currentStatus === "suspended"/);
-assert.match(contactActions, /Mensaje enviado correctamente\. Nuestro equipo te respondera pronto\./);
-assert.match(contactActions, /Tu cuenta mayorista ya esta aprobada\./);
-assert.match(contactActions, /Tu acceso mayorista esta suspendido\./);
-assert.match(contactActions, /Recibimos tu mensaje\. Nuestro equipo revisara tu caso\./);
+assert.match(contactActions, /Mensaje enviado correctamente\. Nuestro equipo te responderá pronto\./);
+assert.match(contactActions, /Tu cuenta mayorista ya está aprobada\./);
+assert.match(contactActions, /Tu acceso mayorista está suspendido\./);
+assert.match(contactActions, /Recibimos tu mensaje\. Nuestro equipo revisará tu caso\./);
 
 assert.match(migration, /notify_general_contact boolean not null default true/);
 assert.match(migration, /create or replace function public\.submit_public_general_contact/);

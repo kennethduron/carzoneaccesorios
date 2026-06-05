@@ -155,14 +155,20 @@ function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number)
     obsY = drawWrappedLine(doc, line, leftX + 2, obsY, labelsX - leftX - 5, 3.5);
   });
 
+  const summaryTextY = startY + 6;
+  const summaryRowGap = 4.35;
+  const totalSeparatorY = startY + boxH - 7.5;
+  const totalTextY = totalSeparatorY + 4.9;
+
+  doc.line(labelsX, totalSeparatorY, pageWidth - marginX, totalSeparatorY);
+
   labels.forEach((label, index) => {
-    const y = startY + 6 + index * 4.6;
+    const isTotalRow = index === labels.length - 1;
+    const y = isTotalRow ? totalTextY : summaryTextY + index * summaryRowGap;
     doc.setFont("helvetica", index === labels.length - 1 ? "bold" : "normal");
     doc.text(label, valuesX - 3, y, { align: "right" });
     doc.text(values[index], pageWidth - marginX - 2, y, { align: "right" });
   });
-
-  doc.line(labelsX, startY + boxH - 10, pageWidth - marginX, startY + boxH - 10);
 
   const extraY = startY + boxH;
   doc.rect(leftX, extraY, boxW, 18);
