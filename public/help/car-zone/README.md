@@ -1,19 +1,27 @@
 # Capturas de guia interna
 
-Esta carpeta queda reservada para capturas del manual interno de Car Zone Accesorios.
+Esta carpeta contiene capturas reales del CRM/Admin de Car Zone Accesorios para el manual interno.
 
 Estado actual:
 
-- No se agregaron capturas reales en esta tarea porque no hubo acceso a una cuenta de prueba autorizada.
-- No usar capturas con correos, telefonos, RTN, comprobantes, pedidos o facturas reales.
-- Tomar capturas solo con datos ficticios o ambiente de pruebas.
+- Capturas reales tomadas desde el sistema local autenticado contra Supabase.
+- Se uso una cuenta temporal de prueba `technical_owner`, eliminada al finalizar la captura.
+- Las capturas fueron redaccionadas antes de guardarse para ocultar correos, telefonos, RTN, usuarios, pedidos, tracking y facturas reales.
+- No usar capturas con datos sensibles sin redaccion previa.
 
-Nombres sugeridos:
+Archivos:
 
 - dashboard.png
 - productos.png
+- inventario.png
 - pedidos.png
-- factura-preview.png
+- facturacion.png
+- crm.png
+- clientes.png
+- mayoristas.png
 - banners.png
-- clientes-crm.png
 - reportes.png
+- configuracion.png
+- seguridad.png
+- ayuda.png
+- guia.png

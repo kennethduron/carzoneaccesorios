@@ -82,6 +82,7 @@ const guideSections: GuideSection[] = [
     title: "Dashboard",
     summary: "Indicadores, alertas y accesos rapidos del negocio.",
     href: "/admin",
+    screenshot: "/help/car-zone/dashboard.png",
     roles: allAdminRoles,
     permissions: ["admin:access"],
     what: "Es la primera pantalla del panel. Resume pendientes, ventas, inventario, clientes y tareas segun permisos.",
@@ -100,6 +101,7 @@ const guideSections: GuideSection[] = [
     title: "Productos",
     summary: "Crear, editar, publicar y mantener productos del catalogo.",
     href: "/admin/productos",
+    screenshot: "/help/car-zone/productos.png",
     roles: businessRoles,
     permissions: ["products:manage"],
     what: "Modulo para administrar nombre, SKU, categoria, precios, compatibilidad, estado e imagenes de cada producto.",
@@ -122,6 +124,7 @@ const guideSections: GuideSection[] = [
     title: "Inventario",
     summary: "Stock disponible, reservado, agotado y movimientos.",
     href: "/admin/inventario",
+    screenshot: "/help/car-zone/inventario.png",
     roles: warehouseRoles,
     permissions: ["inventory:manage"],
     what: "Controla unidades disponibles, reservas activas, productos agotados y movimientos de entrada o salida.",
@@ -142,6 +145,7 @@ const guideSections: GuideSection[] = [
     title: "Pedidos",
     summary: "Revision, pago, cancelacion y flujo logistico.",
     href: "/admin/pedidos",
+    screenshot: "/help/car-zone/pedidos.png",
     roles: ["technical_owner", "business_owner", "admin", "vendedor", "bodega", "soporte"],
     permissions: ["orders:read", "orders:manage", "orders:manage_logistics"],
     what: "Reune los pedidos nuevos, datos del cliente, productos, pago, reserva, notas internas y estado logistico.",
@@ -206,6 +210,7 @@ const guideSections: GuideSection[] = [
     title: "Facturacion fiscal",
     summary: "CAI, correlativo, rango, vista previa, PDF e impresion.",
     href: "/admin/facturas",
+    screenshot: "/help/car-zone/facturacion.png",
     roles: fiscalRoles,
     permissions: ["invoices:read", "invoices:create", "fiscal:read"],
     what: "Modulo para emitir y consultar facturas fiscales con CAI, correlativo y rango autorizado.",
@@ -244,30 +249,52 @@ const guideSections: GuideSection[] = [
     commonError: "Emitir primero y corregir despues por no revisar datos fiscales a tiempo.",
   },
   {
-    id: "crm",
-    title: "Clientes y CRM",
-    summary: "Clientes, historial, notas, seguimientos y tareas.",
+    id: "clientes",
+    title: "Clientes",
+    summary: "Clientes, historial, datos comerciales y cuenta.",
     href: "/admin/clientes",
+    screenshot: "/help/car-zone/clientes.png",
     roles: salesRoles,
     permissions: ["crm:manage", "customers:read"],
-    what: "Centraliza clientes, prospectos, historial de compras, notas, seguimientos y tareas comerciales.",
-    purpose: "Ayuda a dar seguimiento sin perder informacion entre vendedor, soporte y administracion.",
+    what: "Centraliza clientes, prospectos, historial de compras, datos de cuenta, notas y actividad comercial.",
+    purpose: "Permite revisar el contexto del cliente antes de llamar, vender, responder o escalar una situacion.",
     steps: [
       "Busca cliente por nombre, empresa, telefono o correo.",
       "Abre el perfil para revisar historial.",
+      "Confirma si es cliente normal, mayorista o cuenta de prueba.",
+      "Revisa pedidos, facturas y notas relacionadas antes de responder.",
+      "Evita crear duplicados: compara telefono, correo y nombre comercial.",
+    ],
+    recommendation: "Antes de editar datos, valida que estas en el cliente correcto y que la informacion viene de una fuente confiable.",
+    commonError: "Crear clientes duplicados sin revisar telefono o correo existente.",
+  },
+  {
+    id: "crm",
+    title: "CRM",
+    summary: "Notas, seguimientos, oportunidades y tareas vencidas.",
+    href: "/admin/crm",
+    screenshot: "/help/car-zone/crm.png",
+    roles: salesRoles,
+    permissions: ["crm:manage", "customers:read"],
+    what: "Organiza la atencion comercial: notas, seguimientos, oportunidades, tareas vencidas y acuerdos con clientes.",
+    purpose: "Ayuda a dar seguimiento sin perder informacion entre vendedor, soporte y administracion.",
+    steps: [
+      "Entra a CRM para revisar seguimientos pendientes o vencidos.",
       "Agrega notas con acuerdos, dudas o llamadas.",
       "Crea seguimientos con fecha y prioridad.",
       "Revisa tareas vencidas para retomar contactos pendientes.",
       "Cierra seguimientos cuando la accion se complete.",
+      "Usa el historial para entender que se prometio antes de volver a contactar.",
     ],
     recommendation: "Cada llamada o acuerdo importante debe quedar como nota. Eso evita depender de memoria o chats externos.",
-    commonError: "Crear clientes duplicados sin revisar telefono o correo existente.",
+    commonError: "Cerrar seguimientos sin registrar que se hizo o cual fue el proximo paso.",
   },
   {
     id: "mayoristas",
     title: "Mayoristas",
     summary: "Solicitudes, aprobacion, codigos y precios especiales.",
     href: "/admin/clientes-mayoristas",
+    screenshot: "/help/car-zone/mayoristas.png",
     roles: businessRoles,
     permissions: ["wholesale:manage"],
     what: "Gestiona solicitudes de clientes que quieren comprar como mayoristas.",
@@ -289,6 +316,7 @@ const guideSections: GuideSection[] = [
     title: "Banners",
     summary: "Promociones, prioridad, imagen, video y estado.",
     href: "/admin/banners",
+    screenshot: "/help/car-zone/banners.png",
     roles: businessRoles,
     permissions: ["commercial_settings:manage"],
     what: "Administra banners visibles en la tienda para promociones, temporadas o avisos importantes.",
@@ -312,6 +340,7 @@ const guideSections: GuideSection[] = [
     title: "Reportes",
     summary: "Ventas, clientes, inventario, fiscal y exportaciones.",
     href: "/admin/reportes",
+    screenshot: "/help/car-zone/reportes.png",
     roles: ["technical_owner", "business_owner", "admin", "contadora"],
     permissions: ["reports:read", "reports:fiscal_read"],
     what: "Reune informacion para revisar ventas, clientes, productos, inventario, pagos y facturacion.",
@@ -329,9 +358,10 @@ const guideSections: GuideSection[] = [
   },
   {
     id: "roles",
-    title: "Roles y permisos",
-    summary: "Que puede hacer cada tipo de usuario.",
+    title: "Seguridad, roles y permisos",
+    summary: "Usuarios, auditoria y alcance de cada rol.",
     href: "/admin/seguridad",
+    screenshot: "/help/car-zone/seguridad.png",
     roles: allAdminRoles,
     permissions: ["admin:access"],
     what: "Cada usuario tiene un rol para limitar lo que puede ver y hacer dentro del sistema.",
@@ -354,6 +384,7 @@ const guideSections: GuideSection[] = [
     title: "Configuracion",
     summary: "Datos del negocio, contacto, preferencias y fiscal.",
     href: "/admin/configuracion",
+    screenshot: "/help/car-zone/configuracion.png",
     roles: businessRoles,
     permissions: ["settings:manage", "commercial_settings:manage", "settings:fiscal"],
     what: "Contiene datos publicos del negocio, contacto, preferencias operativas, notificaciones y configuracion fiscal.",
@@ -368,6 +399,45 @@ const guideSections: GuideSection[] = [
     recommendation: "Los datos fiscales deben revisarse con la contadora o responsable antes de emitir facturas reales.",
     commonError: "Cambiar datos fiscales o preferencias globales sin avisar al equipo.",
     warning: "Esta guia no muestra secretos, claves, tokens ni configuraciones tecnicas internas.",
+  },
+  {
+    id: "ayuda",
+    title: "Ayuda interna",
+    summary: "Respuesta rapida para tareas frecuentes.",
+    href: "/admin/ayuda",
+    screenshot: "/help/car-zone/ayuda.png",
+    roles: allAdminRoles,
+    permissions: ["admin:access"],
+    what: "Resume acciones comunes por tarea para que el equipo encuentre rapidamente que revisar y que evitar.",
+    purpose: "Sirve como apoyo diario cuando alguien necesita una respuesta corta antes de abrir el modulo completo.",
+    steps: [
+      "Entra a Ayuda interna desde el Dashboard o desde esta guia.",
+      "Busca el bloque relacionado con la tarea: pedidos, pagos, inventario, facturas, CRM o reportes.",
+      "Lee el checklist rapido antes de cambiar estados o confirmar informacion.",
+      "Usa Ver manual completo cuando necesites el proceso detallado.",
+    ],
+    recommendation: "Usa Ayuda para resolver dudas operativas simples y Guia para capacitacion o revision completa.",
+    commonError: "Pedir cambios al sistema antes de revisar si el comportamiento depende de permisos o estado del registro.",
+  },
+  {
+    id: "guia",
+    title: "Guia interna",
+    summary: "Manual completo de uso del CRM/Admin.",
+    href: "/admin/guia",
+    screenshot: "/help/car-zone/guia.png",
+    roles: allAdminRoles,
+    permissions: ["admin:access"],
+    what: "Explica modulo por modulo como operar el CRM/Admin de Car Zone Accesorios sin exponer informacion tecnica sensible.",
+    purpose: "Funciona como documento de capacitacion para dueno, administradores, ventas, bodega, contabilidad y soporte.",
+    steps: [
+      "Abre el indice rapido para saltar al modulo que necesitas.",
+      "Lee primero que hace el modulo y para que sirve.",
+      "Sigue los pasos operativos en orden.",
+      "Revisa recomendaciones, errores comunes e importancias antes de actuar.",
+      "Regresa al modulo con Abrir modulo cuando estes listo para operar.",
+    ],
+    recommendation: "Mantener esta guia actualizada despues de cambios visibles en flujos administrativos.",
+    commonError: "Actualizar funcionalidades del sistema sin actualizar el material interno de capacitacion.",
   },
 ];
 
@@ -480,34 +550,26 @@ function isVisibleToRole(profile: AuthProfile, roles: AppRole[], permissions?: P
 }
 
 function ScreenshotPanel({ title, src }: { title: string; src?: string }) {
-  if (!src) {
-    return (
-      <div className="grid aspect-[16/9] w-full place-items-center rounded-md border border-dashed border-black/20 bg-[#f4f4f5] p-4 text-center">
-        <div>
-          <p className="text-sm font-semibold text-black/70">Captura pendiente</p>
-          <p className="mt-1 text-xs leading-5 text-black/50">
-            Tomar con cuenta de prueba y datos ficticios antes de entregar manual impreso.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (!src) return null;
 
   return (
-    <Image
-      src={src}
-      alt={`Captura de ${title}`}
-      width={1280}
-      height={720}
-      className="h-auto max-h-[420px] w-full rounded-md border border-black/10 object-contain"
-    />
+    <figure className="min-w-0 overflow-hidden rounded-md border border-black/10 bg-[#f4f4f5]">
+      <Image
+        src={src}
+        alt={`Captura real del modulo ${title}`}
+        width={1440}
+        height={900}
+        sizes="(max-width: 1024px) 100vw, 52vw"
+        className="h-auto w-full object-contain"
+      />
+    </figure>
   );
 }
 
 function GuideCard({ section }: { section: GuideSection }) {
   return (
     <article id={section.id} className="scroll-mt-6 rounded-lg border border-black/10 bg-white p-4 sm:p-5">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className={section.screenshot ? "grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : "grid gap-5"}>
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase text-[#e4252c]">{section.summary}</p>
           <h2 className="mt-1 text-xl font-semibold sm:text-2xl">{section.title}</h2>
