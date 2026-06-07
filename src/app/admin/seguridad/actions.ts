@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
-import { createGoogleDriveBackup, formatBytes } from "@/lib/backups/google-drive";
+import { createEmailBackup, formatBytes } from "@/lib/backups/email";
 import {
   canAssignRole as canAssignSecurityRole,
   canManageSecurityUsers,
@@ -28,7 +28,9 @@ type SecurityMutationResult = {
     fileName: string;
     fileSize: string;
     finishedAt: string;
-    googleDriveFileId: string;
+    recipientEmail: string;
+    deliveryProvider: string;
+    deliveryMessageId: string | null;
     tablesExported: number;
     tablesMissing: string[];
   };
@@ -253,12 +255,10 @@ export async function requestBackupAction(
   }
 
   try {
-    const result = await createGoogleDriveBackup({
-      kind: "manual",
-      scope: "full",
+    const result = await createEmailBackup({
       triggeredBy: "manual",
       createdBy: profile,
-      notes: cleanText(notes) || "Backup manual creado desde panel de seguridad.",
+      notes: cleanText(notes) || "Backup manual por correo creado desde panel de seguridad.",
       backupLogType: backupType,
     });
 
@@ -270,6 +270,9 @@ export async function requestBackupAction(
         backupType,
         fileName: result.fileName,
         fileSize: result.fileSize,
+        recipientEmail: result.recipientEmail,
+        deliveryProvider: result.deliveryProvider,
+        deliveryMessageIdPresent: Boolean(result.deliveryMessageId),
         tablesExported: result.tablesExported.length,
         tablesMissing: result.tablesMissing,
       },
@@ -278,12 +281,14 @@ export async function requestBackupAction(
     revalidatePath("/admin/seguridad");
     return {
       ok: true,
-      message: `Backup creado en Google Drive: ${result.fileName} (${formatBytes(result.fileSize)}).`,
+      message: `Backup enviado por correo a ${result.recipientEmail}: ${result.fileName} (${formatBytes(result.fileSize)}).`,
       backup: {
         fileName: result.fileName,
         fileSize: formatBytes(result.fileSize),
         finishedAt: result.finishedAt,
-        googleDriveFileId: result.googleDriveFileId,
+        recipientEmail: result.recipientEmail,
+        deliveryProvider: result.deliveryProvider,
+        deliveryMessageId: result.deliveryMessageId,
         tablesExported: result.tablesExported.length,
         tablesMissing: result.tablesMissing,
       },

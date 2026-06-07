@@ -80,63 +80,47 @@ Archivos y metadata:
 | Inventario Vercel env vars | Mensual y antes de rotar claves | `technical_owner` |
 | Revision de migraciones | Antes de cada deploy | `technical_owner` |
 
-## Backup automatico a Google Drive
+## Backup automatico y manual por correo
 
-El sistema incluye un respaldo server-side hacia Google Drive usando Google Service Account. La carpeta recomendada es:
+La estrategia activa no usa Google Cloud, Google Drive API ni Service Account. El respaldo se genera en servidor, se comprime como ZIP y se envia por el proveedor de correo transaccional existente a:
 
 ```text
-Car Zone Accesorios - Backups/
-  daily/
-  weekly/
-  monthly/
-  manual/
+carzonetech0@gmail.com
 ```
 
-La carpeta principal debe existir en Google Drive y estar compartida con el correo de la Service Account con permiso de editor. Si la carpeta pertenece a la cuenta tecnica `carzonetech0@gmail.com`, compartirla con `GOOGLE_DRIVE_CLIENT_EMAIL`.
+Google Drive queda desactivado por ahora para evitar depender de una cuenta de Google Cloud con tarjeta conectada. El endpoint historico `/api/cron/backups/google-drive` permanece protegido por `CRON_SECRET`, pero responde que esa via esta desactivada.
 
 Variables necesarias en Vercel Production:
 
-- `GOOGLE_DRIVE_CLIENT_EMAIL`
-- `GOOGLE_DRIVE_PRIVATE_KEY`
-- `GOOGLE_DRIVE_BACKUP_FOLDER_ID`
-- `GOOGLE_DRIVE_PROJECT_ID` opcional
-- `GOOGLE_DRIVE_BACKUP_MAX_BYTES` opcional, por defecto 45 MB
+- `CRON_SECRET`
+- proveedor de correo ya existente, por ejemplo `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+- `EMAIL_BACKUP_MAX_BYTES` opcional, por defecto `15000000`
 
-No guardar estos valores en Git, documentacion, backups o capturas.
+No guardar secretos, API keys, tokens ni valores de variables en Git, documentacion, backups o capturas.
 
 ### Endpoint cron
 
-Endpoint:
+Endpoint activo:
 
 ```http
-GET /api/cron/backups/google-drive
+GET /api/cron/backups/email
 Authorization: Bearer CRON_SECRET
 ```
 
-Parametros opcionales:
+Tambien acepta `POST`. Sin `Authorization: Bearer CRON_SECRET`, responde `401` y no crea backup.
 
-- `type=daily|weekly|monthly`, por defecto `daily`.
-- `scope=full`, para forzar backup completo. Sin `scope=full`, `daily` usa respaldo ligero.
-
-Ejemplos:
-
-```http
-GET /api/cron/backups/google-drive?type=daily
-GET /api/cron/backups/google-drive?type=weekly&scope=full
-```
-
-El endpoint rechaza cualquier solicitud sin `Authorization: Bearer CRON_SECRET`.
-
-`vercel.json` ya contiene crons operativos. Si el proyecto esta en Hobby, Vercel permite maximo 2 cron jobs; en ese caso usar Cron-Job.org con este endpoint o reemplazar una tarea existente. Si el proyecto esta en Pro, se puede agregar una tarea diaria/semanal en `vercel.json`.
+`vercel.json` ya contiene crons operativos. Si el proyecto esta en Hobby, Vercel permite maximo 2 cron jobs; en ese caso mantener backup manual o usar Cron-Job.org con este endpoint. Si el proyecto esta en Pro, se puede agregar una tarea semanal, preferiblemente domingo de madrugada, sin romper los crons existentes.
 
 ### Backup manual
 
-En `/admin/seguridad`, el `technical_owner` puede usar `Crear backup ahora`. El backup manual usa alcance completo, sube un ZIP a la carpeta `manual/` y muestra:
+En `/admin/seguridad`, el `technical_owner` puede usar `Enviar backup por correo`. El backup manual genera un ZIP completo, lo envia a `carzonetech0@gmail.com` y muestra:
 
 - estado
 - fecha
 - tamano
 - nombre del archivo
+- destinatario
+- proveedor de entrega
 - numero de tablas respaldadas
 - tablas no encontradas, si aplica
 
@@ -159,12 +143,11 @@ Alcance completo:
 - `wholesale_codes`
 - `crm_notes`
 - `crm_followups`
+- `holiday_banners`
+- `fiscal_settings`
+- `business_settings`
 - `notification_logs` recientes importantes
 - `audit_logs` recientes importantes
-- `fiscal_settings`
-- `company_settings`
-- `business_settings`, si existe
-- `holiday_banners`
 
 Si una tabla no existe, se registra como faltante y el respaldo continua.
 
@@ -173,14 +156,17 @@ Si una tabla no existe, se registra como faltante y el respaldo continua.
 Cada backup se guarda como ZIP:
 
 ```text
-car-zone-backup-TIPO-YYYY-MM-DD-HH-mm.zip
+car-zone-backup-YYYY-MM-DD-HH-mm.zip
 ```
 
 Incluye:
 
-- `backup.json`: respaldo estructurado completo.
+- `metadata.json`: fecha, entorno, URL, tablas, conteos, tamano, commit si existe, dependencias y nota de seguridad.
+- un JSON por tabla exportada, por ejemplo `products.json`, `orders.json`, `users.json`.
 - `summary.csv`: resumen de tablas y conteos.
 - `csv/*.csv`: copia rapida por tabla para revision humana.
+
+Los IDs originales, timestamps y relaciones por IDs se preservan para que Codex, ChatGPT o un desarrollador puedan reconstruir una restauracion asistida. No hay restauracion automatica implementada.
 
 ### Datos excluidos
 
@@ -194,28 +180,30 @@ El sistema no respalda variables de entorno ni Supabase Auth. Tambien redacta re
 - service role keys
 - authorization headers
 - cron secrets
+- cookies
+- sesiones
 - numeros de tarjeta/CVV
 
-### Retencion
+### Tamano maximo
 
-Cuando el respaldo se ejecuta correctamente, el sistema elimina backups antiguos dentro de la misma subcarpeta:
+El limite recomendado por correo es `EMAIL_BACKUP_MAX_BYTES=15000000` (15 MB). Si el ZIP supera ese tamano:
 
-- `daily/`: conserva 7.
-- `weekly/`: conserva 4.
-- `monthly/`: conserva 6.
-- `manual/`: no se limpia automaticamente.
-
-La retencion solo actua sobre archivos cuyo nombre empieza con `car-zone-backup-TIPO-`.
+- no se envia el correo
+- se registra error en `backup_runs`
+- el panel muestra que el backup supera el tamano permitido para correo
+- se debe descargar manualmente o configurar almacenamiento externo
 
 ### Auditoria
 
-La migracion `202606070001_google_drive_backup_runs.sql` crea `backup_runs` para registrar ejecuciones reales:
+Las migraciones `202606070001_google_drive_backup_runs.sql` y `202606070002_email_backup_runs.sql` dejan `backup_runs` listo para registrar ejecuciones por correo:
 
 - inicio y fin
 - estado
 - tipo
 - nombre y tamano de archivo
-- ID de archivo en Google Drive
+- destinatario
+- proveedor de entrega
+- ID de mensaje del proveedor, si lo devuelve
 - tablas exportadas y faltantes
 - origen (`manual`, `cron`, `system`)
 - usuario creador, si aplica

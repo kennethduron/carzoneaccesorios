@@ -6,6 +6,11 @@ export type SendEmailInput = {
   to: string;
   subject: string;
   html: string;
+  attachments?: Array<{
+    filename: string;
+    content: string;
+    contentType?: string;
+  }>;
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
 };
@@ -110,6 +115,11 @@ async function sendWithResend(input: SendEmailInput): Promise<SendEmailResult> {
       to: input.to,
       subject: input.subject,
       html: input.html,
+      attachments: input.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        content: attachment.content,
+        content_type: attachment.contentType,
+      })),
       reply_to: process.env.RESEND_REPLY_TO || undefined,
     }),
   });
@@ -176,6 +186,10 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
       replyTo: process.env.BREVO_REPLY_TO ? { email: process.env.BREVO_REPLY_TO } : undefined,
       subject: input.subject,
       htmlContent: input.html,
+      attachment: input.attachments?.map((attachment) => ({
+        name: attachment.filename,
+        content: attachment.content,
+      })),
       tags: ["car-zone", "transactional"],
       params: input.metadata ?? {},
     }),

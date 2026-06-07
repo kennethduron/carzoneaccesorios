@@ -59,7 +59,9 @@ type ManualBackupResult = {
   fileName: string;
   fileSize: string;
   finishedAt: string;
-  googleDriveFileId: string;
+  recipientEmail: string;
+  deliveryProvider: string;
+  deliveryMessageId: string | null;
   tablesExported: number;
   tablesMissing: string[];
 } | null;
@@ -285,11 +287,11 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
       setMessage(result.message);
       if (result.ok) {
         setLastManualBackup(result.backup ?? null);
-        toast.success(result.message || "Backup solicitado correctamente.");
+        toast.success(result.message || "Backup enviado correctamente.");
         setNotes("");
       } else {
         setLastManualBackup(null);
-        toast.error(result.message || "No se pudo solicitar el backup.");
+        toast.error(result.message || "No se pudo enviar el backup.");
       }
     });
   }
@@ -590,15 +592,18 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               </InputLabel>
               <Button onClick={requestBackup} disabled={isPending} variant="dark">
                 <DatabaseBackup size={17} />
-                {isPending ? "Creando..." : "Crear backup ahora"}
+                {isPending ? "Enviando..." : "Enviar backup por correo"}
               </Button>
               {message ? <p className="text-sm text-black/60">{message}</p> : null}
               {lastManualBackup ? (
                 <div className="rounded-md border border-black/10 bg-white p-3 text-sm">
-                  <p className="font-semibold">Backup creado</p>
+                  <p className="font-semibold">Backup enviado</p>
                   <p className="mt-1 break-all text-black/65">{lastManualBackup.fileName}</p>
                   <p className="text-black/55">
                     {lastManualBackup.fileSize} / {formatDateTime(lastManualBackup.finishedAt)}
+                  </p>
+                  <p className="break-all text-black/55">
+                    Destino: {lastManualBackup.recipientEmail} / {lastManualBackup.deliveryProvider}
                   </p>
                   <p className="text-black/55">
                     Tablas: {lastManualBackup.tablesExported}
