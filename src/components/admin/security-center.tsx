@@ -55,6 +55,15 @@ type CreateUserForm = {
   temporaryPassword: string;
 };
 
+type ManualBackupResult = {
+  fileName: string;
+  fileSize: string;
+  finishedAt: string;
+  googleDriveFileId: string;
+  tablesExported: number;
+  tablesMissing: string[];
+} | null;
+
 type AuditPeriod = "today" | "yesterday" | "7d" | "month" | "custom" | "all";
 
 type AuditFilters = {
@@ -71,6 +80,8 @@ const backupTypeLabels: Record<BackupType, string> = {
   scheduled: "Programado",
   pre_deploy: "Antes de deploy",
 };
+
+const manualBackupTypes: BackupType[] = ["manual", "pre_deploy"];
 
 const roleLabels: Record<AppRole, string> = {
   technical_owner: "Technical owner",
@@ -214,6 +225,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
   const [backupType, setBackupType] = useState<BackupType>("manual");
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState("");
+  const [lastManualBackup, setLastManualBackup] = useState<ManualBackupResult>(null);
   const [search, setSearch] = useState("");
   const [roleSelections, setRoleSelections] = useState<Record<string, AppRole>>({});
   const [roleDraft, setRoleDraft] = useState<RoleChangeDraft>(null);
@@ -272,9 +284,11 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
       const result = await requestBackupAction(backupType, notes);
       setMessage(result.message);
       if (result.ok) {
+        setLastManualBackup(result.backup ?? null);
         toast.success(result.message || "Backup solicitado correctamente.");
         setNotes("");
       } else {
+        setLastManualBackup(null);
         toast.error(result.message || "No se pudo solicitar el backup.");
       }
     });
@@ -559,9 +573,9 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                   onChange={(event) => setBackupType(event.target.value as BackupType)}
                   className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
                 >
-                  {Object.entries(backupTypeLabels).map(([value, label]) => (
+                  {manualBackupTypes.map((value) => (
                     <option key={value} value={value}>
-                      {label}
+                      {backupTypeLabels[value]}
                     </option>
                   ))}
                 </select>
@@ -576,9 +590,22 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               </InputLabel>
               <Button onClick={requestBackup} disabled={isPending} variant="dark">
                 <DatabaseBackup size={17} />
-                {isPending ? "Registrando..." : "Solicitar backup"}
+                {isPending ? "Creando..." : "Crear backup ahora"}
               </Button>
               {message ? <p className="text-sm text-black/60">{message}</p> : null}
+              {lastManualBackup ? (
+                <div className="rounded-md border border-black/10 bg-white p-3 text-sm">
+                  <p className="font-semibold">Backup creado</p>
+                  <p className="mt-1 break-all text-black/65">{lastManualBackup.fileName}</p>
+                  <p className="text-black/55">
+                    {lastManualBackup.fileSize} / {formatDateTime(lastManualBackup.finishedAt)}
+                  </p>
+                  <p className="text-black/55">
+                    Tablas: {lastManualBackup.tablesExported}
+                    {lastManualBackup.tablesMissing.length > 0 ? ` / No encontradas: ${lastManualBackup.tablesMissing.join(", ")}` : ""}
+                  </p>
+                </div>
+              ) : null}
               <div className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/65">
                 <p className="font-medium text-[#080808]">Último respaldo</p>
                 <p>{latestBackup ? `${backupTypeLabels[latestBackup.backup_type]} / ${latestBackup.status}` : "Sin registros"}</p>

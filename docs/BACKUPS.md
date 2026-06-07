@@ -80,6 +80,149 @@ Archivos y metadata:
 | Inventario Vercel env vars | Mensual y antes de rotar claves | `technical_owner` |
 | Revision de migraciones | Antes de cada deploy | `technical_owner` |
 
+## Backup automatico a Google Drive
+
+El sistema incluye un respaldo server-side hacia Google Drive usando Google Service Account. La carpeta recomendada es:
+
+```text
+Car Zone Accesorios - Backups/
+  daily/
+  weekly/
+  monthly/
+  manual/
+```
+
+La carpeta principal debe existir en Google Drive y estar compartida con el correo de la Service Account con permiso de editor. Si la carpeta pertenece a la cuenta tecnica `carzonetech0@gmail.com`, compartirla con `GOOGLE_DRIVE_CLIENT_EMAIL`.
+
+Variables necesarias en Vercel Production:
+
+- `GOOGLE_DRIVE_CLIENT_EMAIL`
+- `GOOGLE_DRIVE_PRIVATE_KEY`
+- `GOOGLE_DRIVE_BACKUP_FOLDER_ID`
+- `GOOGLE_DRIVE_PROJECT_ID` opcional
+- `GOOGLE_DRIVE_BACKUP_MAX_BYTES` opcional, por defecto 45 MB
+
+No guardar estos valores en Git, documentacion, backups o capturas.
+
+### Endpoint cron
+
+Endpoint:
+
+```http
+GET /api/cron/backups/google-drive
+Authorization: Bearer CRON_SECRET
+```
+
+Parametros opcionales:
+
+- `type=daily|weekly|monthly`, por defecto `daily`.
+- `scope=full`, para forzar backup completo. Sin `scope=full`, `daily` usa respaldo ligero.
+
+Ejemplos:
+
+```http
+GET /api/cron/backups/google-drive?type=daily
+GET /api/cron/backups/google-drive?type=weekly&scope=full
+```
+
+El endpoint rechaza cualquier solicitud sin `Authorization: Bearer CRON_SECRET`.
+
+`vercel.json` ya contiene crons operativos. Si el proyecto esta en Hobby, Vercel permite maximo 2 cron jobs; en ese caso usar Cron-Job.org con este endpoint o reemplazar una tarea existente. Si el proyecto esta en Pro, se puede agregar una tarea diaria/semanal en `vercel.json`.
+
+### Backup manual
+
+En `/admin/seguridad`, el `technical_owner` puede usar `Crear backup ahora`. El backup manual usa alcance completo, sube un ZIP a la carpeta `manual/` y muestra:
+
+- estado
+- fecha
+- tamano
+- nombre del archivo
+- numero de tablas respaldadas
+- tablas no encontradas, si aplica
+
+### Tablas respaldadas
+
+Alcance completo:
+
+- `products`
+- `product_images`
+- `categories`
+- `inventory_movements`
+- `inventory_reservations`
+- `orders`
+- `order_items`
+- `payments`
+- `invoices`
+- `invoice_items`
+- `customers`
+- `users`
+- `wholesale_codes`
+- `crm_notes`
+- `crm_followups`
+- `notification_logs` recientes importantes
+- `audit_logs` recientes importantes
+- `fiscal_settings`
+- `company_settings`
+- `business_settings`, si existe
+- `holiday_banners`
+
+Si una tabla no existe, se registra como faltante y el respaldo continua.
+
+### Formato
+
+Cada backup se guarda como ZIP:
+
+```text
+car-zone-backup-TIPO-YYYY-MM-DD-HH-mm.zip
+```
+
+Incluye:
+
+- `backup.json`: respaldo estructurado completo.
+- `summary.csv`: resumen de tablas y conteos.
+- `csv/*.csv`: copia rapida por tabla para revision humana.
+
+### Datos excluidos
+
+El sistema no respalda variables de entorno ni Supabase Auth. Tambien redacta recursivamente campos cuyo nombre indique secretos, por ejemplo:
+
+- passwords
+- tokens
+- secrets
+- API keys
+- private keys
+- service role keys
+- authorization headers
+- cron secrets
+- numeros de tarjeta/CVV
+
+### Retencion
+
+Cuando el respaldo se ejecuta correctamente, el sistema elimina backups antiguos dentro de la misma subcarpeta:
+
+- `daily/`: conserva 7.
+- `weekly/`: conserva 4.
+- `monthly/`: conserva 6.
+- `manual/`: no se limpia automaticamente.
+
+La retencion solo actua sobre archivos cuyo nombre empieza con `car-zone-backup-TIPO-`.
+
+### Auditoria
+
+La migracion `202606070001_google_drive_backup_runs.sql` crea `backup_runs` para registrar ejecuciones reales:
+
+- inicio y fin
+- estado
+- tipo
+- nombre y tamano de archivo
+- ID de archivo en Google Drive
+- tablas exportadas y faltantes
+- origen (`manual`, `cron`, `system`)
+- usuario creador, si aplica
+- error sin secretos, si falla
+
+Tambien se registra compatibilidad en `backup_logs` y auditoria tecnica en `audit_logs`.
+
 ## Procedimiento de backup manual en Free
 
 1. Verificar que el proyecto no este pausado.

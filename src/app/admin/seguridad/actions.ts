@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
+import { createGoogleDriveBackup, formatBytes } from "@/lib/backups/google-drive";
 import {
   canAssignRole as canAssignSecurityRole,
   canManageSecurityUsers,
@@ -23,6 +24,14 @@ import { validateUsername } from "@/utils/usernames";
 type SecurityMutationResult = {
   ok: boolean;
   message: string;
+  backup?: {
+    fileName: string;
+    fileSize: string;
+    finishedAt: string;
+    googleDriveFileId: string;
+    tablesExported: number;
+    tablesMissing: string[];
+  };
 };
 
 type CreateOperationalUserInput = {
@@ -243,34 +252,46 @@ export async function requestBackupAction(
     return { ok: false, message: "Tipo de backup no válido." };
   }
 
-  const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("backup_logs")
-    .insert({
-      requested_by: profile.id,
-      backup_type: backupType,
-      status: "requested",
-      notes: cleanText(notes) || "Backup solicitado desde panel de seguridad.",
-    })
-    .select("id")
-    .single<{ id: string }>();
+  try {
+    const result = await createGoogleDriveBackup({
+      kind: "manual",
+      scope: "full",
+      triggeredBy: "manual",
+      createdBy: profile,
+      notes: cleanText(notes) || "Backup manual creado desde panel de seguridad.",
+      backupLogType: backupType,
+    });
 
-  if (error) {
-    return { ok: false, message: error.message };
+    await writeAuditLog({
+      tableName: "backup_logs",
+      recordId: null,
+      action: "backup.manual_created",
+      newData: {
+        backupType,
+        fileName: result.fileName,
+        fileSize: result.fileSize,
+        tablesExported: result.tablesExported.length,
+        tablesMissing: result.tablesMissing,
+      },
+    });
+
+    revalidatePath("/admin/seguridad");
+    return {
+      ok: true,
+      message: `Backup creado en Google Drive: ${result.fileName} (${formatBytes(result.fileSize)}).`,
+      backup: {
+        fileName: result.fileName,
+        fileSize: formatBytes(result.fileSize),
+        finishedAt: result.finishedAt,
+        googleDriveFileId: result.googleDriveFileId,
+        tablesExported: result.tablesExported.length,
+        tablesMissing: result.tablesMissing,
+      },
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo crear el backup.";
+    return { ok: false, message };
   }
-
-  await writeAuditLog({
-    tableName: "backup_logs",
-    recordId: data.id,
-    action: "backup.requested",
-    newData: { backupType },
-  });
-
-  revalidatePath("/admin/seguridad");
-  return {
-    ok: true,
-    message: "Solicitud de backup registrada. Ejecuta el respaldo desde Supabase o tu tarea programada.",
-  };
 }
 
 export async function changeUserRoleAction(userId: string, role: AppRole): Promise<SecurityMutationResult> {

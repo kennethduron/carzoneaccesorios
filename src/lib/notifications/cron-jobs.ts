@@ -415,7 +415,17 @@ export async function processEmailQueueJob() {
 
 export async function createBackupJob() {
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
+  const { data: backupRun, error: backupRunError } = await admin
+    .from("backup_runs")
+    .select("id, status, started_at, finished_at, file_name")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Record<string, unknown>>();
+  const backupRunsMissing =
+    backupRunError?.code === "42P01" || backupRunError?.message.toLowerCase().includes("backup_runs");
+  const { data, error } = backupRunError && !backupRunsMissing
+    ? { data: null, error: backupRunError }
+    : await admin
     .from("backup_logs")
     .select("id, status, created_at, finished_at, notes")
     .order("created_at", { ascending: false })
@@ -434,8 +444,10 @@ export async function createBackupJob() {
     return { verified: false, status: "failed", message: "backup_logs unreadable" };
   }
 
-  const status = safeString(data?.status, "missing");
-  const stale = !data?.created_at || new Date(String(data.created_at)).getTime() < Date.now() - 36 * 60 * 60 * 1000;
+  const latestBackup = backupRun ?? data;
+  const status = safeString(latestBackup?.status, "missing");
+  const backupDate = latestBackup?.started_at ?? latestBackup?.created_at;
+  const stale = !backupDate || new Date(String(backupDate)).getTime() < Date.now() - 36 * 60 * 60 * 1000;
   const failed = status === "failed" || status === "error" || stale;
 
   if (failed) {
@@ -444,7 +456,7 @@ export async function createBackupJob() {
       title: "Backup requiere revisión",
       message: stale ? "No hay backup reciente registrado en las últimas 36 horas." : "El último backup registrado falló.",
       severity: "critical",
-      metadata: { latest_backup: data ?? null, stale },
+      metadata: { latest_backup: latestBackup ?? null, stale },
       dedupeKey: `system.backup_failed:${new Date().toISOString().slice(0, 10)}`,
     });
   }

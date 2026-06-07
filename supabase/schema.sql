@@ -83,3 +83,4 @@
 \i ./migrations/202605280001_business_owner_security_permissions.sql
 \i ./migrations/202605280002_persist_blocked_security_audit.sql
 \i ./migrations/202605280003_technical_owner_full_access.sql
+\i ./migrations/202606070001_google_drive_backup_runs.sql
