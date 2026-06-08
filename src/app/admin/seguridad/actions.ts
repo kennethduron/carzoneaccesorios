@@ -249,17 +249,22 @@ export async function requestBackupAction(
     return { ok: false, message: "Solo el administrador técnico puede solicitar respaldos." };
   }
 
-  const allowedTypes: BackupType[] = ["manual", "scheduled", "pre_deploy"];
+  const allowedTypes: BackupType[] = ["manual", "pre_deploy"];
   if (!allowedTypes.includes(backupType)) {
     return { ok: false, message: "Tipo de backup no válido." };
   }
 
   try {
+    const defaultNote =
+      backupType === "pre_deploy"
+        ? "Backup antes de deploy creado desde panel de seguridad."
+        : "Backup manual por correo creado desde panel de seguridad.";
     const result = await createEmailBackup({
       triggeredBy: "manual",
       createdBy: profile,
-      notes: cleanText(notes) || "Backup manual por correo creado desde panel de seguridad.",
+      notes: cleanText(notes) || defaultNote,
       backupLogType: backupType,
+      purpose: backupType,
     });
 
     await writeAuditLog({
@@ -281,7 +286,7 @@ export async function requestBackupAction(
     revalidatePath("/admin/seguridad");
     return {
       ok: true,
-      message: `Backup enviado por correo a ${result.recipientEmail}: ${result.fileName} (${formatBytes(result.fileSize)}).`,
+      message: `Backup completado correctamente. Se envio a ${result.recipientEmail}: ${result.fileName} (${formatBytes(result.fileSize)}).`,
       backup: {
         fileName: result.fileName,
         fileSize: formatBytes(result.fileSize),
@@ -294,7 +299,10 @@ export async function requestBackupAction(
       },
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear el backup.";
+    const detail = error instanceof Error ? error.message : "No se pudo crear el backup.";
+    const message = detail.includes("No se pudo exportar")
+      ? `${detail} Revisa los permisos de backup y vuelve a intentarlo.`
+      : detail;
     return { ok: false, message };
   }
 }

@@ -4,7 +4,7 @@ import { canUseTechnicalTools, canViewSecurityUser, visibleSecurityRolesFor } fr
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
 import { effectivePermissions, effectiveRole } from "@/lib/auth/permissions";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
-import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupLogRow } from "@/types/security";
+import type { AdminSecurityData, AdminUserSummary, AuditLogRow, BackupLogRow, BackupRunSummary } from "@/types/security";
 
 type AuditLogQueryRow = Omit<AuditLogRow, "user_email" | "user_name"> & {
   users: {
@@ -18,6 +18,8 @@ type BackupLogQueryRow = Omit<BackupLogRow, "requested_by_email"> & {
     email: string | null;
   } | null;
 };
+
+type BackupRunQueryRow = BackupRunSummary;
 
 type RoleQueryRow = {
   name: AppRole;
@@ -202,6 +204,7 @@ export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecur
     { data: wholesaleCodes, error: wholesaleCodesError },
     { data: auditLogs, error: auditError },
     { data: backupLogs, error: backupError },
+    { data: backupRuns, error: backupRunsError },
     authUsers,
   ] = await Promise.all([
     supabase.from("roles").select("name, permissions").order("name").returns<RoleQueryRow[]>(),
@@ -238,6 +241,14 @@ export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecur
           .limit(50)
           .returns<BackupLogQueryRow[]>()
       : Promise.resolve({ data: [] as BackupLogQueryRow[], error: null }),
+    technicalView
+      ? admin
+          .from("backup_runs")
+          .select("id, status, type, file_name, file_size, started_at, finished_at, error_message, recipient_email, delivery_provider, tables_exported, tables_missing, metadata")
+          .order("started_at", { ascending: false })
+          .limit(20)
+          .returns<BackupRunQueryRow[]>()
+      : Promise.resolve({ data: [] as BackupRunQueryRow[], error: null }),
     getAuthUserMap(),
   ]);
 
@@ -267,6 +278,9 @@ export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecur
 
   if (backupError) {
     throw new Error(backupError.message);
+  }
+  if (backupRunsError) {
+    throw new Error(backupRunsError.message);
   }
 
   const customersByUserId = new Map<string, CustomerProfileLinkRow>();
@@ -363,5 +377,6 @@ export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecur
     }),
     auditLogs: visibleAuditLogs,
     backupLogs: technicalView ? (backupLogs ?? []).map(normalizeBackupLog) : [],
+    backupRuns: technicalView ? backupRuns ?? [] : [],
   };
 }

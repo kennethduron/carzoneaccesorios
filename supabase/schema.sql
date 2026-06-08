@@ -85,3 +85,5 @@
 \i ./migrations/202605280003_technical_owner_full_access.sql
 \i ./migrations/202606070001_google_drive_backup_runs.sql
 \i ./migrations/202606070002_email_backup_runs.sql
+\i ./migrations/202606080001_backup_service_role_grants.sql
+\i ./migrations/202606080002_business_settings_backup_view.sql

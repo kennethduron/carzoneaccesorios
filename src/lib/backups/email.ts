@@ -26,6 +26,7 @@ type EmailBackupInput = {
   createdBy?: Pick<AuthProfile, "id" | "email" | "role"> | null;
   notes?: string | null;
   backupLogType?: BackupType;
+  purpose?: BackupType;
 };
 
 export type EmailBackupResult = {
@@ -68,12 +69,13 @@ const backupTables: BackupTable[] = [
   { name: "holiday_banners" },
   { name: "fiscal_settings" },
   { name: "business_settings" },
+  { name: "company_settings" },
   { name: "audit_logs", limit: 5000, orderBy: "created_at" },
   { name: "notification_logs", limit: 1000, orderBy: "created_at" },
 ];
 
 const sensitiveFieldPattern =
-  /(^|_)(password|passcode|token|secret|authorization|credential|private_key|api_key|service_role|refresh_token|access_token|cron_secret|cvv|card_number|card|tarjeta|cookie|session)(_|$)/i;
+  /(^|_)(password|passcode|token|secret|authorization|credential|private_key|api_key|service_role|refresh_token|access_token|cron_secret|cvv|card_number|card|tarjeta|cookie|session|bank_reference|bank_account|account_number|routing_number|iban|swift|transfer_receipt)(_|$)/i;
 
 function hnParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -110,6 +112,23 @@ function getCommit() {
 function getMaxBytes() {
   const value = Number(process.env.EMAIL_BACKUP_MAX_BYTES ?? defaultMaxBytes);
   return Number.isFinite(value) && value > 0 ? value : defaultMaxBytes;
+}
+
+function exportErrorMessage(tableName: string, error: { code?: string; message?: string; hint?: string }) {
+  const detail = [error.message, error.code ? `code ${error.code}` : null, error.hint ? `hint: ${error.hint}` : null]
+    .filter(Boolean)
+    .join("; ");
+  return detail ? `No se pudo exportar ${tableName}: ${detail}.` : `No se pudo exportar ${tableName}.`;
+}
+
+function isMissingRelationError(error: { code?: string; message?: string }) {
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    error.code === "42P01" ||
+    message.includes("does not exist") ||
+    message.includes("could not find the table") ||
+    message.includes("schema cache")
+  );
 }
 
 function sanitizeValue(value: unknown, redacted: Set<string>, path = ""): unknown {
@@ -160,11 +179,11 @@ async function exportTable(table: BackupTable, redacted: Set<string>): Promise<E
       .returns<JsonRecord[]>();
 
     if (error) {
-      if (error.code === "42P01" || error.message.toLowerCase().includes("does not exist")) {
+      if (isMissingRelationError(error)) {
         return null;
       }
 
-      throw new Error(`No se pudo exportar ${table.name}.`);
+      throw new Error(exportErrorMessage(table.name, error));
     }
 
     const rows = (data ?? []).map((row) => sanitizeValue(row, redacted, table.name) as JsonRecord);
@@ -184,11 +203,11 @@ async function exportTable(table: BackupTable, redacted: Set<string>): Promise<E
       .returns<JsonRecord[]>();
 
     if (error) {
-      if (error.code === "42P01" || error.message.toLowerCase().includes("does not exist")) {
+      if (isMissingRelationError(error)) {
         return null;
       }
 
-      throw new Error(`No se pudo exportar ${table.name}.`);
+      throw new Error(exportErrorMessage(table.name, error));
     }
 
     const page = data ?? [];
@@ -212,6 +231,7 @@ function buildMetadata(input: {
   missingTables: string[];
   redactedFields: string[];
   archiveSizeBytes: number;
+  purpose?: BackupType;
 }) {
   const counts = Object.fromEntries(Object.entries(input.exported).map(([name, table]) => [name, table.rowCount]));
   const truncatedTables = Object.entries(input.exported)
@@ -225,6 +245,7 @@ function buildMetadata(input: {
     environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown",
     system_url: getSiteUrl(),
     backup_type: input.runType,
+    backup_purpose: input.purpose ?? (input.runType === "scheduled_email" ? "scheduled" : "manual"),
     triggered_by: input.trigger,
     created_by_user_id: input.createdBy?.id ?? null,
     created_by_email: input.createdBy?.email ?? null,
@@ -315,6 +336,7 @@ async function buildBackupArchive(input: EmailBackupInput, runType: "manual_emai
     missingTables,
     redactedFields,
     archiveSizeBytes: 0,
+    purpose: input.purpose,
   });
   let buffer = await zipWithMetadata(exported, metadata);
 
@@ -329,6 +351,7 @@ async function buildBackupArchive(input: EmailBackupInput, runType: "manual_emai
       missingTables,
       redactedFields,
       archiveSizeBytes: buffer.length,
+      purpose: input.purpose,
     });
     const nextBuffer = await zipWithMetadata(exported, metadata);
     if (nextBuffer.length === buffer.length) {
@@ -404,6 +427,7 @@ async function insertBackupRun(input: EmailBackupInput, startedAt: string, runTy
         actor_email: input.createdBy?.email ?? null,
         actor_role: input.createdBy?.role ?? null,
         notes: input.notes ?? null,
+        purpose: input.purpose ?? runType,
       },
     })
     .select("id")
@@ -517,7 +541,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
           contentType: "application/zip",
         },
       ],
-      idempotencyKey: `backup-email:${archive.fileName}`,
+      idempotencyKey: `backup-email:${startedAt}:${runType}:${input.purpose ?? runType}`,
       metadata: {
         backup_file_name: archive.fileName,
         backup_file_size: archive.buffer.length,
@@ -560,6 +584,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
         total_records: result.totalRecords,
         redacted_field_count: result.redactedFields.length,
         notes: input.notes ?? null,
+        purpose: input.purpose ?? result.type,
       },
     });
     await insertBackupLog(input, result);
@@ -582,3 +607,6 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
   }
 }
 
+export async function buildEmailBackupArchiveForAudit(input: EmailBackupInput = { triggeredBy: "system" }) {
+  return buildBackupArchive(input, input.triggeredBy === "cron" ? "scheduled_email" : "manual_email");
+}

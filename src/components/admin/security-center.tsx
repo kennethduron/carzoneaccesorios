@@ -113,6 +113,20 @@ function formatDateTime(value: string | null) {
   return formatHnDateTime(value);
 }
 
+function formatFileSize(bytes: number | null) {
+  if (!bytes || bytes <= 0) return "-";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function backupRunPurpose(metadata: Record<string, unknown> | null, fallback: string) {
+  const purpose = String(metadata?.purpose ?? fallback);
+  if (purpose === "pre_deploy") return "Antes de deploy";
+  if (purpose === "scheduled" || purpose === "scheduled_email") return "Programado";
+  return "Manual";
+}
+
 function compactJson(value: Record<string, unknown> | null) {
   if (!value) {
     return "-";
@@ -247,6 +261,8 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
   const permissionCount = new Set(data.roles.flatMap((role) => role.permissions)).size;
   const latestBackup = data.backupLogs[0];
+  const latestSuccessfulBackup = data.backupRuns.find((backup) => backup.status === "completed") ?? null;
+  const latestFailedBackup = data.backupRuns.find((backup) => backup.status === "failed") ?? null;
   const canManageUsers = canManageSecurityUsers(currentUser);
   const canRequestBackups = canRequestTechnicalBackups(currentUser);
   const roleOptions = assignableRolesFor(currentUser);
@@ -615,6 +631,28 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 <p className="font-medium text-[#080808]">Último respaldo</p>
                 <p>{latestBackup ? `${backupTypeLabels[latestBackup.backup_type]} / ${latestBackup.status}` : "Sin registros"}</p>
                 <p>{latestBackup ? formatDateTime(latestBackup.created_at) : "-"}</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                  <p className="font-medium text-emerald-950">Último completado</p>
+                  <p className="text-emerald-900">
+                    {latestSuccessfulBackup ? backupRunPurpose(latestSuccessfulBackup.metadata, latestSuccessfulBackup.type) : "Sin registros"}
+                  </p>
+                  <p className="text-emerald-800">{latestSuccessfulBackup ? formatDateTime(latestSuccessfulBackup.finished_at) : "-"}</p>
+                  <p className="break-all text-emerald-800">
+                    {latestSuccessfulBackup ? `${formatFileSize(latestSuccessfulBackup.file_size)} / ${latestSuccessfulBackup.file_name ?? "-"}` : "-"}
+                  </p>
+                </div>
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+                  <p className="font-medium text-red-950">Último fallido</p>
+                  <p className="text-red-900">
+                    {latestFailedBackup ? backupRunPurpose(latestFailedBackup.metadata, latestFailedBackup.type) : "Sin registros"}
+                  </p>
+                  <p className="text-red-800">{latestFailedBackup ? formatDateTime(latestFailedBackup.finished_at) : "-"}</p>
+                  <p className="text-red-800">
+                    {latestFailedBackup?.error_message ? latestFailedBackup.error_message.slice(0, 120) : "-"}
+                  </p>
+                </div>
               </div>
             </div>
           </div>

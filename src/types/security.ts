@@ -19,6 +19,22 @@ export type AuditLogRow = {
 export type BackupStatus = "requested" | "running" | "completed" | "failed";
 export type BackupType = "manual" | "scheduled" | "pre_deploy";
 
+export type BackupRunSummary = {
+  id: string;
+  status: "running" | "completed" | "failed";
+  type: string;
+  file_name: string | null;
+  file_size: number | null;
+  started_at: string;
+  finished_at: string | null;
+  error_message: string | null;
+  recipient_email: string | null;
+  delivery_provider: string | null;
+  tables_exported: string[];
+  tables_missing: string[];
+  metadata: Record<string, unknown> | null;
+};
+
 export type BackupLogRow = {
   id: string;
   requested_by: string | null;
@@ -73,4 +89,5 @@ export type AdminSecurityData = {
   users: AdminUserSummary[];
   auditLogs: AuditLogRow[];
   backupLogs: BackupLogRow[];
+  backupRuns: BackupRunSummary[];
 };
