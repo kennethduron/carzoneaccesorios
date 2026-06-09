@@ -69,7 +69,7 @@ export function getEmailProviderStatus() {
 }
 
 function getResendFromEmail() {
-  const email = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const email = process.env.RESEND_FROM_EMAIL || "";
   const name = process.env.RESEND_FROM_NAME || "Car Zone Accesorios";
   return email.includes("<") ? email : `${name} <${email}>`;
 }

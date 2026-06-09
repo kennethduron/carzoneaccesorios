@@ -19,7 +19,7 @@ assert.ok(env.SUPABASE_SERVICE_ROLE_KEY, "Missing SUPABASE_SERVICE_ROLE_KEY");
 const admin = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
-const productionUrl = "https://carzoneaccesorios.vercel.app";
+const productionUrl = "https://carzoneaccesorios.com";
 const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const password = `RoleTest-${suffix}-A1!`;
 const testUsers = [];

@@ -3,7 +3,7 @@ import { Rajdhani, Titillium_Web } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import "./globals.css";
 
-const siteUrl = "https://carzoneaccesorios.vercel.app";
+const siteUrl = "https://carzoneaccesorios.com";
 const ogImagePath = "/brand/og-car-zone-logo-20260513.png";
 const ogImageUrl = `${siteUrl}${ogImagePath}`;
 

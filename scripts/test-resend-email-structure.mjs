@@ -20,7 +20,7 @@ for (const key of [
   "EMAIL_PROVIDER=resend",
   "EMAIL_ENABLED=true",
   "RESEND_API_KEY=",
-  "RESEND_FROM_EMAIL=onboarding@resend.dev",
+  "RESEND_FROM_EMAIL=sistema@carzoneaccesorios.com",
   "RESEND_FROM_NAME=Car Zone Accesorios",
   "RESEND_REPLY_TO=",
 ]) {

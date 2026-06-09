@@ -1,6 +1,6 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { writeErrorLog } from "@/lib/error-logging";
 import { checkRateLimit, getRateLimitMessage, type RateLimitResult } from "@/lib/rate-limit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -60,13 +60,13 @@ async function getSiteUrl() {
   }
 
   if (process.env.VERCEL_ENV === "production") {
-    return "https://carzoneaccesorios.vercel.app";
+    return "https://carzoneaccesorios.com";
   }
 
   const requestHeaders = await headers();
   const host = requestHeaders.get("host");
   const proto = requestHeaders.get("x-forwarded-proto") ?? "https";
-  return host ? `${proto}://${host}` : "https://carzoneaccesorios.vercel.app";
+  return host ? `${proto}://${host}` : "https://carzoneaccesorios.com";
 }
 
 function buildAuthCallbackUrl(siteUrl: string, nextPath = "/verificacion/cuenta-confirmada", email?: string) {
@@ -232,7 +232,7 @@ function getPasswordResetErrorMessage(rawMessage: string) {
   const message = rawMessage.toLowerCase();
 
   if (message.includes("expired") || message.includes("invalid") || message.includes("otp") || message.includes("token")) {
-    return "El enlace no es válido o expiró. Solicita uno nuevo.";
+    return "El enlace no es válido o ha expirado. Solicita uno nuevo.";
   }
 
   if (message.includes("weak") || message.includes("password")) {
@@ -241,7 +241,7 @@ function getPasswordResetErrorMessage(rawMessage: string) {
 
   return mapOperationalError(
     { message: rawMessage },
-    { module: "auth", action: "auth.password_update_failed", route: "/restablecer-contrasena", category: "auth" },
+    { module: "auth", action: "auth.password_update_failed", route: "/actualizar-contrasena", category: "auth" },
   ).customerMessage;
 }
 
@@ -276,6 +276,8 @@ function hasRecoverySession(accessToken: string | null | undefined) {
     return method?.method === "recovery";
   });
 }
+
+const passwordRecoveryCookieName = "cz-password-recovery";
 
 async function resolveLoginEmail(identifierInput: string) {
   const identifier = identifierInput.trim();
@@ -722,7 +724,7 @@ export async function requestPasswordResetAction(emailInput: string): Promise<Au
   const supabase = await getSupabaseServerClient();
   const siteUrl = await getSiteUrl();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: buildAuthCallbackUrl(siteUrl, "/restablecer-contrasena"),
+    redirectTo: buildAuthCallbackUrl(siteUrl, "/actualizar-contrasena"),
   });
 
   if (error) {
@@ -740,7 +742,7 @@ export async function requestPasswordResetAction(emailInput: string): Promise<Au
 
 export async function updatePasswordAfterRecoveryAction(password: string): Promise<AuthActionResult> {
   const updateLimit = await checkRateLimit({
-    route: "/restablecer-contrasena",
+    route: "/actualizar-contrasena",
     limit: 6,
     windowSeconds: 15 * 60,
   });
@@ -751,7 +753,7 @@ export async function updatePasswordAfterRecoveryAction(password: string): Promi
       {
         module: "auth",
         action: "auth.password_update_rate_limited",
-        route: "/restablecer-contrasena",
+        route: "/actualizar-contrasena",
         category: "auth",
         retryAfterSeconds: updateLimit.retryAfter,
       },
@@ -768,9 +770,11 @@ export async function updatePasswordAfterRecoveryAction(password: string): Promi
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  const cookieStore = await cookies();
+  const hasPasswordRecoveryCookie = cookieStore.get(passwordRecoveryCookieName)?.value === "1";
 
-  if (!session || !hasRecoverySession(session.access_token)) {
-    return { ok: false, message: "El enlace no es válido o expiró. Solicita uno nuevo." };
+  if (!session || (!hasRecoverySession(session.access_token) && !hasPasswordRecoveryCookie)) {
+    return { ok: false, message: "El enlace no es válido o ha expirado. Solicita uno nuevo." };
   }
 
   const { error } = await supabase.auth.updateUser({ password });
@@ -779,7 +783,7 @@ export async function updatePasswordAfterRecoveryAction(password: string): Promi
     const mapped = mapOperationalError(error, {
       module: "auth",
       action: "auth.password_update_failed",
-      route: "/restablecer-contrasena",
+      route: "/actualizar-contrasena",
       category: "auth",
     });
     await writeMappedAuthError(mapped);
@@ -788,6 +792,7 @@ export async function updatePasswordAfterRecoveryAction(password: string): Promi
   }
 
   await supabase.auth.signOut();
+  cookieStore.delete(passwordRecoveryCookieName);
 
   return {
     ok: true,

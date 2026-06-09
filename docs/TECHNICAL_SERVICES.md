@@ -25,7 +25,7 @@ No usar cuentas técnicas anteriores.
 Configurar el chequeo de reservas vencidas:
 
 ```http
-GET https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations
+GET https://carzoneaccesorios.com/api/cron/check-expired-reservations
 Authorization: Bearer valor_de_CRON_SECRET
 ```
 

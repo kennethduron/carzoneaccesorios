@@ -18,7 +18,7 @@ function loadEnvFile(path) {
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
-process.env.NEXT_PUBLIC_SITE_URL ||= "https://carzoneaccesorios.vercel.app";
+process.env.NEXT_PUBLIC_SITE_URL ||= "https://carzoneaccesorios.com";
 
 for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SITE_URL"]) {
   assert.ok(process.env[key], `Missing ${key}`);
@@ -82,7 +82,7 @@ try {
   await anon.auth.signOut();
 
   const reset = await anon.auth.resetPasswordForEmail(email, {
-    redirectTo: `${envValue("NEXT_PUBLIC_SITE_URL").replace(/\/$/, "")}/auth/callback?next=/restablecer-contrasena`,
+    redirectTo: `${envValue("NEXT_PUBLIC_SITE_URL").replace(/\/$/, "")}/auth/callback?next=/actualizar-contrasena`,
   });
   const resetRateLimited = reset.error?.code === "over_email_send_rate_limit";
   if (reset.error && !resetRateLimited) {

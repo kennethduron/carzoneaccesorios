@@ -41,7 +41,7 @@ function escapeHtml(value: unknown) {
 }
 
 function siteUrl() {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://carzoneaccesorios.vercel.app";
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://carzoneaccesorios.com";
 }
 
 function formatDate(value: unknown) {

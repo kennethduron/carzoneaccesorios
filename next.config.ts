@@ -35,6 +35,17 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "www.carzoneaccesorios.com",
+          },
+        ],
+        destination: "https://carzoneaccesorios.com/:path*",
+        permanent: true,
+      },
+      {
         source: "/seguimiento",
         destination: "/rastreo",
         permanent: true,

@@ -7,7 +7,7 @@ import { getProductMetaDescription } from "@/utils/product-content";
 
 export const dynamic = "force-dynamic";
 
-const siteUrl = "https://carzoneaccesorios.vercel.app";
+const siteUrl = "https://carzoneaccesorios.com";
 
 function absoluteUrl(value: string) {
   return value.startsWith("http") ? value : `${siteUrl}${value}`;

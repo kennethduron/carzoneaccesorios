@@ -40,7 +40,7 @@ type OrderNotificationRow = {
 };
 
 function getSiteUrl() {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://carzoneaccesorios.vercel.app";
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://carzoneaccesorios.com";
 }
 
 function paymentMethodLabel(value: string) {
@@ -183,7 +183,7 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
           <a href="${trackingUrl}" style="display:inline-block;background:#e4252c;color:#ffffff;text-decoration:none;border-radius:6px;padding:12px 16px;font-weight:700;">Rastrear pedido activo</a>
         </div>
         <p style="margin:18px 0 0;color:#666;font-size:13px;line-height:1.5;">El rastreo público solo muestra pedidos activos. Si tu pedido ya fue entregado y pagado, cancelado o cerrado, dejará de aparecer en el rastreo público.</p>
-        <p style="margin:14px 0 0;color:#666;font-size:13px;">Contacto: WhatsApp y teléfono oficial publicados en carzoneaccesorios.vercel.app.</p>
+        <p style="margin:14px 0 0;color:#666;font-size:13px;">Contacto: WhatsApp y teléfono oficial publicados en carzoneaccesorios.com.</p>
       </div>
     </div>
   `;

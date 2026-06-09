@@ -17,7 +17,7 @@ CRON_SECRET=
 EMAIL_PROVIDER=resend
 EMAIL_ENABLED=true
 RESEND_API_KEY=
-RESEND_FROM_EMAIL=
+RESEND_FROM_EMAIL=sistema@carzoneaccesorios.com
 RESEND_FROM_NAME=Car Zone Accesorios
 RESEND_REPLY_TO=
 
@@ -58,18 +58,18 @@ Si FCM no esta configurado, la UI muestra estado deshabilitado y no rompe el adm
 
 ## Cron-Job.org
 
-Dominio de produccion: `https://carzoneaccesorios.vercel.app`
+Dominio de produccion: `https://carzoneaccesorios.com`
 
 | nombre | URL completa | metodo | frecuencia recomendada | header requerido | que hace | prioridad |
 |---|---|---:|---|---|---|---:|
-| Reservas vencidas | `https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations` | GET o POST | Cada 1 hora | `Authorization: Bearer <CRON_SECRET>` | Detecta reservas vencidas, marca revision, crea alerta interna y encola correos. No libera stock automaticamente. | Alta |
-| Procesar cola de correos | `https://carzoneaccesorios.vercel.app/api/cron/process-email-queue` | GET o POST | Cada 5-15 minutos | `Authorization: Bearer <CRON_SECRET>` | Toma correos pending/retrying, envia por Brevo si esta habilitado y reintenta fallos. | Alta |
-| Seguimientos CRM vencidos | `https://carzoneaccesorios.vercel.app/api/cron/check-overdue-followups` | GET o POST | Cada 1 hora | `Authorization: Bearer <CRON_SECRET>` | Detecta followups vencidos y notifica responsables o roles operativos. | Alta |
-| Tareas vencidas | `https://carzoneaccesorios.vercel.app/api/cron/check-overdue-tasks` | GET o POST | Cada 1-6 horas | `Authorization: Bearer <CRON_SECRET>` | Detecta tareas CRM vencidas y crea alertas internas. | Media |
-| Stock bajo | `https://carzoneaccesorios.vercel.app/api/cron/check-low-stock` | GET o POST | Cada 6 horas o diario | `Authorization: Bearer <CRON_SECRET>` | Detecta productos bajo minimo o agotados y evita duplicados por producto. | Media |
-| Mayoristas pendientes | `https://carzoneaccesorios.vercel.app/api/cron/check-pending-wholesale-requests` | GET o POST | Cada 6 horas | `Authorization: Bearer <CRON_SECRET>` | Detecta solicitudes mayoristas pendientes por mas de 24h. | Media |
-| Backups | `https://carzoneaccesorios.vercel.app/api/cron/create-backup` | GET o POST | Diario | `Authorization: Bearer <CRON_SECRET>` | Verifica `backup_logs` y alerta a technical_owner si falta o fallo. | Alta |
-| Salud del sistema | `https://carzoneaccesorios.vercel.app/api/cron/system-health-check` | GET o POST | Diario | `Authorization: Bearer <CRON_SECRET>` | Revisa crons fallidos, correos failed y errores operativos recientes. | Alta |
+| Reservas vencidas | `https://carzoneaccesorios.com/api/cron/check-expired-reservations` | GET o POST | Cada 1 hora | `Authorization: Bearer <CRON_SECRET>` | Detecta reservas vencidas, marca revision, crea alerta interna y encola correos. No libera stock automaticamente. | Alta |
+| Procesar cola de correos | `https://carzoneaccesorios.com/api/cron/process-email-queue` | GET o POST | Cada 5-15 minutos | `Authorization: Bearer <CRON_SECRET>` | Toma correos pending/retrying, envia por Brevo si esta habilitado y reintenta fallos. | Alta |
+| Seguimientos CRM vencidos | `https://carzoneaccesorios.com/api/cron/check-overdue-followups` | GET o POST | Cada 1 hora | `Authorization: Bearer <CRON_SECRET>` | Detecta followups vencidos y notifica responsables o roles operativos. | Alta |
+| Tareas vencidas | `https://carzoneaccesorios.com/api/cron/check-overdue-tasks` | GET o POST | Cada 1-6 horas | `Authorization: Bearer <CRON_SECRET>` | Detecta tareas CRM vencidas y crea alertas internas. | Media |
+| Stock bajo | `https://carzoneaccesorios.com/api/cron/check-low-stock` | GET o POST | Cada 6 horas o diario | `Authorization: Bearer <CRON_SECRET>` | Detecta productos bajo minimo o agotados y evita duplicados por producto. | Media |
+| Mayoristas pendientes | `https://carzoneaccesorios.com/api/cron/check-pending-wholesale-requests` | GET o POST | Cada 6 horas | `Authorization: Bearer <CRON_SECRET>` | Detecta solicitudes mayoristas pendientes por mas de 24h. | Media |
+| Backups | `https://carzoneaccesorios.com/api/cron/create-backup` | GET o POST | Diario | `Authorization: Bearer <CRON_SECRET>` | Verifica `backup_logs` y alerta a technical_owner si falta o fallo. | Alta |
+| Salud del sistema | `https://carzoneaccesorios.com/api/cron/system-health-check` | GET o POST | Diario | `Authorization: Bearer <CRON_SECRET>` | Revisa crons fallidos, correos failed y errores operativos recientes. | Alta |
 
 ## Idempotencia
 

@@ -79,11 +79,11 @@ function redirectToVerificationError(
   return NextResponse.redirect(url);
 }
 
-function redirectToPasswordRecovery(request: NextRequest) {
+function redirectToPasswordUpdateError(request: NextRequest) {
   const url = request.nextUrl.clone();
-  url.pathname = "/recuperar-contrasena";
+  url.pathname = "/actualizar-contrasena";
   url.search = "";
-  url.searchParams.set("reset_error", "expired");
+  url.searchParams.set("error", "expired");
   return NextResponse.redirect(url);
 }
 
@@ -187,7 +187,10 @@ export async function GET(request: NextRequest) {
   const rawType = request.nextUrl.searchParams.get("type") ?? "signup";
   const type = rawType as EmailOtpType;
   const requestedNext = safeNextPath(request.nextUrl.searchParams.get("next"));
-  const isRecoveryFlow = requestedNext === "/restablecer-contrasena" || type === "recovery";
+  const isRecoveryFlow =
+    requestedNext === "/actualizar-contrasena" ||
+    requestedNext === "/restablecer-contrasena" ||
+    type === "recovery";
   let callbackUser: User | null = null;
 
   if (request.nextUrl.searchParams.get("error")) {
@@ -205,7 +208,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (isRecoveryFlow) {
-      return redirectToPasswordRecovery(request);
+      return redirectToPasswordUpdateError(request);
     }
 
     const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, errorText);
@@ -218,7 +221,7 @@ export async function GET(request: NextRequest) {
 
   if (!code && !tokenHash) {
     if (isRecoveryFlow) {
-      return redirectToPasswordRecovery(request);
+      return redirectToPasswordUpdateError(request);
     }
 
     return redirectToVerificationError(request, "missing");
@@ -232,7 +235,7 @@ export async function GET(request: NextRequest) {
       await logAuthCallbackError(request, "auth.callback_exchange_failed", error);
 
       if (isRecoveryFlow) {
-        return redirectToPasswordRecovery(request);
+        return redirectToPasswordUpdateError(request);
       }
 
       const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, error.message);
@@ -277,7 +280,7 @@ export async function GET(request: NextRequest) {
       await logAuthCallbackError(request, "auth.callback_verify_otp_failed", error);
 
       if (isRecoveryFlow) {
-        return redirectToPasswordRecovery(request);
+        return redirectToPasswordUpdateError(request);
       }
 
       const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, error.message);
@@ -293,7 +296,7 @@ export async function GET(request: NextRequest) {
     await logAuthCallbackError(request, "auth.callback_user_missing", { message: "No authenticated user after callback" });
 
     if (isRecoveryFlow) {
-      return redirectToPasswordRecovery(request);
+      return redirectToPasswordUpdateError(request);
     }
 
     return redirectToVerificationError(request, "failed");
@@ -301,10 +304,18 @@ export async function GET(request: NextRequest) {
 
   if (isRecoveryFlow) {
     const url = request.nextUrl.clone();
-    url.pathname = "/restablecer-contrasena";
+    url.pathname = "/actualizar-contrasena";
     url.search = "";
     url.searchParams.set("recovery", "1");
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    response.cookies.set("cz-password-recovery", "1", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
+      path: "/",
+      maxAge: 15 * 60,
+    });
+    return response;
   }
 
   await ensureRetailProfile({

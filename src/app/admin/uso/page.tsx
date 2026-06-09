@@ -200,7 +200,7 @@ export default async function AdminUsagePage() {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm">
             <p className="font-semibold">Solicitud recomendada</p>
-            <p className="mt-2 break-all text-black/65">https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations</p>
+            <p className="mt-2 break-all text-black/65">https://carzoneaccesorios.com/api/cron/check-expired-reservations</p>
             <p className="mt-2 text-black/65">Método: GET o POST</p>
             <p className="mt-1 text-black/65">Frecuencia inicial: cada 1 hora</p>
           </div>

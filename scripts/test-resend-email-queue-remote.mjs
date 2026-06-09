@@ -24,7 +24,7 @@ function envValue(key) {
 
 assert.equal(envValue("EMAIL_PROVIDER"), "resend");
 assert.equal(envValue("EMAIL_ENABLED"), "true");
-assert.equal(envValue("RESEND_FROM_EMAIL"), "onboarding@resend.dev");
+assert.equal(envValue("RESEND_FROM_EMAIL"), "sistema@carzoneaccesorios.com");
 assert.equal(envValue("RESEND_FROM_NAME"), "Car Zone Accesorios");
 assert.equal(envValue("RESEND_REPLY_TO"), "car.zone.accesorioshn@gmail.com");
 

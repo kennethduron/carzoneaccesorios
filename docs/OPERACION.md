@@ -41,13 +41,13 @@ Comparacion revisada el 21 de mayo de 2026:
 
 ### Registro Auth mientras se verifica el dominio
 
-Mientras el dominio definitivo no este verificado en Resend, el registro publico debe usar el mailer nativo de Supabase Auth. No activar Custom SMTP con `onboarding@resend.dev` para Auth porque Resend no permite enviar confirmaciones a correos externos desde ese remitente.
+Con el dominio `carzoneaccesorios.com` verificado en Resend, el registro publico y la recuperacion de contrasena pueden usar SMTP custom de Supabase Auth con `sistema@carzoneaccesorios.com`.
 
 El modo temporal `AUTH_TEST_CREATE_UNCONFIRMED_USERS` queda retirado del flujo publico. El registro debe llamar `supabase.auth.signUp`, enviar `emailRedirectTo` a `/auth/callback` y mantener la cuenta sin sesion hasta que el usuario confirme el correo.
 
 La configuracion de Resend, plantillas, callbacks, scripts SMTP y `email_queue` se conserva para futuro. Solo Auth debe permanecer temporalmente con el mailer nativo de Supabase.
 
-Cuando el dominio este comprado y verificado en Resend, configurar `SUPABASE_AUTH_SMTP_FROM_EMAIL=notificaciones@carzoneaccesorios.com` y restaurar/verificar el flujo SMTP preparado con `npm run configure:supabase-auth-resend-smtp`.
+Configurar `SUPABASE_AUTH_SMTP_FROM_EMAIL=sistema@carzoneaccesorios.com` y verificar el flujo SMTP preparado con `npm run configure:supabase-auth-resend-smtp`.
 
 Antes y despues de cada cambio, auditar la configuracion con:
 
@@ -96,7 +96,7 @@ npm run audit:supabase-auth-config
 Configurar en cron-job.org:
 
 - Cuenta técnica administradora: `carzonetech0@gmail.com`.
-- URL: `https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations`
+- URL: `https://carzoneaccesorios.com/api/cron/check-expired-reservations`
 - Metodo: `GET` o `POST`
 - Header: `Authorization: Bearer valor_de_CRON_SECRET`
 - Frecuencia recomendada inicial: cada 1 hora.

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { getCatalogProducts, getCategorySummaries } from "@/services/supabase/products.service";
 
-const siteUrl = "https://carzoneaccesorios.vercel.app";
+const siteUrl = "https://carzoneaccesorios.com";
 
 const staticRoutes = [
   "",

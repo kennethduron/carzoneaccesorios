@@ -54,7 +54,7 @@ function getEmailFromParams(params: Record<string, string | string[] | undefined
   const candidates = [firstString(params.next), firstString(params.redirect_to)].filter(Boolean) as string[];
   for (const candidate of candidates) {
     try {
-      const nestedEmail = new URL(candidate, "https://carzoneaccesorios.vercel.app").searchParams.get("email")?.trim().toLowerCase() ?? "";
+      const nestedEmail = new URL(candidate, "https://carzoneaccesorios.com").searchParams.get("email")?.trim().toLowerCase() ?? "";
       if (isValidAuthEmail(nestedEmail)) {
         return nestedEmail;
       }

@@ -12,13 +12,13 @@ const securityActions = await readFile(new URL("../src/app/admin/seguridad/actio
 for (const key of [
   "SUPABASE_ACCESS_TOKEN=",
   "SUPABASE_PROJECT_REF=",
-  "SUPABASE_AUTH_SITE_URL=https://carzoneaccesorios.vercel.app",
-  "SUPABASE_AUTH_REDIRECT_URLS=https://carzoneaccesorios.vercel.app/auth/callback,http://localhost:3000/auth/callback",
+  "SUPABASE_AUTH_SITE_URL=https://carzoneaccesorios.com",
+  "SUPABASE_AUTH_REDIRECT_URLS=https://carzoneaccesorios.com/auth/callback,https://www.carzoneaccesorios.com/auth/callback,https://carzoneaccesorios.com/actualizar-contrasena,https://www.carzoneaccesorios.com/actualizar-contrasena,http://localhost:3000/auth/callback,http://localhost:3000/actualizar-contrasena",
   "SUPABASE_AUTH_SMTP_HOST=smtp.resend.com",
   "SUPABASE_AUTH_SMTP_PORT=465",
   "SUPABASE_AUTH_SMTP_USER=resend",
   "SUPABASE_AUTH_SMTP_PASS=",
-  "SUPABASE_AUTH_SMTP_FROM_EMAIL=onboarding@resend.dev",
+  "SUPABASE_AUTH_SMTP_FROM_EMAIL=sistema@carzoneaccesorios.com",
   "SUPABASE_AUTH_SMTP_SENDER_NAME=Car Zone Accesorios",
 ]) {
   assert.match(envExample, new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
@@ -35,8 +35,19 @@ assert.match(configureScript, /smtp_pass: smtpPass/);
 assert.match(configureScript, /mailer_autoconfirm: false/);
 assert.match(configureScript, /mailer_secure_email_change_enabled: true/);
 assert.match(configureScript, /mailer_subjects_confirmation: "Confirma tu cuenta - Car Zone Accesorios"/);
-assert.match(configureScript, /mailer_subjects_recovery: "Restablece tu contrasena - Car Zone Accesorios"/);
+assert.match(configureScript, /mailer_subjects_recovery: "Restablece tu contraseña - Car Zone Accesorios"/);
 assert.match(configureScript, /mailer_subjects_invite: "Acceso al sistema administrativo - Car Zone Accesorios"/);
+assert.match(configureScript, /Cambiar mi contraseña/);
+assert.match(configureScript, /Confirmar mi cuenta/);
+const englishAuthPhrases = [
+  ["Reset", "your", "password"].join(" "),
+  ["Confirm", "your", "email"].join(" "),
+  ["Magic", "Link"].join(" "),
+  ["Invite", "user"].join(" "),
+];
+for (const phrase of englishAuthPhrases) {
+  assert.equal(configureScript.includes(phrase), false, `Unexpected English auth template text: ${phrase}`);
+}
 assert.doesNotMatch(configureScript, /smtpPassword: payload\.smtp_pass/);
 
 assert.match(authActions, /supabase\.auth\.signUp/);
@@ -51,9 +62,12 @@ assert.doesNotMatch(authActions, /temporary-test-bypass/);
 assert.doesNotMatch(authActions, /signInWithPassword\.after_test_registration/);
 assert.match(authActions, /supabase\.auth\.resend/);
 assert.match(authActions, /resetPasswordForEmail/);
+assert.match(authActions, /buildAuthCallbackUrl\(siteUrl, "\/actualizar-contrasena"\)/);
+assert.doesNotMatch(authActions, /buildAuthCallbackUrl\(siteUrl, "\/restablecer-contrasena"\)/);
 assert.match(operationalErrors, /Debes confirmar tu correo antes de iniciar sesión/);
 assert.match(authCallback, /exchangeCodeForSession/);
 assert.match(authCallback, /verifyOtp/);
+assert.match(authCallback, /pathname = "\/actualizar-contrasena"/);
 assert.match(securityActions, /auth\.admin\.createUser/);
 assert.match(securityActions, /email_confirm: true/);
 

@@ -317,7 +317,7 @@ Configuracion recomendada:
 1. Crear cuenta en https://cron-job.org.
 2. Crear cron nuevo.
 3. Iniciar sesión con la cuenta técnica `carzonetech0@gmail.com`.
-4. URL: `https://carzoneaccesorios.vercel.app/api/cron/check-expired-reservations`.
+4. URL: `https://carzoneaccesorios.com/api/cron/check-expired-reservations`.
 5. Metodo: `GET` o `POST`.
 6. Header: `Authorization: Bearer valor_de_CRON_SECRET`.
 7. Frecuencia inicial: cada 1 hora.
