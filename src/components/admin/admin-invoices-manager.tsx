@@ -32,6 +32,7 @@ type AdminInvoicesManagerProps = {
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canUseTechnicalExports: boolean;
+  errorMessage?: string | null;
   activeTask?: { id: string; label: string } | null;
 };
 
@@ -122,6 +123,7 @@ export function AdminInvoicesManager({
   canCancelInvoices,
   canCorrectInvoices,
   canUseTechnicalExports,
+  errorMessage = null,
   activeTask = null,
 }: AdminInvoicesManagerProps) {
   const router = useRouter();
@@ -177,8 +179,8 @@ export function AdminInvoicesManager({
       "Fecha",
       "Método de pago",
       "Referencia bancaria",
-      "Subtotal",
-      "ISV",
+      "Subtotal antes de ISV",
+      "ISV incluido 15%",
       "Recargo mínimo",
       "Descuentos",
       "Otros cargos",
@@ -307,6 +309,13 @@ export function AdminInvoicesManager({
     <div className="space-y-5">
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/facturas" /> : null}
 
+      {errorMessage ? (
+        <section className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+          <p className="font-semibold">No se pudo cargar la consulta solicitada</p>
+          <p className="mt-1">{errorMessage}</p>
+        </section>
+      ) : null}
+
       <FiscalAlertsPanel alerts={fiscalAlerts} />
 
       <section className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
@@ -326,8 +335,8 @@ export function AdminInvoicesManager({
       />
 
       <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="Subtotal" value={formatCurrency(totals.subtotal)} />
-        <Metric label="ISV" value={formatCurrency(totals.tax)} />
+        <Metric label="Subtotal antes de ISV" value={formatCurrency(totals.subtotal)} />
+        <Metric label="ISV incluido 15%" value={formatCurrency(totals.tax)} />
         <Metric label="Total facturado" value={formatCurrency(totals.total)} />
       </div>
 
@@ -419,8 +428,8 @@ export function AdminInvoicesManager({
                 <th className="px-4 py-3">Fecha</th>
                 <th className="px-4 py-3">Método de pago</th>
                 <th className="px-4 py-3">Referencia bancaria</th>
-                <th className="px-4 py-3">Subtotal</th>
-                <th className="px-4 py-3">ISV</th>
+                <th className="px-4 py-3">Subtotal antes de ISV</th>
+                <th className="px-4 py-3">ISV incluido 15%</th>
                 <th className="px-4 py-3">Envío</th>
                 <th className="px-4 py-3">Comisión</th>
                 <th className="px-4 py-3">Total</th>
@@ -432,7 +441,9 @@ export function AdminInvoicesManager({
               {filteredInvoices.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-black/50" colSpan={13}>
-                    No se encontraron resultados con estos filtros.
+                    {activeTask?.id === "pending_invoices" && !errorMessage
+                      ? "No hay facturas pendientes en este momento."
+                      : "No se encontraron resultados con estos filtros."}
                   </td>
                 </tr>
               ) : (
@@ -742,8 +753,8 @@ function InvoiceModal({
         </p>
 
         <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
-          <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
-          <p>ISV: {formatCurrency(invoice.tax)}</p>
+          <p>Subtotal antes de ISV: {formatCurrency(invoice.subtotal)}</p>
+          <p>ISV incluido 15%: {formatCurrency(invoice.tax)}</p>
           <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
           <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
           <p>Recargo mínimo: {formatCurrency(invoice.small_order_fee)}</p>

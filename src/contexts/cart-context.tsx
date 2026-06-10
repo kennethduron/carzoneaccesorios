@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { CartItem, Product } from "@/types/commerce";
+import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
 import { getProductPrice } from "@/utils/pricing";
 import {
   getWholesaleMinimumQuantity,
@@ -156,9 +157,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       .filter(Boolean) as CartRow[];
   }, [cart, findProduct, priceMode]);
 
-  const subtotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
-  const tax = Math.round(subtotal * 0.15 * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
+  const productsTotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
+  const includedTax = calculateIncludedTaxBreakdown(productsTotal);
+  const subtotal = includedTax.subtotalBeforeTax;
+  const tax = includedTax.includedTax;
+  const total = includedTax.totalWithTax;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const invalidItemCount = Math.max(0, cart.length - rows.length);
   const wholesaleQuantityIssues = rows

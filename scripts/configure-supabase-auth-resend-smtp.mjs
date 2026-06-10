@@ -75,10 +75,10 @@ const payload = {
   smtp_sender_name: envValue("SUPABASE_AUTH_SMTP_SENDER_NAME", "RESEND_FROM_NAME") || "Car Zone Accesorios",
   mailer_subjects_confirmation: "Confirma tu cuenta - Car Zone Accesorios",
   mailer_templates_confirmation_content:
-    '<h2>Confirma tu cuenta</h2><p>Gracias por registrarte en Car Zone Accesorios. Para activar tu cuenta, confirma tu correo electrónico.</p><p><a href="{{ .ConfirmationURL }}">Confirmar mi cuenta</a></p><p>Este enlace expira pronto y solo debe usarse una vez.</p><p>Si no solicitaste esta cuenta, puedes ignorar este correo.</p>',
+    '<h2>Confirma tu cuenta</h2><p>Gracias por registrarte en Car Zone Accesorios. Para activar tu cuenta, confirma tu correo electrónico.</p><p><a href="https://carzoneaccesorios.com/auth/callback?token_hash={{ .TokenHash }}&amp;type=signup&amp;next=/verificacion/cuenta-confirmada&amp;email={{ .Email }}">Confirmar mi cuenta</a></p><p>Este enlace expira pronto y solo debe usarse una vez.</p><p>Si no solicitaste esta cuenta, puedes ignorar este correo.</p>',
   mailer_subjects_recovery: "Restablece tu contraseña - Car Zone Accesorios",
   mailer_templates_recovery_content:
-    '<h2>Restablece tu contraseña</h2><p>Hola, recibimos una solicitud para restablecer la contraseña de tu cuenta en Car Zone Accesorios.</p><p><a href="{{ .ConfirmationURL }}">Cambiar mi contraseña</a></p><p>Si no solicitaste este cambio, puedes ignorar este correo.</p>',
+    '<h2>Restablece tu contraseña</h2><p>Hola, recibimos una solicitud para restablecer la contraseña de tu cuenta en Car Zone Accesorios.</p><p><a href="https://carzoneaccesorios.com/auth/callback?token_hash={{ .TokenHash }}&amp;type=recovery&amp;next=/actualizar-contrasena">Cambiar mi contraseña</a></p><p>Si no solicitaste este cambio, puedes ignorar este correo.</p>',
   mailer_subjects_invite: "Acceso al sistema administrativo - Car Zone Accesorios",
   mailer_templates_invite_content:
     '<h2>Acceso al sistema administrativo</h2><p>Has recibido acceso al sistema administrativo de Car Zone Accesorios.</p><p><a href="{{ .ConfirmationURL }}">Aceptar invitación</a></p><p>Usa este enlace solo desde un dispositivo seguro. Si no esperabas esta invitación, ignora este correo y avisa al dueño operativo.</p>',
@@ -88,6 +88,9 @@ const payload = {
   mailer_subjects_email_change: "Confirma el cambio de correo - Car Zone Accesorios",
   mailer_templates_email_change_content:
     '<h2>Confirma el cambio de correo</h2><p>Confirma que quieres cambiar tu correo a {{ .NewEmail }}.</p><p><a href="{{ .ConfirmationURL }}">Confirmar nuevo correo</a></p><p>Si no solicitaste este cambio, ignora este correo y contacta soporte.</p>',
+  mailer_subjects_reauthentication: "Confirma tu identidad - Car Zone Accesorios",
+  mailer_templates_reauthentication_content:
+    '<h2>Confirma tu identidad</h2><p>Usa este código para confirmar que eres tú:</p><p style="font-size:24px;font-weight:700;">{{ .Token }}</p><p>Si no solicitaste esta verificación, puedes ignorar este correo.</p>',
 };
 
 const response = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/config/auth`, {

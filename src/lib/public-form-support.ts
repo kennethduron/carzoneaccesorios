@@ -364,7 +364,17 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
     });
   }
 
-  if (isValidEmail(input.email)) {
+  if (input.kind === "wholesale") {
+    await logNotification({
+      eventType: "public_form.wholesale.requester",
+      customerId: input.customerId,
+      followupId: input.followupId,
+      recipientEmail: isValidEmail(input.email) ? input.email : null,
+      status: "skipped",
+      metadata: { reason: "phase_1_no_customer_email_on_submission" },
+      context: input.context,
+    });
+  } else if (isValidEmail(input.email)) {
     await sendAndLog({
       eventType: `public_form.${input.kind}.requester`,
       recipientEmail: input.email,

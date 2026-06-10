@@ -5,6 +5,8 @@ import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission, requireSession } from "@/lib/auth/session";
+import { writeErrorLog } from "@/lib/error-logging";
+import { queueWholesaleApprovedEmail, queueWholesaleRejectedEmail } from "@/lib/notifications/customer-lifecycle-emails";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
@@ -201,6 +203,30 @@ async function addWholesaleHistoryNote(input: {
     note_type: "wholesale_status",
     note: input.note,
   });
+}
+
+async function completePendingWholesaleFollowups(customerId: string) {
+  const admin = getSupabaseAdminClient();
+  const completedAt = new Date().toISOString();
+  const { error } = await admin
+    .from("crm_followups")
+    .update({
+      status: "completed",
+      completed_at: completedAt,
+      updated_at: completedAt,
+    })
+    .eq("customer_id", customerId)
+    .eq("interaction_type", "solicitud_mayorista")
+    .eq("status", "pending");
+
+  if (error) {
+    await writeErrorLog({
+      route: "/admin/crm",
+      action: "crm.wholesale_followup_complete_failed",
+      errorMessage: error.message,
+      metadata: { customer_id: customerId },
+    });
+  }
 }
 
 export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutationResult> {
@@ -579,7 +605,14 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   await addWholesaleHistoryNote({
     customerId: customer.value,
     userId: profile.id,
-    note: hasActiveAccount ? "Solicitud mayorista aprobada." : "Solicitud mayorista aprobada; pendiente de cuenta activa.",
+    note: "Solicitud mayorista aprobada.",
+  });
+
+  await completePendingWholesaleFollowups(customer.value);
+  await queueWholesaleApprovedEmail({
+    customerId: customer.value,
+    email,
+    name: customerRow.contact_name,
   });
 
   revalidatePath("/admin/crm");
@@ -615,10 +648,12 @@ async function setWholesaleStatusAction(input: {
   const admin = getSupabaseAdminClient();
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
-    .select("id, is_wholesale, wholesale_status, status, active")
+    .select("id, email, contact_name, is_wholesale, wholesale_status, status, active")
     .eq("id", customer.value)
     .maybeSingle<{
       id: string;
+      email: string | null;
+      contact_name: string;
       is_wholesale: boolean;
       wholesale_status: string | null;
       status: string;
@@ -678,6 +713,15 @@ async function setWholesaleStatusAction(input: {
     userId: profile.id,
     note: input.note,
   });
+
+  if (input.action === "wholesale_request.rejected") {
+    await completePendingWholesaleFollowups(customer.value);
+    await queueWholesaleRejectedEmail({
+      customerId: customer.value,
+      email: customerRow.email,
+      name: customerRow.contact_name,
+    });
+  }
 
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");

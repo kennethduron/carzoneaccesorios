@@ -129,13 +129,13 @@ export function CheckoutView({
   const [isFirstWholesalePurchase, setIsFirstWholesalePurchase] = useState(true);
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount } = usePriceMode();
-  const { rows, wholesaleQuantityIssues, invalidItemCount, subtotal, tax, clearCart, clearInvalidCartItems } = useShoppingCart();
+  const { rows, wholesaleQuantityIssues, invalidItemCount, subtotal, tax, total: productsTotal, clearCart, clearInvalidCartItems } = useShoppingCart();
   const { createOrder } = useOrders();
   const toast = useToast();
   const sellsInHonduras = checkout.country === "Honduras";
   const checkoutFees = useMemo(
-    () => calculateCheckoutFees({ subtotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
-    [checkout.paymentMethod, checkout.paymentTiming, settings, subtotal],
+    () => calculateCheckoutFees({ subtotal: productsTotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
+    [checkout.paymentMethod, checkout.paymentTiming, settings, productsTotal],
   );
   const paymentMethods = useMemo(() => {
     const methods: Array<[CheckoutData["paymentMethod"], typeof Banknote]> = [];
@@ -151,7 +151,7 @@ export function CheckoutView({
   const smallOrderFee = 0;
   const discountTotal = 0;
   const additionalFees: [] = [];
-  const finalTotal = Math.round((subtotal + tax + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee + smallOrderFee - discountTotal) * 100) / 100;
+  const finalTotal = Math.round((productsTotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee + smallOrderFee - discountTotal) * 100) / 100;
   const wholesaleMinimumMissing = Math.max(0, Math.round((settings.first_wholesale_minimum - finalTotal) * 100) / 100);
   const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
   const wholesaleMinimumApplies =
@@ -884,6 +884,7 @@ export function CheckoutView({
         <CheckoutTotals
           subtotal={subtotal}
           tax={tax}
+          productsTotal={productsTotal}
           shippingFee={checkoutFees.shippingFee}
           cashOnDeliveryFee={checkoutFees.cashOnDeliveryFee}
           smallOrderFee={smallOrderFee}
@@ -967,6 +968,7 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
 function CheckoutTotals({
   subtotal,
   tax,
+  productsTotal,
   shippingFee,
   cashOnDeliveryFee,
   smallOrderFee,
@@ -979,6 +981,7 @@ function CheckoutTotals({
 }: {
   subtotal: number;
   tax: number;
+  productsTotal: number;
   shippingFee: number;
   cashOnDeliveryFee: number;
   smallOrderFee: number;
@@ -989,18 +992,22 @@ function CheckoutTotals({
   paymentMethod: CheckoutData["paymentMethod"];
   paymentTiming: CheckoutData["paymentTiming"];
 }) {
-  const hasFreeShipping = shippingFee === 0 && subtotal >= settings.free_shipping_threshold;
+  const hasFreeShipping = shippingFee === 0 && productsTotal >= settings.free_shipping_threshold;
 
   return (
     <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
       <p className="text-xs font-semibold uppercase text-black/50">Resumen financiero</p>
       <div className="flex justify-between">
-        <span>Subtotal productos</span>
+        <span>Subtotal antes de ISV</span>
         <span>{formatCurrency(subtotal)}</span>
       </div>
       <div className="flex justify-between">
-        <span>ISV</span>
+        <span>ISV incluido 15%</span>
         <span>{formatCurrency(tax)}</span>
+      </div>
+      <div className="flex justify-between font-medium">
+        <span>Total productos</span>
+        <span>{formatCurrency(productsTotal)}</span>
       </div>
       <div className="flex justify-between">
         <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>

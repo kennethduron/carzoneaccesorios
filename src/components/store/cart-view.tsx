@@ -12,16 +12,16 @@ import { defaultPublicCompanySettings, getPublicCompanySettingsClient } from "@/
 import type { PublicCompanySettings } from "@/types/settings";
 
 export function CartView() {
-  const { rows, wholesaleQuantityIssues, invalidItemCount, cartMessage, subtotal, tax, updateQuantity, removeFromCart, clearInvalidCartItems } =
+  const { rows, wholesaleQuantityIssues, invalidItemCount, cartMessage, subtotal, tax, total: productsTotal, updateQuantity, removeFromCart, clearInvalidCartItems } =
     useShoppingCart();
   const { priceMode, wholesaleAccount } = usePriceMode();
   const firstPurchaseRequirement = wholesaleAccount?.firstPurchaseRequirement ?? null;
   const [settings, setSettings] = useState<PublicCompanySettings>(defaultPublicCompanySettings);
   const estimatedFees = useMemo(
-    () => calculateCheckoutFees({ subtotal, paymentMethod: "Transferencia bancaria", settings }),
-    [settings, subtotal],
+    () => calculateCheckoutFees({ subtotal: productsTotal, paymentMethod: "Transferencia bancaria", settings }),
+    [settings, productsTotal],
   );
-  const estimatedTransferTotal = Math.round((subtotal + tax + estimatedFees.shippingFee) * 100) / 100;
+  const estimatedTransferTotal = Math.round((productsTotal + estimatedFees.shippingFee) * 100) / 100;
   const hasBlockingIssues = invalidItemCount > 0 || wholesaleQuantityIssues.length > 0;
 
   useEffect(() => {
@@ -154,7 +154,14 @@ export function CartView() {
             Cuenta mayorista aprobada: {wholesaleAccount.businessName}
           </p>
         ) : null}
-        <Totals subtotal={subtotal} tax={tax} shippingFee={estimatedFees.shippingFee} total={estimatedTransferTotal} settings={settings} />
+        <Totals
+          subtotal={subtotal}
+          tax={tax}
+          productsTotal={productsTotal}
+          shippingFee={estimatedFees.shippingFee}
+          total={estimatedTransferTotal}
+          settings={settings}
+        />
         {priceMode === "wholesale" &&
         firstPurchaseRequirement &&
         !firstPurchaseRequirement.completed &&
@@ -185,28 +192,34 @@ export function CartView() {
 export function Totals({
   subtotal,
   tax,
+  productsTotal,
   shippingFee,
   total,
   settings,
 }: {
   subtotal: number;
   tax: number;
+  productsTotal: number;
   shippingFee: number;
   total: number;
   settings: PublicCompanySettings;
 }) {
-  const hasFreeShipping = shippingFee === 0 && subtotal >= settings.free_shipping_threshold;
+  const hasFreeShipping = shippingFee === 0 && productsTotal >= settings.free_shipping_threshold;
 
   return (
     <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
       <p className="text-xs font-semibold uppercase text-black/50">Resumen financiero</p>
       <div className="flex justify-between">
-        <span>Subtotal productos</span>
+        <span>Subtotal antes de ISV</span>
         <span>{formatCurrency(subtotal)}</span>
       </div>
       <div className="flex justify-between">
-        <span>ISV</span>
+        <span>ISV incluido 15%</span>
         <span>{formatCurrency(tax)}</span>
+      </div>
+      <div className="flex justify-between font-medium">
+        <span>Total productos</span>
+        <span>{formatCurrency(productsTotal)}</span>
       </div>
       <div className="flex justify-between">
         <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>

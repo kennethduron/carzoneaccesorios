@@ -587,18 +587,11 @@ export function getOfficialInvoiceDates(invoice: OfficialInvoiceInput) {
 
 export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
   const otherFees = additionalFeesTotal(invoice.additionalFees ?? []);
-  const subtotalWithFees = roundMoney(
-    invoice.subtotal +
-      invoice.shippingFee +
-      invoice.cashOnDeliveryFee +
-      (invoice.smallOrderFee ?? 0) +
-      otherFees,
-  );
   const discountTotal = roundMoney(invoice.discountTotal ?? 0);
-  const taxableBase = roundMoney(Math.max(0, subtotalWithFees - discountTotal));
+  const taxableBase = roundMoney(Math.max(0, invoice.subtotal - discountTotal));
 
   return {
-    subtotal: subtotalWithFees,
+    subtotal: invoice.subtotal,
     exonerated: 0,
     exempt: invoice.tax > 0 ? 0 : taxableBase,
     taxable15: invoice.tax > 0 ? taxableBase : 0,

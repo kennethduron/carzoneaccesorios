@@ -213,7 +213,7 @@ export async function getAdminInvoicesPage({
     );
 
   if (task === "pending_invoices") {
-    invoicesQuery = invoicesQuery.in("status", ["pendiente", "draft"]);
+    invoicesQuery = invoicesQuery.in("status", ["draft"]);
   }
 
   const { data: invoices, error: invoicesError, count } = await invoicesQuery

@@ -1,13 +1,19 @@
+import { createHash } from "node:crypto";
 import { type EmailOtpType, type User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { writeErrorLog } from "@/lib/error-logging";
 import { mapOperationalError } from "@/lib/operational-errors";
+import { queueCustomerWelcomeEmail } from "@/lib/notifications/customer-lifecycle-emails";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAuthUserByEmail, isValidAuthEmail } from "@/lib/auth/email-confirmation";
 import { ensureRetailProfile } from "@/lib/auth/profile-sync";
 import { createVerificationSuccessToken } from "@/lib/auth/verification-token";
 
 export const dynamic = "force-dynamic";
+
+type PasswordUpdateErrorReason = "used" | "expired" | "invalid";
+
+const usedRecoveryLinkCookieName = "cz-password-recovery-link";
 
 function safeNextPath(value: string | null) {
   if (!value?.startsWith("/") || value.startsWith("//")) {
@@ -79,11 +85,42 @@ function redirectToVerificationError(
   return NextResponse.redirect(url);
 }
 
-function redirectToPasswordUpdateError(request: NextRequest) {
+function hashRecoveryLinkId(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function recoveryErrorReason(request: NextRequest, message: string): PasswordUpdateErrorReason {
+  const normalized = message.toLowerCase();
+  const errorCode = request.nextUrl.searchParams.get("error_code")?.toLowerCase() ?? "";
+  const tokenHash = request.nextUrl.searchParams.get("token_hash");
+  const code = request.nextUrl.searchParams.get("code");
+  const currentLinkId = hashRecoveryLinkId(tokenHash ?? code);
+  const usedLinkId = request.cookies.get(usedRecoveryLinkCookieName)?.value ?? null;
+
+  if (currentLinkId && usedLinkId === currentLinkId) {
+    return "used";
+  }
+
+  if (normalized.includes("already") || normalized.includes("used") || errorCode.includes("used")) {
+    return "used";
+  }
+
+  if (normalized.includes("expired") || errorCode.includes("expired")) {
+    return "expired";
+  }
+
+  return "invalid";
+}
+
+function redirectToPasswordUpdateError(request: NextRequest, reason: PasswordUpdateErrorReason = "invalid") {
   const url = request.nextUrl.clone();
   url.pathname = "/actualizar-contrasena";
   url.search = "";
-  url.searchParams.set("error", "expired");
+  url.searchParams.set("error", reason);
   return NextResponse.redirect(url);
 }
 
@@ -128,6 +165,12 @@ async function ensureProfileForConfirmedEmail(email: string) {
     fullName: user.user_metadata?.full_name,
     phone: user.user_metadata?.phone,
     username: user.user_metadata?.username,
+  });
+
+  await queueCustomerWelcomeEmail({
+    userId: user.id,
+    email: user.email ?? email,
+    name: user.user_metadata?.full_name,
   });
 
   return true;
@@ -208,7 +251,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (isRecoveryFlow) {
-      return redirectToPasswordUpdateError(request);
+      return redirectToPasswordUpdateError(request, recoveryErrorReason(request, errorText));
     }
 
     const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, errorText);
@@ -221,7 +264,7 @@ export async function GET(request: NextRequest) {
 
   if (!code && !tokenHash) {
     if (isRecoveryFlow) {
-      return redirectToPasswordUpdateError(request);
+      return redirectToPasswordUpdateError(request, "invalid");
     }
 
     return redirectToVerificationError(request, "missing");
@@ -235,7 +278,7 @@ export async function GET(request: NextRequest) {
       await logAuthCallbackError(request, "auth.callback_exchange_failed", error);
 
       if (isRecoveryFlow) {
-        return redirectToPasswordUpdateError(request);
+        return redirectToPasswordUpdateError(request, recoveryErrorReason(request, error.message));
       }
 
       const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, error.message);
@@ -271,6 +314,12 @@ export async function GET(request: NextRequest) {
               phone: user.user_metadata?.phone,
             });
 
+            await queueCustomerWelcomeEmail({
+              userId: user.id,
+              email: user.email ?? "",
+              name: user.user_metadata?.full_name,
+            });
+
             await supabase.auth.signOut();
             return redirectToVerified(request);
           }
@@ -280,7 +329,7 @@ export async function GET(request: NextRequest) {
       await logAuthCallbackError(request, "auth.callback_verify_otp_failed", error);
 
       if (isRecoveryFlow) {
-        return redirectToPasswordUpdateError(request);
+        return redirectToPasswordUpdateError(request, recoveryErrorReason(request, error.message));
       }
 
       const verifiedRedirect = await redirectToVerifiedIfConfirmed(request, error.message);
@@ -296,7 +345,7 @@ export async function GET(request: NextRequest) {
     await logAuthCallbackError(request, "auth.callback_user_missing", { message: "No authenticated user after callback" });
 
     if (isRecoveryFlow) {
-      return redirectToPasswordUpdateError(request);
+      return redirectToPasswordUpdateError(request, "invalid");
     }
 
     return redirectToVerificationError(request, "failed");
@@ -315,6 +364,16 @@ export async function GET(request: NextRequest) {
       path: "/",
       maxAge: 15 * 60,
     });
+    const linkId = hashRecoveryLinkId(tokenHash ?? code);
+    if (linkId) {
+      response.cookies.set(usedRecoveryLinkCookieName, linkId, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 24 * 60 * 60,
+      });
+    }
     return response;
   }
 
@@ -323,6 +382,12 @@ export async function GET(request: NextRequest) {
     email: callbackUser.email ?? "",
     fullName: callbackUser.user_metadata?.full_name,
     phone: callbackUser.user_metadata?.phone,
+  });
+
+  await queueCustomerWelcomeEmail({
+    userId: callbackUser.id,
+    email: callbackUser.email ?? "",
+    name: callbackUser.user_metadata?.full_name,
   });
 
   await supabase.auth.signOut();

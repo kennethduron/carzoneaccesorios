@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CartItem, PriceMode, Product } from "@/types/commerce";
+import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
 import { getProductPrice } from "@/utils/pricing";
 
 export function useCart(products: Product[], priceMode: PriceMode) {
@@ -24,9 +25,11 @@ export function useCart(products: Product[], priceMode: PriceMode) {
       .filter(Boolean);
   }, [cart, priceMode, products]);
 
-  const subtotal = rows.reduce((sum, item) => sum + (item?.lineTotal ?? 0), 0);
-  const tax = subtotal * 0.15;
-  const total = subtotal + tax;
+  const productsTotal = rows.reduce((sum, item) => sum + (item?.lineTotal ?? 0), 0);
+  const includedTax = calculateIncludedTaxBreakdown(productsTotal);
+  const subtotal = includedTax.subtotalBeforeTax;
+  const tax = includedTax.includedTax;
+  const total = includedTax.totalWithTax;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function addToCart(productId: string) {

@@ -61,8 +61,8 @@ export function InvoicesList({
           <div className="mt-4 rounded-md border border-black/10 bg-white p-3 text-sm">
             <p className="font-semibold">Resumen financiero</p>
             <div className="mt-2 grid gap-2 md:grid-cols-4">
-              <p>Subtotal: {formatCurrency(invoice.subtotal)}</p>
-              <p>ISV: {formatCurrency(invoice.isv)}</p>
+              <p>Subtotal antes de ISV: {formatCurrency(invoice.subtotal)}</p>
+              <p>ISV incluido 15%: {formatCurrency(invoice.isv)}</p>
               <p>Envio: {invoice.shippingFee === 0 ? "Gratis" : formatCurrency(invoice.shippingFee)}</p>
               <p>Contra entrega: {formatCurrency(invoice.cashOnDeliveryFee)}</p>
               <p>Recargo mínimo: {formatCurrency(invoice.smallOrderFee)}</p>

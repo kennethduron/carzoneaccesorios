@@ -25,6 +25,28 @@ function cleanRecoveryHash() {
   window.history.replaceState(null, "", `${url.pathname}${url.search}`);
 }
 
+function recoveryErrorMessage(reason: string | null | undefined) {
+  const normalized = String(reason ?? "").toLowerCase();
+
+  if (normalized.includes("used") || normalized.includes("already")) {
+    return "Este enlace ya fue utilizado. Solicita uno nuevo.";
+  }
+
+  if (normalized.includes("expired")) {
+    return "Este enlace ha expirado. Solicita uno nuevo.";
+  }
+
+  return "El enlace no es válido. Solicita uno nuevo.";
+}
+
+function cleanRecoveryErrorHash(reason: string) {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.search = "";
+  url.searchParams.set("error", reason);
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
 export default function PasswordUpdatePage() {
   const searchParams = useSearchParams();
   const [password, setPassword] = useState("");
@@ -44,11 +66,25 @@ export default function PasswordUpdatePage() {
       const isRecoveryLink = hashParams.get("type") === "recovery";
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
+      const hashError = hashParams.get("error_code") ?? hashParams.get("error_description") ?? hashParams.get("error");
+
+      if (hashError) {
+        const reason = hashError.toLowerCase().includes("expired")
+          ? "expired"
+          : hashError.toLowerCase().includes("used") || hashError.toLowerCase().includes("already")
+            ? "used"
+            : "invalid";
+        setOk(false);
+        setMessage(recoveryErrorMessage(hashError));
+        cleanRecoveryErrorHash(reason);
+        setInitializingRecovery(false);
+        return;
+      }
 
       if (!isRecoveryLink || !accessToken || !refreshToken) {
         if (searchParams.get("error")) {
           setOk(false);
-          setMessage("El enlace no es válido o ha expirado. Solicita uno nuevo.");
+          setMessage(recoveryErrorMessage(searchParams.get("error")));
         }
         setInitializingRecovery(false);
         return;
@@ -67,7 +103,7 @@ export default function PasswordUpdatePage() {
 
         if (error) {
           setOk(false);
-          setMessage("El enlace no es válido o ha expirado. Solicita uno nuevo.");
+          setMessage(recoveryErrorMessage(error.message));
           return;
         }
 

@@ -818,8 +818,8 @@ function OrderDetail({
               <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
               <CompactInfo label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
               <CompactInfo label="Momento del pago" value={paymentTimingLabels[order.payment_timing] ?? order.payment_timing} />
-              <CompactInfo label="Subtotal" value={formatCurrency(order.subtotal)} />
-              <CompactInfo label="ISV" value={formatCurrency(order.tax)} />
+              <CompactInfo label="Subtotal antes de ISV" value={formatCurrency(order.subtotal)} />
+              <CompactInfo label="ISV incluido 15%" value={formatCurrency(order.tax)} />
               <CompactInfo label="Total" value={formatCurrency(order.total)} />
               <CompactInfo label="Envío" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
               <CompactInfo label="Contra entrega" value={formatCurrency(order.cash_on_delivery_fee)} />

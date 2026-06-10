@@ -288,8 +288,8 @@ function FinancialSummary({
     <div className="mt-4 rounded-md border border-black/10 bg-white p-3 text-sm">
       <p className="font-semibold">Resumen financiero</p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Info label="Subtotal" value={formatCurrency(subtotal)} />
-        <Info label="ISV" value={formatCurrency(tax)} />
+        <Info label="Subtotal antes de ISV" value={formatCurrency(subtotal)} />
+        <Info label="ISV incluido 15%" value={formatCurrency(tax)} />
         <Info label="Envio" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
         <Info label="Contra entrega" value={formatCurrency(cashOnDeliveryFee)} />
         <Info label="Recargo mínimo" value={formatCurrency(smallOrderFee)} />

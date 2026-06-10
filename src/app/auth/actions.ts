@@ -3,10 +3,12 @@
 import { cookies, headers } from "next/headers";
 import { writeErrorLog } from "@/lib/error-logging";
 import { checkRateLimit, getRateLimitMessage, type RateLimitResult } from "@/lib/rate-limit";
+import { getSupabasePublicClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAuthUserByEmail } from "@/lib/auth/email-confirmation";
 import { createVerificationSuccessToken } from "@/lib/auth/verification-token";
 import { mapOperationalError, type MappedOperationalError } from "@/lib/operational-errors";
+import { queueCustomerWelcomeEmail } from "@/lib/notifications/customer-lifecycle-emails";
 import {
   emailExistsInProfile,
   ensureRetailProfile,
@@ -231,8 +233,16 @@ function getRegisterErrorMessage(rawMessage: string) {
 function getPasswordResetErrorMessage(rawMessage: string) {
   const message = rawMessage.toLowerCase();
 
-  if (message.includes("expired") || message.includes("invalid") || message.includes("otp") || message.includes("token")) {
-    return "El enlace no es válido o ha expirado. Solicita uno nuevo.";
+  if (message.includes("already") || message.includes("used")) {
+    return "Este enlace ya fue utilizado. Solicita uno nuevo.";
+  }
+
+  if (message.includes("expired")) {
+    return "Este enlace ha expirado. Solicita uno nuevo.";
+  }
+
+  if (message.includes("invalid") || message.includes("otp") || message.includes("token")) {
+    return "El enlace no es válido. Solicita uno nuevo.";
   }
 
   if (message.includes("weak") || message.includes("password")) {
@@ -532,6 +542,14 @@ export async function registerWithEmailAction(input: {
     };
   }
 
+  if (data.user) {
+    await queueCustomerWelcomeEmail({
+      userId: data.user.id,
+      email: data.user.email ?? email,
+      name: fullName,
+    });
+  }
+
   return {
     ok: true,
     message: "Cuenta creada correctamente. Ahora puedes iniciar sesión.",
@@ -594,6 +612,12 @@ export async function checkRegisteredEmailVerificationAction(emailInput: string)
       fullName: user.user_metadata?.full_name,
       phone: user.user_metadata?.phone,
       username: user.user_metadata?.username,
+    });
+
+    await queueCustomerWelcomeEmail({
+      userId: user.id,
+      email: user.email ?? email,
+      name: user.user_metadata?.full_name,
     });
 
     return {
@@ -721,8 +745,8 @@ export async function requestPasswordResetAction(emailInput: string): Promise<Au
     return { ok: true, message: safeMessage };
   }
 
-  const supabase = await getSupabaseServerClient();
   const siteUrl = await getSiteUrl();
+  const supabase = getSupabasePublicClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: buildAuthCallbackUrl(siteUrl, "/actualizar-contrasena"),
   });
@@ -734,7 +758,11 @@ export async function requestPasswordResetAction(emailInput: string): Promise<Au
       route: "/recuperar-contrasena",
       category: "auth",
     });
-    await writeMappedAuthError(mapped, email, { email_present: true });
+    await writeMappedAuthError(mapped, email, {
+      email_present: true,
+      auth_flow: "implicit_recovery",
+      redirect_to: buildAuthCallbackUrl(siteUrl, "/actualizar-contrasena"),
+    });
   }
 
   return { ok: true, message: safeMessage };
@@ -774,7 +802,7 @@ export async function updatePasswordAfterRecoveryAction(password: string): Promi
   const hasPasswordRecoveryCookie = cookieStore.get(passwordRecoveryCookieName)?.value === "1";
 
   if (!session || (!hasRecoverySession(session.access_token) && !hasPasswordRecoveryCookie)) {
-    return { ok: false, message: "El enlace no es válido o ha expirado. Solicita uno nuevo." };
+    return { ok: false, message: "El enlace no es válido. Solicita uno nuevo." };
   }
 
   const { error } = await supabase.auth.updateUser({ password });

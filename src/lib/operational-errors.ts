@@ -258,12 +258,32 @@ export function mapOperationalError(error: unknown, context: OperationalErrorCon
     };
   }
 
-  if (message.includes("expired") || message.includes("invalid") || message.includes("otp") || message.includes("token")) {
+  if (message.includes("already") || message.includes("used")) {
     return {
       ...base,
       severity: "warning",
-      customerMessage: "El enlace ya fue usado o expiró. Puedes solicitar uno nuevo.",
-      adminReason: "Token de verificación o recuperación expirado, inválido o ya usado.",
+      customerMessage: "Este enlace ya fue utilizado. Solicita uno nuevo.",
+      adminReason: "Token de verificación o recuperación ya utilizado.",
+      recommendation: "Reenviar enlace de verificación o recuperación.",
+    };
+  }
+
+  if (message.includes("expired")) {
+    return {
+      ...base,
+      severity: "warning",
+      customerMessage: "Este enlace ha expirado. Solicita uno nuevo.",
+      adminReason: "Token de verificación o recuperación expirado.",
+      recommendation: "Reenviar enlace de verificación o recuperación.",
+    };
+  }
+
+  if (message.includes("invalid") || message.includes("otp") || message.includes("token")) {
+    return {
+      ...base,
+      severity: "warning",
+      customerMessage: "El enlace no es válido. Solicita uno nuevo.",
+      adminReason: "Token de verificación o recuperación inválido.",
       recommendation: "Reenviar enlace de verificación o recuperación.",
     };
   }

@@ -37,8 +37,11 @@ assert.match(configureScript, /mailer_secure_email_change_enabled: true/);
 assert.match(configureScript, /mailer_subjects_confirmation: "Confirma tu cuenta - Car Zone Accesorios"/);
 assert.match(configureScript, /mailer_subjects_recovery: "Restablece tu contraseña - Car Zone Accesorios"/);
 assert.match(configureScript, /mailer_subjects_invite: "Acceso al sistema administrativo - Car Zone Accesorios"/);
+assert.match(configureScript, /mailer_subjects_reauthentication: "Confirma tu identidad - Car Zone Accesorios"/);
 assert.match(configureScript, /Cambiar mi contraseña/);
 assert.match(configureScript, /Confirmar mi cuenta/);
+assert.match(configureScript, /token_hash=\{\{ \.TokenHash \}\}&amp;type=recovery&amp;next=\/actualizar-contrasena/);
+assert.match(configureScript, /token_hash=\{\{ \.TokenHash \}\}&amp;type=signup/);
 const englishAuthPhrases = [
   ["Reset", "your", "password"].join(" "),
   ["Confirm", "your", "email"].join(" "),
@@ -62,12 +65,15 @@ assert.doesNotMatch(authActions, /temporary-test-bypass/);
 assert.doesNotMatch(authActions, /signInWithPassword\.after_test_registration/);
 assert.match(authActions, /supabase\.auth\.resend/);
 assert.match(authActions, /resetPasswordForEmail/);
+assert.match(authActions, /getSupabasePublicClient/);
+assert.match(authActions, /auth_flow: "implicit_recovery"/);
 assert.match(authActions, /buildAuthCallbackUrl\(siteUrl, "\/actualizar-contrasena"\)/);
 assert.doesNotMatch(authActions, /buildAuthCallbackUrl\(siteUrl, "\/restablecer-contrasena"\)/);
 assert.match(operationalErrors, /Debes confirmar tu correo antes de iniciar sesión/);
 assert.match(authCallback, /exchangeCodeForSession/);
 assert.match(authCallback, /verifyOtp/);
 assert.match(authCallback, /pathname = "\/actualizar-contrasena"/);
+assert.match(authCallback, /Este enlace ya fue utilizado|usedRecoveryLinkCookieName|recoveryErrorReason/);
 assert.match(securityActions, /auth\.admin\.createUser/);
 assert.match(securityActions, /email_confirm: true/);
 

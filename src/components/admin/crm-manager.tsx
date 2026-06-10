@@ -3,18 +3,28 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  Archive,
   Ban,
+  BadgeDollarSign,
+  CalendarClock,
   CheckCircle2,
   Clock,
+  Eye,
   ExternalLink,
+  ListChecks,
+  Mail,
   MessageSquarePlus,
+  NotebookPen,
   PackageSearch,
   PhoneCall,
+  Pencil,
   Save,
   Search,
   ShieldAlert,
+  Target,
   Trash2,
   UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import {
@@ -201,6 +211,48 @@ function followupStatusLabel(followup: CrmFollowupRow) {
     return "Archivado";
   }
   return "Pendiente";
+}
+
+function followupStatusClasses(followup: CrmFollowupRow) {
+  if (isOverdue(followup)) {
+    return "border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]";
+  }
+  if (followup.status === "completed") {
+    return "border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]";
+  }
+  if (followup.status === "cancelled") {
+    return "border-black/10 bg-[#f4f4f5] text-black/55";
+  }
+  return "border-[#bae6fd] bg-[#f0f9ff] text-[#075985]";
+}
+
+function priorityClasses(priority: CrmPriority) {
+  if (priority === "urgente") {
+    return "border-[#fecdd3] bg-[#fff1f2] text-[#be123c]";
+  }
+  if (priority === "alta") {
+    return "border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]";
+  }
+  if (priority === "media") {
+    return "border-[#fde68a] bg-[#fffbeb] text-[#92400e]";
+  }
+  return "border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]";
+}
+
+function cleanText(value: string | null | undefined, fallback: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+}
+
+function followupDisplayName(item: CrmFollowupRow) {
+  return cleanText(item.business_name ?? item.customer_name, "Cliente o prospecto sin nombre");
+}
+
+function followupSecondaryName(item: CrmFollowupRow) {
+  if (item.business_name && item.customer_name && item.business_name !== item.customer_name) {
+    return item.customer_name;
+  }
+  return item.customer_profile_label;
 }
 
 export function CrmManager({ data, basePath = "/admin/crm", focus = "followups", activeTask = null }: CrmManagerProps) {
@@ -392,6 +444,16 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
     closeCustomerProfile();
     setNote({
       customer_id: customer.id,
+      note_type: "nota",
+      note: "",
+    });
+    setCrmDrawer("note");
+  }
+
+  function openNoteDrawerForCustomerId(customerId: string) {
+    closeCustomerProfile();
+    setNote({
+      customer_id: customerId,
       note_type: "nota",
       note: "",
     });
@@ -799,13 +861,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
       </div>
 
       {focus !== "customers" ? (
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <HelpCard title="Prospecto" text="Persona o negocio interesado que aún no ha comprado." />
-          <HelpCard title="Cliente" text="Persona o negocio con pedido, cuenta o relación comercial activa." />
-          <HelpCard title="Seguimiento" text="Tarea pendiente para contactar o atender a un cliente." />
-          <HelpCard title="Nota" text="Registra información importante del cliente, como llamadas, acuerdos o dudas." />
-          <HelpCard title="Solicitud mayorista" text="Solicitud de una cuenta para comprar con precios especiales." />
-        </section>
+        <CrmPurposePanel />
       ) : null}
 
       {focus !== "customers" ? (
@@ -1106,75 +1162,19 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
           <div className="border-b border-black/10 p-5">
             <h2 className="font-semibold">Historial CRM</h2>
             <p className="mt-1 text-sm text-black/55">
-              {filteredFollowups.length.toLocaleString("es-HN")} seguimientos en esta página.
+              {filteredFollowups.length.toLocaleString("es-HN")} seguimientos en esta página. Usa este historial para ver llamadas, notas, tareas pendientes y oportunidades comerciales sin perder contexto.
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
-                <tr>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Actividad</th>
-                  <th className="px-4 py-3">Próxima acción</th>
-                  <th className="px-4 py-3">Fecha</th>
-                  <th className="px-4 py-3">Prioridad</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {filteredFollowups.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-sm text-black/55">
-                      No se encontraron resultados con estos filtros.
-                    </td>
-                  </tr>
-                ) : (
-                filteredFollowups.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold">{item.business_name ?? item.customer_name ?? "Cliente"}</p>
-                      <p className="text-xs text-black/45">{item.customer_profile_kind === "internal" ? item.customer_profile_label : item.customer_name}</p>
-                      <ContactActions
-                        phone={item.phone}
-                        customerName={item.business_name ?? item.customer_name}
-                        className="mt-2"
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-xs text-black/50">{interactionLabels[item.interaction_type]}</p>
-                    </td>
-                    <td className="px-4 py-3">{item.next_action ?? "-"}</td>
-                    <td className={`px-4 py-3 ${isOverdue(item) ? "font-semibold text-[#9b341b]" : ""}`}>
-                      {formatDateTime(item.due_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{priorityLabels[item.priority]}</span>
-                    </td>
-                    <td className="px-4 py-3">{followupStatusLabel(item)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <IconButton label="Marcar completado" onClick={() => setStatus(item.id, "completed")}>
-                          <CheckCircle2 size={16} />
-                        </IconButton>
-                        <IconButton label="Editar seguimiento" onClick={() => openFollowupDrawer(item)}>
-                          <Save size={16} />
-                        </IconButton>
-                        <IconButton label="Archivar seguimiento" onClick={() => setStatus(item.id, "cancelled")}>
-                          <X size={16} />
-                        </IconButton>
-                        <IconButton label="Ver detalle" onClick={() => openFollowupDetail(item)}>
-                          <Search size={16} />
-                        </IconButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <FollowupHistoryList
+            followups={filteredFollowups}
+            customers={data.customers}
+            pending={isPending}
+            onComplete={(id) => setStatus(id, "completed")}
+            onArchive={(id) => setStatus(id, "cancelled")}
+            onEdit={openFollowupDrawer}
+            onAddNote={openNoteDrawerForCustomerId}
+            onOpenDetail={openFollowupDetail}
+          />
         </div>
 
         <div className="hidden">
@@ -3137,6 +3137,271 @@ function FollowupDetailCard({ followup }: { followup: CrmFollowupRow | null }) {
   );
 }
 
+function CrmPurposePanel() {
+  const terms = [
+    {
+      title: "Prospecto",
+      text: "Persona o negocio interesado que aún no ha comprado.",
+      icon: <Target size={17} />,
+    },
+    {
+      title: "Cliente",
+      text: "Persona que ya compró, tiene cuenta o mantiene relación comercial.",
+      icon: <Users size={17} />,
+    },
+    {
+      title: "Seguimiento",
+      text: "Tarea pendiente para llamar, escribir por WhatsApp o atender una solicitud.",
+      icon: <ListChecks size={17} />,
+    },
+    {
+      title: "Nota",
+      text: "Registro de llamadas, acuerdos, dudas, preferencias o historial importante.",
+      icon: <NotebookPen size={17} />,
+    },
+    {
+      title: "Solicitud mayorista",
+      text: "Cliente que solicita precios especiales o acceso de mayoreo.",
+      icon: <UserPlus size={17} />,
+    },
+    {
+      title: "Pipeline estimado",
+      text: "Valor aproximado de oportunidades comerciales abiertas.",
+      icon: <BadgeDollarSign size={17} />,
+    },
+  ];
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="rounded-lg border border-black/10 bg-white p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-3xl">
+            <h2 className="text-base font-semibold">CRM de Car Zone Accesorios</h2>
+            <p className="mt-2 text-sm leading-6 text-black/60">
+              El CRM sirve para dar seguimiento a clientes, prospectos y solicitudes comerciales. Aquí se registran llamadas,
+              notas, tareas pendientes, recordatorios, solicitudes mayoristas y oportunidades de venta.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-black/10 bg-[#f4f4f5] px-3 py-1 text-xs font-medium text-black/60">
+            <Clock size={14} />
+            Seguimiento comercial
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {terms.map((term) => (
+            <HelpCard key={term.title} title={term.title} text={term.text} icon={term.icon} />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-black/10 bg-white p-5">
+        <h2 className="font-semibold">¿Cómo usar el CRM?</h2>
+        <ol className="mt-3 space-y-3 text-sm leading-5 text-black/65">
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-xs font-semibold text-white">1</span>
+            <span>Registra prospectos cuando alguien pregunte por productos.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-xs font-semibold text-white">2</span>
+            <span>Agrega notas después de llamadas o mensajes de WhatsApp.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-xs font-semibold text-white">3</span>
+            <span>Crea seguimientos para recordar contactar al cliente.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-xs font-semibold text-white">4</span>
+            <span>Marca como completado cuando ya se atendió.</span>
+          </li>
+          <li className="flex gap-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-xs font-semibold text-white">5</span>
+            <span>Usa prioridad alta para clientes importantes o ventas urgentes.</span>
+          </li>
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function FollowupHistoryList({
+  followups,
+  customers,
+  pending,
+  onComplete,
+  onArchive,
+  onEdit,
+  onAddNote,
+  onOpenDetail,
+}: {
+  followups: CrmFollowupRow[];
+  customers: CrmCustomerOption[];
+  pending: boolean;
+  onComplete: (id: string) => void;
+  onArchive: (id: string) => void;
+  onEdit: (followup: CrmFollowupRow) => void;
+  onAddNote: (customerId: string) => void;
+  onOpenDetail: (followup: CrmFollowupRow) => void;
+}) {
+  const customersById = new Map(customers.map((customer) => [customer.id, customer]));
+
+  if (followups.length === 0) {
+    return (
+      <div className="p-5">
+        <div className="rounded-lg border border-dashed border-black/15 bg-[#f8fafc] px-4 py-8 text-center text-sm text-black/55">
+          No se encontraron resultados con estos filtros.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-black/10">
+      {followups.map((item) => (
+        <FollowupHistoryCard
+          key={item.id}
+          followup={item}
+          customer={customersById.get(item.customer_id)}
+          pending={pending}
+          onComplete={onComplete}
+          onArchive={onArchive}
+          onEdit={onEdit}
+          onAddNote={onAddNote}
+          onOpenDetail={onOpenDetail}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FollowupHistoryCard({
+  followup,
+  customer,
+  pending,
+  onComplete,
+  onArchive,
+  onEdit,
+  onAddNote,
+  onOpenDetail,
+}: {
+  followup: CrmFollowupRow;
+  customer?: CrmCustomerOption;
+  pending: boolean;
+  onComplete: (id: string) => void;
+  onArchive: (id: string) => void;
+  onEdit: (followup: CrmFollowupRow) => void;
+  onAddNote: (customerId: string) => void;
+  onOpenDetail: (followup: CrmFollowupRow) => void;
+}) {
+  const name = followupDisplayName(followup);
+  const email = cleanText(customer?.email ?? customer?.account_email, "Sin correo registrado");
+  const phone = cleanText(followup.phone ?? customer?.phone ?? customer?.account_phone, "Sin teléfono registrado");
+  const lastActivity = formatDateTime(customer?.last_activity_at ?? followup.created_at);
+  const note = cleanText(followup.notes, "Sin notas recientes");
+  const nextAction = cleanText(followup.next_action, "Sin próxima acción");
+  const valueLabel = followup.estimated_value > 0 ? formatCurrency(followup.estimated_value) : "Sin valor estimado";
+  const isCompleted = followup.status === "completed";
+  const isArchived = followup.status === "cancelled";
+
+  return (
+    <article className="grid gap-4 p-4 text-sm xl:grid-cols-[minmax(210px,0.9fr)_minmax(300px,1.4fr)_minmax(220px,0.8fr)_auto] xl:items-start">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-black/10 bg-[#f4f4f5] px-2 py-1 text-xs font-medium text-black/60">
+            {followup.customer_profile_kind === "internal" ? "Usuario interno" : followup.customer_profile_label}
+          </span>
+          {customer?.is_test_account ? (
+            <span className="rounded-full border border-[#fed7aa] bg-[#fff7ed] px-2 py-1 text-xs font-medium text-[#9a3412]">
+              Dato de prueba
+            </span>
+          ) : null}
+        </div>
+        <h3 className="mt-2 break-words text-base font-semibold">{name}</h3>
+        <p className="mt-1 break-words text-xs text-black/45">{followupSecondaryName(followup)}</p>
+        <div className="mt-3 space-y-2 text-xs text-black/60">
+          <div className="flex min-w-0 items-center gap-2">
+            <PhoneCall size={14} className="shrink-0 text-black/40" />
+            <span className="min-w-0 break-words">{phone}</span>
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <Mail size={14} className="shrink-0 text-black/40" />
+            <span className="min-w-0 break-words">{email}</span>
+          </div>
+        </div>
+        <ContactActions phone={followup.phone ?? customer?.phone ?? customer?.account_phone} customerName={name} className="mt-3" />
+      </div>
+
+      <div className="min-w-0 space-y-3">
+        <div>
+          <p className="text-xs font-medium uppercase text-black/45">{interactionLabels[followup.interaction_type]}</p>
+          <h4 className="mt-1 break-words font-semibold">{followup.title}</h4>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <InfoTile icon={<ListChecks size={15} />} label="Próxima acción" value={nextAction} />
+          <InfoTile icon={<CalendarClock size={15} />} label="Fecha programada" value={formatDateTime(followup.due_at)} urgent={isOverdue(followup)} />
+          <InfoTile icon={<NotebookPen size={15} />} label="Nota breve" value={note} />
+          <InfoTile icon={<Clock size={15} />} label="Última actividad" value={lastActivity} />
+        </div>
+      </div>
+
+      <div className="min-w-0 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <span className={`rounded-full border px-2 py-1 text-xs font-medium ${priorityClasses(followup.priority)}`}>
+            Prioridad {priorityLabels[followup.priority]}
+          </span>
+          <span className={`rounded-full border px-2 py-1 text-xs font-medium ${followupStatusClasses(followup)}`}>
+            {followupStatusLabel(followup)}
+          </span>
+        </div>
+        <InfoTile icon={<BadgeDollarSign size={15} />} label="Pipeline estimado" value={valueLabel} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 xl:w-40 xl:justify-end">
+        {!isCompleted && !isArchived ? (
+          <IconButton label="Completar seguimiento" onClick={() => onComplete(followup.id)} disabled={pending}>
+            <CheckCircle2 size={16} />
+          </IconButton>
+        ) : null}
+        <IconButton label="Agregar nota" onClick={() => onAddNote(followup.customer_id)} disabled={pending}>
+          <MessageSquarePlus size={16} />
+        </IconButton>
+        <IconButton label="Editar seguimiento" onClick={() => onEdit(followup)} disabled={pending}>
+          <Pencil size={16} />
+        </IconButton>
+        <IconButton label="Ver detalle" onClick={() => onOpenDetail(followup)}>
+          <Eye size={16} />
+        </IconButton>
+        {!isArchived ? (
+          <IconButton label="Archivar seguimiento" onClick={() => onArchive(followup.id)} disabled={pending}>
+            <Archive size={16} />
+          </IconButton>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function InfoTile({
+  icon,
+  label,
+  value,
+  urgent = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  urgent?: boolean;
+}) {
+  return (
+    <div className={`min-w-0 rounded-md border px-3 py-2 ${urgent ? "border-[#fed7aa] bg-[#fff7ed]" : "border-black/10 bg-[#f8fafc]"}`}>
+      <div className="flex items-center gap-2 text-xs font-medium uppercase text-black/45">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <p className={`mt-1 break-words text-sm ${urgent ? "font-semibold text-[#9a3412]" : "text-black/70"}`}>{value}</p>
+    </div>
+  );
+}
+
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-md bg-[#f4f4f5] px-3 py-2">
@@ -3155,10 +3420,13 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HelpCard({ title, text }: { title: string; text: string }) {
+function HelpCard({ title, text, icon }: { title: string; text: string; icon?: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-black/10 bg-white p-3 text-sm">
-      <p className="font-semibold">{title}</p>
+      <div className="flex items-center gap-2">
+        {icon ? <span className="grid size-8 shrink-0 place-items-center rounded-md bg-[#f4f4f5] text-black/60">{icon}</span> : null}
+        <p className="font-semibold">{title}</p>
+      </div>
       <p className="mt-1 text-xs leading-5 text-black/55">{text}</p>
     </div>
   );
@@ -3198,14 +3466,25 @@ function CustomerSelect({
   );
 }
 
-function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function IconButton({
+  label,
+  onClick,
+  children,
+  disabled = false,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
       onClick={onClick}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5]"
+      disabled={disabled}
+      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white transition-colors hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {children}
     </button>
