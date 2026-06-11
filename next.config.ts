@@ -46,6 +46,17 @@ const nextConfig: NextConfig = {
         permanent: true,
       },
       {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "carzoneaccesorios.vercel.app",
+          },
+        ],
+        destination: "https://carzoneaccesorios.com/:path*",
+        permanent: true,
+      },
+      {
         source: "/seguimiento",
         destination: "/rastreo",
         permanent: true,
