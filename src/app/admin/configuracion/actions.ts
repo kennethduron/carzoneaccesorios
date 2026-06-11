@@ -2,10 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { getSessionProfile } from "@/lib/auth/session";
+import { writeErrorLog } from "@/lib/error-logging";
 import { canRoleReceiveNotificationType, isAccountantNotificationType } from "@/lib/notifications/accountant-scope";
 import {
   getAdminBusinessSettings,
+  saveAdminContactSettings,
   saveAdminBusinessSettings,
   sanitizeBusinessSettings,
 } from "@/services/supabase/admin-business-settings.service";
@@ -17,7 +20,8 @@ import {
 } from "@/services/supabase/admin-notification-preferences.service";
 import type { AppRole } from "@/types/auth";
 import type { NotificationPreferenceUpdate, NotificationUserPreferenceUpdate } from "@/types/notifications";
-import type { BusinessSettings } from "@/types/settings";
+import type { BusinessSettings, ContactSettingsInput } from "@/types/settings";
+import { sanitizeContactSettings } from "@/utils/contact-settings";
 
 const allowedRoles: AppRole[] = ["business_owner", "admin", "technical_owner"];
 
@@ -132,6 +136,88 @@ export async function saveBusinessSettingsAction(input: BusinessSettings) {
         ? "Configuración empresarial guardada correctamente."
         : "No había cambios pendientes.",
   };
+}
+
+export async function saveContactSettingsAction(input: ContactSettingsInput) {
+  const profile = await getSessionProfile();
+  const canManageContact =
+    profile &&
+    (hasEffectivePermission(profile.role, profile.permissions, "settings:manage", profile.email) ||
+      hasEffectivePermission(profile.role, profile.permissions, "commercial_settings:manage", profile.email));
+
+  if (!profile || !canManageContact) {
+    return { ok: false as const, message: "No tienes autorización para cambiar la configuración de contacto." };
+  }
+
+  let sanitized: ContactSettingsInput;
+  try {
+    sanitized = sanitizeContactSettings(input);
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof Error ? error.message : "Revisa los datos de contacto ingresados.",
+    };
+  }
+
+  try {
+    const previous = await getAdminBusinessSettings();
+    const saved = await saveAdminContactSettings(sanitized);
+    const changes = buildChanges(previous, { ...previous, ...saved });
+
+    if (Object.keys(changes).length > 0) {
+      await writeAuditLog({
+        tableName: "company_settings",
+        action: "business_settings.contact.updated",
+        oldData: {
+          changed_by: profile.id,
+          changes: Object.fromEntries(Object.entries(changes).map(([field, value]) => [field, value.from])),
+        },
+        newData: {
+          changed_by: profile.id,
+          changes: Object.fromEntries(Object.entries(changes).map(([field, value]) => [field, value.to])),
+        },
+      });
+    }
+
+    revalidatePath("/admin/configuracion");
+    revalidatePath("/");
+    revalidatePath("/catalogo");
+    revalidatePath("/contacto");
+    revalidatePath("/contacto-servicio-cliente");
+    revalidatePath("/producto/[slug]", "page");
+
+    return {
+      ok: true as const,
+      message: "Configuración de contacto guardada correctamente.",
+      settings: saved,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Error desconocido al guardar contacto.";
+    await writeErrorLog({
+      route: "/admin/configuracion",
+      module: "settings",
+      category: "system",
+      severity: "error",
+      action: "business_settings.contact.save_failed",
+      errorMessage,
+      errorStack: error instanceof Error ? error.stack : null,
+      customerMessage: "No se pudo guardar la configuración de contacto.",
+      adminReason: "Falló la actualización de company_settings o el registro de auditoría.",
+      recommendation: "Revisar permisos settings:manage/commercial_settings:manage y la política RLS de company_settings.",
+      userId: profile.id,
+      userEmail: profile.email,
+      metadata: {
+        fields_with_values: Object.entries(sanitized)
+          .filter(([, value]) => Boolean(value))
+          .map(([field]) => field),
+      },
+    });
+
+    return {
+      ok: false as const,
+      message: "No se pudo guardar la configuración de contacto. El error quedó registrado para revisión.",
+    };
+  }
 }
 
 export async function saveNotificationPreferenceAction(input: NotificationPreferenceUpdate) {

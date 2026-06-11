@@ -2,6 +2,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   BacCardStatus,
   BusinessSettings,
+  ContactSettingsInput,
   DashboardCardSettings,
   OutOfStockCatalogMode,
   TransferReceiptRequirement,
@@ -105,11 +106,11 @@ export const defaultBusinessSettings: BusinessSettings = {
   trade_name: "Car Zone Accesorios",
   legal_business_name: "",
   business_rtn: "",
-  business_address: "Honduras",
-  customer_service_phone: "+504 0000-0000",
+  business_address: "",
+  customer_service_phone: "",
   customer_service_email: "",
   customer_service_whatsapp: "",
-  customer_service_hours: "Lunes a sábado, 8:00 a.m. a 6:00 p.m.",
+  customer_service_hours: "",
 };
 
 function clean(value: unknown) {
@@ -197,11 +198,11 @@ export function normalizeBusinessSettings(row: BusinessSettingsRow | null | unde
     trade_name: clean(row?.trade_name) || defaultBusinessSettings.trade_name,
     legal_business_name: clean(row?.legal_business_name),
     business_rtn: clean(row?.business_rtn),
-    business_address: clean(row?.business_address) || defaultBusinessSettings.business_address,
-    customer_service_phone: clean(row?.customer_service_phone) || defaultBusinessSettings.customer_service_phone,
-    customer_service_email: clean(row?.customer_service_email) || defaultBusinessSettings.customer_service_email,
+    business_address: clean(row?.business_address),
+    customer_service_phone: clean(row?.customer_service_phone),
+    customer_service_email: clean(row?.customer_service_email),
     customer_service_whatsapp: clean(row?.customer_service_whatsapp),
-    customer_service_hours: clean(row?.customer_service_hours) || defaultBusinessSettings.customer_service_hours,
+    customer_service_hours: clean(row?.customer_service_hours),
   };
 }
 
@@ -250,4 +251,33 @@ export async function saveAdminBusinessSettings(input: BusinessSettings) {
   }
 
   return sanitized;
+}
+
+export async function saveAdminContactSettings(input: ContactSettingsInput) {
+  const supabase = await getSupabaseServerClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("company_settings")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+
+  if (existingError) {
+    throw new Error(existingError.message);
+  }
+
+  const payload = {
+    ...input,
+    updated_at: new Date().toISOString(),
+  };
+  const query = existing?.id
+    ? supabase.from("company_settings").update(payload).eq("id", existing.id)
+    : supabase.from("company_settings").insert(payload);
+  const { error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return input;
 }

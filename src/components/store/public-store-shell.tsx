@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { CheckCircle2, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import { useEffect, useRef, useState } from "react";
 import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
 import { getWholesaleAccessStateAction, markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
@@ -12,6 +14,7 @@ import { useShoppingCart } from "@/contexts/cart-context";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
 import type { PublicCompanySettings } from "@/types/settings";
+import { getPreferredWhatsAppUrl } from "@/utils/contact-settings";
 
 const primaryLinks = [
   ["Inicio", "/"],
@@ -44,6 +47,7 @@ const guestAccountState: PublicAccountMenuState = {
 };
 
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [accountState, setAccountState] = useState<PublicAccountMenuState>(guestAccountState);
@@ -163,6 +167,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const tradeName = companySettings?.trade_name || companySettings?.company_name || "Car Zone Accesorios";
+  const whatsappUrl = getPreferredWhatsAppUrl(companySettings);
+  const showFloatingWhatsapp =
+    Boolean(whatsappUrl) && !pathname.startsWith("/checkout") && !pathname.startsWith("/carrito");
 
   async function closeWholesaleApprovedNotice() {
     setShowWholesaleApprovedNotice(false);
@@ -320,6 +327,18 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
       </header>
       <div className="h-16 sm:h-[70px]" aria-hidden="true" />
       {children}
+      {showFloatingWhatsapp ? (
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Contactar por WhatsApp"
+          title="Contactar por WhatsApp"
+          className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 grid size-13 place-items-center rounded-full bg-[#25d366] text-white shadow-[0_10px_30px_rgba(0,0,0,0.24)] transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16803a] focus-visible:ring-offset-2 sm:bottom-6 sm:right-6 sm:size-14"
+        >
+          <FaWhatsapp aria-hidden="true" className="size-7" />
+        </a>
+      ) : null}
       {showWholesaleApprovedNotice ? (
         <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4">
           <section className="w-full max-w-lg rounded-lg bg-white p-5 text-[#080808] shadow-xl">

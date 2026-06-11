@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ProductDetail } from "@/components/store/product-detail";
 import { absoluteUrl, getProductImageAlt, serializeJsonLd, siteName, siteUrl } from "@/lib/seo";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getProductBySlug, getRelatedProducts } from "@/services/supabase/products.service";
+import { getPreferredWhatsAppUrl } from "@/utils/contact-settings";
 import { getProductMetaDescription } from "@/utils/product-content";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +59,10 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
     notFound();
   }
 
-  const relatedProducts = await getRelatedProducts(product);
+  const [relatedProducts, companySettings] = await Promise.all([
+    getRelatedProducts(product),
+    getPublicCompanySettings(),
+  ]);
   const canonical = `${siteUrl}/producto/${product.slug}`;
   const productSchema = {
     "@context": "https://schema.org",
@@ -108,7 +113,12 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: serializeJsonLd([productSchema, breadcrumbSchema]) }}
       />
-      <ProductDetail product={product} relatedProducts={relatedProducts} />
+      <ProductDetail
+        product={product}
+        relatedProducts={relatedProducts}
+        whatsappUrl={getPreferredWhatsAppUrl(companySettings)}
+        productUrl={canonical}
+      />
     </PublicStoreShell>
   );
 }

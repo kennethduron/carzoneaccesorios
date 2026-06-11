@@ -37,7 +37,7 @@ export function SocialLinks({ settings, variant = "footer" }: SocialLinksProps) 
             href={href}
             target="_blank"
             rel="noreferrer"
-            aria-label={`Abrir ${item.label} de Car Zone Accesorios`}
+            aria-label={variant === "footer" ? item.label : `Abrir ${item.label} de Car Zone Accesorios`}
             title={item.label}
             className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold shadow-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 ${
               isFeatured

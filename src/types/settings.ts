@@ -94,6 +94,19 @@ export type BusinessContactSettings = {
   customer_service_hours: string;
 };
 
+export type ContactSettingsInput = Pick<
+  SocialSettings,
+  "facebook_url" | "instagram_url" | "tiktok_url" | "whatsapp_url"
+> &
+  Pick<
+    BusinessContactSettings,
+    | "business_address"
+    | "customer_service_phone"
+    | "customer_service_email"
+    | "customer_service_whatsapp"
+    | "customer_service_hours"
+  >;
+
 export type PublicCompanySettings = CommerceSettings &
   SocialSettings & {
     company_name: string;

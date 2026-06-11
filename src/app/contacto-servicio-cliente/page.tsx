@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Clock, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
+import { Clock, Mail, MapPin, Phone } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { createPublicMetadata } from "@/lib/seo";
+import { getPreferredWhatsAppUrl } from "@/utils/contact-settings";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = createPublicMetadata({
@@ -16,7 +18,7 @@ export const metadata: Metadata = createPublicMetadata({
 
 export default async function ContactoServicioClientePage() {
   const settings = await getPublicCompanySettings();
-  const whatsapp = settings.customer_service_whatsapp || settings.whatsapp_url;
+  const whatsapp = getPreferredWhatsAppUrl(settings);
 
   return (
     <PublicStoreShell>
@@ -28,10 +30,18 @@ export default async function ContactoServicioClientePage() {
         </p>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2">
-          <ContactCard icon={<Phone size={19} />} title="Teléfono" value={settings.customer_service_phone || "+504 0000-0000"} />
-          <ContactCard icon={<Mail size={19} />} title="Correo electrónico" value={settings.customer_service_email || "Correo no configurado"} />
-          <ContactCard icon={<MapPin size={19} />} title="Dirección" value={settings.business_address || "Honduras"} />
-          <ContactCard icon={<Clock size={19} />} title="Horario de atención" value={settings.customer_service_hours || "Lunes a sábado, 8:00 a.m. a 6:00 p.m."} />
+          {settings.customer_service_phone ? (
+            <ContactCard icon={<Phone size={19} />} title="Teléfono" value={settings.customer_service_phone} />
+          ) : null}
+          {settings.customer_service_email ? (
+            <ContactCard icon={<Mail size={19} />} title="Correo electrónico" value={settings.customer_service_email} />
+          ) : null}
+          {settings.business_address ? (
+            <ContactCard icon={<MapPin size={19} />} title="Dirección" value={settings.business_address} />
+          ) : null}
+          {settings.customer_service_hours ? (
+            <ContactCard icon={<Clock size={19} />} title="Horario de atención" value={settings.customer_service_hours} />
+          ) : null}
         </div>
 
         {whatsapp ? (
@@ -41,7 +51,7 @@ export default async function ContactoServicioClientePage() {
             rel="noreferrer"
             className="mt-6 inline-flex items-center gap-2 rounded-md bg-[#25d366] px-4 py-3 text-sm font-semibold text-white transition-transform hover:scale-[1.01]"
           >
-            <MessageCircle size={18} />
+            <FaWhatsapp aria-hidden="true" className="size-[18px]" />
             Contactar por WhatsApp
           </a>
         ) : null}

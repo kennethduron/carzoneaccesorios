@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { MessageCircle, PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
+import { PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
@@ -12,8 +13,19 @@ import { getProductCardDescription, parseProductLines } from "@/utils/product-co
 import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
 import { ProductImageGallery } from "@/components/store/product-image-gallery";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
+import { buildWhatsAppMessageUrl } from "@/utils/contact-settings";
 
-export function ProductDetail({ product, relatedProducts = [] }: { product: Product; relatedProducts?: Product[] }) {
+export function ProductDetail({
+  product,
+  relatedProducts = [],
+  whatsappUrl = "",
+  productUrl,
+}: {
+  product: Product;
+  relatedProducts?: Product[];
+  whatsappUrl?: string;
+  productUrl: string;
+}) {
   const { priceMode } = usePriceMode();
   const { addToCart, cartMessage } = useShoppingCart();
   const { registerProducts } = useProductRegistry();
@@ -22,7 +34,10 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
   const featureLines = parseProductLines(product.features);
   const specificationLines = parseProductLines(product.specifications);
   const compatibilityNotes = product.compatibility_notes?.trim();
-  const whatsappText = encodeURIComponent(`Hola, quiero información sobre ${product.name} (${product.sku}).`);
+  const whatsappMessage = product.sku?.trim()
+    ? `Hola, estoy interesado en este producto: ${product.name} (SKU: ${product.sku}) - ${productUrl}`
+    : `Hola, estoy interesado en este producto: ${product.name} - ${productUrl}`;
+  const productWhatsappUrl = buildWhatsAppMessageUrl(whatsappUrl, whatsappMessage);
   const hasWholesalePrice = hasValidWholesalePrice(product);
   const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
   const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
@@ -117,13 +132,27 @@ export function ProductDetail({ product, relatedProducts = [] }: { product: Prod
               <ShoppingCart size={18} />
               {product.stock <= 0 ? "Sin stock" : `Agregar - ${formatCurrency(displayPrice)}`}
             </button>
-            <Link
-              href={`https://wa.me/?text=${whatsappText}`}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-4 py-3 text-sm font-semibold hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
-            >
-              <MessageCircle size={18} />
-              Consultar por WhatsApp
-            </Link>
+            {productWhatsappUrl ? (
+              <a
+                href={productWhatsappUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-4 py-3 text-sm font-semibold hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
+              >
+                <FaWhatsapp aria-hidden="true" className="size-[18px]" />
+                Consultar por WhatsApp
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="WhatsApp no está configurado por el comercio."
+                className="inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border border-black/10 bg-black/5 px-4 py-3 text-sm font-semibold text-black/45"
+              >
+                <FaWhatsapp aria-hidden="true" className="size-[18px]" />
+                Consultar por WhatsApp
+              </button>
+            )}
           </div>
           {cartMessage ? <p className="text-sm font-medium text-[#9b341b]">{cartMessage}</p> : null}
 

@@ -16,7 +16,7 @@ export const defaultAdminCompanySettings: AdminCompanySettings = {
   legal_business_name: "",
   business_rtn: "",
   business_address: "Honduras",
-  customer_service_phone: "+504 0000-0000",
+  customer_service_phone: "",
   customer_service_email: "",
   customer_service_whatsapp: "",
   customer_service_hours: "Lunes a sábado, 8:00 a.m. a 6:00 p.m.",

@@ -50,6 +50,17 @@ export function LegalPage({
 }
 
 export function BusinessContactCard({ settings }: { settings: PublicCompanySettings }) {
+  const contactItems: Array<{ icon: ReactNode; text: string }> = [];
+  if (settings.business_address) {
+    contactItems.push({ icon: <MapPin size={17} />, text: settings.business_address });
+  }
+  if (settings.customer_service_phone) {
+    contactItems.push({ icon: <Phone size={17} />, text: settings.customer_service_phone });
+  }
+  if (settings.customer_service_email) {
+    contactItems.push({ icon: <Mail size={17} />, text: settings.customer_service_email });
+  }
+
   return (
     <section className="mt-8 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -68,11 +79,13 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
           Servicio al cliente
         </Link>
       </div>
-      <div className="mt-5 grid gap-3 text-sm md:grid-cols-3">
-        <Info icon={<MapPin size={17} />} text={settings.business_address || "Honduras"} />
-        <Info icon={<Phone size={17} />} text={settings.customer_service_phone || "+504 0000-0000"} />
-        <Info icon={<Mail size={17} />} text={settings.customer_service_email || "Correo no configurado"} />
-      </div>
+      {contactItems.length > 0 ? (
+        <div className="mt-5 grid gap-3 text-sm md:grid-cols-3">
+          {contactItems.map((item) => (
+            <Info key={item.text} icon={item.icon} text={item.text} />
+          ))}
+        </div>
+      ) : null}
       <div className="mt-5 rounded-md bg-[#f4f4f5] p-3 text-sm leading-6 text-black/60">
         Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp. No ingreses datos de tarjeta en esta
         página.

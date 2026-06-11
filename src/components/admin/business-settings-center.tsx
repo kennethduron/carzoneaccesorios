@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Save, ShieldCheck } from "lucide-react";
-import { saveBusinessSettingsAction } from "@/app/admin/configuracion/actions";
+import { saveBusinessSettingsAction, saveContactSettingsAction } from "@/app/admin/configuracion/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { AppRole } from "@/types/auth";
@@ -67,10 +67,27 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
 
   function save() {
     startTransition(async () => {
-      const result = await saveBusinessSettingsAction(form);
+      const result =
+        activeTab === "contact"
+          ? await saveContactSettingsAction({
+              facebook_url: form.facebook_url,
+              instagram_url: form.instagram_url,
+              tiktok_url: form.tiktok_url,
+              whatsapp_url: form.whatsapp_url,
+              customer_service_whatsapp: form.customer_service_whatsapp,
+              customer_service_phone: form.customer_service_phone,
+              customer_service_email: form.customer_service_email,
+              business_address: form.business_address,
+              customer_service_hours: form.customer_service_hours,
+            })
+          : await saveBusinessSettingsAction(form);
       setMessage(result.message);
 
       if (result.ok) {
+        const savedContactSettings = "settings" in result ? result.settings : null;
+        if (savedContactSettings) {
+          setForm((current) => ({ ...current, ...savedContactSettings }));
+        }
         toast.success(result.message);
       } else {
         toast.error(result.message);
