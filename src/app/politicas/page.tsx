@@ -1,10 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BusinessContactCard } from "@/components/store/legal-page";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
+import { createPublicMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = createPublicMetadata({
+  title: "Políticas de compra | Car Zone Accesorios",
+  description: "Consulta las políticas de privacidad, entrega, devoluciones, cancelación y servicio al cliente de Car Zone Accesorios.",
+  path: "/politicas",
+  absoluteTitle: true,
+});
 
 const policyLinks = [
   {

@@ -1,14 +1,29 @@
 import type { MetadataRoute } from "next";
-
-const siteUrl = "https://carzoneaccesorios.com";
+import { siteUrl } from "@/lib/seo";
 
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
       allow: "/",
-      disallow: ["/admin/", "/api/", "/checkout", "/cuenta", "/mis-pedidos", "/facturas"],
+      disallow: [
+        "/admin/",
+        "/api/",
+        "/checkout",
+        "/carrito",
+        "/cuenta",
+        "/mis-pedidos",
+        "/facturas",
+        "/login",
+        "/registro",
+        "/recuperar-contrasena",
+        "/restablecer-contrasena",
+        "/actualizar-contrasena",
+        "/pago/",
+        "/verificacion/",
+      ],
     },
     sitemap: `${siteUrl}/sitemap.xml`,
+    host: siteUrl,
   };
 }

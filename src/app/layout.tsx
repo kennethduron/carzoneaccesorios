@@ -1,11 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Rajdhani, Titillium_Web } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
+import { defaultOgImageUrl, siteName, siteUrl } from "@/lib/seo";
 import "./globals.css";
-
-const siteUrl = "https://carzoneaccesorios.com";
-const ogImagePath = "/brand/og-car-zone-logo-20260513.png";
-const ogImageUrl = `${siteUrl}${ogImagePath}`;
 
 const rajdhani = Rajdhani({
   subsets: ["latin"],
@@ -24,11 +21,11 @@ const titillium = Titillium_Web({
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Car Zone Accesorios | Accesorios automotrices",
-    template: "%s | Car Zone Accesorios",
+    default: "Car Zone Accesorios | Accesorios automotrices en Honduras",
+    template: `%s | ${siteName}`,
   },
   description:
-    "Tienda automotriz de accesorios, repuestos y productos para vehículos con venta al detalle, cuentas mayoristas, pedidos, rastreo y facturación.",
+    "Accesorios para carros, repuestos, audio, luces LED y seguridad vehicular disponibles en Honduras con atención personalizada.",
   keywords: [
     "Car Zone Accesorios",
     "accesorios automotrices Honduras",
@@ -37,13 +34,10 @@ export const metadata: Metadata = {
     "mayoreo automotriz",
     "repuestos y accesorios",
   ],
-  applicationName: "Car Zone Accesorios",
-  authors: [{ name: "Car Zone Accesorios" }],
-  creator: "Car Zone Accesorios",
-  publisher: "Car Zone Accesorios",
-  alternates: {
-    canonical: siteUrl,
-  },
+  applicationName: siteName,
+  authors: [{ name: siteName }],
+  creator: siteName,
+  publisher: siteName,
   robots: {
     index: true,
     follow: true,
@@ -68,53 +62,28 @@ export const metadata: Metadata = {
     type: "website",
     locale: "es_HN",
     url: siteUrl,
-    siteName: "Car Zone Accesorios",
-    title: "Car Zone Accesorios | Accesorios automotrices",
+    siteName,
+    title: "Car Zone Accesorios | Accesorios automotrices en Honduras",
     description:
-      "Accesorios automotrices con experiencia de compra al detalle, mayorista, rastreo de pedidos y atención profesional.",
+      "Compra accesorios para carros, audio, luces LED, seguridad vehicular y productos automotrices en Honduras.",
     images: [
       {
-        url: ogImageUrl,
+        url: defaultOgImageUrl,
         width: 1200,
         height: 630,
         type: "image/png",
-        alt: "Logo oficial completo de Car Zone Accesorios.",
+        alt: "Car Zone Accesorios Honduras",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Car Zone Accesorios | Accesorios automotrices",
-    description: "Tienda automotriz con venta al detalle, mayorista y rastreo de pedidos.",
-    images: {
-      url: ogImageUrl,
-      alt: "Logo oficial completo de Car Zone Accesorios.",
-    },
+    title: "Car Zone Accesorios | Accesorios automotrices en Honduras",
+    description: "Accesorios para carros y productos automotrices disponibles en Honduras.",
+    images: [{ url: defaultOgImageUrl, alt: "Car Zone Accesorios Honduras" }],
   },
   category: "automotive ecommerce",
 };
-
-const structuredData = [
-  {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    name: "Car Zone Accesorios",
-    url: siteUrl,
-    logo: `${siteUrl}/brand/car-zone-logo.jpeg`,
-  },
-  {
-    "@context": "https://schema.org",
-    "@type": "AutoPartsStore",
-    name: "Car Zone Accesorios",
-    url: siteUrl,
-    image: ogImageUrl,
-    areaServed: "Honduras",
-    address: {
-      "@type": "PostalAddress",
-      addressCountry: "HN",
-    },
-  },
-];
 
 export const viewport: Viewport = {
   themeColor: "#E4252C",
@@ -129,11 +98,6 @@ export default function RootLayout({
   return (
     <html lang="es" className={`${rajdhani.variable} ${titillium.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <script
-          type="application/ld+json"
-          suppressHydrationWarning
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-        />
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

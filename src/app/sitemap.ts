@@ -1,7 +1,6 @@
 import type { MetadataRoute } from "next";
-import { getCatalogProducts, getCategorySummaries } from "@/services/supabase/products.service";
-
-const siteUrl = "https://carzoneaccesorios.com";
+import { absoluteUrl, siteUrl } from "@/lib/seo";
+import { getCategorySummaries, getSitemapProducts } from "@/services/supabase/products.service";
 
 const staticRoutes = [
   "",
@@ -16,8 +15,9 @@ const staticRoutes = [
   "/politica-de-cancelacion",
   "/contacto-servicio-cliente",
   "/rastreo",
-  "/registro",
-  "/login",
+  "/historia",
+  "/mision",
+  "/vision",
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -31,7 +31,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   try {
     const [catalog, categories] = await Promise.all([
-      getCatalogProducts({ pageSize: 48 }),
+      getSitemapProducts(),
       getCategorySummaries(),
     ]);
 
@@ -42,11 +42,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         changeFrequency: "weekly" as const,
         priority: 0.7,
       })),
-      ...catalog.products.map((product) => ({
+      ...catalog.map((product) => ({
         url: `${siteUrl}/producto/${product.slug}`,
-        lastModified: now,
+        lastModified: new Date(product.updatedAt),
         changeFrequency: "weekly" as const,
         priority: 0.8,
+        images: product.image ? [absoluteUrl(product.image)] : undefined,
       })),
     );
   } catch {

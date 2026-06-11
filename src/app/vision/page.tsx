@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
 import { ContentPage } from "@/components/store/content-page";
+import { createPublicMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPublicMetadata({
+  title: "Visión | Car Zone Accesorios",
+  description: "La visión de Car Zone Accesorios como tienda de accesorios automotrices para Honduras.",
+  path: "/vision",
+  absoluteTitle: true,
+});
 
 export default function VisionPage() {
   return (

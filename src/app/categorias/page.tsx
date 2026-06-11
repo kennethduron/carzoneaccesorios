@@ -2,23 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Car, Headphones, Lightbulb, PackageCheck, Sparkles, Wrench } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
+import { createPublicMetadata } from "@/lib/seo";
 import { getCategorySummaries } from "@/services/supabase/products.service";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Categorías",
-  description:
-    "Categorías preparadas para accesorios automotrices por línea de producto, compatibilidad de vehículo y necesidades de compra.",
-  alternates: {
-    canonical: "/categorias",
-  },
-  openGraph: {
-    title: "Categorías | Car Zone Accesorios",
-    description: "Explora accesorios automotrices por categoría y compatibilidad.",
-    url: "/categorias",
-  },
-};
+export const metadata: Metadata = createPublicMetadata({
+  title: "Categorías de accesorios automotrices | Car Zone Accesorios",
+  description: "Explora categorías de accesorios para carros, audio, luces LED y seguridad vehicular disponibles en Honduras.",
+  path: "/categorias",
+  absoluteTitle: true,
+});
 
 const categoryPresentation = {
   exterior: ["Carrocería, defensas, molduras y protección.", Wrench],

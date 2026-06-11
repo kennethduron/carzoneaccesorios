@@ -1,4 +1,13 @@
+import type { Metadata } from "next";
 import { ContentPage } from "@/components/store/content-page";
+import { createPublicMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = createPublicMetadata({
+  title: "Historia | Car Zone Accesorios",
+  description: "Conoce la historia de Car Zone Accesorios y su enfoque en el mercado automotriz de Honduras.",
+  path: "/historia",
+  absoluteTitle: true,
+});
 
 export default function HistoriaPage() {
   return (

@@ -1,11 +1,19 @@
+import type { Metadata } from "next";
 import { Mail, MapPin, Phone } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ContactRequestSwitcher } from "@/components/store/contact-request-switcher";
 import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
+import { createPublicMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = createPublicMetadata({
+  title: "Contacto | Car Zone Accesorios Honduras",
+  description: "Contacta a Car Zone Accesorios para consultar productos automotrices, compras al detalle y atención mayorista en Honduras.",
+  path: "/contacto",
+  absoluteTitle: true,
+});
 
 export default async function ContactoPage() {
   const [companySettings, wholesaleState] = await Promise.all([getPublicCompanySettings(), getWholesaleAccessStateAction()]);

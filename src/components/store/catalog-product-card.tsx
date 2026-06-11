@@ -8,6 +8,7 @@ import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
+import { getProductImageAlt } from "@/lib/seo";
 import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription } from "@/utils/product-content";
 import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
@@ -53,7 +54,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
           ) : (
             <Image
               src={imageUrl}
-              alt={primaryImage?.alt ?? product.name}
+              alt={getProductImageAlt(product.name, primaryImage?.alt)}
               width={400}
               height={276}
               sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"

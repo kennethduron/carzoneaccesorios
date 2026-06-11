@@ -23,7 +23,10 @@ export function getProductCardDescription(product: Pick<Product, "short_descript
 }
 
 export function getProductMetaDescription(product: Pick<Product, "name" | "short_description" | "description">) {
-  return getProductCardDescription(product) || `${product.name} disponible en Car Zone Accesorios.`;
+  return (
+    getProductCardDescription(product) ||
+    `Compra ${product.name} en Car Zone Accesorios. Accesorios automotrices disponibles en Honduras con atención personalizada.`
+  );
 }
 
 export function parseProductLines(value: string | null | undefined) {

@@ -3,25 +3,62 @@ import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { CatalogBrowser } from "@/components/store/catalog-browser";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
-import { getCatalogProducts } from "@/services/supabase/products.service";
+import { getCatalogProducts, getCategorySummaries } from "@/services/supabase/products.service";
+import { createPublicMetadata } from "@/lib/seo";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Catálogo de accesorios automotrices",
-  description:
-    "Explora el catálogo de accesorios automotrices de Car Zone Accesorios con filtros por categoría, vehículo, precio y disponibilidad.",
-  alternates: {
-    canonical: "/catalogo",
-  },
-  openGraph: {
-    title: "Catálogo de accesorios automotrices | Car Zone Accesorios",
-    description:
-      "Accesorios automotrices preparados para venta al detalle y cuentas mayoristas.",
-    url: "/catalogo",
-  },
+type CatalogSearchParams = {
+  q?: string;
+  categoria?: string;
+  page?: string;
+  precio_min?: string;
+  precio_max?: string;
+  marca_carro?: string;
+  modelo_carro?: string;
+  anio_carro?: string;
+  disponibilidad?: string;
 };
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<CatalogSearchParams>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const categories = await getCategorySummaries();
+  const selectedCategory = categories.find((category) => category.slug === params.categoria);
+  const hasExtraFilters = Boolean(
+    params.q ||
+      (params.page && params.page !== "1") ||
+      params.precio_min ||
+      params.precio_max ||
+      params.marca_carro ||
+      params.modelo_carro ||
+      params.anio_carro ||
+      params.disponibilidad,
+  );
+  const path = selectedCategory ? `/catalogo?categoria=${encodeURIComponent(selectedCategory.slug)}` : "/catalogo";
+  const title = selectedCategory
+    ? `${selectedCategory.name} para carros en Honduras | Car Zone Accesorios`
+    : "Catálogo de accesorios automotrices en Honduras | Car Zone Accesorios";
+  const description = selectedCategory
+    ? `Compra productos de ${selectedCategory.name} para carros en Car Zone Accesorios, con atención para clientes en Honduras.`
+    : "Explora accesorios para carros, audio, luces LED, seguridad vehicular, repuestos y productos automotrices disponibles en Honduras.";
+  const metadata = createPublicMetadata({ title, description, path, absoluteTitle: true });
+
+  return hasExtraFilters
+    ? {
+        ...metadata,
+        robots: {
+          index: false,
+          follow: true,
+          googleBot: { index: false, follow: true },
+        },
+      }
+    : metadata;
+}
 
 function optionalNumberParam(value: string | undefined) {
   if (!value?.trim()) {
@@ -35,17 +72,7 @@ function optionalNumberParam(value: string | undefined) {
 export default async function CatalogoPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string;
-    categoria?: string;
-    page?: string;
-    precio_min?: string;
-    precio_max?: string;
-    marca_carro?: string;
-    modelo_carro?: string;
-    anio_carro?: string;
-    disponibilidad?: string;
-  }>;
+  searchParams: Promise<CatalogSearchParams>;
 }) {
   const params = await searchParams;
   const vehicleBrand = normalizeVehicleBrand(params.marca_carro);
@@ -72,6 +99,10 @@ export default async function CatalogoPage({
       <section className="mx-auto max-w-7xl px-5 pt-8">
         <p className="text-sm text-black/50">Tienda pública</p>
         <h1 className="mt-2 text-4xl font-semibold">Catálogo</h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-black/60">
+          Encuentra accesorios para carros, audio, luces LED, seguridad vehicular y repuestos y accesorios con atención
+          para clientes en San Pedro Sula, Tegucigalpa, La Ceiba, Choloma, El Progreso y otras ciudades de Honduras.
+        </p>
         {wholesaleState.kind === "approved" &&
         firstPurchaseRequirement &&
         !firstPurchaseRequirement.completed &&

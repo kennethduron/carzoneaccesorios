@@ -110,6 +110,7 @@ function revalidateProductCatalog(slug?: string | null) {
   revalidatePath("/");
   revalidatePath("/catalogo");
   revalidatePath("/categorias");
+  revalidatePath("/sitemap.xml");
   if (slug) {
     revalidatePath(`/producto/${slug}`);
   }

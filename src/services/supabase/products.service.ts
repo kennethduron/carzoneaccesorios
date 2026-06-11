@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { writeErrorLog } from "@/lib/error-logging";
+import { defaultOgImagePath, getProductImageAlt } from "@/lib/seo";
 import { getSupabasePublicClient } from "@/lib/supabase";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
 import {
@@ -107,6 +108,16 @@ type CatalogSettingsRow = {
   out_of_stock_catalog_mode: "show" | "hide" | null;
 };
 
+type SitemapProductRow = {
+  slug: string;
+  updated_at: string;
+  product_images?: Array<{
+    public_url: string | null;
+    is_primary: boolean;
+    sort_order: number;
+  }> | null;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -154,7 +165,7 @@ function normalizeImages(
       angle: normalizeAngle(image.angle),
       label: image.angle || "Principal",
       url: image.public_url ?? "",
-      alt: image.alt_text ?? product.name,
+      alt: getProductImageAlt(product.name, image.alt_text),
     }));
 }
 
@@ -173,7 +184,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     vehicle_model: normalizeVehicleModel(row.vehicle_model),
     vehicle_year_start: row.vehicle_year_start,
     vehicle_year_end: row.vehicle_year_end,
-    image: normalizedImages[0]?.url ?? "/window.svg",
+    image: normalizedImages[0]?.url ?? defaultOgImagePath,
     images: normalizedImages,
     stock: toNumber(row.available_stock ?? row.stock),
     retail_price: toNumber(row.retail_price),
@@ -709,6 +720,70 @@ export async function getCategorySummaries() {
   try {
     return await getCachedActiveCategories();
   } catch {
+    return [];
+  }
+}
+
+export async function getSitemapProducts() {
+  const pageSize = 1000;
+  const products: Array<{ slug: string; updatedAt: string; image: string | null }> = [];
+
+  try {
+    const outOfStockCatalogMode = await getOutOfStockCatalogMode();
+    const supabase = getSupabasePublicClient();
+
+    for (let from = 0; ; from += pageSize) {
+      let query = supabase
+        .from("products")
+        .select(
+          `
+          slug,
+          updated_at,
+          product_images(
+            public_url,
+            is_primary,
+            sort_order
+          )
+        `,
+        )
+        .eq("active", true)
+        .order("updated_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+
+      if (outOfStockCatalogMode === "hide") {
+        query = query.gt("available_stock", 0);
+      }
+
+      const { data, error } = await query.returns<SitemapProductRow[]>();
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const rows = data ?? [];
+      products.push(
+        ...rows.map((product) => {
+          const image =
+            [...(product.product_images ?? [])]
+              .filter((item) => item.public_url)
+              .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order)[0]
+              ?.public_url ?? null;
+
+          return {
+            slug: product.slug,
+            updatedAt: product.updated_at,
+            image,
+          };
+        }),
+      );
+
+      if (rows.length < pageSize) {
+        break;
+      }
+    }
+
+    return products;
+  } catch (error) {
+    await logProductServiceError("catalog.sitemap_products.load_failed", error);
     return [];
   }
 }

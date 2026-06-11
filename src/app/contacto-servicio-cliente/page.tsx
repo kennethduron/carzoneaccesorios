@@ -1,10 +1,18 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Clock, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
+import { createPublicMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = createPublicMetadata({
+  title: "Servicio al cliente | Car Zone Accesorios",
+  description: "Canales oficiales de atención de Car Zone Accesorios para soporte de pedidos, entregas y productos.",
+  path: "/contacto-servicio-cliente",
+  absoluteTitle: true,
+});
 
 export default async function ContactoServicioClientePage() {
   const settings = await getPublicCompanySettings();

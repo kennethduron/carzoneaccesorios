@@ -1,7 +1,15 @@
+import type { Metadata } from "next";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { PublicOrderTracking } from "@/components/store/public-order-tracking";
+import { createPublicMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = createPublicMetadata({
+  title: "Rastreo de pedidos | Car Zone Accesorios",
+  description: "Consulta de forma segura el estado de tu pedido de Car Zone Accesorios.",
+  path: "/rastreo",
+  absoluteTitle: true,
+});
 
 export default async function RastreoPage({
   searchParams,

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -27,8 +28,17 @@ import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getActiveHolidayBanners } from "@/services/supabase/holiday-banners.service";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getCategorySummaries, getCompatibilityBrandSummaries, getFeaturedProducts } from "@/services/supabase/products.service";
+import { createPublicMetadata, defaultOgImageUrl, serializeJsonLd, siteName, siteUrl } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = createPublicMetadata({
+  title: "Car Zone Accesorios | Accesorios automotrices en Honduras",
+  description:
+    "Compra accesorios para carros, audio, luces LED, seguridad vehicular, repuestos y productos automotrices en Honduras.",
+  path: "/",
+  absoluteTitle: true,
+});
 
 const categoryPresentation = {
   seguridad: ["Protección, visibilidad y control para manejar con confianza.", ShieldCheck],
@@ -64,9 +74,65 @@ export default async function HomePage() {
   ]);
   const featuredCategories = categories.slice(0, 8);
   const brandTiles = compatibilityBrands.length > 0 ? compatibilityBrands : fallbackCompatibilityBrands;
+  const sameAs = [
+    companySettings.facebook_url,
+    companySettings.instagram_url,
+    companySettings.tiktok_url,
+    companySettings.youtube_url,
+  ].filter((url): url is string => Boolean(url?.trim()));
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": `${siteUrl}/#organization`,
+      name: siteName,
+      url: siteUrl,
+      logo: `${siteUrl}/brand/car-zone-logo.jpeg`,
+      ...(sameAs.length > 0 ? { sameAs } : {}),
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "AutoPartsStore",
+      "@id": `${siteUrl}/#store`,
+      name: siteName,
+      url: siteUrl,
+      image: defaultOgImageUrl,
+      parentOrganization: { "@id": `${siteUrl}/#organization` },
+      areaServed: {
+        "@type": "Country",
+        name: "Honduras",
+      },
+      address: {
+        "@type": "PostalAddress",
+        addressCountry: "HN",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": `${siteUrl}/#website`,
+      name: siteName,
+      url: siteUrl,
+      publisher: { "@id": `${siteUrl}/#organization` },
+      inLanguage: "es-HN",
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${siteUrl}/catalogo?q={search_term_string}`,
+        },
+        "query-input": "required name=search_term_string",
+      },
+    },
+  ];
 
   return (
     <PublicStoreShell>
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(structuredData) }}
+      />
       <HolidayBannerPopup banners={holidayBanners} />
       <section className="relative isolate min-h-[560px] overflow-hidden bg-[#080808] text-white sm:min-h-[590px] lg:min-h-[620px]">
         <Image

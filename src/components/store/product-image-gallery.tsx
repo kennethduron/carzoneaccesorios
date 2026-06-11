@@ -4,6 +4,7 @@ import Image from "next/image";
 import { ChevronLeft, ChevronRight, ImageOff, Maximize2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Product } from "@/types/commerce";
+import { getProductImageAlt } from "@/lib/seo";
 import {
   getProductGalleryThumbnailUrl,
   getProductImageUrl,
@@ -22,7 +23,7 @@ export function ProductImageGallery({ product }: { product: Product }) {
               angle: "frontal" as const,
               label: "Frontal",
               url: product.image,
-              alt: product.name,
+              alt: getProductImageAlt(product.name),
             },
           ],
     [product],
