@@ -8,6 +8,8 @@ import { requirePermission } from "@/lib/auth/session";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
+import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
+import { additionalFeesTotal } from "@/utils/financial-summary";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 
 type PaymentStatus = "approved" | "rejected";
@@ -315,11 +317,14 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
+    .select("id, status, payment_method, payment_timing, cash_on_delivery_fee, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
       status: string;
+      payment_method: "bank_transfer" | "card" | "cash";
+      payment_timing: "before_delivery" | "on_delivery";
+      cash_on_delivery_fee: unknown;
       order_reservation_status: string | null;
       payments: Array<{ payment_status: string | null; status: string | null }> | null;
       invoices: Array<{ id: string; invoice_number: string | null; status: string | null }> | null;
@@ -339,6 +344,10 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
 
   if (["released", "expired", "canceled"].includes(String(order.order_reservation_status ?? ""))) {
     return { ok: false, message: "No se puede emitir factura porque la reserva de inventario fue liberada." };
+  }
+
+  if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)) {
+    return { ok: false, message: "Debes confirmar el cargo contra entrega antes de emitir la factura." };
   }
 
   const activeInvoice = (order.invoices ?? []).find((invoice) => !["anulada", "cancelled"].includes(String(invoice.status ?? "")));
@@ -395,6 +404,145 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     invoiceNumber: invoice.invoice_number,
     invoice: invoiceDetail,
     bankReference: null,
+  };
+}
+
+export async function updateCashOnDeliveryFeeAction(orderId: string, rawFee: number | string) {
+  const profile = await requirePermission("admin:access");
+  const canUpdate =
+    hasEffectivePermission(profile.role, profile.permissions, "orders:manage", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "payments:manage", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "crm:manage", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "commercial_settings:manage", profile.email);
+
+  if (!canUpdate) {
+    return { ok: false, message: "Solo usuarios autorizados pueden modificar el cargo contra entrega." };
+  }
+
+  const fee = Math.round(Number(rawFee) * 100) / 100;
+  if (!Number.isFinite(fee) || fee < 0) {
+    return { ok: false, message: "Ingresa un cargo contra entrega válido." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .select(
+      `
+      id,
+      order_number,
+      status,
+      payment_method,
+      payment_timing,
+      subtotal,
+      tax,
+      shipping_fee,
+      shipping_total,
+      cash_on_delivery_fee,
+      small_order_fee,
+      discount_total,
+      additional_fees,
+      invoices(id, invoice_number, status)
+    `,
+    )
+    .eq("id", orderId)
+    .maybeSingle<{
+      id: string;
+      order_number: string;
+      status: string;
+      payment_method: "bank_transfer" | "card" | "cash";
+      payment_timing: "before_delivery" | "on_delivery";
+      subtotal: unknown;
+      tax: unknown;
+      shipping_fee: unknown;
+      shipping_total: unknown;
+      cash_on_delivery_fee: unknown;
+      small_order_fee: unknown;
+      discount_total: unknown;
+      additional_fees: unknown;
+      invoices: Array<{ id: string; invoice_number: string | null; status: string | null }> | null;
+    }>();
+
+  if (orderError) {
+    return { ok: false, message: safeAdminOrderMessage(orderError.message) };
+  }
+
+  if (!order) {
+    return { ok: false, message: "Pedido no encontrado." };
+  }
+
+  if (!cashOnDeliveryApplies(order.payment_method, order.payment_timing)) {
+    return { ok: false, message: "Este pedido no usa pago contra entrega." };
+  }
+
+  if (canonicalOrderStatus(order.status) === "cancelado") {
+    return { ok: false, message: "No se puede modificar el cargo contra entrega de un pedido cancelado." };
+  }
+
+  const invoices = Array.isArray(order.invoices) ? order.invoices : order.invoices ? [order.invoices] : [];
+  const issuedInvoice = invoices.find((invoice) => invoice.invoice_number && !["anulada", "cancelled"].includes(String(invoice.status ?? "")));
+  if (issuedInvoice) {
+    return { ok: false, message: "El cargo contra entrega no puede modificarse porque la factura fiscal ya fue emitida." };
+  }
+
+  const previousFee = Math.round(Number(order.cash_on_delivery_fee ?? 0) * 100) / 100;
+  const subtotal = Math.round(Number(order.subtotal ?? 0) * 100) / 100;
+  const tax = Math.round(Number(order.tax ?? 0) * 100) / 100;
+  const shippingFee = Math.round(Number(order.shipping_fee ?? order.shipping_total ?? 0) * 100) / 100;
+  const smallOrderFee = Math.round(Number(order.small_order_fee ?? 0) * 100) / 100;
+  const discountTotal = Math.round(Number(order.discount_total ?? 0) * 100) / 100;
+  const extras = additionalFeesTotal(order.additional_fees);
+  const total = Math.round((subtotal + tax + shippingFee + fee + smallOrderFee + extras - discountTotal) * 100) / 100;
+  const now = new Date().toISOString();
+
+  const [{ error: orderUpdateError }, { error: paymentUpdateError }, { error: invoiceUpdateError }] = await Promise.all([
+    supabase
+      .from("orders")
+      .update({
+        cash_on_delivery_fee: fee,
+        total,
+        updated_at: now,
+      })
+      .eq("id", orderId),
+    supabase.from("payments").update({ amount: total, updated_at: now }).eq("order_id", orderId),
+    supabase
+      .from("invoices")
+      .update({
+        cash_on_delivery_fee: fee,
+        total,
+        updated_at: now,
+      })
+      .eq("order_id", orderId)
+      .eq("status", "draft"),
+  ]);
+
+  if (orderUpdateError || paymentUpdateError || invoiceUpdateError) {
+    return {
+      ok: false,
+      message: safeAdminOrderMessage(orderUpdateError?.message || paymentUpdateError?.message || invoiceUpdateError?.message || "No se pudo actualizar el cargo contra entrega."),
+    };
+  }
+
+  await writeAuditLog({
+    tableName: "orders",
+    recordId: orderId,
+    action: "order.cash_on_delivery_fee_updated",
+    oldData: {
+      order_number: order.order_number,
+      cash_on_delivery_fee: previousFee,
+    },
+    newData: {
+      order_number: order.order_number,
+      cash_on_delivery_fee: fee,
+      total,
+    },
+  });
+
+  revalidateOperationalPaths();
+
+  return {
+    ok: true,
+    message: fee > 0 ? "Cargo contra entrega actualizado correctamente." : "Cargo contra entrega guardado en L 0.00. El pedido seguirá pendiente de confirmación antes de facturar.",
   };
 }
 

@@ -15,6 +15,7 @@ import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { useOrders } from "@/contexts/orders-context";
 import { useToast } from "@/contexts/toast-context";
+import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { formatCurrency } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
@@ -137,6 +138,7 @@ export function CheckoutView({
     () => calculateCheckoutFees({ subtotal: productsTotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
     [checkout.paymentMethod, checkout.paymentTiming, settings, productsTotal],
   );
+  const requiresCashOnDeliveryReview = cashOnDeliveryApplies(checkout.paymentMethod, checkout.paymentTiming);
   const paymentMethods = useMemo(() => {
     const methods: Array<[CheckoutData["paymentMethod"], typeof Banknote]> = [];
     if (settings.allow_bank_transfer) {
@@ -392,7 +394,7 @@ export function CheckoutView({
         subtotal,
         tax,
         shippingFee: checkoutFees.shippingFee,
-        cashOnDeliveryFee: checkoutFees.cashOnDeliveryFee,
+        cashOnDeliveryFee: 0,
         smallOrderFee,
         discountTotal,
         additionalFees,
@@ -414,17 +416,19 @@ export function CheckoutView({
         paymentMethod: checkout.paymentMethod,
         total: finalTotal,
         currentStatus:
-          checkout.paymentMethod === "Transferencia bancaria"
-            ? checkout.paymentTiming === "on_delivery"
-              ? "Tu pago quedará pendiente hasta que recibas el pedido."
-              : "Tu pedido está pendiente de revisión de pago."
-            : checkout.paymentMethod === "Efectivo"
-              ? "Tu pedido está pendiente de confirmación."
-              : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago.",
+          requiresCashOnDeliveryReview
+            ? "Seleccionaste pago contra entrega. Nuestro equipo revisará el cargo correspondiente y actualizará el total final del pedido."
+            : checkout.paymentMethod === "Transferencia bancaria"
+              ? "Tu pedido está pendiente de revisión de pago."
+              : checkout.paymentMethod === "Efectivo"
+                ? "Tu pedido está pendiente de confirmación."
+                : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago.",
       });
       setFieldErrors({});
       toast.success(
-        checkout.paymentMethod === "Tarjeta"
+        requiresCashOnDeliveryReview
+          ? "Pedido recibido. El cargo contra entrega quedará pendiente de confirmación."
+          : checkout.paymentMethod === "Tarjeta"
           ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
           : "Pedido creado correctamente. Te contactaremos para confirmar el pago.",
       );
@@ -626,7 +630,7 @@ export function CheckoutView({
                   />
                   <span>
                     <span className="block font-semibold">Transferencia al recibir</span>
-                    <span className="mt-1 block text-black/55">Haré la transferencia cuando reciba el pedido. Aplica tarifa contra entrega.</span>
+                    <span className="mt-1 block text-black/55">Haré la transferencia cuando reciba el pedido. El cargo contra entrega quedará pendiente de confirmación.</span>
                   </span>
                 </label>
               </div>
@@ -712,9 +716,7 @@ export function CheckoutView({
               ) : null}
               </>
               ) : (
-                <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-                  Este pedido tendrá tarifa contra entrega porque el pago se realizará al recibir. No necesitas referencia bancaria todavía.
-                </p>
+                <CashOnDeliveryNotice />
               )}
             </section>
           ) : null}
@@ -745,10 +747,11 @@ export function CheckoutView({
                 <div>
                   <h2 className="font-semibold">Pago contra entrega</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Pagarás en efectivo al recibir tu pedido. Puede aplicar tarifa contra entrega.
+                    Pagarás en efectivo al recibir tu pedido.
                   </p>
                 </div>
               </div>
+              <CashOnDeliveryNotice />
             </section>
           ) : null}
 
@@ -886,7 +889,6 @@ export function CheckoutView({
           tax={tax}
           productsTotal={productsTotal}
           shippingFee={checkoutFees.shippingFee}
-          cashOnDeliveryFee={checkoutFees.cashOnDeliveryFee}
           smallOrderFee={smallOrderFee}
           discountTotal={discountTotal}
           additionalFeesTotal={0}
@@ -965,12 +967,23 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
   );
 }
 
+function CashOnDeliveryNotice() {
+  return (
+    <div className="mt-4 rounded-md border border-[#f59e0b]/25 bg-[#fffbeb] p-3 text-sm text-[#7c2d12]">
+      <p className="font-semibold">Pago contra entrega seleccionado.</p>
+      <p className="mt-1">
+        El cargo asociado al servicio contra entrega será revisado y confirmado por un miembro de nuestro equipo. Una vez actualizado, podrás consultar el total final desde el seguimiento de tu pedido o desde tu cuenta si estás registrado.
+      </p>
+      <p className="mt-1">Por favor mantente atento a las actualizaciones de tu pedido.</p>
+    </div>
+  );
+}
+
 function CheckoutTotals({
   subtotal,
   tax,
   productsTotal,
   shippingFee,
-  cashOnDeliveryFee,
   smallOrderFee,
   discountTotal,
   additionalFeesTotal,
@@ -983,7 +996,6 @@ function CheckoutTotals({
   tax: number;
   productsTotal: number;
   shippingFee: number;
-  cashOnDeliveryFee: number;
   smallOrderFee: number;
   discountTotal: number;
   additionalFeesTotal: number;
@@ -993,6 +1005,7 @@ function CheckoutTotals({
   paymentTiming: CheckoutData["paymentTiming"];
 }) {
   const hasFreeShipping = shippingFee === 0 && productsTotal >= settings.free_shipping_threshold;
+  const cashOnDeliveryPending = cashOnDeliveryApplies(paymentMethod, paymentTiming);
 
   return (
     <div className="mt-4 space-y-2 border-t border-black/10 pt-4 text-sm">
@@ -1013,11 +1026,10 @@ function CheckoutTotals({
         <span>{hasFreeShipping ? "Envío gratis" : "Envío estándar"}</span>
         <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
       </div>
-      {(paymentMethod === "Efectivo" || (paymentMethod === "Transferencia bancaria" && paymentTiming === "on_delivery")) &&
-      settings.enable_cash_on_delivery_fee ? (
+      {cashOnDeliveryPending ? (
         <div className="flex justify-between">
-          <span>Cargo contra entrega</span>
-          <span>{formatCurrency(cashOnDeliveryFee)}</span>
+          <span>Contra entrega</span>
+          <span className="text-right font-medium text-[#92400e]">Pendiente de confirmación</span>
         </div>
       ) : null}
       <div className="flex justify-between">
@@ -1035,15 +1047,15 @@ function CheckoutTotals({
       <div className="rounded-md bg-[#f4f4f5] p-3 text-xs text-black/60">
         <p>El envío es gratis en compras mayores o iguales a {formatCurrency(settings.free_shipping_threshold)}.</p>
         <p>Para compras menores aplica envío estándar de {formatCurrency(settings.standard_shipping_fee)}.</p>
-        <p>El pago al recibir puede incluir una comisión adicional definida por la empresa de entrega.</p>
+        <p>El cargo contra entrega se confirma manualmente por el equipo antes de emitir factura.</p>
       </div>
-      {paymentMethod === "Efectivo" || (paymentMethod === "Transferencia bancaria" && paymentTiming === "on_delivery") ? (
+      {cashOnDeliveryPending ? (
         <p className="rounded-md bg-[#fff7ed] p-3 text-xs text-[#7c2d12]">
-          Este pedido tendrá tarifa contra entrega porque el pago se realizará al recibir.
+          Contra entrega pendiente de confirmación. El total mostrado aún no incluye ese cargo.
         </p>
       ) : null}
       <div className="flex justify-between text-lg font-semibold">
-        <span>Total a pagar</span>
+        <span>{cashOnDeliveryPending ? "Total estimado" : "Total a pagar"}</span>
         <span>{formatCurrency(total)}</span>
       </div>
     </div>

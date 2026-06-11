@@ -4,6 +4,7 @@ import { PaginationControls } from "@/components/admin/pagination-controls";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import type { CustomerOrderRow } from "@/services/supabase/customer-account.service";
 import type { StoreInvoice } from "@/types/invoices";
+import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -166,6 +167,8 @@ export function OrdersList({
         const issuedInvoice = invoiceToStoreInvoice(order);
         const pendingInvoiceMessage = invoiceStatusMessage(order);
         const trackingHref = order.tracking_code ? `/rastreo?codigo=${encodeURIComponent(order.tracking_code)}` : "/rastreo";
+        const cashOnDeliveryRequired = cashOnDeliveryApplies(order.payment_method, order.payment_timing);
+        const cashOnDeliveryPending = isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee);
 
         return (
           <article key={order.id} className="rounded-lg border border-black/10 bg-white p-5">
@@ -203,10 +206,14 @@ export function OrdersList({
               discountTotal={order.discount_total}
               additionalFeesValue={additionalFeesTotal(order.additional_fees)}
               total={order.total}
+              cashOnDeliveryPending={cashOnDeliveryPending}
+              cashOnDeliveryRequired={cashOnDeliveryRequired}
             />
-            {order.cash_on_delivery_fee > 0 ? (
+            {cashOnDeliveryRequired ? (
               <p className="mt-4 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
-                Este pedido incluye tarifa contra entrega porque el pago se realizará al recibir.
+                {cashOnDeliveryPending
+                  ? "Cargo contra entrega pendiente de confirmación."
+                  : `Cargo contra entrega: ${formatCurrency(order.cash_on_delivery_fee)}.`}
               </p>
             ) : null}
 
@@ -274,6 +281,8 @@ function FinancialSummary({
   discountTotal,
   additionalFeesValue,
   total,
+  cashOnDeliveryPending,
+  cashOnDeliveryRequired,
 }: {
   subtotal: number;
   tax: number;
@@ -283,6 +292,8 @@ function FinancialSummary({
   discountTotal: number;
   additionalFeesValue: number;
   total: number;
+  cashOnDeliveryPending: boolean;
+  cashOnDeliveryRequired: boolean;
 }) {
   return (
     <div className="mt-4 rounded-md border border-black/10 bg-white p-3 text-sm">
@@ -291,11 +302,14 @@ function FinancialSummary({
         <Info label="Subtotal antes de ISV" value={formatCurrency(subtotal)} />
         <Info label="ISV incluido 15%" value={formatCurrency(tax)} />
         <Info label="Envio" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
-        <Info label="Contra entrega" value={formatCurrency(cashOnDeliveryFee)} />
+        <Info
+          label="Contra entrega"
+          value={cashOnDeliveryRequired && cashOnDeliveryPending ? "Pendiente de confirmación" : formatCurrency(cashOnDeliveryFee)}
+        />
         <Info label="Recargo mínimo" value={formatCurrency(smallOrderFee)} />
         <Info label="Descuentos" value={discountTotal > 0 ? `-${formatCurrency(discountTotal)}` : formatCurrency(0)} />
         <Info label="Otros cargos" value={formatCurrency(additionalFeesValue)} />
-        <Info label="Total final" value={formatCurrency(total)} strong />
+        <Info label={cashOnDeliveryRequired && cashOnDeliveryPending ? "Total estimado" : "Total final"} value={formatCurrency(total)} strong />
       </div>
     </div>
   );

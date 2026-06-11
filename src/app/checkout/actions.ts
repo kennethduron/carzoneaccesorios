@@ -4,12 +4,14 @@ import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
+import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
@@ -189,7 +191,7 @@ function validateBankReference(value: string) {
   return { ok: true as const, value: reference };
 }
 
-async function applyIncludedTaxFinancialsToOrder(orderId: string, taxRate: number) {
+async function applyIncludedTaxFinancialsToOrder(orderId: string, taxRate: number, { cashOnDeliveryPending = false }: { cashOnDeliveryPending?: boolean } = {}) {
   const admin = getSupabaseAdminClient();
   const [{ data: order, error: orderError }, { data: items, error: itemsError }] = await Promise.all([
     admin
@@ -214,7 +216,7 @@ async function applyIncludedTaxFinancialsToOrder(orderId: string, taxRate: numbe
   const productsTotal = roundMoney((items ?? []).reduce((sum, item) => sum + Number(item.line_total ?? 0), 0));
   const breakdown = calculateIncludedTaxBreakdown(productsTotal, taxRate);
   const shippingFee = roundMoney(Number(order.shipping_fee ?? order.shipping_total ?? 0));
-  const cashOnDeliveryFee = roundMoney(Number(order.cash_on_delivery_fee ?? 0));
+  const cashOnDeliveryFee = cashOnDeliveryPending ? 0 : roundMoney(Number(order.cash_on_delivery_fee ?? 0));
   const smallOrderFee = roundMoney(Number(order.small_order_fee ?? 0));
   const discountTotal = roundMoney(Number(order.discount_total ?? 0));
   const extraFees = additionalFeesTotal(order.additional_fees);
@@ -224,6 +226,7 @@ async function applyIncludedTaxFinancialsToOrder(orderId: string, taxRate: numbe
   const orderUpdate = {
     subtotal: breakdown.subtotalBeforeTax,
     tax: breakdown.includedTax,
+    cash_on_delivery_fee: cashOnDeliveryFee,
     total,
     updated_at: now,
   };
@@ -452,6 +455,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         : input.checkout.paymentTiming === "on_delivery"
           ? "on_delivery"
           : "before_delivery";
+  const requiresCashOnDeliveryReview = cashOnDeliveryApplies(paymentMethod, paymentTiming);
   const bankReferenceResult =
     paymentMethod === "bank_transfer" && paymentTiming === "before_delivery"
       ? validateBankReference(String(input.checkout.bankTransferReference ?? ""))
@@ -738,7 +742,9 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const admin = getSupabaseAdminClient();
   try {
-    await applyIncludedTaxFinancialsToOrder(createdOrder.order_id, Number(settings.tax_rate ?? 0.15));
+    await applyIncludedTaxFinancialsToOrder(createdOrder.order_id, Number(settings.tax_rate ?? 0.15), {
+      cashOnDeliveryPending: requiresCashOnDeliveryReview,
+    });
   } catch (financialError) {
     await writeErrorLog({
       route: "/checkout",
@@ -833,6 +839,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       orderNumber: createdOrder.order_number,
       trackingCode: createdOrder.tracking_code,
     });
+
+    if (requiresCashOnDeliveryReview) {
+      await createInternalNotification({
+        type: "payment.cash_on_delivery_review",
+        title: "Pedido contra entrega pendiente de revisión",
+        message: "Tienes un pedido contra entrega pendiente de revisión. Debes confirmar el cargo contra entrega antes de generar factura.",
+        severity: "warning",
+        module: "pagos",
+        orderId: createdOrder.order_id,
+        metadata: {
+          order_number: createdOrder.order_number,
+          tracking_code: createdOrder.tracking_code,
+          payment_method: paymentMethod,
+          payment_timing: paymentTiming,
+          action_path: "/admin/pedidos?task=pending_payments",
+        },
+        dedupeKey: `payment.cash_on_delivery_review:${createdOrder.order_id}`,
+      });
+    }
   } catch (notificationError) {
     await writeErrorLog({
       route: "/checkout",
@@ -851,6 +876,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     message:
       paymentMethod === "card"
         ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
+        : requiresCashOnDeliveryReview
+          ? "Tu pedido fue recibido correctamente. Seleccionaste pago contra entrega. Nuestro equipo revisará el cargo correspondiente y actualizará el total final del pedido."
         : "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,

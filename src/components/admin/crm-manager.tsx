@@ -66,6 +66,7 @@ import type {
   CrmNoteRow,
   CrmPriority,
 } from "@/types/crm";
+import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -2433,7 +2434,10 @@ function CustomerProfilePurchases({
               Sub {formatCurrency(order.subtotal)} / ISV {formatCurrency(order.tax)}
             </p>
             <p className="text-xs text-black/45">
-              Env {formatCurrency(order.shipping_fee)} / CE {formatCurrency(order.cash_on_delivery_fee)}
+              Env {formatCurrency(order.shipping_fee)} / CE{" "}
+              {isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)
+                ? "pendiente"
+                : formatCurrency(order.cash_on_delivery_fee)}
             </p>
             <p className="text-xs text-black/45">
               Rec {formatCurrency(order.small_order_fee + order.additional_fees_total)} / Desc {formatCurrency(order.discount_total)}

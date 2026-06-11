@@ -226,10 +226,6 @@ export function Totals({
         <span>{shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)}</span>
       </div>
       <div className="flex justify-between">
-        <span>Contra entrega</span>
-        <span>{formatCurrency(0)}</span>
-      </div>
-      <div className="flex justify-between">
         <span>Recargo pedido mínimo</span>
         <span>{formatCurrency(0)}</span>
       </div>

@@ -118,6 +118,8 @@ type OrderActivityRow = {
   additional_fees: unknown;
   status: string | null;
   price_mode: "retail" | "wholesale" | null;
+  payment_method?: string | null;
+  payment_timing?: "before_delivery" | "on_delivery" | null;
 };
 
 type DuplicateCustomerQueryRow = {
@@ -145,6 +147,7 @@ type CustomerProfileOrderRow = {
   created_at: string;
   status: string;
   payment_method: string;
+  payment_timing: "before_delivery" | "on_delivery";
   payments: Array<{
     payment_status: string | null;
     status: string | null;
@@ -698,17 +701,17 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   const orderQueries: Array<() => Promise<{ data: OrderActivityRow[] | null; error: { message: string } | null }>> = [];
   if (customerIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode, payment_method, payment_timing").in("customer_id", customerIds).returns<OrderActivityRow[]>(),
     );
   }
   if (userIds.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("user_id", userIds).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode, payment_method, payment_timing").in("user_id", userIds).returns<OrderActivityRow[]>(),
     );
   }
   if (emails.length > 0) {
     orderQueries.push(async () =>
-      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode").in("email", emails).returns<OrderActivityRow[]>(),
+      admin.from("orders").select("id, customer_id, user_id, email, created_at, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, status, price_mode, payment_method, payment_timing").in("email", emails).returns<OrderActivityRow[]>(),
     );
   }
 
@@ -872,7 +875,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     async () =>
       admin
         .from("orders")
-        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
         .eq("customer_id", customerId)
         .order("created_at", { ascending: false })
         .limit(30)
@@ -884,7 +887,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .eq("user_id", customerRow.user_id)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -897,7 +900,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .ilike("email", normalizedEmail)
           .is("user_id", null)
           .order("created_at", { ascending: false })
@@ -1000,6 +1003,8 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     total: order.total,
     status: order.status,
     price_mode: order.price_mode,
+    payment_method: order.payment_method,
+    payment_timing: order.payment_timing,
   }));
   const ordersByCustomerId = new Map([[customerId, activityOrders]]);
   const ordersByUserId = customerRow.user_id ? new Map([[customerRow.user_id, activityOrders]]) : new Map<string, OrderActivityRow[]>();
@@ -1030,6 +1035,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
         created_at: order.created_at,
         status: order.status,
         payment_method: order.payment_method,
+        payment_timing: order.payment_timing,
         payment_status: payment?.payment_status ?? payment?.status ?? null,
         bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
         has_transfer_receipt: Boolean(payment?.transfer_receipt_public_id || payment?.transfer_receipt_url),

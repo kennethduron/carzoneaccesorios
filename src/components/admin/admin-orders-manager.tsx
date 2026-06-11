@@ -9,6 +9,7 @@ import {
   addOrderInternalNoteAction,
   extendOrderReservationAction,
   generateInvoiceFromOrderAction,
+  updateCashOnDeliveryFeeAction,
   updateOrderPaymentStatusAction,
   updateOrderStatusAction,
 } from "@/app/admin/pedidos/actions";
@@ -25,6 +26,7 @@ import type { AdminOrderRow } from "@/types/orders";
 import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
 import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
 import { formatHnDateTime } from "@/utils/format";
+import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import {
   canonicalOrderStatus,
   getAllowedOrderStatusOptions,
@@ -245,6 +247,11 @@ export function AdminOrdersManager({
       return;
     }
 
+    if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)) {
+      showAdminMessage("Debes confirmar el cargo contra entrega antes de emitir la factura.", false);
+      return;
+    }
+
     if (!canIssueInvoice(order)) {
       showAdminMessage("No se puede emitir factura: valida pago confirmado, pedido activo e inventario no liberado.", false);
       return;
@@ -278,6 +285,14 @@ export function AdminOrdersManager({
     startTransition(async () => {
       const result = await updateOrderStatusAction(order.id, status, reason);
       showAdminMessage(result.message ?? "Estado del pedido actualizado.", result.ok);
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function updateCashOnDeliveryFee(order: AdminOrderRow, fee: number) {
+    startTransition(async () => {
+      const result = await updateCashOnDeliveryFeeAction(order.id, fee);
+      showAdminMessage(result.message, result.ok);
       if (result.ok) router.refresh();
     });
   }
@@ -476,6 +491,7 @@ export function AdminOrdersManager({
             onExtendReservation={() => setOrderToExtend(selectedOrder)}
             onAddInternalNote={(note) => addInternalNote(selectedOrder, note)}
             onUpdateOrderStatus={(status) => updateOrderStatus(selectedOrder, status)}
+            onUpdateCashOnDeliveryFee={(fee) => updateCashOnDeliveryFee(selectedOrder, fee)}
             onReprintInvoice={() => reprintInvoice(selectedOrder)}
           />
         ) : null}
@@ -544,7 +560,14 @@ function canIssueInvoice(order: AdminOrderRow) {
   const normalizedStatus = canonicalOrderStatus(order.status);
   const orderReady = ["confirmado", "preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(normalizedStatus);
   const reservationReleased = ["released", "expired", "canceled"].includes(order.order_reservation_status);
-  return paymentConfirmed && orderReady && normalizedStatus !== "cancelado" && !reservationReleased && !orderHasActiveInvoice(order);
+  return (
+    paymentConfirmed &&
+    orderReady &&
+    normalizedStatus !== "cancelado" &&
+    !reservationReleased &&
+    !orderHasActiveInvoice(order) &&
+    !isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)
+  );
 }
 
 function OrderItemCard({
@@ -602,6 +625,7 @@ function OrderDetail({
   onExtendReservation,
   onAddInternalNote,
   onUpdateOrderStatus,
+  onUpdateCashOnDeliveryFee,
   onReprintInvoice,
 }: {
   order: AdminOrderRow;
@@ -627,6 +651,7 @@ function OrderDetail({
   onExtendReservation: () => void;
   onAddInternalNote: (note: string) => void;
   onUpdateOrderStatus: (status: AdminOrderRow["status"]) => void;
+  onUpdateCashOnDeliveryFee: (fee: number) => void;
   onReprintInvoice: () => void;
 }) {
   const normalizedStatus = canonicalOrderStatus(order.status);
@@ -640,6 +665,19 @@ function OrderDetail({
   const invoiceCanBeIssued = canIssueInvoice(order);
   const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
   const hasActiveInvoice = Boolean(order.invoice_number && !invoiceIsCancelled);
+  const cashOnDeliveryRequired = cashOnDeliveryApplies(order.payment_method, order.payment_timing);
+  const cashOnDeliveryPending = isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee);
+  const canEditCashOnDelivery =
+    (canManageOrders || canConfirmPayments) && cashOnDeliveryRequired && !hasActiveInvoice && normalizedStatus !== "cancelado";
+  const cashOnDeliveryLockedReason = hasActiveInvoice
+    ? "El cargo contra entrega no puede modificarse porque la factura fiscal ya fue emitida."
+    : normalizedStatus === "cancelado"
+      ? "No se puede modificar el cargo contra entrega de un pedido cancelado."
+      : null;
+  const [cashOnDeliveryFeeDraft, setCashOnDeliveryFeeDraft] = useState({
+    orderId: order.id,
+    value: String(order.cash_on_delivery_fee ?? 0),
+  });
   const canCancelOrder = normalizedStatus !== "cancelado" && allowedStatuses.some((option) => option.value === "cancelado");
   const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
   const canConfirmPayment =
@@ -664,6 +702,8 @@ function OrderDetail({
     { status: "entregado", label: "Marcar entregado" },
   ] satisfies Array<{ status: AdminOrderRow["status"]; label: string }>;
   const nextStatusActions = nextStatusActionOptions.filter((action) => allowedStatuses.some((option) => option.value === action.status));
+  const cashOnDeliveryFeeInput =
+    cashOnDeliveryFeeDraft.orderId === order.id ? cashOnDeliveryFeeDraft.value : String(order.cash_on_delivery_fee ?? 0);
 
   return (
     <article className="min-w-0 overflow-hidden rounded-lg border border-black/10 bg-white">
@@ -822,7 +862,10 @@ function OrderDetail({
               <CompactInfo label="ISV incluido 15%" value={formatCurrency(order.tax)} />
               <CompactInfo label="Total" value={formatCurrency(order.total)} />
               <CompactInfo label="Envío" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
-              <CompactInfo label="Contra entrega" value={formatCurrency(order.cash_on_delivery_fee)} />
+              <CompactInfo
+                label="Contra entrega"
+                value={cashOnDeliveryRequired && cashOnDeliveryPending ? "Pendiente de confirmación" : formatCurrency(order.cash_on_delivery_fee)}
+              />
               <CompactInfo label="Recargo mínimo" value={formatCurrency(order.small_order_fee)} />
               <CompactInfo label="Descuentos" value={order.discount_total > 0 ? `-${formatCurrency(order.discount_total)}` : formatCurrency(0)} />
               <CompactInfo label="Otros cargos" value={formatCurrency(order.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))} />
@@ -861,6 +904,48 @@ function OrderDetail({
           </details>
         ) : null}
 
+        {canViewFinancialData && cashOnDeliveryRequired ? (
+          <section className="rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <h3 className="font-semibold">Contra entrega</h3>
+                <p className="mt-1">
+                  Estado: {cashOnDeliveryPending ? "pendiente de confirmación" : `cargo definido en ${formatCurrency(order.cash_on_delivery_fee)}`}.
+                </p>
+                <p className="mt-1">Total actual del pedido: {formatCurrency(order.total)}</p>
+                {cashOnDeliveryLockedReason ? <p className="mt-2 font-medium">{cashOnDeliveryLockedReason}</p> : null}
+                {cashOnDeliveryPending ? (
+                  <p className="mt-2 font-medium">Debes confirmar el cargo contra entrega antes de emitir la factura.</p>
+                ) : null}
+              </div>
+              <Badge tone={cashOnDeliveryPending ? "warning" : "success"}>
+                {cashOnDeliveryPending ? "Pendiente" : "Definido"}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,220px)_auto]">
+              <label>
+                <span className="mb-1 block text-xs font-medium uppercase text-[#7c2d12]/75">Cargo contra entrega</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={cashOnDeliveryFeeInput}
+                  onChange={(event) => setCashOnDeliveryFeeDraft({ orderId: order.id, value: event.target.value })}
+                  disabled={isPending || !canEditCashOnDelivery}
+                />
+              </label>
+              <Button
+                onClick={() => onUpdateCashOnDeliveryFee(Number(cashOnDeliveryFeeInput))}
+                disabled={isPending || !canEditCashOnDelivery || !Number.isFinite(Number(cashOnDeliveryFeeInput)) || Number(cashOnDeliveryFeeInput) < 0}
+                variant="primary"
+                className="w-full self-end sm:w-auto"
+              >
+                {isPending ? "Guardando..." : "Guardar cargo contra entrega"}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
         {canCorrectInvoices && canViewFinancialData ? <FiscalCorrectionHistory history={order.fiscal_correction_history} /> : null}
 
         {isCard && !paymentIsApproved ? (
@@ -875,7 +960,9 @@ function OrderDetail({
         ) : null}
         {canGenerateInvoices && !order.invoice_number && !invoiceCanBeIssued ? (
           <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            La factura solo puede generarse cuando el pago esté confirmado. También debe ser un pedido activo con inventario no liberado.
+            {cashOnDeliveryPending
+              ? "Debes confirmar el cargo contra entrega antes de emitir la factura."
+              : "La factura solo puede generarse cuando el pago esté confirmado. También debe ser un pedido activo con inventario no liberado."}
           </p>
         ) : null}
         {message ? <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}

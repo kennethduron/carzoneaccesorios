@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { Search } from "lucide-react";
 import { getPublicOrderTrackingAction, type PublicTrackingOrder } from "@/app/rastreo/actions";
 import { useToast } from "@/contexts/toast-context";
+import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -127,6 +128,8 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
   const progressIndex = useMemo(() => (order ? activeProgressIndex(order) : -1), [order]);
   const progressSteps = useMemo(() => (order ? trackingSteps(order) : []), [order]);
   const orderIsCancelled = order ? canonicalOrderStatus(order.orderStatus) === "cancelado" : false;
+  const cashOnDeliveryRequired = order ? cashOnDeliveryApplies(order.paymentMethod, order.paymentTiming) : false;
+  const cashOnDeliveryPending = order ? isCashOnDeliveryPending(order.paymentMethod, order.paymentTiming, order.cashOnDeliveryFee) : false;
 
   function searchOrder(nextCode = code) {
     const normalizedCode = nextCode.trim().toUpperCase();
@@ -210,9 +213,10 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             <InfoBlock label="Estado del pago" value={customerPaymentLabel(order)} />
           </div>
 
-          {order.cashOnDeliveryFee > 0 ? (
+          {cashOnDeliveryRequired ? (
             <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-              Este pedido incluye tarifa contra entrega porque el pago se realizará al recibir.
+              Contra entrega: {cashOnDeliveryPending ? "pendiente de confirmación" : formatCurrency(order.cashOnDeliveryFee)}.
+              {cashOnDeliveryPending ? " El total mostrado es estimado y se actualizará cuando nuestro equipo confirme el cargo." : " El total mostrado ya incluye este cargo."}
             </p>
           ) : null}
 

@@ -137,6 +137,7 @@ export type CrmCustomerOrderProfileRow = {
   created_at: string;
   status: string;
   payment_method: string;
+  payment_timing: "before_delivery" | "on_delivery";
   payment_status: string | null;
   bank_reference_number: string | null;
   has_transfer_receipt: boolean;
