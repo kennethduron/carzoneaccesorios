@@ -17,6 +17,7 @@ import type {
   WholesaleAccessState,
   WholesaleAccount,
   WholesaleAccountStatus,
+  WholesaleCustomerType,
   WholesaleFirstPurchaseRequirement,
 } from "@/types/wholesale";
 
@@ -35,6 +36,8 @@ type CustomerAccessRow = {
   wholesale_requested_at: string | null;
   wholesale_request_source: string | null;
   wholesale_approved_notice_seen: boolean | null;
+  wholesale_customer_type: WholesaleCustomerType;
+  wholesale_first_purchase_completed: boolean;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
 };
@@ -56,15 +59,19 @@ function isCancelledOrder(status: string | null) {
   return normalized === "cancelado" || normalized === "cancelled";
 }
 
-async function getFirstPurchaseRequirement(customerId: string): Promise<WholesaleFirstPurchaseRequirement> {
+async function getFirstPurchaseRequirement(customer: CustomerAccessRow): Promise<WholesaleFirstPurchaseRequirement | null> {
+  if (customer.wholesale_customer_type === "existing") {
+    return null;
+  }
+
   const admin = getSupabaseAdminClient();
   const [settings, historyResult, ordersResult] = await Promise.all([
     getPublicCompanySettings(),
-    admin.rpc("has_completed_wholesale_order", { target_customer_id: customerId }),
+    admin.rpc("has_completed_wholesale_order", { target_customer_id: customer.id }),
     admin
       .from("orders")
       .select("subtotal, total, status")
-      .eq("customer_id", customerId)
+      .eq("customer_id", customer.id)
       .eq("price_mode", "wholesale")
       .returns<WholesaleOrderHistoryRow[]>(),
   ]);
@@ -72,7 +79,7 @@ async function getFirstPurchaseRequirement(customerId: string): Promise<Wholesal
   const accumulated = (ordersResult.data ?? [])
     .filter((order) => !isCancelledOrder(order.status))
     .reduce((sum, order) => sum + Number(order.total ?? order.subtotal ?? 0), 0);
-  const completed = Boolean(historyResult.data);
+  const completed = customer.wholesale_first_purchase_completed || Boolean(historyResult.data);
 
   return {
     minimum,
@@ -91,6 +98,7 @@ function toAccount(customer: CustomerAccessRow, requirement: WholesaleFirstPurch
     customerName: customer.contact_name,
     businessName,
     status: "approved",
+    customerType: customer.wholesale_customer_type,
     firstPurchaseRequirement: requirement,
   };
 }
@@ -127,6 +135,7 @@ function guestWholesaleState(): WholesaleAccessState {
     canEnterCode: false,
     account: null,
     shouldShowApprovedNotice: false,
+    customerType: null,
     firstPurchaseRequirement: null,
   };
 }
@@ -139,6 +148,7 @@ function regularWholesaleState(): WholesaleAccessState {
     canEnterCode: false,
     account: null,
     shouldShowApprovedNotice: false,
+    customerType: null,
     firstPurchaseRequirement: null,
   };
 }
@@ -151,6 +161,7 @@ function pendingWholesaleState(): WholesaleAccessState {
     canEnterCode: false,
     account: null,
     shouldShowApprovedNotice: false,
+    customerType: null,
     firstPurchaseRequirement: null,
   };
 }
@@ -163,6 +174,7 @@ function rejectedWholesaleState(): WholesaleAccessState {
     canEnterCode: false,
     account: null,
     shouldShowApprovedNotice: false,
+    customerType: null,
     firstPurchaseRequirement: null,
   };
 }
@@ -175,6 +187,7 @@ function suspendedWholesaleState(): WholesaleAccessState {
     canEnterCode: false,
     account: null,
     shouldShowApprovedNotice: false,
+    customerType: null,
     firstPurchaseRequirement: null,
   };
 }
@@ -193,7 +206,7 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
   const { data: customers, error } = await admin
     .from("customers")
     .select(
-      "id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, status, active",
+      "id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, status, active",
     )
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
@@ -213,6 +226,7 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
       canEnterCode: false,
       account: null,
       shouldShowApprovedNotice: false,
+      customerType: null,
       firstPurchaseRequirement: null,
     };
   }
@@ -221,14 +235,18 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
   const approvedCustomer = customerRows.find((customer) => getWholesaleStatus(customer) === "approved" && customer.active);
 
   if (approvedCustomer) {
-    const requirement = await getFirstPurchaseRequirement(approvedCustomer.id);
+    const requirement = await getFirstPurchaseRequirement(approvedCustomer);
+    const isExisting = approvedCustomer.wholesale_customer_type === "existing";
     return {
       kind: "approved",
       title: "Mayorista aprobado",
-      message: "Ya tienes acceso mayorista. Los precios mayoristas se aplicarán automáticamente cuando inicies sesión.",
+      message: isExisting
+        ? "Cuenta mayorista aprobada. Puedes acceder a precios mayoristas sin requisito de primera compra mínima."
+        : "Cuenta mayorista aprobada. Para tu primera compra mayorista, el monto mínimo requerido es de L 10,000. Después de esa primera compra, podrás comprar cualquier monto.",
       canEnterCode: false,
       account: toAccount(approvedCustomer, requirement),
       shouldShowApprovedNotice: approvedCustomer.wholesale_approved_notice_seen === false,
+      customerType: approvedCustomer.wholesale_customer_type,
       firstPurchaseRequirement: requirement,
     };
   }
@@ -296,7 +314,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   const { data: customerRows, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, status, active",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, status, active",
     )
     .or(customerFilter)
     .order("updated_at", { ascending: false })
@@ -309,7 +327,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   const customers = customerRows ?? [];
   if (customers.some((customer) => getWholesaleStatus(customer) === "approved")) {
     const approvedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "approved")!;
-    const requirement = await getFirstPurchaseRequirement(approvedCustomer.id);
+    const requirement = await getFirstPurchaseRequirement(approvedCustomer);
     await writeRegisteredWholesaleAudit({
       action: "public_form.wholesale.overwrite_blocked",
       customerId: approvedCustomer.id,
@@ -328,6 +346,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
         canEnterCode: false,
         account: toAccount(approvedCustomer, requirement),
         shouldShowApprovedNotice: false,
+        customerType: approvedCustomer.wholesale_customer_type,
         firstPurchaseRequirement: requirement,
       },
     };

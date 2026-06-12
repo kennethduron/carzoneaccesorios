@@ -1,5 +1,6 @@
 export type WholesaleAccountStatus = "pending" | "approved" | "rejected" | "suspended";
 export type WholesaleCodeStatus = "active" | "inactive" | "expired" | "disabled";
+export type WholesaleCustomerType = "new" | "existing";
 
 export type WholesaleAccount = {
   id: string;
@@ -7,6 +8,7 @@ export type WholesaleAccount = {
   customerName: string;
   businessName: string;
   status: WholesaleAccountStatus;
+  customerType: WholesaleCustomerType;
   firstPurchaseRequirement: WholesaleFirstPurchaseRequirement | null;
 };
 
@@ -34,6 +36,7 @@ export type WholesaleAccessState = {
   canEnterCode: boolean;
   account: WholesaleAccount | null;
   shouldShowApprovedNotice: boolean;
+  customerType: WholesaleCustomerType | null;
   firstPurchaseRequirement: WholesaleFirstPurchaseRequirement | null;
 };
 

@@ -12,6 +12,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
 import type { AppRole, AuthProfile } from "@/types/auth";
 import type { CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
+import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
   nonNegativeNumber,
@@ -88,6 +89,7 @@ const permanentDeletionRoles: AppRole[] = ["business_owner", "admin", "technical
 const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 const commercialHistoryDeletionMessage = "No se puede eliminar esta cuenta porque tiene historial comercial o fiscal. Puedes suspenderla.";
 const wholesaleManagementPermissionMessage = "Solo usuarios autorizados pueden cambiar el estado mayorista.";
+const wholesaleManagementRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -137,7 +139,28 @@ function hasProtectedEmail(email: string | null | undefined) {
 }
 
 function canManageWholesale(profile: AuthProfile) {
-  return hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
+  return (
+    wholesaleManagementRoles.includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email)
+  );
+}
+
+async function auditDeniedWholesaleMutation(profile: AuthProfile, customerId: string, operation: string) {
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customerId)
+      ? customerId
+      : null,
+    action: "wholesale_management.denied",
+    oldData: {
+      actor_id: profile.id,
+      actor_role: profile.role,
+    },
+    newData: {
+      attempted_operation: operation,
+      result: "denied",
+    },
+  });
 }
 
 async function getWholesaleAuditContext(profile: AuthProfile, reason: string) {
@@ -498,11 +521,19 @@ export async function setCrmFollowupStatusAction(
   return { ok: true, message: status === "completed" ? "Actividad completada." : "Actividad actualizada." };
 }
 
-export async function approveWholesaleRequestAction(customerId: string): Promise<CrmMutationResult> {
+export async function approveWholesaleRequestAction(
+  customerId: string,
+  wholesaleCustomerType: WholesaleCustomerType,
+): Promise<CrmMutationResult> {
   const profile = await requireSession();
 
   if (!canManageWholesale(profile)) {
+    await auditDeniedWholesaleMutation(profile, customerId, "approve");
     return { ok: false, message: wholesaleManagementPermissionMessage };
+  }
+
+  if (!["new", "existing"].includes(wholesaleCustomerType)) {
+    return { ok: false, message: "Selecciona un tipo mayorista válido." };
   }
 
   const customer = uuidLike(customerId, "Cliente");
@@ -513,7 +544,9 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   const admin = getSupabaseAdminClient();
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
-    .select("id, email, business_name, company_name, contact_name, phone, notes, wholesale_status, is_wholesale, status, active")
+    .select(
+      "id, email, business_name, company_name, contact_name, phone, notes, wholesale_status, wholesale_customer_type, wholesale_first_purchase_completed, is_wholesale, status, active",
+    )
     .eq("id", customer.value)
     .maybeSingle<{
       id: string;
@@ -524,6 +557,8 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       phone: string;
       notes: string | null;
       wholesale_status: string | null;
+      wholesale_customer_type: WholesaleCustomerType;
+      wholesale_first_purchase_completed: boolean;
       is_wholesale: boolean;
       status: string;
       active: boolean;
@@ -547,14 +582,9 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   const hasActiveAccount = Boolean(userProfile?.id && userProfile.active !== false);
   const nextWholesaleStatus = "approved";
   const approvedAt = new Date().toISOString();
-  const nextNotes = [
-    customerRow.notes,
-    hasActiveAccount
-      ? `Mayorista aprobado por ${profile.full_name || profile.email}.`
-      : "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesión.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const nextNotes = hasActiveAccount
+    ? customerRow.notes
+    : [customerRow.notes, "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesión."].filter(Boolean).join("\n");
 
   const { error: updateError } = await admin
     .from("customers")
@@ -564,6 +594,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       company_name: customerRow.company_name ?? customerRow.business_name ?? customerRow.contact_name,
       is_wholesale: hasActiveAccount,
       wholesale_status: nextWholesaleStatus,
+      wholesale_customer_type: wholesaleCustomerType,
       wholesale_approved_at: approvedAt,
       wholesale_approved_notice_seen: false,
       status: hasActiveAccount ? "active" : "pending_account",
@@ -581,10 +612,12 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   await writeAuditLog({
     tableName: "customers",
     recordId: customer.value,
-    action: "wholesale_request.approved",
+    action: `wholesale_request.approved_${wholesaleCustomerType}`,
     oldData: {
       is_wholesale: customerRow.is_wholesale,
       wholesale_status: customerRow.wholesale_status,
+      wholesale_customer_type: customerRow.wholesale_customer_type,
+      wholesale_first_purchase_completed: customerRow.wholesale_first_purchase_completed,
       status: customerRow.status,
       active: customerRow.active,
     },
@@ -592,6 +625,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
       user_id: userProfile?.id ?? null,
       is_wholesale: hasActiveAccount,
       wholesale_status: nextWholesaleStatus,
+      wholesale_customer_type: wholesaleCustomerType,
       wholesale_approved_at: approvedAt,
       wholesale_approved_notice_seen: false,
       status: hasActiveAccount ? "active" : "pending_account",
@@ -605,7 +639,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   await addWholesaleHistoryNote({
     customerId: customer.value,
     userId: profile.id,
-    note: "Solicitud mayorista aprobada.",
+    note: `Solicitud aprobada como mayorista ${wholesaleCustomerType === "existing" ? "existente" : "nuevo"}.`,
   });
 
   await completePendingWholesaleFollowups(customer.value);
@@ -613,6 +647,7 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
     customerId: customer.value,
     email,
     name: customerRow.contact_name,
+    wholesaleCustomerType,
   });
 
   revalidatePath("/admin/crm");
@@ -622,8 +657,136 @@ export async function approveWholesaleRequestAction(customerId: string): Promise
   return {
     ok: true,
     message: hasActiveAccount
-      ? "Mayorista aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesión."
+      ? `Mayorista ${wholesaleCustomerType === "existing" ? "existente" : "nuevo"} aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesión.`
       : "Solicitud aprobada, pero falta una cuenta activa vinculada para activar precios al iniciar sesión.",
+  };
+}
+
+export async function changeWholesaleCustomerTypeAction(
+  customerId: string,
+  wholesaleCustomerType: WholesaleCustomerType,
+): Promise<CrmMutationResult> {
+  const profile = await requireSession();
+
+  if (!canManageWholesale(profile)) {
+    await auditDeniedWholesaleMutation(profile, customerId, "change_type");
+    return { ok: false, message: wholesaleManagementPermissionMessage };
+  }
+
+  if (!["new", "existing"].includes(wholesaleCustomerType)) {
+    return { ok: false, message: "Selecciona un tipo mayorista válido." };
+  }
+
+  const customer = uuidLike(customerId, "Cliente");
+  if (!customer.ok) {
+    return { ok: false, message: customer.message };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: customerRow, error: customerError } = await admin
+    .from("customers")
+    .select(
+      "id, wholesale_status, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at",
+    )
+    .eq("id", customer.value)
+    .maybeSingle<{
+      id: string;
+      wholesale_status: string | null;
+      wholesale_customer_type: WholesaleCustomerType;
+      wholesale_first_purchase_completed: boolean;
+      wholesale_first_purchase_completed_at: string | null;
+    }>();
+
+  if (customerError || !customerRow) {
+    return { ok: false, message: "No pudimos encontrar el cliente mayorista." };
+  }
+
+  if (customerRow.wholesale_status !== "approved" && customerRow.wholesale_status !== "suspended") {
+    return { ok: false, message: "Solo puedes cambiar el tipo de una cuenta mayorista aprobada o suspendida." };
+  }
+
+  if (customerRow.wholesale_customer_type === wholesaleCustomerType) {
+    return { ok: true, message: "El cliente ya tiene ese tipo mayorista." };
+  }
+
+  let completed = customerRow.wholesale_first_purchase_completed;
+  let completedAt = customerRow.wholesale_first_purchase_completed_at;
+
+  if (wholesaleCustomerType === "new" && !completed) {
+    const { data: settingsRow } = await admin
+      .from("company_settings")
+      .select("first_wholesale_minimum")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle<{ first_wholesale_minimum: number | null }>();
+    const firstWholesaleMinimum = Math.max(0, Number(settingsRow?.first_wholesale_minimum ?? 10000));
+    const { data: previousOrders } = await admin
+      .from("orders")
+      .select("created_at, subtotal, total")
+      .eq("customer_id", customer.value)
+      .eq("price_mode", "wholesale")
+      .not("status", "in", '("cancelado","cancelled")')
+      .order("created_at", { ascending: true })
+      .returns<Array<{ created_at: string; subtotal: number | null; total: number | null }>>();
+    const firstValidOrder = (previousOrders ?? []).find(
+      (order) => firstWholesaleMinimum <= 0 || Number(order.total ?? order.subtotal ?? 0) >= firstWholesaleMinimum,
+    );
+    completed = Boolean(firstValidOrder);
+    completedAt = firstValidOrder?.created_at ?? null;
+  }
+
+  const { error: updateError } = await admin
+    .from("customers")
+    .update({
+      wholesale_customer_type: wholesaleCustomerType,
+      wholesale_first_purchase_completed: completed,
+      wholesale_first_purchase_completed_at: completedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", customer.value);
+
+  if (updateError) {
+    return { ok: false, message: "No pudimos cambiar el tipo mayorista." };
+  }
+
+  const note = `Tipo mayorista cambiado de ${customerRow.wholesale_customer_type === "existing" ? "existente" : "nuevo"} a ${
+    wholesaleCustomerType === "existing" ? "existente" : "nuevo"
+  }.`;
+  const auditContext = await getWholesaleAuditContext(profile, note);
+  await writeAuditLog({
+    tableName: "customers",
+    recordId: customer.value,
+    action: `wholesale.type_changed_${customerRow.wholesale_customer_type}_to_${wholesaleCustomerType}`,
+    oldData: {
+      wholesale_customer_type: customerRow.wholesale_customer_type,
+      wholesale_first_purchase_completed: customerRow.wholesale_first_purchase_completed,
+      wholesale_first_purchase_completed_at: customerRow.wholesale_first_purchase_completed_at,
+    },
+    newData: {
+      wholesale_customer_type: wholesaleCustomerType,
+      wholesale_first_purchase_completed: completed,
+      wholesale_first_purchase_completed_at: completedAt,
+      audit_context: auditContext,
+    },
+    ipAddress: auditContext.ipAddress,
+    userAgent: auditContext.userAgent,
+  });
+  await addWholesaleHistoryNote({ customerId: customer.value, userId: profile.id, note });
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/clientes-mayoristas");
+  revalidatePath("/cuenta");
+  revalidatePath("/catalogo");
+
+  return {
+    ok: true,
+    message:
+      wholesaleCustomerType === "existing"
+        ? "Tipo actualizado a mayorista existente. Ya no se exige la primera compra mínima."
+        : completed
+          ? "Tipo actualizado a mayorista nuevo. La primera compra ya consta como completada."
+          : "Tipo actualizado a mayorista nuevo. Se aplicará la primera compra mínima de L 10,000.",
   };
 }
 
@@ -638,6 +801,7 @@ async function setWholesaleStatusAction(input: {
   const customer = uuidLike(input.customerId, "Cliente");
 
   if (!canManageWholesale(profile)) {
+    await auditDeniedWholesaleMutation(profile, input.customerId, input.action);
     return { ok: false, message: wholesaleManagementPermissionMessage };
   }
 

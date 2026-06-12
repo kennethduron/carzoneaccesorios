@@ -449,10 +449,12 @@ function normalizeCustomer(
 
   const latestOrderAt = latestDate(...Array.from(relatedOrders.values()).map((order) => order.created_at));
   const totalSpent = Array.from(relatedOrders.values()).reduce((sum, order) => sum + toNumber(order.total), 0);
-  const hasWholesalePurchase = Array.from(relatedOrders.values()).some((order) => {
+  const hasWholesalePurchase =
+    row.wholesale_first_purchase_completed ||
+    Array.from(relatedOrders.values()).some((order) => {
     const status = String(order.status ?? "").trim().toLowerCase();
     return order.price_mode === "wholesale" && status !== "cancelado" && status !== "cancelled";
-  });
+    });
   const authMeta = row.user_id ? authByUserId.get(row.user_id) : null;
   const emailConfirmedAt = authMeta?.email_confirmed_at ?? null;
   const confirmedAt = authMeta?.confirmed_at ?? null;
@@ -524,7 +526,9 @@ function normalizeCustomer(
     wholesale_first_purchase_completed: hasWholesalePurchase,
     wholesale_lifecycle_status:
       wholesaleStatus === "approved"
-        ? hasWholesalePurchase
+        ? row.wholesale_customer_type === "existing"
+          ? "Mayorista activo"
+          : hasWholesalePurchase
           ? "Mayorista activo"
           : "Pendiente de primera compra"
         : wholesaleStatus === "pending"
@@ -592,7 +596,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   let customersQuery = supabase
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
       { count: "exact" },
     );
 
@@ -844,7 +848,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();

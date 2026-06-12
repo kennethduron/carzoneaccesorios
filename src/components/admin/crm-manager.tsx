@@ -30,6 +30,7 @@ import {
 import {
   archiveCrmNoteAction,
   approveWholesaleRequestAction,
+  changeWholesaleCustomerTypeAction,
   deleteCustomerAccountPermanentlyAction,
   deleteTestAccountAction,
   getCustomerProfileAction,
@@ -66,6 +67,7 @@ import type {
   CrmNoteRow,
   CrmPriority,
 } from "@/types/crm";
+import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
@@ -582,14 +584,38 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
     });
   }
 
-  function approveWholesaleCustomer(customerId: string) {
+  function approveWholesaleCustomer(customerId: string, wholesaleCustomerType: WholesaleCustomerType) {
     startTransition(async () => {
-      const result = await approveWholesaleRequestAction(customerId);
+      const result = await approveWholesaleRequestAction(customerId, wholesaleCustomerType);
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message || "Mayorista aprobado correctamente.");
       } else {
         toast.error(result.message || "No se pudo aprobar el mayorista.");
+      }
+    });
+  }
+
+  async function changeWholesaleCustomerType(customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType) {
+    const confirmed = await toast.confirm({
+      title: "Cambiar tipo mayorista",
+      message: "Cambiar el tipo mayorista puede afectar la regla de primera compra mínima. ¿Deseas continuar?",
+      confirmLabel: "Cambiar tipo",
+      cancelLabel: "Cancelar",
+      tone: "neutral",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await changeWholesaleCustomerTypeAction(customer.id, wholesaleCustomerType);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
       }
     });
   }
@@ -1141,6 +1167,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
             pending={isPending}
             onClose={closeCustomerProfile}
             onApproveWholesale={approveWholesaleCustomer}
+            onChangeWholesaleType={changeWholesaleCustomerType}
             onRejectWholesale={rejectWholesaleCustomer}
             onSuspendWholesale={suspendWholesaleCustomer}
             onReactivateWholesale={reactivateWholesaleCustomer}
@@ -1314,6 +1341,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
           pending={isPending}
           onClose={closeCustomerProfile}
           onApproveWholesale={approveWholesaleCustomer}
+          onChangeWholesaleType={changeWholesaleCustomerType}
           onRejectWholesale={rejectWholesaleCustomer}
           onSuspendWholesale={suspendWholesaleCustomer}
           onReactivateWholesale={reactivateWholesaleCustomer}
@@ -2057,6 +2085,7 @@ function CustomerProfileDrawer({
   pending,
   onClose,
   onApproveWholesale,
+  onChangeWholesaleType,
   onRejectWholesale,
   onSuspendWholesale,
   onReactivateWholesale,
@@ -2075,7 +2104,8 @@ function CustomerProfileDrawer({
   error: string | null;
   pending: boolean;
   onClose: () => void;
-  onApproveWholesale: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
+  onChangeWholesaleType: (customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType) => void;
   onRejectWholesale: (customer: CrmCustomerOption) => void;
   onSuspendWholesale: (customer: CrmCustomerOption) => void;
   onReactivateWholesale: (customer: CrmCustomerOption) => void;
@@ -2225,6 +2255,7 @@ function CustomerProfileDrawer({
                   profile={profile}
                   pending={pending}
                   onApproveWholesale={onApproveWholesale}
+                  onChangeWholesaleType={onChangeWholesaleType}
                   onRejectWholesale={onRejectWholesale}
                   onSuspendWholesale={onSuspendWholesale}
                   onReactivateWholesale={onReactivateWholesale}
@@ -2595,21 +2626,22 @@ function CustomerProfileWholesale({
   profile,
   pending,
   onApproveWholesale,
+  onChangeWholesaleType,
   onRejectWholesale,
   onSuspendWholesale,
   onReactivateWholesale,
 }: {
   profile: CrmCustomerProfile;
   pending: boolean;
-  onApproveWholesale: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
+  onChangeWholesaleType: (customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType) => void;
   onRejectWholesale: (customer: CrmCustomerOption) => void;
   onSuspendWholesale: (customer: CrmCustomerOption) => void;
   onReactivateWholesale: (customer: CrmCustomerOption) => void;
 }) {
   const { customer, wholesaleHistory } = profile;
-  const firstWholesalePurchase = profile.orders.find(
-    (order) => order.price_mode === "wholesale" && !["cancelado", "cancelled"].includes(order.status),
-  );
+  const isExistingWholesale = customer.wholesale_customer_type === "existing";
+  const firstPurchaseRequired = !isExistingWholesale;
 
   return (
     <section className="rounded-lg border border-black/10 bg-white p-5">
@@ -2623,16 +2655,30 @@ function CustomerProfileWholesale({
         <InfoPill>{customer.wholesale_lifecycle_status}</InfoPill>
       </div>
       <div className="mt-4 space-y-3">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <InfoLine label="Estado" value={customer.wholesale_lifecycle_status} />
-          <InfoLine label="Mínimo primera compra" value="Total final según configuración mayorista" />
-          <InfoLine label="Primera compra mayorista" value={firstWholesalePurchase ? "Realizada" : "Pendiente"} />
+          <InfoLine label="Tipo de mayorista" value={isExistingWholesale ? "Mayorista existente" : "Mayorista nuevo"} />
+          <InfoLine label="Primera compra mínima" value={firstPurchaseRequired ? "Requerida: L 10,000" : "No requerida"} />
+          <InfoLine
+            label="Primera compra mayorista"
+            value={firstPurchaseRequired ? (customer.wholesale_first_purchase_completed ? "Realizada" : "Pendiente") : "No requerida"}
+          />
         </div>
+        <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
+          {isExistingWholesale
+            ? "Cliente mayorista anterior a la tienda web. Puede comprar con precio mayorista sin requisito de primera compra mínima."
+            : customer.wholesale_first_purchase_completed
+              ? "Cliente incorporado como mayorista nuevo. Ya completó la primera compra mayorista requerida."
+              : "Cliente incorporado como mayorista nuevo. Debe completar una primera compra mayorista mínima de L 10,000."}
+        </p>
         <div className="flex flex-wrap gap-2">
           {customer.wholesale_status === "pending" || customer.has_wholesale_request ? (
             <>
-              <Button type="button" variant="dark" disabled={pending} onClick={() => onApproveWholesale(customer.id)}>
-                Aprobar
+              <Button type="button" variant="dark" disabled={pending} onClick={() => onApproveWholesale(customer.id, "new")}>
+                Aprobar como mayorista nuevo
+              </Button>
+              <Button type="button" variant="secondary" disabled={pending} onClick={() => onApproveWholesale(customer.id, "existing")}>
+                Aprobar como mayorista existente
               </Button>
               <Button type="button" variant="ghost" disabled={pending} onClick={() => onRejectWholesale(customer)}>
                 Rechazar
@@ -2647,6 +2693,16 @@ function CustomerProfileWholesale({
           {customer.wholesale_status === "suspended" ? (
             <Button type="button" variant="dark" disabled={pending} onClick={() => onReactivateWholesale(customer)}>
               Reactivar mayorista
+            </Button>
+          ) : null}
+          {customer.wholesale_status === "approved" || customer.wholesale_status === "suspended" ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pending}
+              onClick={() => onChangeWholesaleType(customer, isExistingWholesale ? "new" : "existing")}
+            >
+              Cambiar a mayorista {isExistingWholesale ? "nuevo" : "existente"}
             </Button>
           ) : null}
         </div>
@@ -2689,7 +2745,7 @@ function CustomerProfileActions({
   pending: boolean;
   isWholesaleRequest: boolean;
   isSuspended: boolean;
-  onApproveWholesale: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
   onAddNote: (customer: CrmCustomerOption) => void;
   onCreateFollowup: (customer: CrmCustomerOption) => void;
   onSuspend: (customer: CrmCustomerOption) => void;
@@ -2748,9 +2804,14 @@ function CustomerProfileActions({
       </div>
       <div className="mt-5 flex flex-wrap gap-2 border-t border-black/10 pt-4">
         {isWholesaleRequest && !customer.is_wholesale ? (
-          <Button onClick={() => onApproveWholesale(customer.id)} disabled={pending} variant="dark">
-            Aprobar como mayorista
-          </Button>
+          <>
+            <Button onClick={() => onApproveWholesale(customer.id, "new")} disabled={pending} variant="dark">
+              Aprobar como mayorista nuevo
+            </Button>
+            <Button onClick={() => onApproveWholesale(customer.id, "existing")} disabled={pending} variant="secondary">
+              Aprobar como mayorista existente
+            </Button>
+          </>
         ) : null}
         {isSuspended ? (
           <Button onClick={() => onReactivate(customer)} disabled={pending} variant="dark">
@@ -2838,7 +2899,7 @@ function CustomerDetailCard({
   pending: boolean;
   notes: CrmNoteRow[];
   followups: CrmFollowupRow[];
-  onApproveWholesale: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
   onSuspend: (customer: CrmCustomerOption) => void;
   onReactivate: (customer: CrmCustomerOption) => void;
   onDeleteTest: (customer: CrmCustomerOption) => void;
@@ -2922,9 +2983,14 @@ function CustomerDetailCard({
               <p className="mt-1 text-xs text-[#7c2d12]/80">
                 Aprobar activa precios mayoristas cuando existe una cuenta vinculada y activa.
               </p>
-              <Button onClick={() => onApproveWholesale(customer.id)} disabled={pending} variant="dark" className="mt-3">
-                Aprobar como mayorista
-              </Button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button onClick={() => onApproveWholesale(customer.id, "new")} disabled={pending} variant="dark">
+                  Aprobar como mayorista nuevo
+                </Button>
+                <Button onClick={() => onApproveWholesale(customer.id, "existing")} disabled={pending} variant="secondary">
+                  Aprobar como mayorista existente
+                </Button>
+              </div>
             </div>
           ) : null}
           <div className="flex flex-wrap gap-2">
@@ -2976,7 +3042,7 @@ function CustomerAccountsTable({
   customers: CrmCustomerOption[];
   pending: boolean;
   onSelect: (customerId: string) => void;
-  onApproveWholesale: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
   onSuspend: (customer: CrmCustomerOption) => void;
   onReactivate: (customer: CrmCustomerOption) => void;
   onDeleteTest: (customer: CrmCustomerOption) => void;
@@ -3065,7 +3131,7 @@ function CustomerAccountsTable({
                           <ExternalLink size={16} />
                         </LinkIconButton>
                         {isWholesaleRequest ? (
-                          <IconButton label="Aprobar mayorista" onClick={() => onApproveWholesale(customer.id)}>
+                          <IconButton label="Aprobar como mayorista nuevo" onClick={() => onApproveWholesale(customer.id, "new")}>
                             <CheckCircle2 size={16} />
                           </IconButton>
                         ) : null}

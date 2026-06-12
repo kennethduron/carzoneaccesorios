@@ -110,7 +110,7 @@ export default async function CuentaPage({
   const firstPurchaseRequirement = wholesaleState.firstPurchaseRequirement;
   const wholesaleLifecycleStatus =
     wholesaleState.kind === "approved"
-      ? firstPurchaseRequirement?.completed
+      ? wholesaleState.customerType === "existing" || firstPurchaseRequirement?.completed
         ? "Mayorista activo"
         : "Pendiente de primera compra"
       : wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado";
@@ -163,21 +163,23 @@ export default async function CuentaPage({
           <WholesaleAccountRequestCard initialState={wholesaleState} context="account" />
         </div>
 
-        {wholesaleState.kind === "approved" && firstPurchaseRequirement && firstPurchaseRequirement.minimum > 0 ? (
+        {wholesaleState.kind === "approved" ? (
           <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
                 <p className="text-sm text-black/50">Estado mayorista</p>
                 <h2 className="mt-1 text-xl font-semibold">{wholesaleLifecycleStatus}</h2>
                 <p className="mt-2 text-sm text-black/60">
-                  Tu primera compra mayorista debe alcanzar un total final de L 10,000.00 o más.
+                  {wholesaleState.customerType === "existing"
+                    ? "Cuenta mayorista aprobada. Puedes acceder a precios mayoristas sin requisito de primera compra mínima."
+                    : "Cuenta mayorista aprobada. Para tu primera compra mayorista, el monto mínimo requerido es de L 10,000. Después de esa primera compra, podrás comprar cualquier monto."}
                 </p>
               </div>
               <Link href="/catalogo" className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white">
                 Comprar ahora
               </Link>
             </div>
-            {!firstPurchaseRequirement.completed ? (
+            {firstPurchaseRequirement && !firstPurchaseRequirement.completed ? (
               <div className="mt-4">
                 <WholesaleRequirementSummary requirement={firstPurchaseRequirement} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -186,11 +188,11 @@ export default async function CuentaPage({
                   <Info label="Total final faltante" value={formatCurrency(firstPurchaseRequirement.missing)} />
                 </div>
               </div>
-            ) : (
+            ) : wholesaleState.customerType === "new" ? (
               <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
                 Primera compra completada. Tus compras mayoristas posteriores no tienen monto mínimo.
               </p>
-            )}
+            ) : null}
           </section>
         ) : null}
 

@@ -165,7 +165,8 @@ export function CheckoutView({
   const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
   const blocksWholesaleQuantityMinimum = priceMode === "wholesale" && wholesaleQuantityIssues.length > 0;
 
-  const wholesaleMinimumBlockMessage = `Tu primera compra mayorista debe alcanzar un total final de ${formatCurrency(settings.first_wholesale_minimum)} o más. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo de primera compra mayorista.`;
+  const wholesaleMinimumBlockMessage =
+    "Para activar tu primera compra mayorista, el monto mínimo debe ser de L 10,000. Después de tu primera compra mayorista, podrás comprar cualquier monto.";
   const wholesaleQuantityBlockMessage =
     wholesaleQuantityIssues.length === 1
       ? `No se puede crear el pedido. El producto ${wholesaleQuantityIssues[0].productName} requiere mínimo ${wholesaleQuantityIssues[0].minimumQuantity} unidades para compra mayorista.`
@@ -876,7 +877,7 @@ export function CheckoutView({
           >
             <p>
               {blocksFirstWholesaleOrder
-                ? `Tu primera compra mayorista debe alcanzar un total final de ${formatCurrency(settings.first_wholesale_minimum)} o más. Te faltan ${formatCurrency(wholesaleMinimumMissing)} para completar el mínimo de primera compra mayorista.`
+                ? wholesaleMinimumBlockMessage
                 : "Has alcanzado el mínimo requerido para tu primera compra mayorista."}
             </p>
             <p className="mt-1 text-xs opacity-80">

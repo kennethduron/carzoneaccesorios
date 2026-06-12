@@ -146,13 +146,6 @@ function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   return "bank_transfer";
 }
 
-function formatMoney(value: number) {
-  return `L ${Number(value || 0).toLocaleString("es-HN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
 function roundMoney(value: number) {
   return Math.round(Number(value || 0) * 100) / 100;
 }
@@ -653,7 +646,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         if (missing > 0) {
           return {
             ok: false,
-            message: `Tu primera compra mayorista debe alcanzar un total final de ${formatMoney(settings.first_wholesale_minimum)} o más. Te faltan ${formatMoney(missing)} para completar el mínimo de primera compra mayorista.`,
+            message:
+              "Para activar tu primera compra mayorista, el monto mínimo debe ser de L 10,000. Después de tu primera compra mayorista, podrás comprar cualquier monto.",
           };
         }
       }

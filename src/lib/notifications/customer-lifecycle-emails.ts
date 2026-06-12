@@ -2,6 +2,7 @@ import "server-only";
 
 import { writeErrorLog } from "@/lib/error-logging";
 import { enqueueEmail, processEmailQueue } from "@/lib/notifications/email-queue";
+import type { WholesaleCustomerType } from "@/types/wholesale";
 
 const officialSiteUrl = "https://carzoneaccesorios.com";
 const loginUrl = `${officialSiteUrl}/login`;
@@ -11,6 +12,7 @@ type CustomerEmailInput = {
   userId?: string | null;
   email?: string | null;
   name?: string | null;
+  wholesaleCustomerType?: WholesaleCustomerType;
 };
 
 function escapeHtml(value: unknown) {
@@ -83,13 +85,18 @@ function welcomeHtml(name: string) {
   );
 }
 
-function wholesaleApprovedHtml(name: string) {
+function wholesaleApprovedHtml(name: string, wholesaleCustomerType: WholesaleCustomerType) {
+  const conditions =
+    wholesaleCustomerType === "existing"
+      ? "Puedes comprar con precios mayoristas desde ahora, sin requisito de primera compra mínima."
+      : "Tu primera compra mayorista debe alcanzar L 10,000. Después de completar esa primera compra, podrás comprar cualquier monto.";
+
   return baseEmail(
     "Tu cuenta mayorista fue aprobada",
     `
       <p style="margin:0 0 16px;">Hola ${escapeHtml(name)},</p>
       <p style="margin:0 0 16px;">Nos alegra informarte que tu solicitud de cuenta mayorista fue aprobada.</p>
-      <p style="margin:0 0 16px;">A partir de ahora podrás acceder a beneficios mayoristas según las condiciones establecidas por Car Zone Accesorios.</p>
+      <p style="margin:0 0 16px;">${escapeHtml(conditions)}</p>
       <p style="margin:0 0 16px;">Puedes iniciar sesión en tu cuenta para revisar productos y precios disponibles.</p>
       ${actionButton("Iniciar sesión", loginUrl)}
       <p style="margin:0 0 16px;">Si tienes dudas, puedes comunicarte con nuestro equipo.</p>
@@ -217,15 +224,16 @@ export async function queueWholesaleApprovedEmail(input: CustomerEmailInput) {
   }
 
   const name = displayName(input.name);
+  const wholesaleCustomerType = input.wholesaleCustomerType ?? "new";
   return safeEnqueueCustomerEmail({
     email,
     name,
     subject: "Tu cuenta mayorista fue aprobada",
     templateKey: "wholesale.approved",
-    html: wholesaleApprovedHtml(name),
+    html: wholesaleApprovedHtml(name, wholesaleCustomerType),
     relatedModule: "mayoristas",
     relatedId: customerId,
-    idempotencyKey: `wholesale.approved:${customerId}`,
+    idempotencyKey: `wholesale.approved:${customerId}:${wholesaleCustomerType}`,
     errorAction: "wholesale.approved_email_queue_failed",
   });
 }

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Ban, CheckCircle2, RotateCcw, Search, ShieldAlert, X } from "lucide-react";
 import {
   approveWholesaleRequestAction,
+  changeWholesaleCustomerTypeAction,
   reactivateWholesaleAccessAction,
   rejectWholesaleRequestAction,
   suspendWholesaleAccessAction,
@@ -12,6 +13,7 @@ import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { CrmCustomerOption, CrmWholesaleStatus } from "@/types/crm";
+import type { WholesaleCustomerType } from "@/types/wholesale";
 import { formatHnDateTime } from "@/utils/format";
 
 type WholesaleCustomersManagerProps = {
@@ -101,6 +103,29 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
     });
   }
 
+  function approve(customerId: string, wholesaleCustomerType: WholesaleCustomerType) {
+    runAction(() => approveWholesaleRequestAction(customerId, wholesaleCustomerType));
+  }
+
+  async function changeType(customer: CrmCustomerOption) {
+    const confirmed = await toast.confirm({
+      title: "Cambiar tipo mayorista",
+      message: "Cambiar el tipo mayorista puede afectar la regla de primera compra mínima. ¿Deseas continuar?",
+      confirmLabel: "Cambiar tipo",
+      cancelLabel: "Cancelar",
+      tone: "neutral",
+    });
+
+    if (confirmed) {
+      runAction(() =>
+        changeWholesaleCustomerTypeAction(
+          customer.id,
+          customer.wholesale_customer_type === "existing" ? "new" : "existing",
+        ),
+      );
+    }
+  }
+
   return (
     <div className="space-y-5">
       {activeFilter ? <ActiveFilterBanner label={activeFilter.label} clearHref="/admin/clientes-mayoristas" /> : null}
@@ -178,7 +203,11 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
                 </span>
                 <p className="text-sm text-black/60">
                   {customer.wholesale_status === "approved"
-                    ? "Precios mayoristas activos automáticamente."
+                    ? customer.wholesale_customer_type === "existing"
+                      ? "Mayorista existente: sin primera compra mínima."
+                      : customer.wholesale_first_purchase_completed
+                        ? "Mayorista nuevo: primera compra completada."
+                        : "Mayorista nuevo: primera compra mínima de L 10,000 pendiente."
                     : customer.wholesale_status === "pending"
                       ? "Solicitud pendiente de revisión administrativa."
                       : customer.wholesale_status === "suspended"
@@ -187,10 +216,15 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
                 </p>
                 {canManageWholesale ? <div className="flex flex-wrap gap-2 xl:justify-end">
                   {customer.wholesale_status === "pending" || customer.wholesale_status === "rejected" ? (
-                    <Button onClick={() => runAction(() => approveWholesaleRequestAction(customer.id))} disabled={isPending} variant="dark">
-                      <CheckCircle2 size={16} />
-                      Aprobar
-                    </Button>
+                    <>
+                      <Button onClick={() => approve(customer.id, "new")} disabled={isPending} variant="dark">
+                        <CheckCircle2 size={16} />
+                        Aprobar como nuevo
+                      </Button>
+                      <Button onClick={() => approve(customer.id, "existing")} disabled={isPending} variant="secondary">
+                        Aprobar como existente
+                      </Button>
+                    </>
                   ) : null}
                   {customer.wholesale_status === "pending" ? (
                     <Button onClick={() => runAction(() => rejectWholesaleRequestAction(customer.id))} disabled={isPending} variant="ghost">
@@ -199,10 +233,19 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
                     </Button>
                   ) : null}
                   {customer.wholesale_status === "approved" ? (
-                    <Button onClick={() => runAction(() => suspendWholesaleAccessAction(customer.id))} disabled={isPending} variant="ghost">
-                      <Ban size={16} />
-                      Suspender
-                    </Button>
+                    <>
+                      <Button
+                        onClick={() => changeType(customer)}
+                        disabled={isPending}
+                        variant="secondary"
+                      >
+                        Cambiar a {customer.wholesale_customer_type === "existing" ? "nuevo" : "existente"}
+                      </Button>
+                      <Button onClick={() => runAction(() => suspendWholesaleAccessAction(customer.id))} disabled={isPending} variant="ghost">
+                        <Ban size={16} />
+                        Suspender
+                      </Button>
+                    </>
                   ) : null}
                   {customer.wholesale_status === "suspended" ? (
                     <Button onClick={() => runAction(() => reactivateWholesaleAccessAction(customer.id))} disabled={isPending} variant="dark">

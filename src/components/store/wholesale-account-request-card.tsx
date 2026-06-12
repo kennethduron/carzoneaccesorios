@@ -130,12 +130,13 @@ export function WholesaleAccountRequestCard({ initialState, context = "contact" 
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">{copy.title}</h2>
-          <p className="mt-1 text-sm leading-6 text-black/60">{copy.message}</p>
+          <p className="mt-1 text-sm leading-6 text-black/60">{state.kind === "approved" ? state.message : copy.message}</p>
 
           {state.kind === "approved" && state.account ? (
-            <p className="mt-3 rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
-              Cuenta aprobada: {state.account.businessName}
-            </p>
+            <div className="mt-3 rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
+              <p>Cuenta aprobada: {state.account.businessName}</p>
+              <p className="mt-1 text-xs">{state.account.customerType === "existing" ? "Mayorista existente" : "Mayorista nuevo"}</p>
+            </div>
           ) : null}
 
           {showPendingFirstPurchase && requirement ? (

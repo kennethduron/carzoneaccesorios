@@ -10,6 +10,7 @@ export type CrmPriority = "baja" | "media" | "alta" | "urgente";
 export type CrmFollowupStatus = "pending" | "completed" | "cancelled";
 export type CrmLeadStatus = "prospecto" | "contactado" | "calificado" | "cliente" | "perdido";
 export type CrmWholesaleStatus = "none" | "pending" | "approved" | "rejected" | "suspended";
+export type CrmWholesaleCustomerType = "new" | "existing";
 export type CrmProfileKind = "customer" | "internal";
 
 export type CrmCustomerOption = {
@@ -29,6 +30,9 @@ export type CrmCustomerOption = {
   wholesale_request_source: "formulario_publico" | "cuenta_registrada" | "admin" | null;
   wholesale_approved_at: string | null;
   wholesale_approved_notice_seen: boolean;
+  wholesale_customer_type: CrmWholesaleCustomerType;
+  wholesale_first_purchase_completed: boolean;
+  wholesale_first_purchase_completed_at: string | null;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
   lead_status: CrmLeadStatus;
@@ -68,7 +72,6 @@ export type CrmCustomerOption = {
     | "Technical Owner";
   customer_type: "Retail" | "Mayorista";
   has_wholesale_request: boolean;
-  wholesale_first_purchase_completed: boolean;
   wholesale_lifecycle_status: "Sin acceso mayorista" | "Pendiente de primera compra" | "Primera compra completada" | "Mayorista activo";
   is_test_account: boolean;
   can_delete_permanently: boolean;
