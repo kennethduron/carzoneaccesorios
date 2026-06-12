@@ -148,7 +148,7 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
         {message ? <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
         {!canManageWholesale ? (
           <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            Puedes consultar clientes mayoristas. Los cambios de estado requieren autorizacion adicional.
+            Puedes consultar clientes mayoristas. Los cambios de estado requieren autorización adicional.
           </p>
         ) : null}
       </section>

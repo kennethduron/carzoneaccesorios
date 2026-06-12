@@ -39,20 +39,20 @@ const helpBlocks: HelpBlock[] = [
   },
   {
     title: "Preparar y despachar",
-    description: "Usa el flujo logistico para preparacion, empacado, enviado, en ruta y entregado.",
+    description: "Usa el flujo logístico para preparación, empacado, enviado, en ruta y entregado.",
     href: "/admin/pedidos?task=to_prepare",
     permissions: ["orders:manage_logistics", "reservations:review"],
     roles: warehouseRoles,
-    checklist: ["Filtrar pedidos listos.", "Verificar productos fisicos.", "Empacar con cuidado.", "Actualizar estado real.", "Avisar si falta stock."],
-    avoid: "No marques entregado si el cliente aun no recibio el pedido.",
+    checklist: ["Filtrar pedidos listos.", "Verificar productos físicos.", "Empacar con cuidado.", "Actualizar el estado real.", "Avisar si faltan existencias."],
+    avoid: "No marques el pedido como entregado si el cliente aún no lo recibió.",
   },
   {
     title: "Validar pagos",
-    description: "Confirma efectivo, transferencia o tarjeta por link solo con evidencia real.",
+    description: "Confirma efectivo, transferencia o tarjeta mediante enlace solo con evidencia real.",
     href: "/admin/pedidos?task=pending_payments",
     permissions: ["payments:read", "payments:confirm", "payments:reject"],
     roles: adminRoles,
-    checklist: ["Revisar metodo.", "Comparar monto.", "Revisar referencia o comprobante.", "Contactar cliente si hay duda.", "Confirmar o rechazar con motivo."],
+    checklist: ["Revisar el método.", "Comparar el monto.", "Revisar la referencia o el comprobante.", "Contactar al cliente si hay dudas.", "Confirmar o rechazar con un motivo."],
     avoid: "No confirmes pago de tarjeta antes de verificar el pago externo.",
   },
   {
@@ -70,12 +70,12 @@ const helpBlocks: HelpBlock[] = [
     href: "/admin/clientes",
     permissions: ["crm:manage", "customers:read"],
     roles: salesRoles,
-    checklist: ["Buscar cliente.", "Abrir perfil.", "Leer historial.", "Agregar nota clara.", "Crear proxima accion."],
+    checklist: ["Buscar al cliente.", "Abrir el perfil.", "Leer el historial.", "Agregar una nota clara.", "Crear la próxima acción."],
     avoid: "No dejes acuerdos importantes solo en mensajes externos.",
   },
   {
     title: "Gestionar mayoristas",
-    description: "Aprueba, rechaza o suspende acceso mayorista segun criterio comercial.",
+    description: "Aprueba, rechaza o suspende el acceso mayorista según el criterio comercial.",
     href: "/admin/clientes-mayoristas",
     permissions: ["wholesale:manage"],
     roles: adminRoles,
@@ -84,16 +84,16 @@ const helpBlocks: HelpBlock[] = [
   },
   {
     title: "Mantener productos",
-    description: "Crea o edita catalogo, precios, categoria, SKU, imagenes y estado.",
+    description: "Crea o edita el catálogo, los precios, la categoría, el SKU, las imágenes y el estado.",
     href: "/admin/productos",
     permissions: ["products:manage"],
     roles: adminRoles,
-    checklist: ["Completar SKU.", "Asignar categoria.", "Definir precio normal.", "Definir precio mayorista.", "Activar solo si esta listo."],
+    checklist: ["Completar el SKU.", "Asignar la categoría.", "Definir el precio normal.", "Definir el precio mayorista.", "Activar solo si está listo."],
     avoid: "No publiques productos sin imagen, precio revisado o stock confirmado.",
   },
   {
     title: "Controlar inventario",
-    description: "Revisa stock disponible, reservado, bajo minimo y movimientos.",
+    description: "Revisa las existencias disponibles, reservadas, por debajo del mínimo y sus movimientos.",
     href: "/admin/inventario",
     permissions: ["inventory:manage"],
     roles: warehouseRoles,
@@ -106,12 +106,12 @@ const helpBlocks: HelpBlock[] = [
     href: "/admin/banners",
     permissions: ["commercial_settings:manage"],
     roles: adminRoles,
-    checklist: ["Crear banner.", "Usar imagen o video claro.", "Definir prioridad.", "Revisar fechas.", "Activar o desactivar."],
-    avoid: "No uses piezas con texto pequeno que no se lea en celular.",
+    checklist: ["Crear el banner.", "Usar una imagen o un video claro.", "Definir la prioridad.", "Revisar las fechas.", "Activar o desactivar."],
+    avoid: "No uses piezas con texto pequeño que no pueda leerse en el celular.",
   },
   {
     title: "Revisar reportes",
-    description: "Consulta ventas, clientes, inventario y facturacion con filtros.",
+    description: "Consulta ventas, clientes, inventario y facturación con filtros.",
     href: "/admin/reportes",
     permissions: ["reports:read", "reports:fiscal_read"],
     roles: ["technical_owner", "business_owner", "admin", "contadora"],
@@ -122,22 +122,22 @@ const helpBlocks: HelpBlock[] = [
 
 const dailyTips: DailyTip[] = [
   {
-    title: "Si no aparece un boton",
-    text: "Puede ser por permisos, estado del pedido o una condicion pendiente. Revisa el manual antes de pedir cambio.",
+    title: "Si no aparece un botón",
+    text: "Puede deberse a los permisos, al estado del pedido o a una condición pendiente. Revisa el manual antes de solicitar un cambio.",
   },
   {
     title: "Si el cliente paga con tarjeta",
-    text: "El sitio no procesa tarjetas. Usa WhatsApp, envia el link externo y confirma manualmente cuando el pago este verificado.",
+    text: "El sitio no procesa tarjetas. Usa WhatsApp, envía el enlace externo y confirma manualmente cuando el pago esté verificado.",
     permissions: ["payments:read", "orders:read"],
   },
   {
     title: "Si necesitas enviar factura",
-    text: "Abre la factura, descarga el PDF y adjuntalo manualmente por WhatsApp o correo si el cliente lo solicita.",
+    text: "Abre la factura, descarga el PDF y adjúntalo manualmente por WhatsApp o correo electrónico si el cliente lo solicita.",
     permissions: ["invoices:read"],
   },
   {
     title: "Si falta stock",
-    text: "No prometas entrega. Revisa inventario, alternativas y fecha de reposicion antes de responder al cliente.",
+    text: "No prometas la entrega. Revisa el inventario, las alternativas y la fecha de reposición antes de responder al cliente.",
     permissions: ["inventory:manage", "products:read"],
   },
   {
@@ -176,13 +176,13 @@ export default async function AdminHelpPage() {
 
       <section className="rounded-lg border border-black/10 bg-white p-5">
         <p className="text-sm text-black/50">Centro de ayuda del CRM/Admin</p>
-        <h2 className="mt-1 text-2xl font-semibold">Que hacer segun tu tarea</h2>
+        <h2 className="mt-1 text-2xl font-semibold">Qué hacer según tu tarea</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-          Usa esta pantalla para resolver dudas rapidas. La guia completa contiene los pasos detallados por modulo.
+          Usa esta pantalla para resolver dudas rápidas. La guía completa contiene los pasos detallados por módulo.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <QuickCard title="Operar con orden" text="Revisa datos antes de cambiar estados." />
-          <QuickCard title="Contactar al cliente" text="Usa WhatsApp cuando falte pago, direccion o confirmacion." icon="message" />
+          <QuickCard title="Contactar al cliente" text="Usa WhatsApp cuando falte el pago, la dirección o la confirmación." icon="message" />
           <QuickCard title="Cuidar permisos" text="Cada usuario debe usar su propia cuenta." icon="shield" />
         </div>
       </section>
@@ -193,7 +193,7 @@ export default async function AdminHelpPage() {
             <p className="text-sm font-semibold uppercase text-[#e4252c]">{block.title}</p>
             <p className="mt-2 text-sm leading-6 text-black/60">{block.description}</p>
             <div className="mt-4 rounded-md bg-[#f4f4f5] p-3">
-              <p className="text-sm font-semibold">Checklist rapido</p>
+              <p className="text-sm font-semibold">Lista de verificación rápida</p>
               <ol className="mt-2 space-y-1 text-sm leading-6 text-black/62">
                 {block.checklist.map((item, index) => (
                   <li key={item}>
@@ -212,7 +212,7 @@ export default async function AdminHelpPage() {
 
       <section className="mt-5 rounded-lg border border-black/10 bg-white p-5">
         <p className="text-sm text-black/50">Recordatorios</p>
-        <h2 className="mt-1 text-xl font-semibold">Dudas comunes durante el dia</h2>
+        <h2 className="mt-1 text-xl font-semibold">Dudas comunes durante el día</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {visibleTips.map((tip) => (
             <article key={tip.title} className="rounded-md bg-[#f4f4f5] p-4">

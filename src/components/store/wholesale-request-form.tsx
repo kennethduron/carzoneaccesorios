@@ -145,7 +145,7 @@ export function WholesaleRequestForm({ initialAccessState = null }: { initialAcc
             required
           />
         </Field>
-        <Field label="Correo">
+        <Field label="Correo electrónico">
           <Input
             type="email"
             value={form.email}

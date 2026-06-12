@@ -224,7 +224,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                   setOpen(false);
                 }}
                 className="inline-flex h-10 items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-2.5 text-sm hover:bg-white/80 sm:px-3"
-                aria-label="Abrir menu de usuario"
+                aria-label="Abrir menú de usuario"
                 aria-expanded={userMenuOpen}
               >
                 <UserRound size={17} />
@@ -302,7 +302,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                 setUserMenuOpen(false);
               }}
               className="grid size-10 place-items-center rounded-md border border-black/10 bg-white xl:hidden"
-              aria-label="Abrir menu principal"
+              aria-label="Abrir menú principal"
               aria-expanded={open}
             >
               {open ? <X size={18} /> : <Menu size={18} />}
@@ -400,21 +400,21 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold">Siguenos</p>
+            <p className="mb-2 text-sm font-semibold">Síguenos</p>
             <div className="mb-5">
               <SocialLinks settings={companySettings} />
             </div>
             <p className="mb-2 text-sm font-semibold">Pagos seguros</p>
-            <p className="mb-3 text-sm text-black/55">Efectivo, transferencia bancaria y tarjeta por link de pago enviado por WhatsApp.</p>
+            <p className="mb-3 text-sm text-black/55">Efectivo, transferencia bancaria y tarjeta mediante enlace de pago enviado por WhatsApp.</p>
           </div>
         </div>
         <div className="border-t border-black/10 px-5 py-4">
           <div className="mx-auto flex max-w-7xl flex-wrap gap-2 text-sm text-black/55">
             <Link href="/mision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Mision
+              Misión
             </Link>
             <Link href="/vision" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
-              Vision
+              Visión
             </Link>
             <Link href="/historia" className="rounded-md px-3 py-2 hover:bg-[#f4f4f5]">
               Historia

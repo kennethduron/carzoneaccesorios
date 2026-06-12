@@ -53,11 +53,11 @@ export default async function PoliticasPage() {
   return (
     <PublicStoreShell>
       <section className="mx-auto max-w-6xl px-5 py-10">
-        <p className="text-sm text-black/50">Informacion legal y comercial</p>
+        <p className="text-sm text-black/50">Información legal y comercial</p>
         <h1 className="mt-2 text-4xl font-semibold">Políticas de Car Zone Accesorios</h1>
         <p className="mt-4 max-w-3xl text-black/60">
           Estas páginas reúnen las condiciones comerciales visibles requeridas para operar una tienda en línea con pagos
-          manuales y tarjeta por link externo.
+          manuales y tarjeta mediante enlace externo.
         </p>
 
         <div className="mt-8 grid gap-4 md:grid-cols-2">

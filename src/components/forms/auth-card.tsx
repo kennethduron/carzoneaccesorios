@@ -83,7 +83,7 @@ export function AuthCard({ mode }: AuthCardProps) {
 
     if (searchParams.get("confirmed")) {
       return {
-        text: "Correo confirmado correctamente. Ya puedes iniciar sesión.",
+        text: "Correo electrónico confirmado correctamente. Ya puedes iniciar sesión.",
         tone: "success" as const,
         canResend: false,
       };
@@ -466,7 +466,7 @@ export function AuthCard({ mode }: AuthCardProps) {
                 setEmail(event.target.value);
                 setVerificationDetected(false);
               }}
-              placeholder={isLogin ? "Correo o usuario" : "Correo electrónico"}
+              placeholder={isLogin ? "Correo electrónico o usuario" : "Correo electrónico"}
               type={isLogin ? "text" : "email"}
               autoComplete={isLogin ? "username" : "email"}
               disabled={loading}

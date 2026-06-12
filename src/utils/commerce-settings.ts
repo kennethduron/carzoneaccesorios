@@ -87,7 +87,15 @@ export function calculateCheckoutFees({
   settings,
 }: {
   subtotal: number;
-  paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Tarjeta por link de pago" | "Efectivo" | "bank_transfer" | "card" | "cash";
+  paymentMethod:
+    | "Transferencia bancaria"
+    | "Tarjeta"
+    | "Tarjeta por link de pago"
+    | "Tarjeta mediante enlace de pago"
+    | "Efectivo"
+    | "bank_transfer"
+    | "card"
+    | "cash";
   paymentTiming?: "before_delivery" | "on_delivery";
   settings: CommerceSettings;
 }) {

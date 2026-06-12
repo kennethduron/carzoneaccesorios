@@ -47,7 +47,7 @@ function paymentMethodLabel(value: string) {
   const labels: Record<string, string> = {
     bank_transfer: "Transferencia bancaria",
     cash: "Efectivo",
-    card: "Tarjeta por link de pago",
+    card: "Tarjeta mediante enlace de pago",
   };
 
   return labels[value] ?? value;
@@ -102,7 +102,7 @@ function buildEmailHtml(order: OrderNotificationRow) {
 
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
           ${row("Pedido", order.order_number)}
-          ${row("Código de rastreo", order.tracking_code ?? "Sin código")}
+          ${row("Número de seguimiento", order.tracking_code ?? "Sin código")}
           ${row("Cliente", order.customer_name)}
           ${row("Teléfono", order.phone)}
           ${row("Método de pago", paymentMethodLabel(order.payment_method))}
@@ -152,7 +152,7 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
         <p style="margin:0 0 18px;color:#555;line-height:1.6;">Hola ${escapeHtml(order.customer_name)}. Hemos recibido tu pedido. Nuestro equipo lo revisará pronto.</p>
         ${
           order.payment_method === "card"
-            ? '<p style="margin:0 0 18px;color:#555;line-height:1.6;">Nuestro equipo te contactará por WhatsApp para enviarte el link de pago seguro. No ingreses datos de tarjeta en esta página.</p>'
+            ? '<p style="margin:0 0 18px;color:#555;line-height:1.6;">Nuestro equipo te contactará por WhatsApp para enviarte el enlace de pago seguro. No ingreses datos de tarjeta en esta página.</p>'
             : ""
         }
         <table style="width:100%;border-collapse:collapse;font-size:14px;">
@@ -192,7 +192,7 @@ function buildCustomerOrderReceivedHtml(order: OrderNotificationRow) {
 function statusLabel(value: string) {
   const labels: Record<string, string> = {
     confirmado: "confirmado",
-    preparacion: "en preparacion",
+    preparacion: "en preparación",
     empacado: "empacado",
     enviado: "enviado",
     en_ruta: "en ruta",
@@ -376,8 +376,8 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
   } else if (order.payment_method === "card") {
     await createInternalNotification({
       type: "payment.pending",
-      title: "Pago con tarjeta por link pendiente",
-      message: `El pedido ${order.order_number} requiere enviar link de pago por WhatsApp y confirmar manualmente.`,
+      title: "Pago con tarjeta mediante enlace pendiente",
+      message: `El pedido ${order.order_number} requiere enviar el enlace de pago por WhatsApp y confirmarlo manualmente.`,
       severity: "warning",
       module: "pagos",
       orderId: createdOrder.orderId,
@@ -426,7 +426,7 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
         title: "Hemos recibido tu pedido",
         message:
           order.payment_method === "card"
-            ? "Recibimos tu pedido. Nuestro equipo te contactará por WhatsApp para enviarte el link de pago seguro."
+            ? "Recibimos tu pedido. Nuestro equipo te contactará por WhatsApp para enviarte el enlace de pago seguro."
             : "Hemos recibido tu pedido. Nuestro equipo lo revisará pronto.",
         order_number: order.order_number,
         customer_name: order.customer_name,

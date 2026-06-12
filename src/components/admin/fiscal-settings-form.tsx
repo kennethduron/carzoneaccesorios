@@ -254,7 +254,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
           <Field label="Teléfono">
             <Input disabled={!canEdit} value={form.phone} onChange={(event) => updateField("phone", event.target.value)} />
           </Field>
-          <Field label="Correo">
+          <Field label="Correo electrónico">
             <Input disabled={!canEdit} type="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} />
           </Field>
           <label className="lg:col-span-2">

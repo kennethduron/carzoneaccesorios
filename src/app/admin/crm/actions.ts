@@ -326,7 +326,7 @@ export async function getCustomerProfileAction(customerId: string): Promise<Cust
       profile.customer.profile_kind === "internal" &&
       !["technical_owner", "admin", "business_owner"].includes(viewer.role)
     ) {
-      return { ok: false, message: "No tienes autorizacion para ver perfiles internos completos.", profile: null };
+      return { ok: false, message: "No tienes autorización para ver perfiles internos completos.", profile: null };
     }
 
     return { ok: true, message: "Perfil cargado.", profile };

@@ -45,7 +45,7 @@ export function VerificationEmailForm({ initialEmail = "" }: { initialEmail?: st
   return (
     <form onSubmit={submit} className="mt-5 rounded-lg border border-black/10 bg-[#f8f8f8] p-4">
       <label className="block">
-        <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
+        <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo electrónico</span>
         <Input
           value={email}
           onChange={(event) => setEmail(event.target.value)}

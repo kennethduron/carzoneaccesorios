@@ -143,7 +143,7 @@ function fromBanner(banner: HolidayBanner): HolidayBannerInput {
 
 function bytesLabel(bytes: number) {
   if (!bytes) {
-    return "Tamano no disponible";
+    return "Tamaño no disponible";
   }
 
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
@@ -578,7 +578,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
       <section className="h-fit rounded-lg border border-black/10 bg-white p-5">
         <h2 className="font-semibold">{form.id ? "Editar banner" : "Nuevo banner"}</h2>
         <div className="mt-4 grid gap-3">
-          <Field label="Titulo">
+          <Field label="Título">
             <Input value={form.title} onChange={(event) => update("title", event.target.value)} />
           </Field>
           <Field label="Mensaje">
@@ -590,7 +590,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
           </Field>
 
           <div>
-            <span className="mb-2 block text-xs font-medium uppercase text-black/50">Ubicacion</span>
+            <span className="mb-2 block text-xs font-medium uppercase text-black/50">Ubicación</span>
             <div className="grid grid-cols-2 gap-2">
               {(["main", "secondary"] as BannerSlot[]).map((slot) => (
                 <label
@@ -738,7 +738,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
             <div>
               <h2 className="font-semibold">Banners configurados</h2>
               <p className="mt-1 text-sm text-black/55">
-                El Home muestra 1 banner principal vigente y hasta 3 secundarios, ordenados por prioridad.
+                La página de inicio muestra un banner principal vigente y hasta tres secundarios, ordenados por prioridad.
               </p>
             </div>
             {canViewTechnical ? (
@@ -747,7 +747,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                   Revisar integridad
                 </Button>
                 <Button onClick={() => reviewIntegrity(true)} variant="secondary" disabled={isPending}>
-                  Limpiar huerfanos
+                  Limpiar huérfanos
                 </Button>
               </div>
             ) : null}
@@ -905,18 +905,18 @@ function formatDateTime(value: string) {
 
 function auditActionLabel(action: string) {
   const labels: Record<string, string> = {
-    "holiday_banner.created": "Creacion",
-    "holiday_banner.updated": "Modificacion",
-    "holiday_banner.deleted": "Eliminacion",
+    "holiday_banner.created": "Creación",
+    "holiday_banner.updated": "Modificación",
+    "holiday_banner.deleted": "Eliminación",
     "holiday_banner.activated": "Activacion",
     "holiday_banner.deactivated": "Desactivacion",
     "holiday_banner.priority_updated": "Cambio de prioridad",
-    "holiday_banner.integrity_review": "Revision de integridad",
-    "holiday_banner.integrity_cleanup": "Limpieza de huerfanos",
+    "holiday_banner.integrity_review": "Revisión de integridad",
+    "holiday_banner.integrity_cleanup": "Limpieza de huérfanos",
     "holiday_banner.cloudinary_asset_deleted": "Archivo técnico eliminado",
-    "technical_alert.cloudinary_storage_sent": "Alerta tecnica enviada",
-    "technical_alert.cloudinary_storage_failed": "Alerta tecnica fallida",
-    "technical_alert_settings.updated": "Configuracion tecnica actualizada",
+    "technical_alert.cloudinary_storage_sent": "Alerta técnica enviada",
+    "technical_alert.cloudinary_storage_failed": "Alerta técnica fallida",
+    "technical_alert_settings.updated": "Configuración técnica actualizada",
   };
 
   return labels[action] ?? action;
@@ -936,7 +936,7 @@ function HomeBannerPreview({ form, mediaUrl, posterUrl }: { form: HolidayBannerI
 
   return (
     <div>
-      <span className="mb-1 block text-xs font-medium uppercase text-black/50">Preview Home</span>
+      <span className="mb-1 block text-xs font-medium uppercase text-black/50">Vista previa de la página de inicio</span>
       <div className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
         <div className="relative bg-[#080808]">
           {hasMedia && form.media_type === "video" ? (
@@ -957,8 +957,8 @@ function HomeBannerPreview({ form, mediaUrl, posterUrl }: { form: HolidayBannerI
         <div className="p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h3 className="text-xl font-semibold">{form.title || "Titulo del banner"}</h3>
-              <p className="mt-2 text-sm leading-6 text-black/60">{form.message || "Subtitulo o descripcion promocional visible en Home."}</p>
+              <h3 className="text-xl font-semibold">{form.title || "Título del banner"}</h3>
+              <p className="mt-2 text-sm leading-6 text-black/60">{form.message || "Subtítulo o descripción promocional visible en la página de inicio."}</p>
             </div>
             {form.button_text ? (
               <span className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-[#e4252c] px-4 text-sm font-semibold text-white">
@@ -990,9 +990,9 @@ function StorageSummaryPanel({ summary }: { summary: HolidayBannerStorageSummary
         {usedPercent !== null ? <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-black/60">{usedPercent}% usado</span> : null}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Imagenes" value={`${summary.imageCount}`} detail={formatBytes(summary.imageBytes)} />
+        <Metric label="Imágenes" value={`${summary.imageCount}`} detail={formatBytes(summary.imageBytes)} />
         <Metric label="Videos" value={`${summary.videoCount}`} detail={formatBytes(summary.videoBytes)} />
-        <Metric label="Total banners" value={formatBytes(summary.totalBytes)} detail="Segun registros activos e historicos" />
+        <Metric label="Total de banners" value={formatBytes(summary.totalBytes)} detail="Según los registros activos e históricos" />
         <Metric
           label="Cloudinary"
           value={summary.cloudinaryUsedBytes !== null ? formatBytes(summary.cloudinaryUsedBytes) : "No disponible"}
@@ -1018,8 +1018,8 @@ function TechnicalAlertsPanel({
     <section className="rounded-lg border border-black/10 bg-white p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="font-semibold">Alertas tecnicas</h2>
-          <p className="mt-1 text-sm text-black/55">Configuracion visible solo para administracion tecnica.</p>
+          <h2 className="font-semibold">Alertas técnicas</h2>
+          <p className="mt-1 text-sm text-black/55">Configuración visible solo para la administración técnica.</p>
         </div>
         <label className="inline-flex items-center gap-2 text-sm">
           <input type="checkbox" checked={settings.enabled} onChange={(event) => onChange({ ...settings, enabled: event.target.checked })} />
@@ -1028,7 +1028,7 @@ function TechnicalAlertsPanel({
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_auto]">
-        <Field label="Correo técnico">
+        <Field label="Correo electrónico técnico">
           <Input value={settings.email} onChange={(event) => onChange({ ...settings, email: event.target.value })} />
         </Field>
         <Field label="Umbral Cloudinary">
@@ -1049,12 +1049,12 @@ function TechnicalAlertsPanel({
         </div>
       </div>
       <p className="mt-3 rounded-md bg-zinc-100 px-3 py-2 text-xs text-black/60">
-        Cuenta técnica de servicios: {settings.serviceAccountEmail}. Uso interno para backups, cron, proveedores y futuras integraciones.
+        Cuenta técnica de servicios: {settings.serviceAccountEmail}. Uso interno para copias de seguridad, tareas programadas, proveedores y futuras integraciones.
       </p>
 
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-black/50">
         <span className="rounded-md bg-zinc-100 px-2 py-1">
-          Ultimo chequeo: {settings.lastCheckedAt ? formatDateTime(settings.lastCheckedAt) : "Sin registro"}
+          Última comprobación: {settings.lastCheckedAt ? formatDateTime(settings.lastCheckedAt) : "Sin registro"}
         </span>
         <span className="rounded-md bg-zinc-100 px-2 py-1">
           Ultima alerta: {settings.lastAlertSentAt ? formatDateTime(settings.lastAlertSentAt) : "Sin registro"}
@@ -1079,7 +1079,7 @@ function BannerAuditPanel({ entries }: { entries: HolidayBannerAuditEntry[] }) {
     <section className="rounded-lg border border-black/10 bg-white">
       <div className="border-b border-black/10 p-4">
         <h2 className="font-semibold">Historial de banners</h2>
-        <p className="mt-1 text-sm text-black/55">Ultimos movimientos de creacion, cambios y eliminacion.</p>
+        <p className="mt-1 text-sm text-black/55">Últimos movimientos de creación, modificación y eliminación.</p>
       </div>
       <div className="max-h-[420px] overflow-y-auto">
         {entries.length === 0 ? <p className="p-4 text-sm text-black/55">No hay movimientos registrados.</p> : null}

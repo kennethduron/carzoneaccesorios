@@ -422,14 +422,14 @@ export function CheckoutView({
               ? "Tu pedido está pendiente de revisión de pago."
               : checkout.paymentMethod === "Efectivo"
                 ? "Tu pedido está pendiente de confirmación."
-                : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago.",
+                : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago.",
       });
       setFieldErrors({});
       toast.success(
         requiresCashOnDeliveryReview
           ? "Pedido recibido. El cargo contra entrega quedará pendiente de confirmación."
           : checkout.paymentMethod === "Tarjeta"
-          ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
+          ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago."
           : "Pedido creado correctamente. Te contactaremos para confirmar el pago.",
       );
       setProofFile(null);
@@ -477,7 +477,7 @@ export function CheckoutView({
           ))}
           {accountInfo.isAuthenticated ? (
             <label className="grid gap-1">
-              <span className="text-xs font-medium uppercase text-black/50">Correo de la cuenta</span>
+              <span className="text-xs font-medium uppercase text-black/50">Correo electrónico de la cuenta</span>
               <input
                 value={accountInfo.email ?? ""}
                 disabled
@@ -488,12 +488,12 @@ export function CheckoutView({
             </label>
           ) : (
             <label className="grid gap-1">
-              <span className="text-xs font-medium uppercase text-black/50">Correo</span>
+              <span className="text-xs font-medium uppercase text-black/50">Correo electrónico</span>
               <input
                 type="email"
                 value={checkout.email}
                 onChange={(event) => updateCheckoutField("email", event.target.value)}
-                placeholder="Correo"
+                placeholder="Correo electrónico"
                 autoComplete="email"
                 className={`w-full rounded-md border px-3 py-2 text-sm outline-none ${
                   fieldErrors.email ? "border-[#e4252c]" : "border-black/10"
@@ -728,13 +728,13 @@ export function CheckoutView({
                 <div>
                   <h2 className="font-semibold">Tarjeta de crédito o débito</h2>
                   <p className="mt-1 text-sm text-black/60">
-                    Al finalizar tu pedido, nuestro equipo te enviará un link de pago seguro por WhatsApp para que puedas pagar con tarjeta.
+                    Al finalizar tu pedido, nuestro equipo te enviará un enlace de pago seguro por WhatsApp para que puedas pagar con tarjeta.
                   </p>
                 </div>
               </div>
               <div className="mt-4 rounded-md border border-[#e4252c]/20 bg-white p-3 text-sm leading-6 text-black/65">
-                <p>Tu pedido será registrado y nuestro equipo te enviará un link de pago seguro por WhatsApp.</p>
-                <p>No ingresas datos de tarjeta en esta página.</p>
+                <p>Tu pedido será registrado y nuestro equipo te enviará un enlace de pago seguro por WhatsApp.</p>
+                <p>No ingreses datos de tarjeta en esta página.</p>
                 <p>No debes escribir número de tarjeta, CVV ni fecha de vencimiento aquí.</p>
               </div>
             </section>
@@ -784,7 +784,7 @@ export function CheckoutView({
                 />
                 <span>
                   <span className="block font-semibold">No, solo el correo inicial</span>
-                  <span className="mt-1 block text-black/55">Aun te escribiremos si el pedido se cancela o hay un cambio critico.</span>
+                  <span className="mt-1 block text-black/55">Aún te escribiremos si el pedido se cancela o hay un cambio crítico.</span>
                 </span>
               </label>
             </div>

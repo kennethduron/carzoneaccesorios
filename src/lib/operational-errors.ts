@@ -252,7 +252,7 @@ export function mapOperationalError(error: unknown, context: OperationalErrorCon
     return {
       ...base,
       severity: "info",
-      customerMessage: "Correo, usuario o contraseña incorrectos.",
+      customerMessage: "Correo electrónico, usuario o contraseña incorrectos.",
       adminReason: "Supabase Auth rechazó las credenciales de inicio de sesión.",
       recommendation: "Pedir al cliente revisar sus datos o recuperar contraseña.",
     };

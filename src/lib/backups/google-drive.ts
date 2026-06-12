@@ -126,7 +126,7 @@ function driveConfig() {
   const rootFolderId = process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID;
 
   if (!clientEmail || !privateKey || !rootFolderId) {
-    throw new Error("Google Drive backup no esta configurado en variables de entorno.");
+    throw new Error("La copia de seguridad de Google Drive no está configurada en las variables de entorno.");
   }
 
   return {
@@ -185,7 +185,7 @@ async function driveFetch<T>(token: string, path: string, init: RequestInit = {}
   const data: T & DriveErrorPayload = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
-    throw new Error(data.error?.message || "Google Drive no pudo completar la operacion.");
+    throw new Error(data.error?.message || "Google Drive no pudo completar la operación.");
   }
 
   return data as T;
@@ -206,7 +206,7 @@ async function driveUpload<T>(token: string, body: Buffer, contentType: string) 
   const data = (await response.json()) as T & { error?: { message?: string } };
 
   if (!response.ok) {
-    throw new Error(data.error?.message || "No se pudo subir el backup a Google Drive.");
+    throw new Error(data.error?.message || "No se pudo subir la copia de seguridad a Google Drive.");
   }
 
   return data as T;
@@ -424,11 +424,11 @@ async function buildBackupArchive(input: BackupRunInput) {
   const maxBytes = Number(process.env.GOOGLE_DRIVE_BACKUP_MAX_BYTES ?? defaultMaxBytes);
 
   if (buffer.length <= 0) {
-    throw new Error("El backup generado esta vacio.");
+    throw new Error("La copia de seguridad generada está vacía.");
   }
 
   if (buffer.length > maxBytes) {
-    throw new Error("El backup generado supera el tamano maximo configurado.");
+    throw new Error("La copia de seguridad generada supera el tamaño máximo configurado.");
   }
 
   return {
@@ -464,7 +464,7 @@ async function uploadBackupToDrive(token: string, fileName: string, folderId: st
   const uploaded = await driveUpload<DriveFileResponse>(token, uploadBody.body, uploadBody.contentType);
 
   if (!uploaded.id) {
-    throw new Error("Google Drive no devolvio el ID del archivo de backup.");
+    throw new Error("Google Drive no devolvió el ID del archivo de la copia de seguridad.");
   }
 
   return { fileId: uploaded.id };
@@ -519,7 +519,7 @@ async function insertBackupRun(input: BackupRunInput, startedAt: string) {
       return null;
     }
 
-    throw new Error("No se pudo registrar el inicio del backup.");
+    throw new Error("No se pudo registrar el inicio de la copia de seguridad.");
   }
 
   return data?.id ?? null;
@@ -546,7 +546,7 @@ async function insertBackupLog(input: BackupRunInput, result: GoogleDriveBackupR
     storage_location: result ? `google-drive:${result.googleDriveFileId}` : null,
     notes: result
       ? `Google Drive ${result.fileName} (${formatBytes(result.fileSize)}). ${input.notes ?? ""}`.trim()
-      : `Google Drive backup fallido. ${errorMessage ?? ""}`.trim(),
+      : `Falló la copia de seguridad en Google Drive. ${errorMessage ?? ""}`.trim(),
     started_at: result?.startedAt ?? new Date().toISOString(),
     completed_at: result?.finishedAt ?? new Date().toISOString(),
   });
@@ -638,7 +638,7 @@ export async function createGoogleDriveBackup(input: BackupRunInput): Promise<Go
 
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo generar el backup.";
+    const message = error instanceof Error ? error.message : "No se pudo generar la copia de seguridad.";
     const finishedAt = new Date().toISOString();
     await updateBackupRun(runId, {
       finished_at: finishedAt,

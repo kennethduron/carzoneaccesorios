@@ -11,7 +11,7 @@ async function run(request: NextRequest) {
   return Response.json(
     {
       ok: false,
-      message: "El backup por Google Drive esta desactivado. Usa /api/cron/backups/email.",
+      message: "La copia de seguridad en Google Drive está desactivada. Usa /api/cron/backups/email.",
     },
     { status: 410 },
   );

@@ -158,7 +158,7 @@ export function ProductDetail({
 
           <div className="grid gap-3 sm:grid-cols-3">
             {[
-              ["Pago seguro", "Tarjeta por link externo enviado por WhatsApp.", ShieldCheck],
+              ["Pago seguro", "Tarjeta mediante enlace externo enviado por WhatsApp.", ShieldCheck],
               ["Entrega", "Despacho coordinado por pedido.", Truck],
               ["Inventario", "Stock conectado al catálogo.", PackageCheck],
             ].map(([title, text, Icon]) => (

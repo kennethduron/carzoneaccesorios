@@ -203,7 +203,7 @@ function getLoginErrorMessage(rawMessage: string, userExists: boolean) {
   );
 
   if (!userExists && !rawMessage.toLowerCase().includes("not confirmed")) {
-    return "Correo, usuario o contraseña incorrectos.";
+    return "Correo electrónico, usuario o contraseña incorrectos.";
   }
 
   return mapped.customerMessage;
@@ -303,12 +303,12 @@ async function resolveLoginEmail(identifierInput: string) {
 
   const username = validateUsername(identifier);
   if (!username.ok) {
-    return { ok: false as const, message: "Correo, usuario o contraseña incorrectos." };
+    return { ok: false as const, message: "Correo electrónico, usuario o contraseña incorrectos." };
   }
 
   const email = await getEmailForUsername(username.username);
   if (!email) {
-    return { ok: false as const, message: "Correo, usuario o contraseña incorrectos." };
+    return { ok: false as const, message: "Correo electrónico, usuario o contraseña incorrectos." };
   }
 
   if (email === "__suspended__") {
@@ -372,7 +372,7 @@ export async function loginWithEmailAction(identifierInput: string, password: st
       ok: false,
       message:
         resolved.kind === "username" && !error.message.toLowerCase().includes("not confirmed")
-          ? "Correo, usuario o contraseña incorrectos."
+          ? "Correo electrónico, usuario o contraseña incorrectos."
           : getLoginErrorMessage(error.message, resolved.exists),
     };
   }

@@ -556,7 +556,7 @@ export function valueOrDash(value: string | null | undefined) {
 
 export function paymentLabel(method: string) {
   if (method === "bank_transfer" || method === "Transferencia bancaria") return "Transferencia bancaria";
-  if (method === "card" || method === "Tarjeta") return "Tarjeta por link de pago";
+  if (method === "card" || method === "Tarjeta") return "Tarjeta mediante enlace de pago";
   if (method === "cash" || method === "Efectivo") return "Efectivo";
   return method || "-";
 }

@@ -38,7 +38,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
             ) : product.is_new ? (
               <span className="rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold uppercase text-[#080808]">Nuevo</span>
             ) : isLowStock ? (
-              <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-[10px] font-semibold uppercase text-[#b91c25]">Ultimos</span>
+              <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-[10px] font-semibold uppercase text-[#b91c25]">Últimos</span>
             ) : null}
             {isWholesalePriceVisible ? (
               <span className="rounded-md bg-[#e4252c] px-2 py-1 text-[10px] font-semibold uppercase text-white">Precio mayorista</span>

@@ -148,7 +148,7 @@ const orderStatusLabels: Record<string, string> = {
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta por link",
+  card: "Tarjeta mediante enlace",
   cash: "Efectivo",
 };
 
@@ -857,7 +857,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
         <Metric label="Prospectos" value={prospects.length.toLocaleString("es-HN")} />
         <Metric label="Pendientes" value={pendingFollowups.length.toLocaleString("es-HN")} />
         <Metric label="Atrasados" value={overdueCount.toLocaleString("es-HN")} />
-        <Metric label="Solicitudes mayoreo" value={wholesaleRequests.length.toLocaleString("es-HN")} />
+        <Metric label="Solicitudes de mayoreo" value={wholesaleRequests.length.toLocaleString("es-HN")} />
         <Metric label="Pipeline estimado" value={formatCurrency(estimatedPipeline)} />
       </div>
 
@@ -978,7 +978,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
             <Field label="Teléfono">
               <Input value={lead.phone} onChange={(event) => updateLead("phone", event.target.value)} />
             </Field>
-            <Field label="Correo">
+            <Field label="Correo electrónico">
               <Input type="email" value={lead.email} onChange={(event) => updateLead("email", event.target.value)} />
             </Field>
             <Field label="RTN">
@@ -1055,7 +1055,7 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
                 ))}
               </select>
             </Field>
-            <Field label="Titulo">
+            <Field label="Título">
               <Input value={followup.title} onChange={(event) => updateFollowup("title", event.target.value)} />
             </Field>
             <Field label="Próxima acción">
@@ -1884,7 +1884,7 @@ function PermanentDeleteAccountModal({
 
         <div className="mt-5 grid gap-2 rounded-lg border border-black/10 bg-[#f4f4f5] p-4 text-sm sm:grid-cols-2">
           <InfoLine label="Nombre" value={customerDisplayName(customer)} />
-          <InfoLine label="Correo" value={email} />
+          <InfoLine label="Correo electrónico" value={email} />
           <InfoLine label="Teléfono" value={phone} />
           <InfoLine label="Rol" value="Cliente" />
           <InfoLine label="Estado" value={customer.account_state} />
@@ -2272,7 +2272,7 @@ function CustomerProfileSummary({ profile }: { profile: CrmCustomerProfile }) {
           <Metric label="Rol" value={roleLabel} />
           <Metric label="Estado" value={customer.account_active === false || !customer.active ? "Suspendido" : "Activo"} />
           <Metric label="Permisos" value={customer.account_role === "business_owner" ? "Acceso empresarial" : "Acceso operativo"} />
-          <Metric label="Auditoria" value={customer.last_activity_at ? "Con actividad" : "Sin actividad"} />
+          <Metric label="Auditoría" value={customer.last_activity_at ? "Con actividad" : "Sin actividad"} />
         </section>
         <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <CustomerProfileInfo customer={customer} compact />
@@ -2334,23 +2334,23 @@ function CustomerProfileInfo({ customer, compact = false }: { customer: CrmCusto
   if (customer.profile_kind === "internal") {
     return (
       <section className="rounded-lg border border-black/10 bg-white p-5">
-        <h3 className="font-semibold">Informacion operativa</h3>
+        <h3 className="font-semibold">Información operativa</h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <InfoLine label="Nombre" value={customerDisplayName(customer)} />
           <InfoLine label="Usuario" value={customer.account_full_name ?? customerDisplayName(customer)} />
-          <InfoLine label="Correo" value={customer.account_email ?? customer.email ?? "Sin correo"} />
+          <InfoLine label="Correo electrónico" value={customer.account_email ?? customer.email ?? "Sin correo electrónico"} />
         <InfoLine label="Teléfono" value={customer.account_phone ?? customer.phone ?? "Sin teléfono"} />
           <InfoLine label="Rol" value={customer.account_role ? roleLabels[customer.account_role] : customer.profile_label} />
           <InfoLine label="Estado" value={customer.account_active === false || !customer.active ? "Suspendido" : "Activo"} />
-          <InfoLine label="Fecha de creacion" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
-          <InfoLine label="Ultimo acceso" value={formatDateTime(customer.last_activity_at)} />
+          <InfoLine label="Fecha de creación" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
+          <InfoLine label="Último acceso" value={formatDateTime(customer.last_activity_at)} />
           {!compact ? (
             <InfoLine
               label="Acceso"
-              value={customer.account_role === "business_owner" ? "Gestion completa del negocio" : "Permisos operativos por rol"}
+              value={customer.account_role === "business_owner" ? "Gestión completa del negocio" : "Permisos operativos por rol"}
             />
           ) : null}
-          {!compact ? <InfoLine label="Compras" value="Compras personales vinculadas en seccion secundaria" /> : null}
+          {!compact ? <InfoLine label="Compras" value="Compras personales vinculadas en una sección secundaria" /> : null}
         </div>
       </section>
     );
@@ -2361,7 +2361,7 @@ function CustomerProfileInfo({ customer, compact = false }: { customer: CrmCusto
       <h3 className="font-semibold">Información general</h3>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <InfoLine label="Nombre" value={customerDisplayName(customer)} />
-        <InfoLine label="Correo" value={customer.account_email ?? customer.email ?? "Sin correo"} />
+        <InfoLine label="Correo electrónico" value={customer.account_email ?? customer.email ?? "Sin correo electrónico"} />
         <InfoLine label="Teléfono" value={customer.account_phone ?? customer.phone ?? "Sin teléfono"} />
         <InfoLine label="Ciudad" value={customer.city ?? "Sin ciudad"} />
         <InfoLine label="RTN" value={customer.tax_id ?? "Sin RTN"} />
@@ -2370,7 +2370,7 @@ function CustomerProfileInfo({ customer, compact = false }: { customer: CrmCusto
         <InfoLine label="Mayorista" value={customer.is_wholesale ? "Aprobado" : customer.has_wholesale_request ? "Solicitud pendiente" : "No aprobado"} />
         <InfoLine label="Fecha de registro" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
         <InfoLine label="Última actividad" value={formatDateTime(customer.last_activity_at)} />
-        {!compact ? <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} /> : null}
+        {!compact ? <InfoLine label="Correo electrónico confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} /> : null}
         {!compact ? <InfoLine label="Estado CRM" value={leadStatusLabels[customer.lead_status]} /> : null}
       </div>
     </section>
@@ -2863,7 +2863,7 @@ function CustomerDetailCard({
           <InfoLine label="Tipo de cliente" value={customer.customer_type === "Retail" ? "Cliente al detalle" : "Mayorista"} />
           <InfoLine label="Estado CRM" value={leadStatusLabels[customer.lead_status]} />
           <InfoLine label="Estado de cuenta" value={customer.account_state} />
-          <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} />
+          <InfoLine label="Correo electrónico confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} />
           <InfoLine label="Pedidos" value={customer.order_count.toLocaleString("es-HN")} />
           <InfoLine label="Facturas" value={customer.invoice_count.toLocaleString("es-HN")} />
           <InfoLine label="Estado mayorista" value={customer.wholesale_lifecycle_status} />
@@ -3032,7 +3032,7 @@ function CustomerAccountsTable({
                     <td className="px-4 py-3">
                       <p>{email || "Sin correo"}</p>
                       <p className="text-xs text-black/45">{customer.account_phone ?? customer.phone ?? "Sin teléfono"}</p>
-                      <p className="mt-1 text-xs text-black/45">Correo: {customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"}</p>
+                      <p className="mt-1 text-xs text-black/45">Correo electrónico: {customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"}</p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">

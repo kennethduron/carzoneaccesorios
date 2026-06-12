@@ -33,7 +33,7 @@ const transferProgressSteps = [
 
 const cardProgressSteps = [
   { key: "recibido", label: "Pedido recibido" },
-  { key: "link_pago", label: "Link de pago por WhatsApp" },
+  { key: "link_pago", label: "Enlace de pago por WhatsApp" },
   { key: "pago_aprobado", label: "Pago aprobado" },
   { key: "preparacion", label: "En preparación" },
   { key: "empacado", label: "Empacado" },
@@ -44,7 +44,7 @@ const cardProgressSteps = [
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta por link de pago",
+  card: "Tarjeta mediante enlace de pago",
   cash: "Efectivo",
 };
 
@@ -80,7 +80,7 @@ function customerPaymentLabel(order: PublicTrackingOrder) {
     if (order.paymentTiming === "on_delivery") return "Pago pendiente al recibir";
     return "Pago en revisión";
   }
-  if (order.paymentMethod === "card") return "Pago pendiente por link";
+  if (order.paymentMethod === "card") return "Pago pendiente mediante enlace";
   return "Pendiente de confirmación";
 }
 

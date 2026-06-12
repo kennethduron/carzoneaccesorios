@@ -123,7 +123,7 @@ export default async function AdminUsagePage() {
           <p className="text-sm font-semibold">Cuenta técnica oficial de servicios</p>
           <p className="mt-1 text-lg font-semibold">{technicalAlertSettings.serviceAccountEmail}</p>
           <p className="mt-2 text-xs leading-5 text-black/50">
-            Uso privado para Cron-Job.org, Cloudinary, Brevo, backups, alertas técnicas e integraciones futuras.
+            Uso privado para Cron-Job.org, Cloudinary, Brevo, copias de seguridad, alertas técnicas e integraciones futuras.
           </p>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
@@ -147,7 +147,7 @@ export default async function AdminUsagePage() {
         </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="rounded-md border border-black/10 p-4">
-            <p className="text-sm font-semibold">Notificaciones últimas 24h</p>
+            <p className="text-sm font-semibold">Notificaciones de las últimas 24 h</p>
             <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
               <p>Enviadas: {formatNumber(usage.notificationStatus.sent24h)}</p>
               <p>Fallidas: {formatNumber(usage.notificationStatus.failed24h)}</p>
@@ -362,7 +362,7 @@ export default async function AdminUsagePage() {
         </div>
         <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
           <div className="rounded-lg border border-dashed border-black/15 bg-[#fafaf7] p-4">
-            <p className="text-sm font-semibold">Tablas criticas</p>
+            <p className="text-sm font-semibold">Tablas críticas</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {usage.criticalTables.map((table) => (
                 <span key={table} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-black/65">
@@ -396,10 +396,10 @@ export default async function AdminUsagePage() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase text-black/45">
                 <tr>
-                  <th className="py-2">Area</th>
+                  <th className="py-2">Área</th>
                   <th className="py-2">Estado</th>
                   <th className="py-2">Frecuencia</th>
-                  <th className="py-2">Recomendacion</th>
+                  <th className="py-2">Recomendación</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/10">

@@ -162,7 +162,7 @@ function getHealthStatus(databaseSizeBytes: number): UsageHealthStatus {
 
 function getTechnicalRecommendation(status: UsageHealthStatus) {
   if (status === "rojo") {
-    return "La base de datos ya esta en zona roja. Se debe pasar a Supabase Pro y revisar logs/indices inmediatamente.";
+    return "La base de datos ya está en zona roja. Se debe pasar a Supabase Pro y revisar los registros e índices inmediatamente.";
   }
 
   if (status === "naranja") {
@@ -170,7 +170,7 @@ function getTechnicalRecommendation(status: UsageHealthStatus) {
   }
 
   if (status === "amarillo") {
-    return "El uso esta creciendo. Revisa tablas pesadas mensualmente y prepara upgrade antes de 350-400 MB.";
+    return "El uso está creciendo. Revisa mensualmente las tablas de mayor tamaño y prepara una actualización del plan antes de alcanzar entre 350 y 400 MB.";
   }
 
   return "Uso saludable para etapa inicial. Mantener archivos fuera de Postgres y limpieza periodica de logs.";
@@ -430,18 +430,18 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     metrics: [
       { key: "orders", label: "Pedidos", value: orders, helper: "Lectura paginada en admin y reportes." },
       { key: "invoices", label: "Facturas", value: invoices, helper: "PDF generado bajo demanda; no se duplican archivos." },
-      { key: "products", label: "Productos", value: products, helper: "Imagenes fuera de Postgres." },
+      { key: "products", label: "Productos", value: products, helper: "Imágenes fuera de Postgres." },
       { key: "customers", label: "Clientes", value: customers, helper: "CRM paginado por clientes y seguimientos." },
       { key: "logs", label: "Logs operativos", value: auditLogs + errorLogs + notificationLogs, helper: "Audit, error y notificaciones." },
     ],
     logs: [
-      { table: "audit_logs", label: "Audit logs", total: auditLogs, olderThan90Days: oldAuditLogs },
+      { table: "audit_logs", label: "Registros de auditoría", total: auditLogs, olderThan90Days: oldAuditLogs },
       { table: "error_logs", label: "Error logs", total: errorLogs, olderThan90Days: oldErrorLogs },
       { table: "notification_logs", label: "Notification logs", total: notificationLogs, olderThan90Days: oldNotificationLogs },
     ],
     storageReferences: [
       {
-        label: "Imagenes de productos",
+        label: "Imágenes de productos",
         value: productImages,
         helper: "Registros con URL/public_id de Cloudinary o Storage.",
       },
@@ -491,11 +491,11 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
     },
     backupChecklist: [
       {
-        area: "Supabase database",
+        area: "Base de datos de Supabase",
         status: "manual",
         cadence: "Diario, semanal y mensual",
         recommendation:
-          "Activar backups automáticos del plan Pro o ejecutar respaldo programado externo con prueba de restauracion mensual.",
+          "Activar copias de seguridad automáticas del plan Pro o ejecutar un respaldo externo programado con una prueba de restauración mensual.",
       },
       {
         area: "Migraciones Supabase",
@@ -504,10 +504,10 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
         recommendation: "Mantener supabase/migrations y supabase/schema.sql versionados antes de cualquier deploy.",
       },
       {
-        area: "Cloudinary productos",
+        area: "Productos en Cloudinary",
         status: "manual",
         cadence: "Semanal",
-        recommendation: "Exportar listado de public_id, URL y carpeta; habilitar backup/versionado en Cloudinary si el plan lo permite.",
+        recommendation: "Exportar el listado de public_id, URL y carpeta; habilitar copias de seguridad o control de versiones en Cloudinary si el plan lo permite.",
       },
       {
         area: "Comprobantes de pago",
@@ -522,10 +522,10 @@ export async function getAdminUsageOverview(): Promise<AdminUsageOverview> {
         recommendation: "Guardar inventario cifrado de nombres de variables, responsable y fecha de rotacion; nunca guardar valores en Git.",
       },
       {
-        area: "Restauracion de emergencia",
+        area: "Restauración de emergencia",
         status: "pending",
         cadence: "Trimestral",
-        recommendation: "Probar restauracion en proyecto Supabase/Vercel separado antes de depender del plan en produccion.",
+        recommendation: "Probar la restauración en un proyecto separado de Supabase/Vercel antes de depender del plan en producción.",
       },
     ],
   };

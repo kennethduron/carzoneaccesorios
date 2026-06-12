@@ -29,7 +29,7 @@ export default async function AdminFiscalSettingsPage() {
       <div className="space-y-5">
         <div className="rounded-lg border border-black/10 bg-white p-5 text-sm text-black/60">
           Esta pantalla queda reservada para datos fiscales: RTN, CAI, rango, correlativo y datos legales de factura.
-          Redes, contacto, mayoristas, pagos por link y notificaciones se gestionan en{" "}
+          Las redes, el contacto, los mayoristas, los pagos mediante enlace y las notificaciones se gestionan en{" "}
           <Link href="/admin/configuracion" className="font-semibold text-[#e4252c]">
             Configuración empresarial
           </Link>

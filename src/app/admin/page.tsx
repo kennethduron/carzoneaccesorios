@@ -104,7 +104,7 @@ const moduleGroups = [
       { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["security:read"] },
       { title: "Configuración empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
       { title: "Banners festivos", href: "/admin/banners", description: "Flyers, promociones y mensajes por días festivos de Honduras.", permissions: ["settings:manage", "commercial_settings:manage"] },
-      { title: "Tarjeta por link", href: "/admin/revision-bac", description: "Referencia operativa; el flujo activo usa link externo por WhatsApp.", permissions: ["commercial_settings:manage", "settings:manage"] },
+      { title: "Tarjeta mediante enlace", href: "/admin/revision-bac", description: "Referencia operativa; el flujo activo usa un enlace externo enviado por WhatsApp.", permissions: ["commercial_settings:manage", "settings:manage"] },
     ],
   },
   {
@@ -114,20 +114,20 @@ const moduleGroups = [
     description: "Material operativo para resolver dudas rápido.",
     defaultOpen: false,
     modules: [
-      { title: "Guía rápida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y pagos por link.", permissions: ["admin:access"] },
-      { title: "Ayuda interna", href: "/admin/ayuda", description: "Manual operativo por rol para productos, pedidos, facturas, CRM y pagos por link.", permissions: ["admin:access"] },
+      { title: "Guía rápida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y pagos mediante enlace.", permissions: ["admin:access"] },
+      { title: "Ayuda interna", href: "/admin/ayuda", description: "Manual operativo por rol para productos, pedidos, facturas, CRM y pagos mediante enlace.", permissions: ["admin:access"] },
     ],
   },
   {
     id: "tecnico",
     title: "Técnico",
     navLabel: "Técnico",
-    description: "Monitoreo, cron, backups y alertas técnicas.",
+    description: "Monitoreo, tareas programadas, copias de seguridad y alertas técnicas.",
     defaultOpen: true,
     technicalOnly: true,
     modules: [
       { title: "Uso y monitoreo", href: "/admin/uso", description: "Volumen de datos, logs antiguos, cron y referencias externas.", permissions: ["technical:tools"] },
-      { title: "Backups", href: "/admin/uso", description: "Estado operativo y controles de respaldo.", permissions: ["system:backups"] },
+      { title: "Copias de seguridad", href: "/admin/uso", description: "Estado operativo y controles de respaldo.", permissions: ["system:backups"] },
       { title: "Alertas técnicas", href: "/admin/uso", description: "Errores, notificaciones y monitoreo técnico.", permissions: ["technical:tools"] },
     ],
   },
@@ -559,7 +559,7 @@ export default async function AdminPage() {
               />
               <OperationalStatus label="Backups" status={overview.latestBackupStatus} detail={formatDate(overview.latestBackupAt)} />
               <OperationalStatus
-                label="Correos fallidos"
+                label="Correos electrónicos fallidos"
                 status={overview.failedEmails > 0 ? "failed" : "success"}
                 detail={`${overview.failedEmails.toLocaleString("es-HN")} correos en estado failed`}
               />

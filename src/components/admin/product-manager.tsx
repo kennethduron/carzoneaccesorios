@@ -1548,7 +1548,7 @@ export function ProductManager({
             Excel
           </Button>
           {canUseTechnicalExports ? (
-            <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica solo para Kenneth/admin técnico">
+            <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica disponible solo para el Technical Owner">
               <Download size={17} />
               CSV técnico
             </Button>

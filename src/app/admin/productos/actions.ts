@@ -291,7 +291,7 @@ async function setProductStockLocked(productId: string, nextStock: number): Prom
   const { data, error } = await supabase.rpc("set_product_stock_locked", {
     target_product_id: productId,
     target_stock: nextStock,
-    movement_notes: "Ajuste desde modulo de productos",
+    movement_notes: "Ajuste desde el módulo de productos",
   });
 
   if (error) {
@@ -312,7 +312,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
     const angle = String(formData.get("angle") ?? "principal").trim() || "principal";
 
     if (!(file instanceof File) || file.size === 0) {
-      return { ok: false, message: "Selecciona una imagen valida antes de subir." };
+    return { ok: false, message: "Selecciona una imagen válida antes de subirla." };
     }
 
     if (!isAllowedProductImageMimeType(file.type)) {

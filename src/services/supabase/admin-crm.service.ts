@@ -343,7 +343,7 @@ function buildDuplicateGroups(
   }
 
   for (const customer of customers) {
-    addCustomer("email", customer.email ? normalizeAccountEmail(customer.email) : null, customer.email ?? "Correo repetido", customer);
+    addCustomer("email", customer.email ? normalizeAccountEmail(customer.email) : null, customer.email ?? "Correo electrónico repetido", customer);
     addCustomer("phone", normalizePhoneKey(customer.phone), normalizePhoneKey(customer.phone) ?? "Teléfono repetido", customer);
   }
 
@@ -378,11 +378,11 @@ function getAccountState(input: {
   role: AppRole | null;
 }) {
   if (input.role === "business_owner") {
-    return "Dueño operativo" as const;
+    return "Business Owner" as const;
   }
 
   if (input.role === "technical_owner") {
-    return "Admin técnico" as const;
+    return "Technical Owner" as const;
   }
 
   if (isInternalRole(input.role)) {
@@ -410,11 +410,11 @@ function getAccountState(input: {
   }
 
   if (input.userId && input.emailConfirmedAt) {
-    return "Correo confirmado" as const;
+    return "Correo electrónico confirmado" as const;
   }
 
   if (input.userId) {
-    return "Correo pendiente de confirmar" as const;
+    return "Correo electrónico pendiente de confirmar" as const;
   }
 
   if (input.hasOrders) {
@@ -492,7 +492,7 @@ function normalizeCustomer(
     profile_label: profileLabel,
     primary_badges: internal
       ? accountRole === "business_owner"
-        ? ["Dueño operativo", "Usuario interno"]
+        ? ["Business Owner", "Usuario interno"]
         : [profileLabel, "Usuario interno"]
       : row.is_wholesale
         ? ["Cliente mayorista"]

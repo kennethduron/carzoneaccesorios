@@ -51,7 +51,7 @@ export type CheckoutData = {
   department: string;
   city: string;
   address: string;
-  paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Tarjeta por link de pago" | "Efectivo";
+  paymentMethod: "Transferencia bancaria" | "Tarjeta" | "Tarjeta por link de pago" | "Tarjeta mediante enlace de pago" | "Efectivo";
   paymentTiming: "before_delivery" | "on_delivery";
   bankTransferReference: string;
   receiveOrderEmailUpdates: boolean;

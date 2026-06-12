@@ -362,7 +362,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       outcome: "suspended",
       context: requestContext,
     });
-    return { ok: false, message: "Tu acceso mayorista esta suspendido. Contacta a servicio al cliente.", state: suspendedWholesaleState() };
+    return { ok: false, message: "Tu acceso mayorista está suspendido. Contacta al servicio al cliente.", state: suspendedWholesaleState() };
   }
 
   const rejectedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "rejected");

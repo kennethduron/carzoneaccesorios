@@ -13,9 +13,9 @@ export const internalRoles = [
 export type InternalRole = (typeof internalRoles)[number];
 
 export const roleLabels: Record<AppRole, string> = {
-  technical_owner: "Admin técnico",
-  admin: "Admin",
-  business_owner: "Dueno operativo",
+  technical_owner: "Technical Owner",
+  admin: "Administrador",
+  business_owner: "Business Owner",
   vendedor: "Vendedor",
   bodega: "Bodega",
   contadora: "Contadora",

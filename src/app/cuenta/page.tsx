@@ -121,7 +121,7 @@ export default async function CuentaPage({
       <section className="mx-auto max-w-6xl px-5 py-8">
         {confirmed ? (
           <div className="mb-4 rounded-lg border border-[#16a34a]/20 bg-[#f0fdf4] p-4 text-sm text-[#166534]">
-            Correo confirmado correctamente. Tu cuenta ya está activa.
+            Correo electrónico confirmado correctamente. Tu cuenta ya está activa.
           </div>
         ) : null}
 
@@ -148,10 +148,10 @@ export default async function CuentaPage({
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Info label="Nombre" value={profile.full_name || "Cliente"} />
-              <Info label="Correo" value={profile.email ?? "No disponible"} />
+              <Info label="Correo electrónico" value={profile.email ?? "No disponible"} />
               <Info label="Teléfono" value={accountSummary.phone || "No disponible"} />
               <Info label="Tipo de cuenta" value={visibleRole} />
-              <Info label="Correo confirmado" value={accountSummary.emailConfirmed ? "Sí" : "No"} />
+              <Info label="Correo electrónico confirmado" value={accountSummary.emailConfirmed ? "Sí" : "No"} />
               <Info label="Registro" value={formatDate(accountSummary.registeredAt)} />
               <Info label="Total de pedidos" value={accountSummary.orderCount.toLocaleString("es-HN")} />
               <Info label="Total comprado" value={formatCurrency(accountSummary.totalPurchased)} />

@@ -54,8 +54,8 @@ export type CrmCustomerOption = {
   last_activity_at: string | null;
   account_state:
     | "Cuenta creada"
-    | "Correo pendiente de confirmar"
-    | "Correo confirmado"
+    | "Correo electrónico pendiente de confirmar"
+    | "Correo electrónico confirmado"
     | "Cliente activo"
     | "Cliente invitado"
     | "Compra sin cuenta"
@@ -64,8 +64,8 @@ export type CrmCustomerOption = {
     | "Mayorista aprobado"
     | "Cuenta suspendida"
     | "Usuario interno"
-    | "Dueño operativo"
-    | "Admin técnico";
+    | "Business Owner"
+    | "Technical Owner";
   customer_type: "Retail" | "Mayorista";
   has_wholesale_request: boolean;
   wholesale_first_purchase_completed: boolean;

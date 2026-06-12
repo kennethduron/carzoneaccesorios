@@ -109,7 +109,7 @@ function buildInternalEmail(input: PublicFormNotification) {
           <table style="width:100%;border-collapse:collapse;font-size:14px;">
             ${row("Nombre", input.name)}
             ${row("Empresa", input.businessName)}
-            ${row("Correo", input.email)}
+            ${row("Correo electrónico", input.email)}
             ${row("Teléfono", input.phone)}
             ${row("RTN", input.taxId)}
             ${row("Ciudad", input.city)}

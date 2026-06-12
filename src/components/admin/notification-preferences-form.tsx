@@ -17,9 +17,9 @@ type Props = {
 };
 
 const availableRoles: Array<{ value: AppRole; label: string }> = [
-  { value: "technical_owner", label: "Technical owner" },
-  { value: "business_owner", label: "Business owner" },
-  { value: "admin", label: "Admin" },
+  { value: "technical_owner", label: "Technical Owner" },
+  { value: "business_owner", label: "Business Owner" },
+  { value: "admin", label: "Administrador" },
   { value: "contadora", label: "Contadora" },
   { value: "bodega", label: "Bodega" },
   { value: "vendedor", label: "Vendedor" },
@@ -140,7 +140,7 @@ export function NotificationPreferencesForm({ preferences, userPreferences, curr
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-4">
                 <Switch label="Interna" checked={item.internal_enabled} disabled={false} onChange={(value) => updatePersonal(item.notification_type, { internal_enabled: value })} />
-                <Switch label="Correo" checked={item.email_enabled} disabled={item.email_required} onChange={(value) => updatePersonal(item.notification_type, { email_enabled: value })} />
+                <Switch label="Correo electrónico" checked={item.email_enabled} disabled={item.email_required} onChange={(value) => updatePersonal(item.notification_type, { email_enabled: value })} />
                 <Switch label="Push" checked={item.push_enabled} disabled={false} onChange={(value) => updatePersonal(item.notification_type, { push_enabled: value })} />
                 <label className="grid gap-1 text-sm">
                   <span className="text-xs font-medium uppercase text-black/45">Frecuencia</span>
@@ -185,7 +185,7 @@ export function NotificationPreferencesForm({ preferences, userPreferences, curr
                         <p className="text-xs text-black/45">{item.notification_type}</p>
                       </div>
                       {item.technical_only ? (
-                        <span className="w-fit rounded-full bg-black px-2.5 py-1 text-xs font-semibold text-white">Tecnica</span>
+                        <span className="w-fit rounded-full bg-black px-2.5 py-1 text-xs font-semibold text-white">Técnica</span>
                       ) : null}
                     </div>
 
@@ -197,7 +197,7 @@ export function NotificationPreferencesForm({ preferences, userPreferences, curr
                         onChange={(value) => update(item.id, { internal_enabled: value })}
                       />
                       <Switch
-                        label="Correo"
+                        label="Correo electrónico"
                         checked={item.email_enabled}
                         disabled={!canEdit}
                         onChange={(value) => update(item.id, { email_enabled: value })}
@@ -254,7 +254,7 @@ export function NotificationPreferencesForm({ preferences, userPreferences, curr
                       </div>
                     ) : (
                       <p className="mt-3 rounded-md bg-[#f4f4f5] p-2 text-xs text-black/55">
-                        Solo technical_owner puede modificar esta preferencia.
+                        Solo el Technical Owner puede modificar esta preferencia.
                       </p>
                     )}
                   </div>

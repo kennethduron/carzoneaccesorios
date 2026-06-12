@@ -54,7 +54,7 @@ function validateEmailList(value: string) {
     .filter(Boolean);
 
   const invalid = emails.find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
-  return invalid ? `Correo inválido: ${invalid}` : null;
+  return invalid ? `Correo electrónico inválido: ${invalid}` : null;
 }
 
 function validateUrl(label: string, value: string) {

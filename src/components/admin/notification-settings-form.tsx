@@ -54,7 +54,7 @@ export function NotificationSettingsForm({ settings, canEdit }: NotificationSett
         <div>
           <h2 className="text-lg font-semibold">Notificaciones automáticas</h2>
           <p className="mt-1 text-sm text-black/55">
-            Correos transaccionales para avisar al dueño o administradores cuando ocurren eventos importantes.
+            Correos electrónicos transaccionales para avisar al dueño o a los administradores cuando ocurren eventos importantes.
           </p>
         </div>
       </div>
@@ -67,7 +67,7 @@ export function NotificationSettingsForm({ settings, canEdit }: NotificationSett
 
       <div className="grid gap-4">
         <label>
-          <span className={fieldClass}>Correos de notificación</span>
+          <span className={fieldClass}>Correos electrónicos de notificación</span>
           <Input
             disabled={!canEdit}
             value={form.notification_emails}

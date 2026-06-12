@@ -362,7 +362,7 @@ async function buildBackupArchive(input: EmailBackupInput, runType: "manual_emai
   }
 
   if (buffer.length <= 0) {
-    throw new Error("El backup generado esta vacio.");
+    throw new Error("La copia de seguridad generada está vacía.");
   }
 
   return {
@@ -395,16 +395,16 @@ function emailBody(input: {
   return `
     <div style="font-family:Arial,sans-serif;color:#111;line-height:1.6;">
       <p>Hola,</p>
-      <p>Se adjunta el backup de Car Zone Accesorios.</p>
+      <p>Se adjunta la copia de seguridad de Car Zone Accesorios.</p>
       <p>
         <strong>Fecha:</strong> ${htmlEscape(input.timestamp)}<br />
         <strong>Entorno:</strong> ${htmlEscape(input.environment)}<br />
         <strong>Tablas incluidas:</strong> ${htmlEscape(input.tablesExported.join(", "))}<br />
         <strong>Total de registros:</strong> ${htmlEscape(input.totalRecords)}<br />
-        <strong>Tamano del archivo:</strong> ${htmlEscape(input.fileSizeLabel)}
+        <strong>Tamaño del archivo:</strong> ${htmlEscape(input.fileSizeLabel)}
       </p>
-      <p>Este backup no contiene contrasenas, llaves API ni secretos.</p>
-      <p>Para restauracion, entregar este archivo a soporte tecnico o a Codex/ChatGPT con acceso autorizado al proyecto.</p>
+      <p>Esta copia de seguridad no contiene contraseñas, claves de API ni secretos.</p>
+      <p>Para restaurarla, entrega este archivo al soporte técnico o a Codex/ChatGPT con acceso autorizado al proyecto.</p>
       <p>Atentamente,<br />Sistema Car Zone Accesorios</p>
     </div>
   `;
@@ -438,7 +438,7 @@ async function insertBackupRun(input: EmailBackupInput, startedAt: string, runTy
       return null;
     }
 
-    throw new Error("No se pudo registrar el inicio del backup.");
+    throw new Error("No se pudo registrar el inicio de la copia de seguridad.");
   }
 
   return data?.id ?? null;
@@ -519,7 +519,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
     const maxBytes = getMaxBytes();
 
     if (archive.buffer.length > maxBytes) {
-      throw new Error("El backup supera el tamano permitido para correo. Descargalo manualmente o configura almacenamiento externo.");
+      throw new Error("La copia de seguridad supera el tamaño permitido para el correo electrónico. Descárgala manualmente o configura un almacenamiento externo.");
     }
 
     const timestamp = emailTimestamp();
@@ -549,7 +549,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
     });
 
     if (!delivery.ok) {
-      throw new Error(delivery.errorMessage ?? "No se pudo enviar el backup por correo.");
+      throw new Error(delivery.errorMessage ?? "No se pudo enviar la copia de seguridad por correo electrónico.");
     }
 
     const finishedAt = new Date().toISOString();
@@ -592,7 +592,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
 
     return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo generar el backup por correo.";
+    const message = error instanceof Error ? error.message : "No se pudo generar la copia de seguridad por correo electrónico.";
     const finishedAt = new Date().toISOString();
     await updateBackupRun(runId, {
       finished_at: finishedAt,

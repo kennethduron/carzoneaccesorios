@@ -48,7 +48,7 @@ const statusLabels: Record<InvoiceStatus, string> = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta por link",
+  card: "Tarjeta mediante enlace",
   cash: "Efectivo",
 };
 
@@ -56,7 +56,7 @@ const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
   customer_name: "Nombre fiscal",
   customer_rtn: "RTN",
   customer_phone: "Teléfono",
-  customer_email: "Correo",
+  customer_email: "Correo electrónico",
   customer_address: "Dirección fiscal",
 };
 
@@ -382,7 +382,7 @@ export function AdminInvoicesManager({
             >
               <option value="all">Todos</option>
               <option value="bank_transfer">Transferencia bancaria</option>
-              <option value="card">Tarjeta por link</option>
+              <option value="card">Tarjeta mediante enlace</option>
               <option value="cash">Efectivo</option>
             </select>
           </label>
@@ -391,7 +391,7 @@ export function AdminInvoicesManager({
             Excel
           </Button>
           {canUseTechnicalExports ? (
-            <Button onClick={exportCsv} variant="ghost" title="Exportación técnica solo para Kenneth/admin técnico">
+            <Button onClick={exportCsv} variant="ghost" title="Exportación técnica disponible solo para el Technical Owner">
               <Download size={16} />
               CSV técnico
             </Button>
@@ -614,7 +614,7 @@ function InvoiceModal({
           <Info label="Fecha de emisión" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
           <Info label="Cliente" value={invoice.customer_name} />
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
-          <Info label="Correo" value={invoice.customer_email ?? "-"} />
+          <Info label="Correo electrónico" value={invoice.customer_email ?? "-"} />
           <Info label="Teléfono" value={invoice.customer_phone ?? "-"} />
           <Info label="Dirección" value={invoice.customer_address ?? "-"} />
           <Info label="Método de pago" value={paymentLabels[invoice.payment_method] ?? invoice.payment_method} />
@@ -652,7 +652,7 @@ function InvoiceModal({
             <p className="mt-2 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">{fiscalCorrectionWarning}</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cliente / razon social</span>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cliente / razón social</span>
                 <Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
               </label>
               <label>
@@ -665,7 +665,7 @@ function InvoiceModal({
                 <Input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
               </label>
               <label>
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo</span>
+                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Correo electrónico</span>
                 <Input value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} />
               </label>
               <label className="md:col-span-2">
@@ -728,7 +728,7 @@ function InvoiceModal({
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Cantidad</th>
                 <th className="px-4 py-3">Precio</th>
-                <th className="px-4 py-3">Subtotal linea</th>
+                <th className="px-4 py-3">Subtotal de línea</th>
                 <th className="px-4 py-3">Total</th>
               </tr>
             </thead>

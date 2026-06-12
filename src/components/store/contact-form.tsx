@@ -58,7 +58,7 @@ export function ContactForm() {
           type="email"
           value={form.email}
           onChange={(event) => updateField("email", event.target.value)}
-          placeholder="Correo"
+          placeholder="Correo electrónico"
           className="rounded-md border border-black/10 px-3 py-2 text-sm outline-none"
           required
         />

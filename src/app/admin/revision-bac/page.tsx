@@ -24,7 +24,7 @@ const checklistGroups = [
     items: [
       "No hay integración directa activa dentro del sitio.",
       "No hay proceso automático de pago activo para tarjeta.",
-      "La tarjeta se gestiona por link externo enviado manualmente por WhatsApp.",
+      "La tarjeta se gestiona mediante un enlace externo enviado manualmente por WhatsApp.",
       "La confirmación del pago se registra manualmente desde pedidos.",
     ],
   },
@@ -45,7 +45,7 @@ const checklistGroups = [
       "Esta sección queda como referencia futura no activa.",
       "No usar credenciales ni llaves bancarias para el flujo actual.",
       "No solicitar datos de tarjeta dentro del sitio.",
-      "Confirmar pagos de tarjeta solo tras verificar el link externo.",
+      "Confirmar pagos con tarjeta solo después de verificar el enlace externo.",
     ],
   },
   {
@@ -80,15 +80,15 @@ export default async function RevisionBacPage() {
   const visibleChecklistGroups = canViewTechnical ? checklistGroups : checklistGroups.filter((group) => group.status !== "credentials");
 
   return (
-    <AdminShell title="Tarjeta por link externo">
+    <AdminShell title="Tarjeta mediante enlace externo">
       <section className="grid gap-6">
         <div className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-sm text-black/50">Flujo activo sin integracion directa</p>
-              <h1 className="mt-1 text-2xl font-semibold">Tarjeta por link de pago externo</h1>
+              <p className="text-sm text-black/50">Flujo activo sin integración directa</p>
+              <h1 className="mt-1 text-2xl font-semibold">Tarjeta mediante enlace de pago externo</h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-                El checkout no procesa tarjetas dentro del sitio. El equipo envía manualmente un link externo por
+                El checkout no procesa tarjetas dentro del sitio. El equipo envía manualmente un enlace externo por
                 WhatsApp y confirma el pago desde pedidos cuando lo verifica. El sistema no guarda números de tarjeta,
                 CVV ni fecha de vencimiento.
               </p>
@@ -109,7 +109,7 @@ export default async function RevisionBacPage() {
         <div className={`grid gap-4 ${canViewTechnical ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
           <InfoCard
             title="Flujo activo"
-            text="Crear pedido, enviar link externo por WhatsApp, verificar pago y confirmar manualmente desde pedidos."
+            text="Crear el pedido, enviar el enlace externo por WhatsApp, verificar el pago y confirmarlo manualmente desde Pedidos."
           />
           <InfoCard
             title="Qué no debe hacerse"
@@ -117,7 +117,7 @@ export default async function RevisionBacPage() {
           />
           <InfoCard
             title="Confirmación manual"
-            text="El dueño o rol autorizado confirma o rechaza el pago después de revisar el resultado del link externo."
+            text="El dueño o el rol autorizado confirma o rechaza el pago después de revisar el resultado del enlace externo."
           />
         </div>
 
@@ -158,7 +158,7 @@ function ChecklistCard({ title, items, status }: { title: string; items: string[
     completed: "Completado",
     pending: "Pendiente",
     real_data: "Requiere datos reales",
-    credentials: "Integracion no activa",
+    credentials: "Integración no activa",
     legal: "Revisión legal/contable",
   };
   const iconByStatus = {

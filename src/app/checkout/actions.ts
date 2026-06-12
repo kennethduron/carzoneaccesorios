@@ -875,7 +875,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     ok: true,
     message:
       paymentMethod === "card"
-        ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el link de pago."
+        ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago."
         : requiresCashOnDeliveryReview
           ? "Tu pedido fue recibido correctamente. Seleccionaste pago contra entrega. Nuestro equipo revisará el cargo correspondiente y actualizará el total final del pedido."
         : "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",

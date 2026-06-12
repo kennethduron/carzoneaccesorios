@@ -72,7 +72,7 @@ export function renderEmailTemplate(templateKey: string, payload: Record<string,
   const rows = [
     row("Pedido", payload.order_number),
     row("Cliente", payload.customer_name),
-    row("Correo", payload.customer_email),
+    row("Correo electrónico", payload.customer_email),
     row("Teléfono", payload.customer_phone),
     row("Método de pago", payload.payment_method),
     row("Estado", payload.status ?? payload.payment_status),
@@ -297,7 +297,7 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
       failed += 1;
       await createTechnicalNotification({
         type: "system.email_failed",
-        title: "Correo fallido",
+        title: "Fallo en el correo electrónico",
         message: `El correo ${item.template_key} no pudo enviarse después de ${nextAttempts} intentos.`,
         severity: "critical",
         metadata: { queue_id: item.id, to_email: item.to_email, error: result.errorMessage ?? result.technicalMessage },

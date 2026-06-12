@@ -68,7 +68,7 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
           <h2 className="text-lg font-semibold">Datos del comercio</h2>
           <p className="mt-1 text-sm text-black/55">{settings.trade_name || settings.company_name}</p>
           {settings.legal_business_name ? (
-            <p className="mt-1 text-sm text-black/55">Razon social: {settings.legal_business_name}</p>
+            <p className="mt-1 text-sm text-black/55">Razón social: {settings.legal_business_name}</p>
           ) : null}
           {settings.business_rtn ? <p className="mt-1 text-sm text-black/55">RTN: {settings.business_rtn}</p> : null}
         </div>
@@ -87,7 +87,7 @@ export function BusinessContactCard({ settings }: { settings: PublicCompanySetti
         </div>
       ) : null}
       <div className="mt-5 rounded-md bg-[#f4f4f5] p-3 text-sm leading-6 text-black/60">
-        Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp. No ingreses datos de tarjeta en esta
+        Los pagos con tarjeta se coordinan mediante un enlace externo enviado por WhatsApp. No ingreses datos de tarjeta en esta
         página.
       </div>
     </section>

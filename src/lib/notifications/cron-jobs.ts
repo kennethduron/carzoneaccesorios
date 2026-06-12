@@ -203,7 +203,7 @@ export async function checkOverdueFollowupsJob() {
     const created = await createInternalNotification({
       type: "crm.followup_overdue",
       title: "Seguimiento CRM vencido",
-      message: `${title} requiere atencion.`,
+      message: `${title} requiere atención.`,
       severity: "warning",
       module: "CRM",
       userId: assignedUserId,
@@ -223,7 +223,7 @@ export async function checkOverdueFollowupsJob() {
       subject: "Seguimiento CRM vencido - Car Zone Accesorios",
       payload: {
         title: "Seguimiento CRM vencido",
-        message: `${title} requiere atencion.`,
+        message: `${title} requiere atención.`,
         due_at: followup.due_at,
         action_path: "/admin/crm?task=overdue",
         action_label: "Abrir CRM",
@@ -263,7 +263,7 @@ export async function checkLowStockJob() {
     const minimum = Number(product.min_stock ?? 0);
     const criticalLow = minimum > 0 && available > 0 && available <= Math.max(1, Math.floor(minimum / 2));
     const type = available <= 0 ? "inventory.out_of_stock" : criticalLow ? "inventory.critical_low_stock" : "inventory.low_stock";
-    const title = available <= 0 ? "Producto agotado" : criticalLow ? "Producto bajo stock critico" : "Producto bajo stock";
+    const title = available <= 0 ? "Producto agotado" : criticalLow ? "Producto con existencias críticamente bajas" : "Producto con pocas existencias";
     const severity: NotificationSeverity = available <= 0 || criticalLow ? "critical" : "warning";
     const productId = safeString(product.id);
     const created = await createInternalNotification({
@@ -435,8 +435,8 @@ export async function createBackupJob() {
   if (error) {
     await createTechnicalNotification({
       type: "system.backup_failed",
-      title: "No se pudo verificar backups",
-      message: "El endpoint diario no pudo leer backup_logs.",
+      title: "No se pudieron verificar las copias de seguridad",
+      message: "La tarea diaria no pudo leer el registro de copias de seguridad.",
       severity: "critical",
       metadata: { error: error.message },
       dedupeKey: `system.backup_failed:backup_logs_unreadable:${new Date().toISOString().slice(0, 10)}`,
@@ -454,7 +454,7 @@ export async function createBackupJob() {
     await createTechnicalNotification({
       type: "system.backup_failed",
       title: "Backup requiere revisión",
-      message: stale ? "No hay backup reciente registrado en las últimas 36 horas." : "El último backup registrado falló.",
+      message: stale ? "No hay una copia de seguridad reciente registrada en las últimas 36 horas." : "La última copia de seguridad registrada falló.",
       severity: "critical",
       metadata: { latest_backup: latestBackup ?? null, stale },
       dedupeKey: `system.backup_failed:${new Date().toISOString().slice(0, 10)}`,

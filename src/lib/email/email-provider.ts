@@ -157,7 +157,7 @@ async function sendWithBrevo(input: SendEmailInput): Promise<SendEmailResult> {
       status: "skipped",
       provider: "brevo",
       providerMessageId: null,
-      errorMessage: "Brevo esta desactivado. Define BREVO_ENABLED=true cuando la cuenta este lista.",
+      errorMessage: "Brevo está desactivado. Define BREVO_ENABLED=true cuando la cuenta esté lista.",
       technicalMessage: "BREVO_ENABLED is not true.",
     };
   }

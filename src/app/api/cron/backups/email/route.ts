@@ -40,7 +40,7 @@ async function run(request: NextRequest) {
 
     return Response.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo ejecutar el backup por correo.";
+    const message = error instanceof Error ? error.message : "No se pudo ejecutar la copia de seguridad por correo electrónico.";
     await logCronRun({
       jobName: "email-backup",
       status: "failed",
@@ -59,4 +59,3 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   return run(request);
 }
-

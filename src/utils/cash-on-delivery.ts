@@ -1,10 +1,21 @@
-type PaymentMethodLike = "Transferencia bancaria" | "Tarjeta" | "Tarjeta por link de pago" | "Efectivo" | "bank_transfer" | "card" | "cash" | string | null | undefined;
+type PaymentMethodLike =
+  | "Transferencia bancaria"
+  | "Tarjeta"
+  | "Tarjeta por link de pago"
+  | "Tarjeta mediante enlace de pago"
+  | "Efectivo"
+  | "bank_transfer"
+  | "card"
+  | "cash"
+  | string
+  | null
+  | undefined;
 type PaymentTimingLike = "before_delivery" | "on_delivery" | string | null | undefined;
 
 export function normalizePaymentMethod(value: PaymentMethodLike) {
   if (value === "Transferencia bancaria") return "bank_transfer";
   if (value === "Efectivo") return "cash";
-  if (value === "Tarjeta" || value === "Tarjeta por link de pago") return "card";
+  if (value === "Tarjeta" || value === "Tarjeta por link de pago" || value === "Tarjeta mediante enlace de pago") return "card";
   return String(value ?? "");
 }
 

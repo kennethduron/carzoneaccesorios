@@ -61,7 +61,7 @@ const trustBlocks = [
   ["Detalle y mayoreo", "Precio público y precio mayorista para cuentas aprobadas.", BadgePercent],
   ["Rastreo de pedido", "Seguimiento simple para saber en qué etapa va tu compra.", Radar],
   ["Facturación disponible", "Facturas fiscales y datos de compra organizados.", ReceiptText],
-  ["Pagos seguros", "Efectivo, transferencia y tarjeta por link de pago.", CreditCard],
+  ["Pagos seguros", "Efectivo, transferencia y tarjeta mediante enlace de pago.", CreditCard],
 ] as const;
 
 export default async function HomePage() {
@@ -298,7 +298,7 @@ export default async function HomePage() {
         <div className="grid gap-3 rounded-lg border border-black/10 bg-white p-5 shadow-sm md:grid-cols-4">
           {[
             ["HTTPS", "Conexión segura para navegar y comprar."],
-            ["Pago seguro", "Tarjeta por link externo enviado por WhatsApp."],
+            ["Pago seguro", "Tarjeta mediante enlace externo enviado por WhatsApp."],
             ["Políticas visibles", "Entrega, devoluciones y cancelación."],
             ["Soporte", "Contacto rápido por canales oficiales."],
           ].map(([title, text]) => (

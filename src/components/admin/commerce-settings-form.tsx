@@ -86,7 +86,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
         <Field label="Teléfono de servicio al cliente">
           <Input value={form.customer_service_phone} disabled={!canEdit} onChange={(event) => update("customer_service_phone", event.target.value)} />
         </Field>
-        <Field label="Correo de servicio al cliente">
+        <Field label="Correo electrónico de servicio al cliente">
           <Input type="email" value={form.customer_service_email} disabled={!canEdit} onChange={(event) => update("customer_service_email", event.target.value)} />
         </Field>
         <Field label="WhatsApp de servicio al cliente">
@@ -118,7 +118,7 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
       </div>
 
       <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Validar tratamiento fiscal de envío y comisión con la contadora. Los pagos con tarjeta se coordinan por link externo enviado por WhatsApp.
+        Valida el tratamiento fiscal del envío y la comisión con la contadora. Los pagos con tarjeta se coordinan mediante un enlace externo enviado por WhatsApp.
       </p>
 
       {canEdit ? (

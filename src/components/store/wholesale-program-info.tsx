@@ -8,7 +8,7 @@ import type { WholesaleFirstPurchaseRequirement } from "@/types/wholesale";
 
 const conditionItems = [
   ["Acceso a precios especiales", BadgePercent],
-  ["Atencion personalizada", Handshake],
+  ["Atención personalizada", Handshake],
   ["Beneficios exclusivos", Sparkles],
   ["Primera compra minima de L 10,000", ShoppingBag],
   ["Compras posteriores sin monto mínimo", Repeat],

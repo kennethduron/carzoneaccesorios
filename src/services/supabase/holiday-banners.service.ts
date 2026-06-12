@@ -376,7 +376,7 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
   const sentAt = new Date().toISOString();
   const result = await enqueueEmail({
     toEmail: settings.email,
-    subject: `Alerta tecnica Car Zone: almacenamiento al ${usedPercent}%`,
+    subject: `Alerta técnica Car Zone: almacenamiento al ${usedPercent}%`,
     templateKey: "system.cloudinary_high_usage",
     idempotencyKey: `cloudinary-storage-${usedPercent}-${sentAt.slice(0, 10)}`,
     relatedModule: "sistema",
@@ -385,9 +385,9 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
       used_percent: usedPercent,
       html: `
       <div style="font-family:Arial,sans-serif;color:#111827;padding:24px;">
-        <h1 style="font-size:22px;margin:0 0 12px;">Alerta tecnica de almacenamiento</h1>
-        <p>El uso reportado de almacenamiento esta en ${usedPercent}%.</p>
-        <p>Uso: ${(used / 1024 / 1024).toFixed(2)} MB / Limite: ${(limit / 1024 / 1024).toFixed(2)} MB.</p>
+        <h1 style="font-size:22px;margin:0 0 12px;">Alerta técnica de almacenamiento</h1>
+        <p>El uso reportado de almacenamiento está en ${usedPercent}%.</p>
+        <p>Uso: ${(used / 1024 / 1024).toFixed(2)} MB / Límite: ${(limit / 1024 / 1024).toFixed(2)} MB.</p>
         <p>Umbral configurado: ${settings.cloudinaryStorageThresholdPercent}%.</p>
       </div>
     `,
@@ -397,7 +397,7 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
   await createTechnicalNotification({
     type: "system.cloudinary_high_usage",
     title: "Uso alto de Cloudinary",
-    message: `El uso reportado de almacenamiento esta en ${usedPercent}%.`,
+    message: `El uso reportado de almacenamiento está en ${usedPercent}%.`,
     severity: "warning",
     metadata: {
       used_percent: usedPercent,
@@ -427,7 +427,7 @@ async function maybeSendCloudinaryStorageAlert(summary: HolidayBannerStorageSumm
     await writeErrorLog({
       route: "/admin/banners",
       action: "technical_alert.cloudinary_storage_failed",
-      errorMessage: "No se pudo encolar la alerta tecnica.",
+      errorMessage: "No se pudo poner en cola la alerta técnica.",
       metadata: {
         provider: "email_queue",
         queue_result: result.reason,

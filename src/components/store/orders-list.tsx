@@ -11,7 +11,7 @@ import { formatCurrency } from "@/utils/pricing";
 const orderStatusLabels: Record<string, string> = {
   recibido: "Recibido",
   confirmado: "Confirmado",
-  preparacion: "En preparacion",
+  preparacion: "En preparación",
   empacado: "Empacado",
   enviado: "Enviado",
   en_ruta: "En ruta",
@@ -20,7 +20,7 @@ const orderStatusLabels: Record<string, string> = {
   pending: "Recibido",
   confirmed: "Confirmado",
   paid: "Pago confirmado",
-  preparing: "En preparacion",
+  preparing: "En preparación",
   shipped: "Enviado",
   delivered: "Entregado",
   cancelled: "Cancelado",
@@ -36,7 +36,7 @@ const paymentStatusLabels: Record<string, string> = {
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: "Transferencia",
   cash: "Efectivo",
-  card: "Tarjeta por link",
+  card: "Tarjeta mediante enlace",
 };
 
 const reservationLabels: Record<string, string> = {
@@ -67,7 +67,7 @@ function invoiceStatusMessage(order: CustomerOrderRow) {
     return "Factura pendiente. Estara disponible cuando el pago sea confirmado.";
   }
 
-  return "Factura pendiente. Disponible despues de confirmar el pago por link.";
+  return "Factura pendiente. Disponible después de confirmar el pago mediante enlace.";
 }
 
 function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
@@ -128,7 +128,7 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     total: invoice.total,
     priceMode: invoice.price_mode ?? order.price_mode,
     paymentMethod:
-      order.payment_method === "bank_transfer" ? "Transferencia bancaria" : order.payment_method === "card" ? "Tarjeta por link de pago" : "Efectivo",
+      order.payment_method === "bank_transfer" ? "Transferencia bancaria" : order.payment_method === "card" ? "Tarjeta mediante enlace de pago" : "Efectivo",
     paymentReference: order.bank_reference_number,
     status: invoice.status,
     issuedAt: invoice.issued_at ?? order.created_at,
@@ -179,7 +179,7 @@ export function OrdersList({
                   <PackageCheck size={20} />
                   Pedido: {order.order_number}
                 </h2>
-                <p className="mt-2 text-sm text-black/60">Código de rastreo: {order.tracking_code ?? "Pendiente"}</p>
+                <p className="mt-2 text-sm text-black/60">Número de seguimiento: {order.tracking_code ?? "Pendiente"}</p>
               </div>
               <span className="w-fit rounded-md bg-[#fff1f2] px-3 py-2 text-sm font-medium text-[#b91c25]">
                 {orderStatusLabels[order.status] ?? order.status}
@@ -301,7 +301,7 @@ function FinancialSummary({
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Info label="Subtotal antes de ISV" value={formatCurrency(subtotal)} />
         <Info label="ISV incluido 15%" value={formatCurrency(tax)} />
-        <Info label="Envio" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
+        <Info label="Envío" value={shippingFee === 0 ? "Gratis" : formatCurrency(shippingFee)} />
         <Info
           label="Contra entrega"
           value={cashOnDeliveryRequired && cashOnDeliveryPending ? "Pendiente de confirmación" : formatCurrency(cashOnDeliveryFee)}

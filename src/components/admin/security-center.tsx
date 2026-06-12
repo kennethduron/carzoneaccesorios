@@ -86,9 +86,9 @@ const backupTypeLabels: Record<BackupType, string> = {
 const manualBackupTypes: BackupType[] = ["manual", "pre_deploy"];
 
 const roleLabels: Record<AppRole, string> = {
-  technical_owner: "Technical owner",
-  admin: "Admin",
-  business_owner: "Dueño operativo",
+  technical_owner: "Technical Owner",
+  admin: "Administrador",
+  business_owner: "Business Owner",
   vendedor: "Vendedor",
   bodega: "Bodega",
   contadora: "Contadora",
@@ -101,7 +101,7 @@ const sensitiveKeyPattern = /(password|token|secret|apikey|api_key|key|service_r
 const roleDescriptions: Record<AppRole, string> = {
   technical_owner: "Administrador técnico. Mantiene infraestructura, monitoreo y recuperación técnica.",
   admin: "Gerente delegado. Opera el negocio y administra accesos operativos sin herramientas técnicas.",
-  business_owner: "Dueño operativo. Administra ventas, equipo, pedidos, clientes, pagos, facturas y reportes sin secretos técnicos.",
+  business_owner: "Business Owner. Administra ventas, equipo, pedidos, clientes, pagos, facturas y reportes sin acceso a secretos técnicos.",
   vendedor: "Atiende clientes, pedidos y CRM operativo.",
   bodega: "Gestiona inventario, preparación y envíos.",
   contadora: "Revisa facturas fiscales, CAI, correlativos y reportes contables.",
@@ -307,7 +307,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         setNotes("");
       } else {
         setLastManualBackup(null);
-        toast.error(result.message || "No se pudo enviar el backup.");
+        toast.error(result.message || "No se pudo enviar la copia de seguridad.");
       }
     });
   }
@@ -381,7 +381,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
         />
         <ControlItem
           title="Separación técnica"
-          description="El dueño operativo no recibe secretos, errores crudos, backups ni módulos de infraestructura."
+          description="El Business Owner no recibe secretos, errores sin procesar, copias de seguridad ni módulos de infraestructura."
         />
       </section>
 
@@ -412,7 +412,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 />
               </InputLabel>
               <div className="grid gap-3 sm:grid-cols-2">
-                <InputLabel label="Correo">
+                <InputLabel label="Correo electrónico">
                   <input
                     value={createForm.email}
                     onChange={(event) => updateCreateForm("email", event.target.value)}
@@ -486,7 +486,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     <th className="w-[11%] px-4 py-3">Estado</th>
                     <th className="px-4 py-3">Creación</th>
                     <th className="px-4 py-3">Último acceso</th>
-                    <th className="w-[11%] px-4 py-3">Correo</th>
+                    <th className="w-[11%] px-4 py-3">Correo electrónico</th>
                     <th className="w-[16%] px-3 py-3 text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -608,7 +608,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               </InputLabel>
               <Button onClick={requestBackup} disabled={isPending} variant="dark">
                 <DatabaseBackup size={17} />
-                {isPending ? "Enviando..." : "Enviar backup por correo"}
+                {isPending ? "Enviando..." : "Enviar copia de seguridad por correo electrónico"}
               </Button>
               {message ? <p className="text-sm text-black/60">{message}</p> : null}
               {lastManualBackup ? (
@@ -668,7 +668,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             <ControlItem title="Cambios de rol" description="Solo se ejecutan mediante RPC con auditoría y reglas de último administrador." />
             <ControlItem title="Cuenta protegida" description="Las cuentas protegidas no pueden ser modificadas por roles operativos." />
             <ControlItem title="Usuarios suspendidos" description="active=false invalida acceso al panel y al inicio de sesión." />
-            <ControlItem title="RLS Supabase" description="Las politicas limitan lectura y escritura por rol y propietario." />
+            <ControlItem title="RLS de Supabase" description="Las políticas limitan la lectura y la escritura según el rol y el propietario." />
             <ControlItem title="Secretos" description="La UI no muestra API keys, secretos de cron ni variables de integraciones." />
           </div>
         </div>
@@ -843,7 +843,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
         {data.backupLogs.length > 0 || canRequestBackups ? (
           <DataTable
-            title="Historial de backups"
+            title="Historial de copias de seguridad"
             icon={<DatabaseBackup size={19} />}
             columns={["Fecha", "Tipo", "Estado", "Solicitado por", "Notas"]}
             rows={data.backupLogs.map((backup) => [
@@ -859,7 +859,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
       <section className="hidden">
         <DataTable
-          title={selectedAuditUser ? `Auditoria de ${selectedAuditUser.email ?? selectedAuditUser.full_name}` : "Audit logs"}
+          title={selectedAuditUser ? `Auditoría de ${selectedAuditUser.email ?? selectedAuditUser.full_name}` : "Registros de auditoría"}
           icon={<FileClock size={19} />}
           columns={["Fecha", "Usuario", "Rol", "Tabla", "Acción", "Datos"]}
           action={
@@ -879,7 +879,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           ])}
         />
         <DataTable
-          title="Historial de backups"
+          title="Historial de copias de seguridad"
           icon={<DatabaseBackup size={19} />}
           columns={["Fecha", "Tipo", "Estado", "Solicitado por", "Notas"]}
           rows={data.backupLogs.map((backup) => [
@@ -997,7 +997,7 @@ function UserProfileModal({
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <InfoCard label="Nombre" value={user.full_name ?? "Sin nombre"} />
           <InfoCard label="Usuario" value={user.username ? `@${user.username}` : "-"} />
-          <InfoCard label="Correo" value={user.email ?? "-"} />
+          <InfoCard label="Correo electrónico" value={user.email ?? "-"} />
           <InfoCard label="Teléfono" value={user.phone ?? "-"} />
           <InfoCard label="Rol actual" value={roleLabels[user.role]} />
           <InfoCard label="Estado de cuenta" value={user.active ? "Activa" : "Suspendida"} />

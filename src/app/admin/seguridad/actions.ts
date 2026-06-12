@@ -251,7 +251,7 @@ export async function requestBackupAction(
 
   const allowedTypes: BackupType[] = ["manual", "pre_deploy"];
   if (!allowedTypes.includes(backupType)) {
-    return { ok: false, message: "Tipo de backup no válido." };
+    return { ok: false, message: "El tipo de copia de seguridad no es válido." };
   }
 
   try {
@@ -286,7 +286,7 @@ export async function requestBackupAction(
     revalidatePath("/admin/seguridad");
     return {
       ok: true,
-      message: `Backup completado correctamente. Se envio a ${result.recipientEmail}: ${result.fileName} (${formatBytes(result.fileSize)}).`,
+      message: `Copia de seguridad completada correctamente. Se envió a ${result.recipientEmail}: ${result.fileName} (${formatBytes(result.fileSize)}).`,
       backup: {
         fileName: result.fileName,
         fileSize: formatBytes(result.fileSize),
@@ -299,9 +299,9 @@ export async function requestBackupAction(
       },
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : "No se pudo crear el backup.";
+    const detail = error instanceof Error ? error.message : "No se pudo crear la copia de seguridad.";
     const message = detail.includes("No se pudo exportar")
-      ? `${detail} Revisa los permisos de backup y vuelve a intentarlo.`
+      ? `${detail} Revisa los permisos de copias de seguridad y vuelve a intentarlo.`
       : detail;
     return { ok: false, message };
   }

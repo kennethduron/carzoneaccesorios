@@ -55,7 +55,7 @@ type ReportsDashboardProps = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia",
-  card: "Tarjeta por link",
+  card: "Tarjeta mediante enlace",
   cash: "Efectivo",
 };
 
@@ -77,7 +77,7 @@ const invoiceStatusLabels: Record<string, string> = {
 const orderStatusLabels: Record<string, string> = {
   recibido: "Recibido",
   confirmado: "Confirmado",
-  preparacion: "Preparacion",
+  preparacion: "Preparación",
   empacado: "Empacado",
   enviado: "Enviado",
   en_ruta: "En ruta",
@@ -86,7 +86,7 @@ const orderStatusLabels: Record<string, string> = {
   pending: "Recibido",
   confirmed: "Confirmado",
   paid: "Pagado",
-  preparing: "Preparacion",
+  preparing: "Preparación",
   shipped: "Enviado",
   delivered: "Entregado",
   cancelled: "Cancelado",
@@ -464,7 +464,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "orderFinancialStatus",
         label: "Estado financiero de pedidos",
-        description: "Pedidos creados con estado logistico, pago y reserva separados. Solo un pago confirmado cuenta como venta real.",
+        description: "Pedidos creados con estado logístico, pago y reserva separados. Solo un pago confirmado cuenta como venta real.",
         columns: ["Pedido", "Fecha", "Cliente", "Estado pedido", "Estado pago", "Reserva", "Requiere revisión", "Método de pago", "Total", "Venta real"],
         rows: data.orders.map((order) => ({
           Pedido: order.order_number,
@@ -500,8 +500,8 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       },
       {
         key: "daily",
-        label: "Ventas del dia",
-        description: "Ventas agrupadas por dia dentro del rango seleccionado.",
+        label: "Ventas del día",
+        description: "Ventas agrupadas por día dentro del rango seleccionado.",
         columns: ["Fecha", "Pedidos", "Unidades", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: Array.from(dailySales.entries())
           .sort(([left], [right]) => right.localeCompare(left))
@@ -675,14 +675,14 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         key: "customerSales",
         label: "Ventas por cliente",
         description: "Consolidado por cliente con facturas, pedidos, total comprado y tipo de cliente.",
-        columns: ["Cliente", "Empresa", "RTN", "Correo", "Teléfono", "Pedidos realizados", "Facturas emitidas", "Total comprado", "Última compra", "Tipo cliente"],
+        columns: ["Cliente", "Empresa", "RTN", "Correo electrónico", "Teléfono", "Pedidos realizados", "Facturas emitidas", "Total comprado", "Última compra", "Tipo cliente"],
         rows: Array.from(customerSales.values())
           .sort((left, right) => right.total - left.total)
           .map((customer) => ({
             Cliente: customer.customer,
             Empresa: customer.company,
             RTN: customer.rtn,
-            Correo: customer.email,
+            "Correo electrónico": customer.email,
             Teléfono: customer.phone,
             "Pedidos realizados": customer.orders.size,
             "Facturas emitidas": customer.invoices.size,
@@ -703,7 +703,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "wholesaleSales",
         label: "Ventas mayoristas",
-        description: "Detalle de ventas con precio mayorista historico por producto.",
+        description: "Detalle de ventas con precio mayorista histórico por producto.",
         columns: ["Cliente", "Empresa", "RTN", "Pedido", "Producto", "SKU", "Cantidad", "Precio mayorista", "Total", "Fecha"],
         rows: wholesaleRows,
         financial: true,
@@ -734,7 +734,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "paymentMethodDetails",
         label: "Detalle por método de pago",
-        description: "Pedidos, total vendido y total facturado por método: efectivo, transferencia, tarjeta por link y otros.",
+        description: "Pedidos, total vendido y total facturado por método: efectivo, transferencia, tarjeta mediante enlace y otros.",
         columns: ["Método", "Pedidos", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total vendido", "Total facturado"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
           Método: paymentLabels[method] ?? "Otros",
@@ -772,7 +772,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         rows: data.products.map((product) => ({
           Producto: product.name,
           SKU: product.sku,
-          "Codigo interno": product.internal_code ?? "-",
+          "Código interno": product.internal_code ?? "-",
           Marca: product.brand,
           Stock: product.stock,
           Reservado: product.reserved_stock,
@@ -793,7 +793,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           .map((product) => ({
             Producto: product.name,
             SKU: product.sku,
-            "Codigo interno": product.internal_code ?? "-",
+            "Código interno": product.internal_code ?? "-",
             Marca: product.brand,
             Stock: product.stock,
             Reservado: product.reserved_stock,
@@ -953,7 +953,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               <option value="all">Todos</option>
               <option value="cash">Efectivo</option>
               <option value="bank_transfer">Transferencia</option>
-              <option value="card">Tarjeta por link</option>
+              <option value="card">Tarjeta mediante enlace</option>
             </SelectField>
           ) : null}
           <SelectField label="Tipo cliente" name="priceMode" defaultValue={data.filters.priceMode}>
@@ -998,7 +998,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             <p className="text-sm font-semibold">Exportaciones</p>
             <p className="mt-1 text-sm text-black/55">
               Excel y PDF exportan las columnas visibles del reporte activo con encabezados claros, fechas legibles y moneda en lempiras.
-              CSV técnico solo aparece para Kenneth/admin técnico.
+              La exportación CSV técnica solo está disponible para el Technical Owner.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1011,7 +1011,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               {exportingPdf ? "Generando..." : "PDF"}
             </Button>
             {canUseTechnicalExports ? (
-              <Button variant="ghost" onClick={exportCsv} disabled={!canExport} title="Exportación técnica solo para Kenneth/admin técnico">
+              <Button variant="ghost" onClick={exportCsv} disabled={!canExport} title="Exportación técnica disponible solo para el Technical Owner">
                 <Download size={16} />
                 CSV técnico
               </Button>

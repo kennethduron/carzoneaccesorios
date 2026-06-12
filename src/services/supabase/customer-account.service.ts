@@ -194,7 +194,7 @@ function paymentMethodLabel(value: string): StoreInvoice["paymentMethod"] {
   }
 
   if (value === "card") {
-    return "Tarjeta por link de pago";
+    return "Tarjeta mediante enlace de pago";
   }
 
   return "Efectivo";

@@ -58,7 +58,7 @@ type AdminOrdersManagerProps = {
 
 const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta por link de pago",
+  card: "Tarjeta mediante enlace de pago",
   cash: "Efectivo",
 };
 
@@ -80,7 +80,7 @@ const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
   customer_name: "Nombre fiscal",
   customer_rtn: "RTN",
   customer_phone: "Teléfono",
-  customer_email: "Correo",
+  customer_email: "Correo electrónico",
   customer_address: "Dirección fiscal",
 };
 
@@ -134,11 +134,11 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
       "",
       `Total a pagar: ${formatCurrency(order.total)}`,
       "",
-      "Método de pago seleccionado: Tarjeta de crédito o débito por link de pago.",
+      "Método de pago seleccionado: tarjeta de crédito o débito mediante enlace de pago.",
       "",
       "Puedes realizar tu pago de forma segura por medio del siguiente enlace:",
       "",
-      "Link de pago:",
+      "Enlace de pago:",
       "",
       "Cuando completes el pago, por favor envíanos la confirmación o el comprobante por este chat para continuar con tu pedido.",
       "",
@@ -686,7 +686,7 @@ function OrderDetail({
     !paymentIsRejected &&
     normalizedStatus !== "cancelado" &&
     (order.payment_timing !== "on_delivery" || normalizedStatus === "entregado");
-  const paymentActionLabel = isCard ? "Confirmar pago por link" : "Confirmar pago recibido";
+  const paymentActionLabel = isCard ? "Confirmar pago mediante enlace" : "Confirmar pago recibido";
   const visibleManualStatuses = canManageOrders
     ? manualStatuses
     : manualStatuses.filter((option) => ["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(option.value));
@@ -695,7 +695,7 @@ function OrderDetail({
     ? visibleManualStatuses
     : [currentStatusOption, ...visibleManualStatuses];
   const nextStatusActionOptions = [
-    { status: "preparacion", label: "Marcar en preparacion" },
+    { status: "preparacion", label: "Marcar en preparación" },
     { status: "empacado", label: "Marcar empacado" },
     { status: "enviado", label: "Marcar enviado" },
     { status: "en_ruta", label: "Marcar en ruta" },
@@ -729,7 +729,7 @@ function OrderDetail({
         <CompactInfo label="Estado del pedido" value={orderStatusLabels[normalizedStatus] ?? order.status} />
         <CompactInfo label="Estado del pago" value={paymentDisplayLabel(order)} />
         <CompactInfo label="Reserva" value={order.reservation_review_required ? "Vencida: requiere revisión" : reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
-        <CompactInfo label="Tracking" value={order.tracking_code ?? "Sin codigo"} />
+        <CompactInfo label="Número de seguimiento" value={order.tracking_code ?? "Sin código"} />
       </div>
 
       <div className="space-y-4 p-4">
@@ -751,7 +751,7 @@ function OrderDetail({
         ) : null}
 
         <div className="rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-3">
-          <p className="text-sm font-semibold text-[#7c2d12]">Accion recomendada</p>
+          <p className="text-sm font-semibold text-[#7c2d12]">Acción recomendada</p>
           <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
         </div>
 
@@ -764,7 +764,7 @@ function OrderDetail({
               className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-medium sm:w-auto"
             >
               <Copy size={15} />
-              Copiar tracking
+              Copiar número de seguimiento
             </button>
           ) : null}
         </div>
@@ -950,7 +950,7 @@ function OrderDetail({
 
         {isCard && !paymentIsApproved ? (
           <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
-            Pago con tarjeta por link pendiente de enviar o confirmar. Usa WhatsApp para enviar el link y confirma manualmente cuando el pago sea verificado.
+            Pago con tarjeta mediante enlace pendiente de envío o confirmación. Usa WhatsApp para enviar el enlace y confirma manualmente cuando el pago se haya verificado.
           </p>
         ) : null}
         {isCash && !paymentIsApproved && normalizedStatus !== "entregado" && normalizedStatus !== "cancelado" ? (

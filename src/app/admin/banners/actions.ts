@@ -288,7 +288,7 @@ function normalizeBanner(input: HolidayBannerInput, actorId: string, existing: H
   const videoDuration = Number(tokenPayload?.durationSeconds ?? input.media_duration_seconds ?? existing?.media_duration_seconds ?? 0);
 
   if (!title || !message || !startDate || !endDate) {
-    throw new Error("Titulo, mensaje y fechas son obligatorios.");
+    throw new Error("El título, el mensaje y las fechas son obligatorios.");
   }
 
   if (endDate < startDate) {
@@ -911,7 +911,7 @@ export async function saveTechnicalAlertSettingsAction(
       cloudinaryStorageThresholdPercent: Math.min(100, Math.max(1, Math.trunc(Number(input.cloudinaryStorageThresholdPercent) || 70))),
     });
     revalidatePath("/admin/banners");
-    return { ok: true, message: "Configuracion tecnica de alertas actualizada." };
+    return { ok: true, message: "Configuración técnica de alertas actualizada." };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la configuración técnica." };
   }
