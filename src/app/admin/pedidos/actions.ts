@@ -8,6 +8,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
+import type { AppRole, Permission } from "@/types/auth";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
@@ -86,12 +87,20 @@ function revalidateOperationalPaths() {
     "/admin/pedidos",
     "/admin/facturas",
     "/admin/reportes",
+    "/admin/cuentas-por-cobrar",
     "/admin/crm",
     "/rastreo",
     "/mis-pedidos",
     "/cuenta",
     "/facturas",
   ].forEach((path) => revalidatePath(path));
+}
+
+function canManageCommercialCredit(role: AppRole, permissions: Permission[], email: string | null) {
+  return (
+    ["technical_owner", "business_owner", "admin"].includes(role) &&
+    hasEffectivePermission(role, permissions, "credit:mark_paid", email)
+  );
 }
 
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
@@ -128,6 +137,35 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     ok: true,
     message: status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.",
   };
+}
+
+export async function markCreditReceivablePaidAction(receivableId: string) {
+  const profile = await requirePermission("admin:access");
+
+  if (!canManageCommercialCredit(profile.role, profile.permissions, profile.email)) {
+    await writeAuditLog({
+      tableName: "accounts_receivable",
+      recordId: receivableId,
+      action: "commercial_credit.permission_denied",
+      newData: {
+        attempted_action: "mark_paid",
+        role: profile.role,
+      },
+    });
+    return { ok: false, message: "Solo usuarios autorizados pueden marcar crédito como pagado." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("mark_credit_receivable_paid", {
+    target_receivable_id: receivableId,
+  });
+
+  if (error || data !== true) {
+    return { ok: false, message: safeAdminOrderMessage(error?.message || "No se pudo marcar el crédito como pagado.") };
+  }
+
+  revalidateOperationalPaths();
+  return { ok: true, message: "Crédito marcado como pagado correctamente." };
 }
 
 export async function extendOrderReservationAction(orderId: string, minutes: 720 | 1440 | 2880, reason: string) {
@@ -223,7 +261,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       order_number: string;
       status: string;
       tracking_status: string | null;
-      payment_method: "bank_transfer" | "card" | "cash";
+      payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
       payment_timing: "before_delivery" | "on_delivery";
       order_reservation_status: string | null;
       payments: Array<{
@@ -322,7 +360,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     .maybeSingle<{
       id: string;
       status: string;
-      payment_method: "bank_transfer" | "card" | "cash";
+      payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
       payment_timing: "before_delivery" | "on_delivery";
       cash_on_delivery_fee: unknown;
       order_reservation_status: string | null;
@@ -368,7 +406,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
   }
 
   const payment = order.payments?.[0] ?? null;
-  if (!isPaymentConfirmed(payment?.payment_status ?? payment?.status ?? null)) {
+  if (order.payment_method !== "commercial_credit" && !isPaymentConfirmed(payment?.payment_status ?? payment?.status ?? null)) {
     return { ok: false, message: "La factura solo puede generarse cuando el pago esté confirmado." };
   }
 
@@ -450,7 +488,7 @@ export async function updateCashOnDeliveryFeeAction(orderId: string, rawFee: num
       id: string;
       order_number: string;
       status: string;
-      payment_method: "bank_transfer" | "card" | "cash";
+      payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
       payment_timing: "before_delivery" | "on_delivery";
       subtotal: unknown;
       tax: unknown;

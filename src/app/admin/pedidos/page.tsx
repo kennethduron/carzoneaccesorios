@@ -38,6 +38,10 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     invoice_cancelled_at: null,
     invoice_cancellation_reason: null,
     fiscal_correction_history: [],
+    receivable_id: null,
+    receivable_status: null,
+    receivable_due_date: null,
+    receivable_balance_due: null,
     customer_rtn: null,
     fiscal_customer_rtn: null,
     order_items: order.order_items.map((item) => ({
@@ -80,6 +84,9 @@ export default async function AdminOrdersPage({
   const canManageLogistics =
     canManageOrders || hasEffectivePermission(profile.role, profile.permissions, "orders:manage_logistics", profile.email);
   const canGenerateInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:create", profile.email);
+  const canMarkCreditPaid =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
   const canCancelInvoices = hasEffectivePermission(profile.role, profile.permissions, "invoices:manage", profile.email);
   const canCorrectInvoices = ["technical_owner", "admin", "business_owner"].includes(profile.role);
   const canViewFinancialData =
@@ -113,6 +120,7 @@ export default async function AdminOrdersPage({
         canCancelOrders={canCancelOrders}
         canManageLogistics={canManageLogistics}
         canGenerateInvoices={canGenerateInvoices}
+        canMarkCreditPaid={canMarkCreditPaid}
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
         canViewFinancialData={canViewFinancialData}

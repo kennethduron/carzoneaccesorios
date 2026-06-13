@@ -2,6 +2,7 @@ import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminCrm } from "@/services/supabase/admin-crm.service";
 
@@ -18,6 +19,9 @@ export default async function AdminCrmPage({
   searchParams: Promise<{ page?: string; task?: string }>;
 }) {
   const profile = await requirePermission("crm:manage");
+  const canManageCredit =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "credit:manage", profile.email);
   const params = await searchParams;
   const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
   const crm = await getAdminCrm({
@@ -39,7 +43,7 @@ export default async function AdminCrmPage({
           Panel administrativo
         </Link>
       </div>
-      <CrmManager data={crm} basePath="/admin/crm" focus="followups" activeTask={activeTask} />
+      <CrmManager data={crm} basePath="/admin/crm" focus="followups" activeTask={activeTask} canManageCredit={canManageCredit} />
     </AdminShell>
   );
 }

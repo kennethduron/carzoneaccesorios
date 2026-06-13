@@ -17,7 +17,7 @@ export type OrderWorkflowStatus =
 
 export type OrderWorkflowInput = {
   status: string;
-  payment_method: "bank_transfer" | "card" | "cash";
+  payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
   payment_timing?: "before_delivery" | "on_delivery";
   payment_status: string | null;
   transfer_receipt_url?: string | null;
@@ -134,7 +134,7 @@ export function getAllowedOrderStatusOptions(order: OrderWorkflowInput): OrderSt
     allowed.add("cancelado");
   }
 
-  if (order.payment_method === "cash" || order.payment_timing === "on_delivery") {
+  if (order.payment_method === "cash" || order.payment_method === "commercial_credit" || order.payment_timing === "on_delivery") {
     if (current === "recibido") {
       allowed.add("confirmado");
     } else {
@@ -173,6 +173,7 @@ export function canMoveOrderToStatus(order: OrderWorkflowInput, targetStatus: st
 export function canConfirmPayment(order: OrderWorkflowInput) {
   if (canonicalOrderStatus(order.status) === "cancelado") return false;
   if (isPaymentConfirmed(order.payment_status) || order.payment_status === "rejected") return false;
+  if (order.payment_method === "commercial_credit") return false;
   if (order.payment_method === "cash" || order.payment_timing === "on_delivery") {
     return canonicalOrderStatus(order.status) === "entregado";
   }
@@ -186,7 +187,7 @@ export function getContextualOrderActions(order: OrderWorkflowInput): Contextual
   if (current === "cancelado") return [];
 
   const actions: ContextualOrderAction[] = [];
-  if (current === "recibido" && (order.payment_method === "cash" || order.payment_timing === "on_delivery" || paymentConfirmed)) {
+  if (current === "recibido" && (order.payment_method === "cash" || order.payment_method === "commercial_credit" || order.payment_timing === "on_delivery" || paymentConfirmed)) {
     actions.push("accept_order");
   }
 
@@ -210,6 +211,7 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
 
   if (status === "rejected") return "Pago rechazado";
   if (isPaymentConfirmed(status)) {
+    if (order.payment_method === "commercial_credit") return "Crédito pagado";
     if (order.payment_method === "cash") return "Pago recibido";
     if (order.payment_method === "card") return "Pago aprobado";
     return "Pago confirmado";
@@ -222,6 +224,10 @@ export function paymentDisplayLabel(order: OrderWorkflowInput) {
 
   if (order.payment_method === "card") {
     return "Pago pendiente por link";
+  }
+
+  if (order.payment_method === "commercial_credit") {
+    return "Crédito pendiente";
   }
 
   return "Pendiente";
@@ -255,6 +261,11 @@ export function recommendedOrderAction(order: OrderWorkflowInput) {
   if (order.payment_method === "card") {
     if (!paymentConfirmed) return "Enviar link de pago por WhatsApp y confirmar manualmente cuando el cliente pague.";
     return "Pago con tarjeta confirmado manualmente. Preparar pedido.";
+  }
+
+  if (order.payment_method === "commercial_credit") {
+    if (!paymentConfirmed) return "Crédito comercial abierto. Preparar y entregar según operación; el cobro se marca completo desde cuentas por cobrar.";
+    return "Crédito comercial pagado. Continuar seguimiento operativo.";
   }
 
   if (!paymentConfirmed) return "Esperar confirmación real del pago antes de preparar.";

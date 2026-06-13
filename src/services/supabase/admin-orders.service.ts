@@ -114,6 +114,17 @@ type OrderQueryRow = Omit<
     customer_email: string | null;
     customer_address: string | null;
   } | null;
+  accounts_receivable: {
+    id: string;
+    status: "open" | "paid" | "overdue" | null;
+    due_date: string | null;
+    balance_due: unknown;
+  } | Array<{
+    id: string;
+    status: "open" | "paid" | "overdue" | null;
+    due_date: string | null;
+    balance_due: unknown;
+  }> | null;
   customers: {
     tax_id: string | null;
   } | null;
@@ -122,6 +133,9 @@ type OrderQueryRow = Omit<
 function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
   const payment = row.payments?.[0] ?? null;
   const invoice = Array.isArray(row.invoices) ? row.invoices[0] ?? null : row.invoices;
+  const receivable = Array.isArray(row.accounts_receivable)
+    ? row.accounts_receivable[0] ?? null
+    : row.accounts_receivable;
 
   return {
     ...row,
@@ -154,6 +168,10 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     invoice_cancelled_at: invoice?.cancelled_at ?? null,
     invoice_cancellation_reason: invoice?.cancellation_reason ?? null,
     fiscal_correction_history: [],
+    receivable_id: receivable?.id ?? null,
+    receivable_status: receivable?.status ?? null,
+    receivable_due_date: receivable?.due_date ?? null,
+    receivable_balance_due: receivable ? toNumber(receivable.balance_due) : null,
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -252,6 +270,7 @@ export async function getAdminOrdersPage({
       ${paymentRelation}(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
       order_internal_notes(id, note, actor_role, created_at),
       invoices(id, invoice_number, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
+      accounts_receivable(id, status, due_date, balance_due),
       customers(tax_id)
     `,
       { count: "exact" },

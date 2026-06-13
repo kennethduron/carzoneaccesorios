@@ -9,6 +9,10 @@
       "schedule": "0 12 * * *"
     },
     {
+      "path": "/api/cron/check-commercial-credit",
+      "schedule": "30 12 * * *"
+    },
+    {
       "path": "/api/cron/process-email-queue",
       "schedule": "0 13 * * *"
     }

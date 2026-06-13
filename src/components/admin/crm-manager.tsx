@@ -41,6 +41,7 @@ import {
   saveCrmFollowupAction,
   saveCrmLeadAction,
   saveCrmNoteAction,
+  saveCustomerCommercialCreditAction,
   setCrmFollowupStatusAction,
   suspendCustomerAccountAction,
   suspendWholesaleAccessAction,
@@ -77,6 +78,7 @@ type CrmManagerProps = {
   basePath?: string;
   focus?: "customers" | "followups";
   activeTask?: { id: string; label: string } | null;
+  canManageCredit?: boolean;
 };
 
 type CustomerFilter = "clients" | "internal" | "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
@@ -258,7 +260,13 @@ function followupSecondaryName(item: CrmFollowupRow) {
   return item.customer_profile_label;
 }
 
-export function CrmManager({ data, basePath = "/admin/crm", focus = "followups", activeTask = null }: CrmManagerProps) {
+export function CrmManager({
+  data,
+  basePath = "/admin/crm",
+  focus = "followups",
+  activeTask = null,
+  canManageCredit = false,
+}: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
   const [followup, setFollowup] = useState<CrmFollowupInput>(emptyFollowup);
@@ -1165,6 +1173,8 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
             loading={profileLoading}
             error={profileError}
             pending={isPending}
+            canManageCredit={canManageCredit}
+            onProfileUpdated={setCustomerProfile}
             onClose={closeCustomerProfile}
             onApproveWholesale={approveWholesaleCustomer}
             onChangeWholesaleType={changeWholesaleCustomerType}
@@ -1339,6 +1349,8 @@ export function CrmManager({ data, basePath = "/admin/crm", focus = "followups",
           loading={profileLoading}
           error={profileError}
           pending={isPending}
+          canManageCredit={canManageCredit}
+          onProfileUpdated={setCustomerProfile}
           onClose={closeCustomerProfile}
           onApproveWholesale={approveWholesaleCustomer}
           onChangeWholesaleType={changeWholesaleCustomerType}
@@ -2056,7 +2068,7 @@ function RecentNotesCard({
   );
 }
 
-type CustomerProfileTab = "resumen" | "informacion" | "compras" | "facturas" | "crm" | "mayorista" | "acciones";
+type CustomerProfileTab = "resumen" | "informacion" | "compras" | "facturas" | "crm" | "credito" | "mayorista" | "acciones";
 
 const customerProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
   { id: "resumen", label: "Resumen" },
@@ -2064,6 +2076,7 @@ const customerProfileTabs: Array<{ id: CustomerProfileTab; label: string }> = [
   { id: "compras", label: "Compras" },
   { id: "facturas", label: "Facturas" },
   { id: "crm", label: "CRM" },
+  { id: "credito", label: "Crédito" },
   { id: "mayorista", label: "Mayorista" },
   { id: "acciones", label: "Acciones" },
 ];
@@ -2083,6 +2096,8 @@ function CustomerProfileDrawer({
   loading,
   error,
   pending,
+  canManageCredit,
+  onProfileUpdated,
   onClose,
   onApproveWholesale,
   onChangeWholesaleType,
@@ -2103,6 +2118,8 @@ function CustomerProfileDrawer({
   loading: boolean;
   error: string | null;
   pending: boolean;
+  canManageCredit: boolean;
+  onProfileUpdated: (profile: CrmCustomerProfile) => void;
   onClose: () => void;
   onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
   onChangeWholesaleType: (customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType) => void;
@@ -2119,7 +2136,10 @@ function CustomerProfileDrawer({
 }) {
   const [activeTab, setActiveTab] = useState<CustomerProfileTab>("resumen");
   const customer = profile?.customer ?? fallbackCustomer;
-  const profileTabs = customer?.profile_kind === "internal" ? internalProfileTabs : customerProfileTabs;
+  const profileTabs =
+    customer?.profile_kind === "internal"
+      ? internalProfileTabs
+      : customerProfileTabs.filter((tab) => tab.id !== "credito" || canManageCredit);
   const visibleActiveTab = profileTabs.some((tab) => tab.id === activeTab) ? activeTab : "resumen";
   const isWholesaleRequest = Boolean(customer?.notes?.includes("[SOLICITUD_MAYOREO]") || customer?.has_wholesale_request);
   const isSuspended = customer?.account_state === "Cuenta suspendida" || customer?.status === "disabled" || customer?.active === false;
@@ -2248,6 +2268,12 @@ function CustomerProfileDrawer({
                   onAddNote={onAddNote}
                   onCreateFollowup={onCreateFollowup}
                   onCompleteFollowup={onCompleteFollowup}
+                />
+              ) : null}
+              {customer.profile_kind === "customer" && canManageCredit && visibleActiveTab === "credito" ? (
+                <CustomerProfileCredit
+                  profile={profile}
+                  onProfileUpdated={onProfileUpdated}
                 />
               ) : null}
               {customer.profile_kind === "customer" && visibleActiveTab === "mayorista" ? (
@@ -2617,6 +2643,167 @@ function CustomerProfileCrm({
           )}
         </div>
         {notes.length > 4 && compact ? <p className="mt-3 text-xs text-black/45">Ver todas en la pestaña CRM.</p> : null}
+      </section>
+    </div>
+  );
+}
+
+function CustomerProfileCredit({
+  profile,
+  onProfileUpdated,
+}: {
+  profile: CrmCustomerProfile;
+  onProfileUpdated: (profile: CrmCustomerProfile) => void;
+}) {
+  const account = profile.creditAccount;
+  const toast = useToast();
+  const [isPending, startTransition] = useTransition();
+  const [enabled, setEnabled] = useState(account?.is_credit_enabled ?? false);
+  const [creditLimit, setCreditLimit] = useState(String(account?.credit_limit ?? 0));
+  const [termsDays, setTermsDays] = useState(String(account?.terms_days ?? 30));
+  const [status, setStatus] = useState<"active" | "suspended">(account?.status ?? "active");
+  const [notes, setNotes] = useState(account?.notes ?? "");
+  const pendingReceivables = profile.receivables.filter((item) => item.status !== "paid");
+  const pendingBalance = pendingReceivables.reduce((sum, item) => sum + item.balance_due, 0);
+  const availableCredit = Math.max(Number(creditLimit || 0) - pendingBalance, 0);
+
+  function saveCredit() {
+    startTransition(async () => {
+      const result = await saveCustomerCommercialCreditAction({
+        customerId: profile.customer.id,
+        isCreditEnabled: enabled,
+        creditLimit: Number(creditLimit),
+        termsDays: Number(termsDays),
+        status,
+        notes,
+      });
+
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+
+      const refreshed = await getCustomerProfileAction(profile.customer.id);
+      if (refreshed.ok && refreshed.profile) {
+        onProfileUpdated(refreshed.profile);
+      }
+      toast.success(result.message);
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="border-b border-black/10 pb-5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+          <div>
+            <h2 className="font-semibold">Crédito comercial</h2>
+            <p className="mt-1 text-sm text-black/55">Configuración interna. El pago de cada cuenta por cobrar es completo.</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(event) => setEnabled(event.target.checked)}
+              className="size-4 accent-[#e4252c]"
+            />
+            Crédito habilitado
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase text-black/50">Límite de crédito</span>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={creditLimit}
+              onChange={(event) => setCreditLimit(event.target.value)}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase text-black/50">Plazo en días</span>
+            <Input
+              type="number"
+              min="1"
+              max="365"
+              step="1"
+              value={termsDays}
+              onChange={(event) => setTermsDays(event.target.value)}
+            />
+          </label>
+          <label className="grid gap-1">
+            <span className="text-xs font-semibold uppercase text-black/50">Estado</span>
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value as "active" | "suspended")}
+              className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c]"
+            >
+              <option value="active">Activo</option>
+              <option value="suspended">Suspendido</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="mt-4 grid gap-1">
+          <span className="text-xs font-semibold uppercase text-black/50">Notas internas</span>
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            maxLength={2000}
+            rows={4}
+            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+          />
+        </label>
+
+        <div className="mt-4 flex justify-end">
+          <Button onClick={saveCredit} disabled={isPending} variant="primary">
+            <Save size={16} />
+            {isPending ? "Guardando..." : "Guardar crédito"}
+          </Button>
+        </div>
+      </section>
+
+      <section>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metric label="Saldo pendiente" value={formatCurrency(pendingBalance)} />
+          <Metric label="Crédito disponible" value={formatCurrency(availableCredit)} />
+          <Metric label="Cuentas abiertas" value={pendingReceivables.length.toLocaleString("es-HN")} />
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead className="border-b border-black/10 text-xs uppercase text-black/45">
+              <tr>
+                <th className="px-2 py-2">Pedido</th>
+                <th className="px-2 py-2">Total</th>
+                <th className="px-2 py-2">Saldo</th>
+                <th className="px-2 py-2">Vencimiento</th>
+                <th className="px-2 py-2">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-black/10">
+              {profile.receivables.map((item) => {
+                const order = profile.orders.find((candidate) => candidate.id === item.order_id);
+                return (
+                  <tr key={item.id}>
+                    <td className="px-2 py-2">{order?.order_number ?? item.order_id.slice(0, 8)}</td>
+                    <td className="px-2 py-2">{formatCurrency(item.original_amount)}</td>
+                    <td className="px-2 py-2 font-semibold">{formatCurrency(item.balance_due)}</td>
+                    <td className="px-2 py-2">{item.due_date}</td>
+                    <td className="px-2 py-2">{item.status === "paid" ? "Pagado" : item.status === "overdue" ? "Vencido" : "Abierto"}</td>
+                  </tr>
+                );
+              })}
+              {profile.receivables.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-2 py-5 text-center text-black/50">
+                    Este cliente no tiene cuentas por cobrar.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

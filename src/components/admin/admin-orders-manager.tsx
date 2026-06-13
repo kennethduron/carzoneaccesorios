@@ -9,6 +9,7 @@ import {
   addOrderInternalNoteAction,
   extendOrderReservationAction,
   generateInvoiceFromOrderAction,
+  markCreditReceivablePaidAction,
   updateCashOnDeliveryFeeAction,
   updateOrderPaymentStatusAction,
   updateOrderStatusAction,
@@ -50,6 +51,7 @@ type AdminOrdersManagerProps = {
   canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
+  canMarkCreditPaid: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
@@ -60,6 +62,7 @@ const paymentLabels: Record<string, string> = {
   bank_transfer: "Transferencia bancaria",
   card: "Tarjeta mediante enlace de pago",
   cash: "Efectivo",
+  commercial_credit: "Crédito comercial",
 };
 
 const paymentTimingLabels: Record<string, string> = {
@@ -158,6 +161,16 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
     ].join("\n");
   }
 
+  if (order.payment_method === "commercial_credit") {
+    return [
+      ...commonIntro,
+      "",
+      "Este pedido fue creado con crédito comercial autorizado. El pago se marcará como completo cuando el cliente cancele la cuenta por cobrar.",
+      "",
+      "Gracias por comprar en Car Zone Accesorios.",
+    ].join("\n");
+  }
+
   return [
     ...commonIntro,
     "",
@@ -180,6 +193,7 @@ export function AdminOrdersManager({
   canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
+  canMarkCreditPaid,
   canCancelInvoices,
   canCorrectInvoices,
   canViewFinancialData,
@@ -242,7 +256,7 @@ export function AdminOrdersManager({
       return;
     }
 
-    if (!isPaymentConfirmed(order.payment_status)) {
+    if (order.payment_method !== "commercial_credit" && !isPaymentConfirmed(order.payment_status)) {
       showAdminMessage("La factura solo puede generarse cuando el pago esté confirmado.", false);
       return;
     }
@@ -276,6 +290,19 @@ export function AdminOrdersManager({
 
     startTransition(async () => {
       const result = await updateOrderPaymentStatusAction(order.id, status, rejectionReason);
+      showAdminMessage(result.message, result.ok);
+      if (result.ok) router.refresh();
+    });
+  }
+
+  function markCreditPaid(order: AdminOrderRow) {
+    if (!order.receivable_id) {
+      showAdminMessage("Este pedido no tiene cuenta por cobrar vinculada.", false);
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await markCreditReceivablePaidAction(order.receivable_id ?? "");
       showAdminMessage(result.message, result.ok);
       if (result.ok) router.refresh();
     });
@@ -477,6 +504,7 @@ export function AdminOrdersManager({
             canCancelOrders={canCancelOrders}
             canManageLogistics={canManageLogistics}
             canGenerateInvoices={canGenerateInvoices}
+            canMarkCreditPaid={canMarkCreditPaid}
             canCancelInvoices={canCancelInvoices}
             canCorrectInvoices={canCorrectInvoices}
             canViewFinancialData={canViewFinancialData}
@@ -484,6 +512,7 @@ export function AdminOrdersManager({
             message={message}
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
             onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
+            onMarkCreditPaid={() => markCreditPaid(selectedOrder)}
             onRejectPayment={() => setPaymentToReject(selectedOrder)}
             onCancelOrder={() => setOrderToCancel(selectedOrder)}
             onCancelInvoice={() => setInvoiceToCancel(selectedOrder)}
@@ -557,11 +586,12 @@ export function AdminOrdersManager({
 
 function canIssueInvoice(order: AdminOrderRow) {
   const paymentConfirmed = isPaymentConfirmed(order.payment_status);
+  const creditOrder = order.payment_method === "commercial_credit";
   const normalizedStatus = canonicalOrderStatus(order.status);
   const orderReady = ["confirmado", "preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(normalizedStatus);
   const reservationReleased = ["released", "expired", "canceled"].includes(order.order_reservation_status);
   return (
-    paymentConfirmed &&
+    (paymentConfirmed || creditOrder) &&
     orderReady &&
     normalizedStatus !== "cancelado" &&
     !reservationReleased &&
@@ -611,6 +641,7 @@ function OrderDetail({
   canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
+  canMarkCreditPaid,
   canCancelInvoices,
   canCorrectInvoices,
   canViewFinancialData,
@@ -618,6 +649,7 @@ function OrderDetail({
   message,
   onGenerateInvoice,
   onApprovePayment,
+  onMarkCreditPaid,
   onRejectPayment,
   onCancelOrder,
   onCancelInvoice,
@@ -637,6 +669,7 @@ function OrderDetail({
   canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
+  canMarkCreditPaid: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
@@ -644,6 +677,7 @@ function OrderDetail({
   message: string;
   onGenerateInvoice: () => void;
   onApprovePayment: () => void;
+  onMarkCreditPaid: () => void;
   onRejectPayment: () => void;
   onCancelOrder: () => void;
   onCancelInvoice: () => void;
@@ -658,6 +692,7 @@ function OrderDetail({
   const isBankTransfer = order.payment_method === "bank_transfer";
   const isCash = order.payment_method === "cash";
   const isCard = order.payment_method === "card";
+  const isCredit = order.payment_method === "commercial_credit";
   const allowedStatuses = getAllowedOrderStatusOptions(order);
   const manualStatuses = allowedStatuses.filter((option) => option.value !== "cancelado");
   const paymentIsApproved = isPaymentConfirmed(order.payment_status);
@@ -682,6 +717,7 @@ function OrderDetail({
   const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
   const canConfirmPayment =
     canConfirmPayments &&
+    !isCredit &&
     !paymentIsApproved &&
     !paymentIsRejected &&
     normalizedStatus !== "cancelado" &&
@@ -788,6 +824,12 @@ function OrderDetail({
               {isPending ? "Procesando..." : paymentActionLabel}
             </Button>
           ) : null}
+          {canMarkCreditPaid && isCredit && order.receivable_id && order.receivable_status !== "paid" ? (
+            <Button onClick={onMarkCreditPaid} disabled={isPending} variant="primary" className="w-full sm:w-auto">
+              <CheckCircle2 size={17} />
+              {isPending ? "Procesando..." : "Marcar crédito como pagado"}
+            </Button>
+          ) : null}
           {canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
             <Button onClick={onRejectPayment} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
               <XCircle size={17} />
@@ -874,6 +916,9 @@ function OrderDetail({
               <CompactInfo label="Dirección fiscal" value={order.fiscal_customer_address ?? "Sin dirección"} />
               <CompactInfo label="Factura fiscal" value={order.invoice_number ?? "Sin factura"} />
               <CompactInfo label="Estado factura" value={invoiceIsCancelled ? "Factura anulada" : order.invoice_number ? "Factura emitida" : "Sin factura"} />
+              {isCredit ? <CompactInfo label="Estado crédito" value={order.receivable_status === "paid" ? "Pagado" : order.receivable_status === "overdue" ? "Vencido" : "Abierto"} /> : null}
+              {isCredit ? <CompactInfo label="Saldo por cobrar" value={formatCurrency(order.receivable_balance_due ?? 0)} /> : null}
+              {isCredit ? <CompactInfo label="Vence" value={order.receivable_due_date ?? "Sin fecha"} /> : null}
             </div>
             {isBankTransfer ? (
               <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -962,6 +1007,8 @@ function OrderDetail({
           <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
             {cashOnDeliveryPending
               ? "Debes confirmar el cargo contra entrega antes de emitir la factura."
+              : isCredit
+                ? "La factura de crédito solo puede emitirse si el pedido está activo y la reserva de inventario no fue liberada."
               : "La factura solo puede generarse cuando el pago esté confirmado. También debe ser un pedido activo con inventario no liberado."}
           </p>
         ) : null}

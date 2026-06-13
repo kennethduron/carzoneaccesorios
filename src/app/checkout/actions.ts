@@ -10,6 +10,7 @@ import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
+import { getActiveCreditAccountForUser, getOpenCreditBalance } from "@/services/supabase/credit.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
@@ -59,6 +60,13 @@ export type CheckoutAccountInfo = {
   rtn: string | null;
   address: string | null;
   city: string | null;
+  credit: {
+    customerId: string;
+    creditLimit: number;
+    termsDays: number;
+    openBalance: number;
+    availableCredit: number;
+  } | null;
 };
 
 type CustomerAuthorizationRow = {
@@ -135,6 +143,12 @@ function safeCheckoutErrorMessage(message: string) {
 }
 
 function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
+  const normalizedMethod = String(method);
+
+  if (normalizedMethod === "Crédito Comercial" || normalizedMethod === "CrÃ©dito Comercial") {
+    return "commercial_credit";
+  }
+
   if (method === "Tarjeta") {
     return "card";
   }
@@ -265,6 +279,7 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     rtn: null,
     address: null,
     city: null,
+    credit: null,
   };
 
   const supabase = await getSupabaseServerClient();
@@ -285,12 +300,13 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
       .maybeSingle<{ email: string | null; full_name: string | null; phone: string | null }>(),
     admin
       .from("customers")
-      .select("contact_name, email, phone, tax_id, address, city")
+      .select("id, contact_name, email, phone, tax_id, address, city")
       .eq("user_id", user.id)
       .eq("active", true)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle<{
+        id: string;
         contact_name: string | null;
         email: string | null;
         phone: string | null;
@@ -301,6 +317,8 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
   ]);
 
   const accountEmail = normalizeEmail(user.email || profile?.email || customer?.email);
+  const creditAccount = await getActiveCreditAccountForUser(user.id).catch(() => null);
+  const openBalance = creditAccount ? await getOpenCreditBalance(creditAccount.customer_id).catch(() => 0) : 0;
 
   return {
     isAuthenticated: true,
@@ -310,6 +328,15 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     rtn: customer?.tax_id || null,
     address: customer?.address || null,
     city: customer?.city || null,
+    credit: creditAccount
+      ? {
+          customerId: creditAccount.customer_id,
+          creditLimit: creditAccount.credit_limit,
+          termsDays: creditAccount.terms_days,
+          openBalance,
+          availableCredit: Math.max(creditAccount.credit_limit - openBalance, 0),
+        }
+      : null,
   };
 }
 
@@ -441,7 +468,9 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const email = user ? accountEmail : submittedEmail;
   const paymentMethod = paymentMethodValue(input.checkout.paymentMethod);
   const paymentTiming =
-    paymentMethod === "cash"
+    paymentMethod === "commercial_credit"
+      ? "before_delivery"
+      : paymentMethod === "cash"
       ? "on_delivery"
       : paymentMethod === "card"
         ? "before_delivery"
@@ -485,6 +514,10 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   if (paymentMethod === "cash" && !settings.allow_cash_on_delivery) {
     return { ok: false, message: "El pago contra entrega no está disponible en este momento." };
+  }
+
+  if (paymentMethod === "commercial_credit" && !user) {
+    return { ok: false, message: "Inicia sesión con una cuenta autorizada para usar crédito comercial." };
   }
 
   if (!bankReferenceResult.ok) {
@@ -736,9 +769,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const admin = getSupabaseAdminClient();
   try {
-    await applyIncludedTaxFinancialsToOrder(createdOrder.order_id, Number(settings.tax_rate ?? 0.15), {
+    const normalizedFinancials = await applyIncludedTaxFinancialsToOrder(createdOrder.order_id, Number(settings.tax_rate ?? 0.15), {
       cashOnDeliveryPending: requiresCashOnDeliveryReview,
     });
+
+    if (paymentMethod === "commercial_credit") {
+      const { error: receivableSyncError } = await admin
+        .from("accounts_receivable")
+        .update({
+          original_amount: normalizedFinancials.total,
+          balance_due: normalizedFinancials.total,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("order_id", createdOrder.order_id)
+        .in("status", ["open", "overdue"]);
+
+      if (receivableSyncError) {
+        throw new Error(receivableSyncError.message);
+      }
+    }
   } catch (financialError) {
     await writeErrorLog({
       route: "/checkout",
@@ -872,6 +921,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago."
         : requiresCashOnDeliveryReview
           ? "Tu pedido fue recibido correctamente. Seleccionaste pago contra entrega. Nuestro equipo revisará el cargo correspondiente y actualizará el total final del pedido."
+        : paymentMethod === "commercial_credit"
+          ? "Pedido creado con crédito comercial. El pago quedará pendiente hasta que el equipo marque el crédito como pagado."
         : "Pedido creado correctamente. Nuestro equipo revisará el pago y la facturación.",
     orderNumber: createdOrder.order_number,
     trackingCode: createdOrder.tracking_code,

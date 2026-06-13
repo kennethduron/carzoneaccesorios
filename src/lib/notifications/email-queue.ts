@@ -47,11 +47,13 @@ function siteUrl() {
 function formatDate(value: unknown) {
   if (!value) return "Sin fecha";
 
+  const rawValue = String(value);
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(rawValue);
   return new Intl.DateTimeFormat("es-HN", {
     dateStyle: "medium",
-    timeStyle: "short",
+    ...(dateOnly ? {} : { timeStyle: "short" as const }),
     timeZone: "America/Tegucigalpa",
-  }).format(new Date(String(value)));
+  }).format(new Date(dateOnly ? `${rawValue}T12:00:00-06:00` : rawValue));
 }
 
 function row(label: string, value: unknown) {
@@ -76,10 +78,13 @@ export function renderEmailTemplate(templateKey: string, payload: Record<string,
     row("Teléfono", payload.customer_phone),
     row("Método de pago", payload.payment_method),
     row("Estado", payload.status ?? payload.payment_status),
+    row("Monto", payload.amount),
+    row("Saldo pendiente", payload.balance_due),
     row("Producto", payload.product_name),
     row("Stock disponible", payload.available_stock),
     row("Stock mínimo", payload.min_stock),
-    row("Fecha", payload.created_at ? formatDate(payload.created_at) : payload.due_at ? formatDate(payload.due_at) : null),
+    row("Fecha límite", payload.due_at ? formatDate(payload.due_at) : null),
+    row("Fecha", payload.created_at ? formatDate(payload.created_at) : null),
   ].join("");
 
   const templateLabel = templateKey.replaceAll(".", " ");

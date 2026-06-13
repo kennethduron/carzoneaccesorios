@@ -89,6 +89,7 @@ const moduleGroups = [
     description: "Facturas, reportes y configuración fiscal.",
     defaultOpen: true,
     modules: [
+      { title: "Cuentas por cobrar", href: "/admin/cuentas-por-cobrar", description: "Créditos abiertos, próximos a vencer y vencidos.", permissions: ["receivables:read"] },
       { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", description: "Ventas facturadas, impuestos, facturas anuladas y correlativos.", permissions: ["reports:read", "reports:fiscal_read"] },
       { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal", "fiscal:read"] },

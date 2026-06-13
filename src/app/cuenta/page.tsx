@@ -13,6 +13,7 @@ import {
   getCustomerOrders,
   type CustomerOrderRow,
 } from "@/services/supabase/customer-account.service";
+import { getActiveCreditAccountForUser, getCustomerReceivablesForUser } from "@/services/supabase/credit.service";
 import type { StoreInvoice } from "@/types/invoices";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -87,6 +88,10 @@ function pendingInvoiceMessage(order: CustomerOrderRow) {
     return "Factura pendiente. Estará disponible cuando el pago o entrega sea confirmado.";
   }
 
+  if (order.payment_method === "commercial_credit") {
+    return "Factura pendiente. Estará disponible cuando el equipo la emita.";
+  }
+
   return order.payment_status === "approved"
     ? "Tu factura estará disponible cuando sea emitida."
     : "Estamos revisando tu pago.";
@@ -98,11 +103,13 @@ export default async function CuentaPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireSession();
-  const [wholesaleState, accountSummary, recentOrders, issuedInvoices] = await Promise.all([
+  const [wholesaleState, accountSummary, recentOrders, issuedInvoices, creditAccount, creditReceivables] = await Promise.all([
     getWholesaleAccessStateAction(),
     getCustomerAccountSummary(profile.id),
     getCustomerOrders(profile.id, 5),
     getCustomerIssuedInvoices(profile.id, 5),
+    getActiveCreditAccountForUser(profile.id).catch(() => null),
+    getCustomerReceivablesForUser(profile.id, 10).catch(() => []),
   ]);
   const params = (await searchParams) ?? {};
   const confirmed = params.confirmed === "1";
@@ -115,6 +122,8 @@ export default async function CuentaPage({
         : "Pendiente de primera compra"
       : wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado";
   const pendingInvoiceOrders = recentOrders.filter((order) => !orderHasIssuedInvoice(order)).slice(0, 3);
+  const openReceivables = creditReceivables.filter((item) => item.status !== "paid");
+  const pendingCreditBalance = openReceivables.reduce((sum, item) => sum + item.balance_due, 0);
 
   return (
     <PublicStoreShell>
@@ -193,6 +202,47 @@ export default async function CuentaPage({
                 Primera compra completada. Tus compras mayoristas posteriores no tienen monto mínimo.
               </p>
             ) : null}
+          </section>
+        ) : null}
+
+        {creditAccount ? (
+          <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div>
+                <p className="text-sm text-black/50">Crédito comercial</p>
+                <h2 className="mt-1 text-xl font-semibold">Crédito activo</h2>
+                <p className="mt-2 text-sm text-black/60">
+                  Puedes comprar con Crédito Comercial. Cada pedido queda pendiente hasta que el equipo marque el crédito como pagado.
+                </p>
+              </div>
+              <Link href="/catalogo" className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white">
+                Comprar con crédito
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Info label="Límite autorizado" value={formatCurrency(creditAccount.credit_limit)} />
+              <Info label="Saldo pendiente" value={formatCurrency(pendingCreditBalance)} />
+              <Info label="Plazo de pago" value={`${creditAccount.terms_days} días`} />
+            </div>
+            {openReceivables.length > 0 ? (
+              <div className="mt-4 grid gap-2">
+                {openReceivables.slice(0, 5).map((item) => (
+                  <div key={item.id} className="rounded-md border border-black/10 p-3 text-sm">
+                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                      <p className="font-semibold">{formatCurrency(item.balance_due)}</p>
+                      <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">
+                        {item.status === "overdue" ? "Vencido" : "Abierto"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-black/55">Fecha límite: {formatDate(item.due_date)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
+                No tienes cuentas por cobrar pendientes.
+              </p>
+            )}
           </section>
         ) : null}
 

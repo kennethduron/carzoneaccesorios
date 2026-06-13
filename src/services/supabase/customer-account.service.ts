@@ -90,7 +90,7 @@ type CustomerAccountSummaryRow = {
 
 type CustomerOrderQueryRow = Omit<
   CustomerOrderRow,
-  "subtotal" | "tax" | "shipping_fee" | "shipping_total" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices"
+  "subtotal" | "tax" | "shipping_fee" | "shipping_total" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices" | "receivable_id" | "receivable_status" | "receivable_due_date" | "receivable_balance_due"
 > & {
   subtotal: unknown;
   tax: unknown;
@@ -116,6 +116,17 @@ type CustomerOrderQueryRow = Omit<
     transfer_receipt_url: string | null;
   }> | null;
   invoices: CustomerOrderInvoice[] | CustomerOrderInvoice | null;
+  accounts_receivable: {
+    id: string;
+    status: "open" | "paid" | "overdue" | null;
+    due_date: string | null;
+    balance_due: unknown;
+  } | Array<{
+    id: string;
+    status: "open" | "paid" | "overdue" | null;
+    due_date: string | null;
+    balance_due: unknown;
+  }> | null;
 };
 
 type CustomerInvoiceQueryRow = {
@@ -189,6 +200,10 @@ function normalizePageSize(value: unknown) {
 }
 
 function paymentMethodLabel(value: string): StoreInvoice["paymentMethod"] {
+  if (value === "commercial_credit") {
+    return "Crédito Comercial";
+  }
+
   if (value === "bank_transfer") {
     return "Transferencia bancaria";
   }
@@ -208,6 +223,9 @@ function normalizePaymentStatus(payments: CustomerOrderQueryRow["payments"]) {
 function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
   const payment = row.payments?.[0] ?? null;
   const invoices = Array.isArray(row.invoices) ? row.invoices : row.invoices ? [row.invoices] : [];
+  const receivable = Array.isArray(row.accounts_receivable)
+    ? row.accounts_receivable[0] ?? null
+    : row.accounts_receivable;
 
   return {
     ...row,
@@ -224,6 +242,10 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
     bank_reference_number: payment?.bank_reference_number ?? payment?.reference ?? null,
     transfer_receipt_url: payment?.transfer_receipt_url ?? null,
     fiscal_correction_history: [],
+    receivable_id: receivable?.id ?? null,
+    receivable_status: receivable?.status ?? null,
+    receivable_due_date: receivable?.due_date ?? null,
+    receivable_balance_due: receivable ? toNumber(receivable.balance_due) : null,
     invoices: invoices.map((invoice) => ({
       ...invoice,
       subtotal: toNumber(invoice.subtotal),
@@ -433,6 +455,7 @@ export async function getCustomerOrdersPage(
         wholesale_price_snapshot
       ),
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
+      accounts_receivable(id, status, due_date, balance_due),
       invoices(
         id,
         invoice_number,

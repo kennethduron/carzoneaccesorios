@@ -204,6 +204,8 @@ export type CrmCustomerProfile = {
   followups: CrmFollowupRow[];
   wholesaleCodes: CrmCustomerWholesaleCodeProfileRow[];
   wholesaleHistory: CrmCustomerWholesaleHistoryRow[];
+  creditAccount: import("@/types/credit").CustomerCreditAccount | null;
+  receivables: import("@/types/credit").AccountsReceivableRow[];
 };
 
 export type CrmLeadInput = {

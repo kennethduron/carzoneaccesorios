@@ -1,6 +1,7 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
+import { getCustomerCreditAccount, getCustomerReceivables } from "@/services/supabase/credit.service";
 import type { AppRole } from "@/types/auth";
 import type {
   AdminCrmData,
@@ -920,6 +921,8 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     { data: followups, error: followupsError },
     { data: wholesaleCodes, error: wholesaleCodesError },
     { data: wholesaleHistory, error: wholesaleHistoryError },
+    creditAccount,
+    receivables,
   ] = await Promise.all([
     Promise.all(orderQueries.map((query) => query())),
     admin
@@ -959,6 +962,8 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .eq("note_type", "wholesale_status")
       .order("created_at", { ascending: true })
       .returns<CustomerWholesaleHistoryRow[]>(),
+    getCustomerCreditAccount(customerId),
+    getCustomerReceivables(customerId, 50),
   ]);
 
   for (const result of orderResults) {
@@ -1094,5 +1099,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       user_name: item.users?.full_name ?? null,
       user_email: item.users?.email ?? null,
     })),
+    creditAccount,
+    receivables,
   };
 }

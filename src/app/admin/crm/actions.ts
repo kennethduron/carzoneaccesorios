@@ -352,6 +352,16 @@ export async function getCustomerProfileAction(customerId: string): Promise<Cust
       return { ok: false, message: "No tienes autorización para ver perfiles internos completos.", profile: null };
     }
 
+    const canReadCredit =
+      ["technical_owner", "business_owner", "admin"].includes(viewer.role) &&
+      (hasEffectivePermission(viewer.role, viewer.permissions, "credit:read", viewer.email) ||
+        hasEffectivePermission(viewer.role, viewer.permissions, "credit:manage", viewer.email));
+
+    if (!canReadCredit) {
+      profile.creditAccount = null;
+      profile.receivables = [];
+    }
+
     return { ok: true, message: "Perfil cargado.", profile };
   } catch (error) {
     return {
@@ -360,6 +370,83 @@ export async function getCustomerProfileAction(customerId: string): Promise<Cust
       profile: null,
     };
   }
+}
+
+export async function saveCustomerCommercialCreditAction(input: {
+  customerId: string;
+  isCreditEnabled: boolean;
+  creditLimit: number;
+  termsDays: number;
+  status: "active" | "suspended";
+  notes: string;
+}) {
+  const viewer = await requirePermission("admin:access");
+  const customerId = uuidLike(input.customerId, "Cliente");
+  const canManage =
+    ["technical_owner", "business_owner", "admin"].includes(viewer.role) &&
+    hasEffectivePermission(viewer.role, viewer.permissions, "credit:manage", viewer.email);
+
+  if (!customerId.ok) {
+    return { ok: false, message: customerId.message };
+  }
+
+  if (!canManage) {
+    await writeAuditLog({
+      tableName: "customer_credit_accounts",
+      recordId: customerId.value,
+      action: "commercial_credit.permission_denied",
+      newData: {
+        attempted_action: "update_credit",
+        role: viewer.role,
+      },
+    });
+    return { ok: false, message: "Solo usuarios autorizados pueden modificar crédito comercial." };
+  }
+
+  const creditLimit = Math.round(Number(input.creditLimit) * 100) / 100;
+  const termsDays = Number(input.termsDays);
+  const notes = input.notes.trim();
+
+  if (!Number.isFinite(creditLimit) || creditLimit < 0) {
+    return { ok: false, message: "El límite de crédito no puede ser negativo." };
+  }
+  if (input.isCreditEnabled && input.status === "active" && creditLimit <= 0) {
+    return { ok: false, message: "El límite de crédito debe ser mayor a cero." };
+  }
+  if (!Number.isInteger(termsDays) || termsDays < 1 || termsDays > 365) {
+    return { ok: false, message: "El plazo de crédito debe estar entre 1 y 365 días." };
+  }
+  if (!["active", "suspended"].includes(input.status)) {
+    return { ok: false, message: "Estado de crédito inválido." };
+  }
+  if (notes.length > 2000) {
+    return { ok: false, message: "Las notas internas no pueden exceder 2000 caracteres." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("set_customer_commercial_credit", {
+    target_customer_id: customerId.value,
+    credit_enabled: input.isCreditEnabled,
+    target_credit_limit: creditLimit,
+    target_terms_days: termsDays,
+    target_status: input.isCreditEnabled ? input.status : "suspended",
+    internal_notes: notes || null,
+  });
+
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return { ok: false, message: error?.message || "No se pudo actualizar el crédito comercial." };
+  }
+
+  revalidatePath("/admin/crm");
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/cuentas-por-cobrar");
+  revalidatePath("/checkout");
+  revalidatePath("/cuenta");
+
+  return {
+    ok: true,
+    message: input.isCreditEnabled ? "Crédito comercial activado correctamente." : "Crédito comercial desactivado correctamente.",
+  };
 }
 
 export async function saveCrmFollowupAction(input: CrmFollowupInput): Promise<CrmMutationResult> {

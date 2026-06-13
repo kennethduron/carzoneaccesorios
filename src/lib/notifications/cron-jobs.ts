@@ -179,6 +179,98 @@ export async function checkExpiredReservationsJob() {
   return { reviewRequiredOrders: Number(data ?? 0), email };
 }
 
+type CreditReminderRow = {
+  id: string;
+  customer_id: string;
+  order_id: string;
+  balance_due: unknown;
+  due_date: string;
+  status: "open" | "overdue";
+  customers: { contact_name: string | null; business_name: string | null } | null;
+  orders: { order_number: string | null } | null;
+};
+
+function tegucigalpaDateOffset(days: number) {
+  const target = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(target);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+export async function checkCommercialCreditRemindersJob() {
+  const admin = getSupabaseAdminClient();
+  const { data: overdueCount, error: overdueError } = await admin.rpc("mark_overdue_accounts_receivable", { max_rows: 500 });
+  if (overdueError) throw new Error(overdueError.message);
+
+  const reminderDates = [tegucigalpaDateOffset(7), tegucigalpaDateOffset(3), tegucigalpaDateOffset(1)];
+  const { data, error } = await admin
+    .from("accounts_receivable")
+    .select("id, customer_id, order_id, balance_due, due_date, status, customers(contact_name, business_name), orders(order_number)")
+    .in("status", ["open", "overdue"])
+    .or(`due_date.in.(${reminderDates.join(",")}),status.eq.overdue`)
+    .limit(500)
+    .returns<CreditReminderRow[]>();
+
+  if (error) throw new Error(error.message);
+
+  let notifications = 0;
+  const today = tegucigalpaDateOffset(0);
+
+  for (const receivable of data ?? []) {
+    const days = Math.round(
+      (new Date(`${receivable.due_date}T12:00:00-06:00`).getTime() - new Date(`${today}T12:00:00-06:00`).getTime()) /
+        (24 * 60 * 60 * 1000),
+    );
+    const customerName = receivable.customers?.business_name || receivable.customers?.contact_name || "Cliente";
+    const orderNumber = receivable.orders?.order_number || "pedido";
+    const type =
+      receivable.status === "overdue" || days < 0
+        ? "credit.overdue"
+        : days === 7
+          ? "credit.due_7_days"
+          : days === 3
+            ? "credit.due_3_days"
+            : "credit.due_1_day";
+    const title =
+      type === "credit.overdue"
+        ? "Crédito comercial vencido"
+        : type === "credit.due_7_days"
+          ? "Crédito vence en 7 días"
+          : type === "credit.due_3_days"
+            ? "Crédito vence en 3 días"
+            : "Crédito vence mañana";
+    const created = await createInternalNotification({
+      type,
+      title,
+      message: `${customerName}, pedido ${orderNumber}, saldo L ${Number(receivable.balance_due ?? 0).toFixed(2)}.`,
+      severity: type === "credit.overdue" ? "critical" : days <= 3 ? "warning" : "info",
+      module: "pagos",
+      customerId: receivable.customer_id,
+      orderId: receivable.order_id,
+      metadata: {
+        receivable_id: receivable.id,
+        due_date: receivable.due_date,
+        balance_due: Number(receivable.balance_due ?? 0),
+        days_remaining: days,
+        action_path: "/admin/cuentas-por-cobrar",
+      },
+      dedupeKey: `${type}:${receivable.id}`,
+    });
+    if (created.created) notifications += 1;
+  }
+
+  return {
+    overdueMarked: Number(overdueCount ?? 0),
+    scanned: data?.length ?? 0,
+    notifications,
+  };
+}
+
 export async function checkOverdueFollowupsJob() {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin

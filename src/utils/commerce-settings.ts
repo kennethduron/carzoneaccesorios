@@ -93,9 +93,11 @@ export function calculateCheckoutFees({
     | "Tarjeta por link de pago"
     | "Tarjeta mediante enlace de pago"
     | "Efectivo"
+    | "Crédito Comercial"
     | "bank_transfer"
     | "card"
-    | "cash";
+    | "cash"
+    | "commercial_credit";
   paymentTiming?: "before_delivery" | "on_delivery";
   settings: CommerceSettings;
 }) {

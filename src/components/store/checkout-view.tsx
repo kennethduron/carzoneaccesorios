@@ -43,6 +43,7 @@ const guestCheckoutAccount: CheckoutAccountInfo = {
   rtn: null,
   address: null,
   city: null,
+  credit: null,
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -148,8 +149,11 @@ export function CheckoutView({
     if (settings.allow_cash_on_delivery) {
       methods.push(["Efectivo", Store]);
     }
+    if (accountInfo.credit) {
+      methods.push(["Crédito Comercial", Banknote]);
+    }
     return methods;
-  }, [settings.allow_bank_transfer, settings.allow_cash_on_delivery]);
+  }, [accountInfo.credit, settings.allow_bank_transfer, settings.allow_cash_on_delivery]);
   const smallOrderFee = 0;
   const discountTotal = 0;
   const additionalFees: [] = [];
@@ -164,6 +168,8 @@ export function CheckoutView({
   const blocksFirstWholesaleOrder = wholesaleMinimumApplies && wholesaleMinimumMissing > 0;
   const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
   const blocksWholesaleQuantityMinimum = priceMode === "wholesale" && wholesaleQuantityIssues.length > 0;
+  const blocksCommercialCreditLimit =
+    checkout.paymentMethod === "Crédito Comercial" && accountInfo.credit ? finalTotal > accountInfo.credit.availableCredit : false;
 
   const wholesaleMinimumBlockMessage =
     "Para activar tu primera compra mayorista, el monto mínimo debe ser de L 10,000. Después de tu primera compra mayorista, podrás comprar cualquier monto.";
@@ -316,6 +322,16 @@ export function CheckoutView({
       return;
     }
 
+    if (checkout.paymentMethod === "Crédito Comercial" && !accountInfo.credit) {
+      showCheckoutError("paymentMethod", "Tu cuenta no tiene crédito comercial activo.");
+      return;
+    }
+
+    if (blocksCommercialCreditLimit) {
+      showCheckoutError("paymentMethod", "Este pedido supera el crédito autorizado para este cliente.");
+      return;
+    }
+
     const bankReferenceError = isBankTransferNow ? validateBankReference(bankTransferReference) : "";
     if (bankReferenceError) {
       showCheckoutError("bankTransferReference", bankReferenceError);
@@ -423,6 +439,8 @@ export function CheckoutView({
               ? "Tu pedido está pendiente de revisión de pago."
               : checkout.paymentMethod === "Efectivo"
                 ? "Tu pedido está pendiente de confirmación."
+                : checkout.paymentMethod === "Crédito Comercial"
+                  ? "Pedido creado con crédito comercial. El pago queda pendiente hasta marcarlo como pagado."
                 : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago.",
       });
       setFieldErrors({});
@@ -431,6 +449,8 @@ export function CheckoutView({
           ? "Pedido recibido. El cargo contra entrega quedará pendiente de confirmación."
           : checkout.paymentMethod === "Tarjeta"
           ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago."
+          : checkout.paymentMethod === "Crédito Comercial"
+          ? "Pedido creado con crédito comercial."
           : "Pedido creado correctamente. Te contactaremos para confirmar el pago.",
       );
       setProofFile(null);
@@ -570,7 +590,7 @@ export function CheckoutView({
                   setCheckout((current) => ({
                     ...current,
                     paymentMethod: method as CheckoutData["paymentMethod"],
-                    paymentTiming: method === "Efectivo" ? "on_delivery" : method === "Tarjeta" ? "before_delivery" : current.paymentTiming,
+                    paymentTiming: method === "Efectivo" ? "on_delivery" : method === "Tarjeta" || method === "Crédito Comercial" ? "before_delivery" : current.paymentTiming,
                   }));
                   if (method !== "Transferencia bancaria") {
                     setProofFileName("");
@@ -753,6 +773,30 @@ export function CheckoutView({
                 </div>
               </div>
               <CashOnDeliveryNotice />
+            </section>
+          ) : null}
+
+          {checkout.paymentMethod === "Crédito Comercial" && accountInfo.credit ? (
+            <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
+              <div className="flex items-start gap-3">
+                <Banknote size={19} className="mt-0.5 text-[#e4252c]" />
+                <div>
+                  <h2 className="font-semibold">Crédito comercial</h2>
+                  <p className="mt-1 text-sm text-black/60">
+                    Este pedido quedará como cuenta por cobrar. No requiere pago inmediato ni genera factura automáticamente.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+                <MiniCredit label="Límite" value={formatCurrency(accountInfo.credit.creditLimit)} />
+                <MiniCredit label="Disponible" value={formatCurrency(accountInfo.credit.availableCredit)} />
+                <MiniCredit label="Plazo" value={`${accountInfo.credit.termsDays} días`} />
+              </div>
+              {blocksCommercialCreditLimit ? (
+                <p className="mt-3 rounded-md bg-[#fff0ea] p-3 text-sm font-medium text-[#9b341b]">
+                  Este pedido supera el crédito autorizado para este cliente.
+                </p>
+              ) : null}
             </section>
           ) : null}
 
@@ -964,6 +1008,15 @@ function InfoRow({ label, value, strong = false }: { label: string; value: strin
     <div className="flex justify-between gap-3">
       <span className="text-black/55">{label}</span>
       <span className={`text-right ${strong ? "font-semibold" : "font-medium"}`}>{value}</span>
+    </div>
+  );
+}
+
+function MiniCredit({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-black/10 bg-white px-3 py-2">
+      <p className="text-xs uppercase text-black/45">{label}</p>
+      <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
 }

@@ -100,7 +100,7 @@ export type AdminOrderRow = {
   delivery_country_code: string;
   delivery_department: string | null;
   delivery_city: string | null;
-  payment_method: "bank_transfer" | "card" | "cash";
+  payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
   payment_timing: "before_delivery" | "on_delivery";
   price_mode: PriceMode;
   subtotal: number;
@@ -137,4 +137,8 @@ export type AdminOrderRow = {
   invoice_cancelled_at: string | null;
   invoice_cancellation_reason: string | null;
   fiscal_correction_history: FiscalCorrectionHistoryEntry[];
+  receivable_id: string | null;
+  receivable_status: "open" | "paid" | "overdue" | null;
+  receivable_due_date: string | null;
+  receivable_balance_due: number | null;
 };
