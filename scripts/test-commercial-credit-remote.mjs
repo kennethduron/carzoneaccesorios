@@ -141,6 +141,11 @@ async function cleanupFixtureRows() {
     await admin.from("invoices").delete().in("order_id", orderIds);
     await admin.from("orders").delete().in("id", orderIds);
   }
+  if (customerIds.length) {
+    await admin.from("internal_notifications").delete().in("customer_id", customerIds);
+    await admin.from("email_queue").delete().in("idempotency_key", customerIds.map((id) => `credit.enabled:${id}`));
+  }
+  if (creditAccountIds.length) await admin.from("email_queue").delete().in("related_id", creditAccountIds);
   if (creditAccountIds.length) await admin.from("customer_credit_accounts").delete().in("id", creditAccountIds);
   if (customerIds.length) await admin.from("customers").delete().in("id", customerIds);
   if (productIds.length) {
@@ -175,6 +180,8 @@ async function cleanupStaleFixtures() {
   const { data: staleCustomers } = await admin.from("customers").select("id").like("email", "codex-credit-%@example.com");
   const staleCustomerIds = (staleCustomers ?? []).map((row) => row.id);
   if (staleCustomerIds.length) {
+    await admin.from("internal_notifications").delete().in("customer_id", staleCustomerIds);
+    await admin.from("email_queue").delete().in("idempotency_key", staleCustomerIds.map((id) => `credit.enabled:${id}`));
     await admin.from("customer_credit_accounts").delete().in("customer_id", staleCustomerIds);
     await admin.from("customers").delete().in("id", staleCustomerIds);
   }
@@ -219,6 +226,58 @@ try {
     assert.equal(data.length, 1, `${roleName} must manage credit`);
     if (!creditAccountIds.includes(data[0].credit_account_id)) creditAccountIds.push(data[0].credit_account_id);
   }
+
+  const { data: initialEnabledEmails, error: initialEnabledEmailsError } = await admin
+    .from("email_queue")
+    .select("id, idempotency_key, template_key")
+    .eq("template_key", "commercial_credit.enabled")
+    .eq("idempotency_key", `credit.enabled:${creditCustomerId}`);
+  assert.ifError(initialEnabledEmailsError);
+  assert.equal(initialEnabledEmails.length, 1, "Credit enabled email must be queued once on first activation");
+
+  const { data: initialVisualNotifications, error: initialVisualNotificationsError } = await admin
+    .from("internal_notifications")
+    .select("id")
+    .eq("customer_id", creditCustomerId)
+    .eq("notification_type", "commercial_credit.enabled");
+  assert.ifError(initialVisualNotificationsError);
+  assert.equal(initialVisualNotifications.length, 1, "First activation must create one visual notification");
+
+  const disableResult = await roles.admin.client.rpc("set_customer_commercial_credit", {
+    target_customer_id: creditCustomerId,
+    credit_enabled: false,
+    target_credit_limit: 1500,
+    target_terms_days: 30,
+    target_status: "suspended",
+    internal_notes: "Deshabilitar para probar idempotencia",
+  });
+  assert.ifError(disableResult.error);
+
+  const reactivateResult = await roles.admin.client.rpc("set_customer_commercial_credit", {
+    target_customer_id: creditCustomerId,
+    credit_enabled: true,
+    target_credit_limit: 1500,
+    target_terms_days: 30,
+    target_status: "active",
+    internal_notes: "Reactivar para probar idempotencia",
+  });
+  assert.ifError(reactivateResult.error);
+
+  const { data: enabledEmailsAfterReactivation, error: enabledEmailsAfterReactivationError } = await admin
+    .from("email_queue")
+    .select("id")
+    .eq("template_key", "commercial_credit.enabled")
+    .eq("idempotency_key", `credit.enabled:${creditCustomerId}`);
+  assert.ifError(enabledEmailsAfterReactivationError);
+  assert.equal(enabledEmailsAfterReactivation.length, 1, "Reactivation must not queue a second enabled email");
+
+  const { data: visualNotificationsAfterReactivation, error: visualNotificationsAfterReactivationError } = await admin
+    .from("internal_notifications")
+    .select("id")
+    .eq("customer_id", creditCustomerId)
+    .eq("notification_type", "commercial_credit.enabled");
+  assert.ifError(visualNotificationsAfterReactivationError);
+  assert.equal(visualNotificationsAfterReactivation.length, 2, "Reactivation must create a new visual notification");
 
   const deniedRoles = ["contadora", "vendedor", "bodega", "soporte"];
   for (const roleName of deniedRoles) {
@@ -267,7 +326,7 @@ try {
 
   const { data: orderState, error: orderStateError } = await admin
     .from("orders")
-    .select("id, customer_id, payment_method, total, status, invoices(id), payments(payment_status, status), accounts_receivable(id, original_amount, balance_due, due_date, status)")
+    .select("id, customer_id, payment_method, total, status, invoices(id), payments(payment_status, status), accounts_receivable(id, original_amount, balance_due, due_date, status, paid_at, payment_received_method, payment_received_reference, payment_recorded_by)")
     .eq("id", firstOrder.order.order_id)
     .single();
   assert.ifError(orderStateError);
@@ -313,12 +372,16 @@ try {
   for (const roleName of ["contadora", "vendedor", "bodega", "soporte"]) {
     const { data, error } = await roles[roleName].client.rpc("mark_credit_receivable_paid", {
       target_receivable_id: receivable.id,
+      received_payment_method: "bank_transfer",
+      payment_reference: "DENIED-TEST",
     });
     assert.ifError(error);
     assert.equal(data, false, `${roleName} must not mark credit paid`);
   }
   const customerMarkPaid = await creditCustomerUser.client.rpc("mark_credit_receivable_paid", {
     target_receivable_id: receivable.id,
+    received_payment_method: "bank_transfer",
+    payment_reference: "DENIED-CLIENT",
   });
   assert.ifError(customerMarkPaid.error);
   assert.equal(customerMarkPaid.data, false, "Customer must not mark credit paid");
@@ -342,21 +405,40 @@ try {
   assert.ifError(afterDeliveryProduct.error);
   assert.deepEqual(afterDeliveryProduct.data, { stock: 2, reserved_stock: 0, available_stock: 2 });
 
+  const noMethodPaidResult = await roles.admin.client.rpc("mark_credit_receivable_paid", {
+    target_receivable_id: receivable.id,
+  });
+  assert.ifError(noMethodPaidResult.error);
+  assert.equal(noMethodPaidResult.data, false, "Mark paid without real payment method must be blocked");
+
   const paidResult = await roles.admin.client.rpc("mark_credit_receivable_paid", {
     target_receivable_id: receivable.id,
+    received_payment_method: "bank_transfer",
+    payment_reference: "REF-123456789",
   });
   assert.ifError(paidResult.error);
   assert.equal(paidResult.data, true);
 
   const { data: paidReceivable, error: paidReceivableError } = await admin
     .from("accounts_receivable")
-    .select("status, balance_due, paid_at")
+    .select("status, balance_due, paid_at, payment_received_method, payment_received_reference, payment_recorded_by")
     .eq("id", receivable.id)
     .single();
   assert.ifError(paidReceivableError);
   assert.equal(paidReceivable.status, "paid");
   assert.equal(Number(paidReceivable.balance_due), 0);
   assert.ok(paidReceivable.paid_at);
+  assert.equal(paidReceivable.payment_received_method, "bank_transfer");
+  assert.equal(paidReceivable.payment_received_reference, "REF-123456789");
+  assert.ok(paidReceivable.payment_recorded_by);
+
+  const secondPaidResult = await roles.admin.client.rpc("mark_credit_receivable_paid", {
+    target_receivable_id: receivable.id,
+    received_payment_method: "cash",
+    payment_reference: null,
+  });
+  assert.ifError(secondPaidResult.error);
+  assert.equal(secondPaidResult.data, false, "Paid receivable must not accept payment edits");
 
   const afterPaidProduct = await admin
     .from("products")

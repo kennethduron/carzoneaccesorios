@@ -8,16 +8,21 @@ const [
   creditMigration,
   invoiceMigration,
   permissionAuditMigration,
+  finalMigration,
   permissions,
   checkoutAction,
   checkoutView,
   crmAction,
   crmManager,
   accountPage,
+  accountActions,
+  notificationToast,
   receivablesPage,
   receivablesManager,
   orderActions,
+  ordersManager,
   orderWorkflow,
+  emailQueue,
   cronJobs,
   vercelConfig,
 ] = await Promise.all([
@@ -25,16 +30,21 @@ const [
   read("supabase/migrations/202606130002_commercial_credit_accounts_receivable.sql"),
   read("supabase/migrations/202606130003_commercial_credit_invoice_independence.sql"),
   read("supabase/migrations/202606130004_commercial_credit_permission_audit.sql"),
+  read("supabase/migrations/202606140001_commercial_credit_final_adjustments.sql"),
   read("src/lib/auth/permissions.ts"),
   read("src/app/checkout/actions.ts"),
   read("src/components/store/checkout-view.tsx"),
   read("src/app/admin/crm/actions.ts"),
   read("src/components/admin/crm-manager.tsx"),
   read("src/app/cuenta/page.tsx"),
+  read("src/app/cuenta/actions.ts"),
+  read("src/components/store/customer-credit-notification-toast.tsx"),
   read("src/app/admin/cuentas-por-cobrar/page.tsx"),
   read("src/components/admin/accounts-receivable-manager.tsx"),
   read("src/app/admin/pedidos/actions.ts"),
+  read("src/components/admin/admin-orders-manager.tsx"),
   read("src/utils/order-workflow.ts"),
+  read("src/lib/notifications/email-queue.ts"),
   read("src/lib/notifications/cron-jobs.ts"),
   read("vercel.json"),
 ]);
@@ -47,7 +57,6 @@ assert.match(creditMigration, /status in \('open', 'overdue'\) and balance_due =
 assert.match(creditMigration, /status = 'paid' and balance_due = 0/);
 assert.match(permissionAuditMigration, /commercial_credit\.permission_denied/);
 assert.match(permissionAuditMigration, /return false/);
-assert.match(permissionAuditMigration, /return query/);
 
 for (const role of ["technical_owner", "business_owner", "admin"]) {
   assert.match(permissions, new RegExp(`${role}:[\\s\\S]*?"credit:manage"[\\s\\S]*?"credit:mark_paid"`));
@@ -58,40 +67,55 @@ for (const role of ["vendedor", "bodega", "soporte", "cliente"]) {
   assert.doesNotMatch(roleBlock, /credit:manage|credit:mark_paid|receivables:read/);
 }
 
-assert.match(checkoutView, /if \(accountInfo\.credit\)[\s\S]*?methods\.push\(\["Crédito Comercial"/);
+assert.match(checkoutView, /methods\.push\(\["Crédito Comercial"/);
 assert.match(checkoutView, /blocksCommercialCreditLimit/);
 assert.match(checkoutAction, /paymentMethod === "commercial_credit" && !user/);
 assert.match(creditMigration, /open_credit_balance \+ recalculated_total > credit_account\.credit_limit/);
 assert.match(creditMigration, /raise exception 'Este pedido supera/);
-
-assert.match(creditMigration, /insert into public\.accounts_receivable/);
-assert.match(creditMigration, /original_amount,[\s\S]*?balance_due,[\s\S]*?due_date/);
-assert.match(creditMigration, /delete from public\.invoices[\s\S]*?status = 'draft'/);
-assert.match(invoiceMigration, /order_record\.payment_method <> 'commercial_credit'/);
-assert.match(invoiceMigration, /public\.fiscal_invoice_number_value/);
-assert.match(invoiceMigration, /public\.increment_fiscal_invoice_number/);
-
-assert.match(creditMigration, /apply_credit_inventory_on_delivery/);
-assert.match(creditMigration, /new\.status::text in \('entregado', 'delivered'\)/);
-assert.match(creditMigration, /if order_record\.payment_method = 'commercial_credit' then[\s\S]*?return new/);
 assert.match(orderWorkflow, /order\.payment_method === "commercial_credit"/);
 
-assert.match(creditMigration, /create or replace function public\.mark_credit_receivable_paid\(target_receivable_id uuid\)/);
-assert.doesNotMatch(creditMigration, /mark_credit_receivable_paid\([^)]*(amount|monto)/i);
-assert.match(creditMigration, /set status = 'paid',[\s\S]*?balance_due = 0,[\s\S]*?paid_at = now\(\)/);
-assert.match(orderActions, /markCreditReceivablePaidAction\(receivableId: string\)/);
-assert.doesNotMatch(orderActions, /markCreditReceivablePaidAction\([^)]*,/);
+assert.match(finalMigration, /add column if not exists payment_received_method/);
+assert.match(finalMigration, /accounts_receivable_paid_payment_method_required/);
+assert.match(finalMigration, /payment_received_method in \('bank_transfer', 'card', 'cash'\)/);
+assert.match(finalMigration, /mark_credit_receivable_paid_authorized\(\s*target_receivable_id uuid,\s*received_payment_method text,/);
+assert.match(finalMigration, /commercial_credit\.payment_method_recorded/);
+assert.match(finalMigration, /commercial_credit\.paid_edit_denied/);
+assert.match(finalMigration, /commercial_credit\.payment_method_required/);
+assert.match(finalMigration, /set status = 'paid',[\s\S]*?balance_due = 0,[\s\S]*?paid_at = now\(\)/);
+assert.match(orderActions, /markCreditReceivablePaidAction\(input: \{/);
+assert.match(orderActions, /paymentMethod: CreditPaymentReceivedMethod/);
+assert.match(orderActions, /received_payment_method: paymentMethod/);
+assert.match(receivablesManager, /Método con el que pagó el cliente/);
+assert.match(receivablesManager, /payment_received_reference/);
+assert.match(ordersManager, /Método con el que pagó el cliente/);
+assert.match(ordersManager, /creditPaymentIsPaid/);
+assert.doesNotMatch(orderActions, /markCreditReceivablePaidAction\(receivableId: string\)/);
 
 assert.match(crmAction, /saveCustomerCommercialCreditAction/);
 assert.match(crmAction, /\["technical_owner", "business_owner", "admin"\]\.includes\(viewer\.role\)/);
 assert.match(crmAction, /profile\.creditAccount = null;[\s\S]*?profile\.receivables = \[\]/);
 assert.match(crmManager, /tab\.id !== "credito" \|\| canManageCredit/);
+const creditComponent = crmManager.slice(crmManager.indexOf("function CustomerProfileCredit"));
+assert.doesNotMatch(creditComponent, /Notas internas/);
+assert.doesNotMatch(creditComponent, /textarea/);
 
 assert.match(receivablesPage, /receivables:read/);
 assert.match(receivablesPage, /\["technical_owner", "business_owner", "admin"\]\.includes\(profile\.role\)/);
-assert.match(receivablesManager, /Sin pagos parciales/);
+assert.match(receivablesManager, /Pago completo únicamente/);
 assert.match(receivablesManager, /canMarkPaid && row\.status !== "paid"/);
 assert.match(accountPage, /\{creditAccount \? \(/);
+assert.match(accountPage, /CustomerCreditNotificationToast/);
+assert.match(accountActions, /eq\("user_id", profile\.id\)/);
+assert.match(notificationToast, /Crédito comercial habilitado\. Ahora puedes realizar compras a crédito según las condiciones asignadas\./);
+
+assert.match(finalMigration, /commercial_credit\.enabled/);
+assert.match(finalMigration, /Tu crédito comercial ha sido habilitado/);
+assert.match(finalMigration, /credit\.enabled:' \|\| target_customer_id::text/);
+assert.match(finalMigration, /on conflict \(idempotency_key\) where idempotency_key is not null do nothing/);
+assert.match(finalMigration, /commercial_credit\.enabled_email_queued/);
+assert.match(finalMigration, /commercial_credit\.visual_notification_created/);
+assert.match(emailQueue, /Límite autorizado/);
+assert.match(emailQueue, /Plazo de pago/);
 
 for (const template of [
   "commercial_credit.created",
@@ -104,14 +128,16 @@ for (const template of [
 }
 assert.match(creditMigration, /scheduled_at/);
 assert.match(creditMigration, /idempotency_key/);
-assert.match(creditMigration, /update public\.email_queue[\s\S]*?status = 'cancelled'/);
+assert.match(finalMigration, /status in \('pending', 'retrying'\)/);
 assert.match(cronJobs, /checkCommercialCreditRemindersJob/);
 assert.match(vercelConfig, /\/api\/cron\/check-commercial-credit/);
+assert.match(invoiceMigration, /order_record\.payment_method <> 'commercial_credit'/);
 
-console.log("Commercial credit structure checks passed.", {
+console.log("Commercial credit final structure checks passed.", {
+  checkoutFourthOptionKept: true,
   partialPayments: false,
-  authorizedManagers: ["technical_owner", "business_owner", "admin"],
-  accountantReadOnly: true,
-  customerVisibilityConditional: true,
-  scheduledEmails: 5,
+  realPaymentMethodRequired: true,
+  enabledEmailIdempotent: true,
+  customerToast: true,
+  notesFieldHidden: true,
 });

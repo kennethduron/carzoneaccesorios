@@ -14,6 +14,7 @@ import { additionalFeesTotal } from "@/utils/financial-summary";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 
 type PaymentStatus = "approved" | "rejected";
+type CreditPaymentReceivedMethod = "bank_transfer" | "card" | "cash";
 type OrderStatus =
   | "recibido"
   | "confirmado"
@@ -103,6 +104,10 @@ function canManageCommercialCredit(role: AppRole, permissions: Permission[], ema
   );
 }
 
+function normalizeCreditPaymentMethod(value: unknown): CreditPaymentReceivedMethod | null {
+  return value === "bank_transfer" || value === "card" || value === "cash" ? value : null;
+}
+
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
   await requirePermission(status === "approved" ? "payments:confirm" : "payments:reject");
   const rejectionReason = reason.trim();
@@ -139,8 +144,15 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
   };
 }
 
-export async function markCreditReceivablePaidAction(receivableId: string) {
+export async function markCreditReceivablePaidAction(input: {
+  receivableId: string;
+  paymentMethod: CreditPaymentReceivedMethod;
+  paymentReference?: string;
+}) {
   const profile = await requirePermission("admin:access");
+  const receivableId = input.receivableId.trim();
+  const paymentMethod = normalizeCreditPaymentMethod(input.paymentMethod);
+  const paymentReference = (input.paymentReference ?? "").trim();
 
   if (!canManageCommercialCredit(profile.role, profile.permissions, profile.email)) {
     await writeAuditLog({
@@ -155,9 +167,19 @@ export async function markCreditReceivablePaidAction(receivableId: string) {
     return { ok: false, message: "Solo usuarios autorizados pueden marcar crédito como pagado." };
   }
 
+  if (!paymentMethod) {
+    return { ok: false, message: "Selecciona el método con el que pagó el cliente." };
+  }
+
+  if (paymentReference.length > 200) {
+    return { ok: false, message: "La referencia no puede exceder 200 caracteres." };
+  }
+
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("mark_credit_receivable_paid", {
     target_receivable_id: receivableId,
+    received_payment_method: paymentMethod,
+    payment_reference: paymentReference || null,
   });
 
   if (error || data !== true) {

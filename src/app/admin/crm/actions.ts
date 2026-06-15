@@ -378,7 +378,7 @@ export async function saveCustomerCommercialCreditAction(input: {
   creditLimit: number;
   termsDays: number;
   status: "active" | "suspended";
-  notes: string;
+  notes?: string;
 }) {
   const viewer = await requirePermission("admin:access");
   const customerId = uuidLike(input.customerId, "Cliente");
@@ -405,7 +405,7 @@ export async function saveCustomerCommercialCreditAction(input: {
 
   const creditLimit = Math.round(Number(input.creditLimit) * 100) / 100;
   const termsDays = Number(input.termsDays);
-  const notes = input.notes.trim();
+  const notes = (input.notes ?? "").trim();
 
   if (!Number.isFinite(creditLimit) || creditLimit < 0) {
     return { ok: false, message: "El límite de crédito no puede ser negativo." };
@@ -420,7 +420,7 @@ export async function saveCustomerCommercialCreditAction(input: {
     return { ok: false, message: "Estado de crédito inválido." };
   }
   if (notes.length > 2000) {
-    return { ok: false, message: "Las notas internas no pueden exceder 2000 caracteres." };
+    return { ok: false, message: "Las observaciones internas no pueden exceder 2000 caracteres." };
   }
 
   const supabase = await getSupabaseServerClient();

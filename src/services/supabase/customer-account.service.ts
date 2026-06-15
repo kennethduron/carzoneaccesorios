@@ -90,7 +90,7 @@ type CustomerAccountSummaryRow = {
 
 type CustomerOrderQueryRow = Omit<
   CustomerOrderRow,
-  "subtotal" | "tax" | "shipping_fee" | "shipping_total" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices" | "receivable_id" | "receivable_status" | "receivable_due_date" | "receivable_balance_due"
+  "subtotal" | "tax" | "shipping_fee" | "shipping_total" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total" | "order_items" | "payment_status" | "bank_reference_number" | "transfer_receipt_url" | "invoices" | "receivable_id" | "receivable_status" | "receivable_due_date" | "receivable_balance_due" | "receivable_paid_at" | "receivable_payment_received_method" | "receivable_payment_received_reference" | "receivable_payment_recorded_by"
 > & {
   subtotal: unknown;
   tax: unknown;
@@ -121,11 +121,19 @@ type CustomerOrderQueryRow = Omit<
     status: "open" | "paid" | "overdue" | null;
     due_date: string | null;
     balance_due: unknown;
+    paid_at: string | null;
+    payment_received_method: CustomerOrderRow["receivable_payment_received_method"];
+    payment_received_reference: string | null;
+    payment_recorded_by: string | null;
   } | Array<{
     id: string;
     status: "open" | "paid" | "overdue" | null;
     due_date: string | null;
     balance_due: unknown;
+    paid_at: string | null;
+    payment_received_method: CustomerOrderRow["receivable_payment_received_method"];
+    payment_received_reference: string | null;
+    payment_recorded_by: string | null;
   }> | null;
 };
 
@@ -246,6 +254,10 @@ function normalizeOrder(row: CustomerOrderQueryRow): CustomerOrderRow {
     receivable_status: receivable?.status ?? null,
     receivable_due_date: receivable?.due_date ?? null,
     receivable_balance_due: receivable ? toNumber(receivable.balance_due) : null,
+    receivable_paid_at: receivable?.paid_at ?? null,
+    receivable_payment_received_method: receivable?.payment_received_method ?? null,
+    receivable_payment_received_reference: receivable?.payment_received_reference ?? null,
+    receivable_payment_recorded_by: receivable?.payment_recorded_by ?? null,
     invoices: invoices.map((invoice) => ({
       ...invoice,
       subtotal: toNumber(invoice.subtotal),
@@ -455,7 +467,7 @@ export async function getCustomerOrdersPage(
         wholesale_price_snapshot
       ),
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
-      accounts_receivable(id, status, due_date, balance_due),
+      accounts_receivable(id, status, due_date, balance_due, paid_at, payment_received_method, payment_received_reference, payment_recorded_by),
       invoices(
         id,
         invoice_number,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { FileText, PackageCheck, Route, ShoppingBag, UserRound } from "lucide-react";
 import { LogoutButton } from "@/components/auth";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
+import { CustomerCreditNotificationToast } from "@/components/store/customer-credit-notification-toast";
 import { WholesaleAccountRequestCard } from "@/components/store/wholesale-account-request-card";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
@@ -13,7 +14,7 @@ import {
   getCustomerOrders,
   type CustomerOrderRow,
 } from "@/services/supabase/customer-account.service";
-import { getActiveCreditAccountForUser, getCustomerReceivablesForUser } from "@/services/supabase/credit.service";
+import { getActiveCreditAccountForUser, getCustomerReceivablesForUser, getUnreadCustomerCreditNotifications } from "@/services/supabase/credit.service";
 import type { StoreInvoice } from "@/types/invoices";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -103,13 +104,14 @@ export default async function CuentaPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireSession();
-  const [wholesaleState, accountSummary, recentOrders, issuedInvoices, creditAccount, creditReceivables] = await Promise.all([
+  const [wholesaleState, accountSummary, recentOrders, issuedInvoices, creditAccount, creditReceivables, creditNotifications] = await Promise.all([
     getWholesaleAccessStateAction(),
     getCustomerAccountSummary(profile.id),
     getCustomerOrders(profile.id, 5),
     getCustomerIssuedInvoices(profile.id, 5),
     getActiveCreditAccountForUser(profile.id).catch(() => null),
     getCustomerReceivablesForUser(profile.id, 10).catch(() => []),
+    getUnreadCustomerCreditNotifications(profile.id).catch(() => []),
   ]);
   const params = (await searchParams) ?? {};
   const confirmed = params.confirmed === "1";
@@ -127,6 +129,7 @@ export default async function CuentaPage({
 
   return (
     <PublicStoreShell>
+      <CustomerCreditNotificationToast notifications={creditAccount ? creditNotifications : []} />
       <section className="mx-auto max-w-6xl px-5 py-8">
         {confirmed ? (
           <div className="mb-4 rounded-lg border border-[#16a34a]/20 bg-[#f0fdf4] p-4 text-sm text-[#166534]">

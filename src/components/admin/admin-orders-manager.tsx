@@ -21,6 +21,7 @@ import { OfficialInvoiceDocument } from "@/components/invoices/official-invoice-
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import type { CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 import type { AdminInvoiceDetail } from "@/types/invoices";
 import type { AdminOrderRow } from "@/types/orders";
@@ -63,6 +64,12 @@ const paymentLabels: Record<string, string> = {
   card: "Tarjeta mediante enlace de pago",
   cash: "Efectivo",
   commercial_credit: "Crédito comercial",
+};
+
+const creditPaymentReceivedLabels: Record<CommercialCreditPaymentReceivedMethod, string> = {
+  bank_transfer: "Transferencia bancaria",
+  card: "Tarjeta",
+  cash: "Efectivo",
 };
 
 const paymentTimingLabels: Record<string, string> = {
@@ -295,14 +302,21 @@ export function AdminOrdersManager({
     });
   }
 
-  function markCreditPaid(order: AdminOrderRow) {
+  function markCreditPaid(
+    order: AdminOrderRow,
+    payment: { paymentMethod: CommercialCreditPaymentReceivedMethod; paymentReference?: string },
+  ) {
     if (!order.receivable_id) {
       showAdminMessage("Este pedido no tiene cuenta por cobrar vinculada.", false);
       return;
     }
 
     startTransition(async () => {
-      const result = await markCreditReceivablePaidAction(order.receivable_id ?? "");
+      const result = await markCreditReceivablePaidAction({
+        receivableId: order.receivable_id ?? "",
+        paymentMethod: payment.paymentMethod,
+        paymentReference: payment.paymentReference,
+      });
       showAdminMessage(result.message, result.ok);
       if (result.ok) router.refresh();
     });
@@ -495,6 +509,7 @@ export function AdminOrdersManager({
 
         {selectedOrder ? (
           <OrderDetail
+            key={selectedOrder.id}
             order={selectedOrder}
             canConfirmPayments={canConfirmPayments}
             canRejectPayments={canRejectPayments}
@@ -512,7 +527,7 @@ export function AdminOrdersManager({
             message={message}
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
             onApprovePayment={() => updatePaymentStatus(selectedOrder, "approved")}
-            onMarkCreditPaid={() => markCreditPaid(selectedOrder)}
+            onMarkCreditPaid={(payment) => markCreditPaid(selectedOrder, payment)}
             onRejectPayment={() => setPaymentToReject(selectedOrder)}
             onCancelOrder={() => setOrderToCancel(selectedOrder)}
             onCancelInvoice={() => setInvoiceToCancel(selectedOrder)}
@@ -677,7 +692,7 @@ function OrderDetail({
   message: string;
   onGenerateInvoice: () => void;
   onApprovePayment: () => void;
-  onMarkCreditPaid: () => void;
+  onMarkCreditPaid: (payment: { paymentMethod: CommercialCreditPaymentReceivedMethod; paymentReference?: string }) => void;
   onRejectPayment: () => void;
   onCancelOrder: () => void;
   onCancelInvoice: () => void;
@@ -693,6 +708,8 @@ function OrderDetail({
   const isCash = order.payment_method === "cash";
   const isCard = order.payment_method === "card";
   const isCredit = order.payment_method === "commercial_credit";
+  const [creditPaymentMethod, setCreditPaymentMethod] = useState<CommercialCreditPaymentReceivedMethod | "">(order.receivable_payment_received_method ?? "");
+  const [creditPaymentReference, setCreditPaymentReference] = useState(order.receivable_payment_received_reference ?? "");
   const allowedStatuses = getAllowedOrderStatusOptions(order);
   const manualStatuses = allowedStatuses.filter((option) => option.value !== "cancelado");
   const paymentIsApproved = isPaymentConfirmed(order.payment_status);
@@ -723,6 +740,8 @@ function OrderDetail({
     normalizedStatus !== "cancelado" &&
     (order.payment_timing !== "on_delivery" || normalizedStatus === "entregado");
   const paymentActionLabel = isCard ? "Confirmar pago mediante enlace" : "Confirmar pago recibido";
+  const creditPaymentIsPaid = isCredit && order.receivable_status === "paid";
+  const canSubmitCreditPayment = Boolean(creditPaymentMethod) && !creditPaymentIsPaid;
   const visibleManualStatuses = canManageOrders
     ? manualStatuses
     : manualStatuses.filter((option) => ["preparacion", "empacado", "enviado", "en_ruta", "entregado"].includes(option.value));
@@ -791,6 +810,52 @@ function OrderDetail({
           <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
         </div>
 
+        {isCredit && order.receivable_id ? (
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm">
+            <p className="font-semibold">Pago recibido del crédito</p>
+            {creditPaymentIsPaid ? (
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                <CompactInfo
+                  label="Método recibido"
+                  value={order.receivable_payment_received_method ? creditPaymentReceivedLabels[order.receivable_payment_received_method] : "No registrado"}
+                />
+                <CompactInfo label="Referencia" value={order.receivable_payment_received_reference ?? "Sin referencia"} />
+                <CompactInfo label="Fecha de pago" value={order.receivable_paid_at ? formatHnDateTime(order.receivable_paid_at) : "No disponible"} />
+              </div>
+            ) : canMarkCreditPaid ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-[240px_1fr]">
+                <label>
+                  <span className="mb-1 block text-xs font-medium uppercase text-black/50">Método con el que pagó el cliente</span>
+                  <select
+                    value={creditPaymentMethod}
+                    onChange={(event) => {
+                      const nextMethod = event.target.value as CommercialCreditPaymentReceivedMethod | "";
+                      setCreditPaymentMethod(nextMethod);
+                      if (nextMethod === "cash") setCreditPaymentReference("");
+                    }}
+                    className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">Seleccionar</option>
+                    <option value="bank_transfer">Transferencia bancaria</option>
+                    <option value="card">Tarjeta</option>
+                    <option value="cash">Efectivo</option>
+                  </select>
+                </label>
+                {creditPaymentMethod === "bank_transfer" || creditPaymentMethod === "card" ? (
+                  <label>
+                    <span className="mb-1 block text-xs font-medium uppercase text-black/50">
+                      {creditPaymentMethod === "bank_transfer" ? "Número de referencia" : "Referencia / enlace / comprobante"}
+                    </span>
+                    <Input value={creditPaymentReference} onChange={(event) => setCreditPaymentReference(event.target.value)} />
+                  </label>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-2 text-black/55">Solo lectura. No tienes permiso para registrar el pago del crédito.</p>
+            )}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
           <ContactActions phone={order.phone} customerName={order.customer_name} whatsappMessage={buildOrderWhatsappMessage(order)} />
           {order.tracking_code ? (
@@ -825,7 +890,16 @@ function OrderDetail({
             </Button>
           ) : null}
           {canMarkCreditPaid && isCredit && order.receivable_id && order.receivable_status !== "paid" ? (
-            <Button onClick={onMarkCreditPaid} disabled={isPending} variant="primary" className="w-full sm:w-auto">
+            <Button
+              onClick={() =>
+                creditPaymentMethod
+                  ? onMarkCreditPaid({ paymentMethod: creditPaymentMethod, paymentReference: creditPaymentReference })
+                  : undefined
+              }
+              disabled={isPending || !canSubmitCreditPayment}
+              variant="primary"
+              className="w-full sm:w-auto"
+            >
               <CheckCircle2 size={17} />
               {isPending ? "Procesando..." : "Marcar crédito como pagado"}
             </Button>

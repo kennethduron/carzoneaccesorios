@@ -1,4 +1,5 @@
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import type { CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { AdditionalFee } from "@/types/financial";
 import type { FiscalCorrectionHistoryEntry } from "@/types/fiscal-corrections";
 
@@ -141,4 +142,8 @@ export type AdminOrderRow = {
   receivable_status: "open" | "paid" | "overdue" | null;
   receivable_due_date: string | null;
   receivable_balance_due: number | null;
+  receivable_paid_at: string | null;
+  receivable_payment_received_method: CommercialCreditPaymentReceivedMethod | null;
+  receivable_payment_received_reference: string | null;
+  receivable_payment_recorded_by: string | null;
 };

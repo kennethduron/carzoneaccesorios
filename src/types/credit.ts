@@ -1,5 +1,6 @@
 export type CommercialCreditStatus = "active" | "suspended";
 export type AccountsReceivableStatus = "open" | "paid" | "overdue";
+export type CommercialCreditPaymentReceivedMethod = "bank_transfer" | "card" | "cash";
 
 export type CustomerCreditAccount = {
   id: string;
@@ -28,6 +29,9 @@ export type AccountsReceivableRow = {
   status: AccountsReceivableStatus;
   paid_at: string | null;
   overdue_at: string | null;
+  payment_received_method: CommercialCreditPaymentReceivedMethod | null;
+  payment_received_reference: string | null;
+  payment_recorded_by: string | null;
   created_at: string;
   updated_at: string;
 };

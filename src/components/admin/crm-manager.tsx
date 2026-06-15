@@ -2662,7 +2662,6 @@ function CustomerProfileCredit({
   const [creditLimit, setCreditLimit] = useState(String(account?.credit_limit ?? 0));
   const [termsDays, setTermsDays] = useState(String(account?.terms_days ?? 30));
   const [status, setStatus] = useState<"active" | "suspended">(account?.status ?? "active");
-  const [notes, setNotes] = useState(account?.notes ?? "");
   const pendingReceivables = profile.receivables.filter((item) => item.status !== "paid");
   const pendingBalance = pendingReceivables.reduce((sum, item) => sum + item.balance_due, 0);
   const availableCredit = Math.max(Number(creditLimit || 0) - pendingBalance, 0);
@@ -2675,7 +2674,7 @@ function CustomerProfileCredit({
         creditLimit: Number(creditLimit),
         termsDays: Number(termsDays),
         status,
-        notes,
+        notes: account?.notes ?? "",
       });
 
       if (!result.ok) {
@@ -2744,17 +2743,6 @@ function CustomerProfileCredit({
             </select>
           </label>
         </div>
-
-        <label className="mt-4 grid gap-1">
-          <span className="text-xs font-semibold uppercase text-black/50">Notas internas</span>
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            maxLength={2000}
-            rows={4}
-            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
-          />
-        </label>
 
         <div className="mt-4 flex justify-end">
           <Button onClick={saveCredit} disabled={isPending} variant="primary">

@@ -23,6 +23,7 @@ export const notificationCatalog = [
   { type: "payment.rejected", module: "pagos", label: "Pago rechazado", defaultSeverity: "critical", defaultRoles: ["business_owner", "admin"], emailDefault: true },
   { type: "payment.confirmed", module: "pagos", label: "Pago confirmado", defaultSeverity: "info", defaultRoles: ["business_owner", "admin"], emailDefault: true },
   { type: "payment.overdue", module: "pagos", label: "Pago pendiente vencido", defaultSeverity: "critical", defaultRoles: ["business_owner", "admin"], emailDefault: true },
+  { type: "commercial_credit.enabled", module: "pagos", label: "Crédito comercial habilitado", defaultSeverity: "info", defaultRoles: [], emailDefault: false },
   { type: "credit.due_7_days", module: "pagos", label: "Crédito vence en 7 días", defaultSeverity: "info", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },
   { type: "credit.due_3_days", module: "pagos", label: "Crédito vence en 3 días", defaultSeverity: "warning", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },
   { type: "credit.due_1_day", module: "pagos", label: "Crédito vence mañana", defaultSeverity: "warning", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },

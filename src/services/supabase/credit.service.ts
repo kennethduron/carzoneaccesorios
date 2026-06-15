@@ -8,6 +8,13 @@ import type {
   ReceivablesSummary,
 } from "@/types/credit";
 
+export type CustomerCreditNotification = {
+  id: string;
+  title: string;
+  message: string;
+  created_at: string;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -124,7 +131,7 @@ export async function getCustomerReceivablesForUser(userId: string, limit = 20) 
 
   const { data, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, created_at, updated_at")
+    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, payment_received_method, payment_received_reference, payment_recorded_by, created_at, updated_at")
     .in("customer_id", customerIds)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -156,7 +163,7 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, created_at, updated_at")
+    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, payment_received_method, payment_received_reference, payment_recorded_by, created_at, updated_at")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -188,6 +195,9 @@ export async function getAdminAccountsReceivable(): Promise<{
       status,
       paid_at,
       overdue_at,
+      payment_received_method,
+      payment_received_reference,
+      payment_recorded_by,
       created_at,
       updated_at,
       customers(contact_name, business_name, email, phone),
@@ -232,4 +242,24 @@ export async function getAdminAccountsReceivable(): Promise<{
       overdue: pendingRows.filter((row) => row.status === "overdue" || new Date(`${row.due_date}T00:00:00-06:00`) < now).length,
     },
   };
+}
+
+export async function getUnreadCustomerCreditNotifications(userId: string): Promise<CustomerCreditNotification[]> {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("internal_notifications")
+    .select("id, title, message, created_at")
+    .eq("user_id", userId)
+    .eq("notification_type", "commercial_credit.enabled")
+    .eq("read_state", "unread")
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(5)
+    .returns<CustomerCreditNotification[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
 }

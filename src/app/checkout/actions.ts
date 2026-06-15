@@ -145,7 +145,7 @@ function safeCheckoutErrorMessage(message: string) {
 function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   const normalizedMethod = String(method);
 
-  if (normalizedMethod === "Crédito Comercial" || normalizedMethod === "CrÃ©dito Comercial") {
+  if (normalizedMethod === "Crédito Comercial") {
     return "commercial_credit";
   }
 

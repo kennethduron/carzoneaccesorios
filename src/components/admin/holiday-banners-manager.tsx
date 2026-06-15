@@ -984,7 +984,7 @@ function StorageSummaryPanel({ summary }: { summary: HolidayBannerStorageSummary
         <div>
           <h2 className="font-semibold">Uso de almacenamiento</h2>
           <p className="mt-1 text-sm text-black/55">
-            Metricas administrativas de banners. {summary.source === "cloudinary" ? "Incluye uso total reportado por Cloudinary." : "Cloudinary no reporto cuota; se muestra el registro local."}
+            Metricas administrativas de banners. {summary.source === "cloudinary" ? "Incluye uso total reportado por Cloudinary." : "Cloudinary no reporto limite; se muestra el registro local."}
           </p>
         </div>
         {usedPercent !== null ? <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-black/60">{usedPercent}% usado</span> : null}
