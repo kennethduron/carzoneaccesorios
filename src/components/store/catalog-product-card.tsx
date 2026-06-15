@@ -13,7 +13,7 @@ import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesal
 import { getProductCardDescription } from "@/utils/product-content";
 import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
 
-export function CatalogProductCard({ product }: { product: Product }) {
+export function CatalogProductCard({ product, eagerImage = false }: { product: Product; eagerImage?: boolean }) {
   const { priceMode } = usePriceMode();
   const { addToCart, cartMessage } = useShoppingCart();
   const primaryImage = product.images.find((image) => image.angle === "frontal") ?? product.images[0];
@@ -58,7 +58,7 @@ export function CatalogProductCard({ product }: { product: Product }) {
               width={400}
               height={276}
               sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
-              loading="lazy"
+              loading={eagerImage ? "eager" : "lazy"}
               quality={70}
               unoptimized={isCloudinaryImageUrl(imageUrl)}
               className="aspect-[4/3] w-full object-cover transition-transform duration-300 hover:scale-[1.02]"

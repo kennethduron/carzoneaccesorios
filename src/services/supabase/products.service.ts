@@ -335,7 +335,7 @@ async function getOutOfStockCatalogMode() {
   return data?.out_of_stock_catalog_mode === "hide" ? "hide" : "show";
 }
 
-async function getCachedActiveCategories() {
+const getCachedActiveCategories = unstable_cache(async () => {
   const supabase = getSupabasePublicClient();
   const { data, error } = await supabase
     .from("categories")
@@ -349,9 +349,9 @@ async function getCachedActiveCategories() {
   }
 
   return data ?? [];
-}
+}, ["catalog-active-categories"], { revalidate: 300, tags: ["catalog", "categories"] });
 
-async function getCachedProductFilterOptions(outOfStockCatalogMode: "show" | "hide" = "show") {
+const getCachedProductFilterOptions = unstable_cache(async (outOfStockCatalogMode: "show" | "hide" = "show") => {
   const supabase = getSupabasePublicClient();
   let query = supabase
     .from("products")
@@ -369,7 +369,7 @@ async function getCachedProductFilterOptions(outOfStockCatalogMode: "show" | "hi
   }
 
   return data ?? [];
-}
+}, ["catalog-product-filter-options"], { revalidate: 300, tags: ["catalog", "products"] });
 
 export async function getActiveProducts() {
   const page = await getCatalogProducts({ pageSize: 48 });
@@ -398,10 +398,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       ? categories.find((item) => item.slug === category || normalizeComparable(item.slug) === normalizedCategory || normalizeComparable(item.name) === normalizedCategory)
       : null;
     const supabase = getSupabasePublicClient();
-    let productsQuery = supabase
-      .from("products")
-      .select(
-        `
+    const productSelect = `
         id,
         category_id,
         sku,
@@ -425,84 +422,117 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         wholesale_min_quantity,
         is_new,
         categories(name, slug)
-      `,
-        { count: "exact" },
-      )
-      .eq("active", true);
+      `;
 
-    if (outOfStockCatalogMode === "hide") {
-      productsQuery = productsQuery.gt("available_stock", 0);
-    }
+    function buildProductsQuery(selectColumns: string, options?: { count?: "exact"; head?: boolean }) {
+      let productsQuery = supabase
+        .from("products")
+        .select(selectColumns, options)
+        .eq("active", true);
 
-    if (query) {
-      const search = sanitizePostgrestSearch(query);
-      const normalizedSearch = normalizeComparable(search);
-      const categoryMatches = normalizedSearch
-        ? categories
-            .filter((item) => normalizeComparable(item.name).includes(normalizedSearch) || normalizeComparable(item.slug).includes(normalizedSearch))
-            .map((item) => item.id)
-        : [];
+      if (outOfStockCatalogMode === "hide") {
+        productsQuery = productsQuery.gt("available_stock", 0);
+      }
 
-      if (search || categoryMatches.length > 0) {
-        const searchConditions = search
-          ? [
-              `sku.ilike.%${search}%`,
-              `internal_code.ilike.%${search}%`,
-              `name.ilike.%${search}%`,
-              `brand.ilike.%${search}%`,
-              `vehicle_brand.ilike.%${search}%`,
-              `vehicle_model.ilike.%${search}%`,
-              `short_description.ilike.%${search}%`,
-              `description.ilike.%${search}%`,
-              `features.ilike.%${search}%`,
-              `specifications.ilike.%${search}%`,
-              `compatibility_notes.ilike.%${search}%`,
-            ]
+      if (query) {
+        const search = sanitizePostgrestSearch(query);
+        const normalizedSearch = normalizeComparable(search);
+        const categoryMatches = normalizedSearch
+          ? categories
+              .filter((item) => normalizeComparable(item.name).includes(normalizedSearch) || normalizeComparable(item.slug).includes(normalizedSearch))
+              .map((item) => item.id)
           : [];
 
-        if (categoryMatches.length > 0) {
-          searchConditions.push(`category_id.in.(${categoryMatches.join(",")})`);
-        }
+        if (search || categoryMatches.length > 0) {
+          const searchConditions = search
+            ? [
+                `sku.ilike.%${search}%`,
+                `internal_code.ilike.%${search}%`,
+                `name.ilike.%${search}%`,
+                `brand.ilike.%${search}%`,
+                `vehicle_brand.ilike.%${search}%`,
+                `vehicle_model.ilike.%${search}%`,
+                `short_description.ilike.%${search}%`,
+                `description.ilike.%${search}%`,
+                `features.ilike.%${search}%`,
+                `specifications.ilike.%${search}%`,
+                `compatibility_notes.ilike.%${search}%`,
+              ]
+            : [];
 
-        productsQuery = productsQuery.or(searchConditions.join(","));
+          if (categoryMatches.length > 0) {
+            searchConditions.push(`category_id.in.(${categoryMatches.join(",")})`);
+          }
+
+          productsQuery = productsQuery.or(searchConditions.join(","));
+        }
+      }
+
+      if (category) {
+        productsQuery = selectedCategory ? productsQuery.eq("category_id", selectedCategory.id) : productsQuery.eq("category_id", "00000000-0000-0000-0000-000000000000");
+      }
+
+      if (minPrice !== null) {
+        productsQuery = productsQuery.gte(priceColumn, minPrice);
+      }
+
+      if (maxPrice !== null) {
+        productsQuery = productsQuery.lte(priceColumn, maxPrice);
+      }
+
+      if (vehicleBrand) {
+        productsQuery = productsQuery.ilike("vehicle_brand", vehicleBrand);
+      }
+
+      if (vehicleModel) {
+        productsQuery = productsQuery.ilike("vehicle_model", vehicleModel);
+      }
+
+      if (vehicleYear !== null) {
+        productsQuery = productsQuery
+          .or(`vehicle_year_start.is.null,vehicle_year_start.lte.${vehicleYear}`)
+          .or(`vehicle_year_end.is.null,vehicle_year_end.gte.${vehicleYear}`);
+      }
+
+      if (availability === "disponible") {
+        productsQuery = productsQuery.gt("available_stock", 0);
+      }
+
+      if (availability === "agotado") {
+        productsQuery = productsQuery.lte("available_stock", 0);
+      }
+
+      return productsQuery;
+    }
+
+    if (page > 1) {
+      const { count: filteredCount, error: countError } = await buildProductsQuery("id", { count: "exact", head: true });
+
+      if (countError) {
+        throw new Error(countError.message);
+      }
+
+      if ((filteredCount ?? 0) <= from) {
+        const filterRows = await getCachedProductFilterOptions(outOfStockCatalogMode);
+        const vehicleOptions = buildVehicleOptions(filterRows);
+
+        return {
+          products: [],
+          total: filteredCount ?? 0,
+          page,
+          pageSize,
+          categories,
+          filterOptions: {
+            vehicleBrands: uniqueVehicleValues(vehicleOptions.map((row) => row.vehicleBrand), "brand"),
+            vehicleModels: uniqueVehicleValues(vehicleOptions.map((row) => row.vehicleModel), "model"),
+            vehicleYears: buildVehicleYears(filterRows),
+            vehicleOptions,
+          },
+        };
       }
     }
 
-    if (category) {
-      productsQuery = selectedCategory ? productsQuery.eq("category_id", selectedCategory.id) : productsQuery.eq("category_id", "00000000-0000-0000-0000-000000000000");
-    }
-
-    if (minPrice !== null) {
-      productsQuery = productsQuery.gte(priceColumn, minPrice);
-    }
-
-    if (maxPrice !== null) {
-      productsQuery = productsQuery.lte(priceColumn, maxPrice);
-    }
-
-    if (vehicleBrand) {
-      productsQuery = productsQuery.ilike("vehicle_brand", vehicleBrand);
-    }
-
-    if (vehicleModel) {
-      productsQuery = productsQuery.ilike("vehicle_model", vehicleModel);
-    }
-
-    if (vehicleYear !== null) {
-      productsQuery = productsQuery
-        .or(`vehicle_year_start.is.null,vehicle_year_start.lte.${vehicleYear}`)
-        .or(`vehicle_year_end.is.null,vehicle_year_end.gte.${vehicleYear}`);
-    }
-
-    if (availability === "disponible") {
-      productsQuery = productsQuery.gt("available_stock", 0);
-    }
-
-    if (availability === "agotado") {
-      productsQuery = productsQuery.lte("available_stock", 0);
-    }
-
-    const pagedProductsQuery = productsQuery
+    const pagedProductsQuery = buildProductsQuery(productSelect, { count: "exact" })
       .order("name", { ascending: true })
       .range(from, to)
       .returns<CatalogProductRow[]>();

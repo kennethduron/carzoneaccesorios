@@ -67,6 +67,46 @@ function yearsFromRange(start: number | null, end: number | null) {
 }
 
 const emptyVehicleOptions: NonNullable<CatalogBrowserProps["filterOptions"]["vehicleOptions"]> = [];
+const paginationSiblingCount = 1;
+
+function paginationRange(currentPage: number, totalPages: number) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  const pages = new Set<number>([1, totalPages]);
+  const start = Math.max(2, currentPage - paginationSiblingCount);
+  const end = Math.min(totalPages - 1, currentPage + paginationSiblingCount);
+
+  for (let pageNumber = start; pageNumber <= end; pageNumber += 1) {
+    pages.add(pageNumber);
+  }
+
+  if (currentPage <= 3) {
+    pages.add(2);
+    pages.add(3);
+  }
+
+  if (currentPage >= totalPages - 2) {
+    pages.add(totalPages - 2);
+    pages.add(totalPages - 1);
+  }
+
+  const sortedPages = Array.from(pages)
+    .filter((pageNumber) => pageNumber >= 1 && pageNumber <= totalPages)
+    .sort((left, right) => left - right);
+  const items: Array<number | "ellipsis"> = [];
+
+  sortedPages.forEach((pageNumber, index) => {
+    const previousPage = sortedPages[index - 1];
+    if (previousPage && pageNumber - previousPage > 1) {
+      items.push("ellipsis");
+    }
+    items.push(pageNumber);
+  });
+
+  return items;
+}
 
 export function CatalogBrowser({
   products,
@@ -94,7 +134,11 @@ export function CatalogBrowser({
   const [selectedAvailability, setSelectedAvailability] = useState(availability);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { registerProducts } = useProductRegistry();
-  const hasNextPage = page * pageSize < total;
+  const totalPages = Math.ceil(total / pageSize);
+  const currentPage = totalPages > 0 ? Math.min(Math.max(page, 1), totalPages) : 1;
+  const hasPreviousPage = currentPage > 1;
+  const hasNextPage = currentPage < totalPages;
+  const paginationItems = useMemo(() => paginationRange(currentPage, totalPages), [currentPage, totalPages]);
   const hasActiveFilters = Boolean(query || category || minPrice || maxPrice || vehicleBrand || vehicleModel || vehicleYear || availability);
   const isEmptyCatalog = total === 0 && !hasActiveFilters;
   const vehicleOptions = useMemo(() => filterOptions.vehicleOptions ?? emptyVehicleOptions, [filterOptions.vehicleOptions]);
@@ -275,7 +319,7 @@ export function CatalogBrowser({
   );
 
   return (
-    <section className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-5 lg:grid-cols-[1fr_340px]">
+    <section className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-5">
       <div className="space-y-5">
         <form action="/catalogo" className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
           <div className="mb-4 flex flex-col justify-between gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-center">
@@ -341,9 +385,26 @@ export function CatalogBrowser({
           </div>
         ) : null}
 
-        <p className="text-sm text-black/55">
-          Mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
-        </p>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+          <WholesaleCodePanel />
+          <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+            <h2 className="font-semibold">Atención comercial</h2>
+            <p className="mt-2 text-sm leading-6 text-black/60">
+              Para pedidos de volumen, inicia sesión o solicita acceso mayorista. Los precios especiales se activan solo para cuentas aprobadas.
+            </p>
+          </section>
+        </div>
+
+        <div className="flex flex-col justify-between gap-2 text-sm text-black/55 sm:flex-row sm:items-center">
+          <p>
+            Mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
+          </p>
+          {totalPages > 1 ? (
+            <p>
+              Página {currentPage.toLocaleString("es-HN")} de {totalPages.toLocaleString("es-HN")}
+            </p>
+          ) : null}
+        </div>
 
         {products.length === 0 ? (
           <div className="rounded-lg border border-dashed border-black/15 bg-white p-8 text-center">
@@ -365,34 +426,63 @@ export function CatalogBrowser({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3">
-            {products.map((product) => (
-              <CatalogProductCard key={product.id} product={product} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {products.map((product, index) => (
+              <CatalogProductCard key={product.id} product={product} eagerImage={index < 4} />
             ))}
           </div>
         )}
-        {hasNextPage ? (
-          <div className="flex justify-center">
-            <Link
-              href={buildHref(page + 1)}
-              className="rounded-md border border-black/10 bg-white px-4 py-3 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
-            >
-              Ver siguiente página
-            </Link>
-          </div>
+        {totalPages > 1 ? (
+          <nav className="flex flex-wrap items-center justify-center gap-2 pb-2" aria-label="Paginación del catálogo">
+            <PaginationLink href={buildHref(currentPage - 1)} disabled={!hasPreviousPage} label="Anterior" />
+            {paginationItems.map((item, index) =>
+              item === "ellipsis" ? (
+                <span key={`ellipsis-${index}`} className="px-2 py-2 text-sm text-black/40" aria-hidden="true">
+                  ...
+                </span>
+              ) : (
+                <PaginationLink key={item} href={buildHref(item)} label={String(item)} isCurrent={item === currentPage} />
+              ),
+            )}
+            <PaginationLink href={buildHref(currentPage + 1)} disabled={!hasNextPage} label="Siguiente" />
+          </nav>
         ) : null}
       </div>
-
-      <aside className="space-y-4">
-        <WholesaleCodePanel />
-        <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-          <h2 className="font-semibold">Atención comercial</h2>
-          <p className="mt-2 text-sm text-black/60">
-            Para pedidos de volumen, inicia sesión o solicita acceso mayorista. Los precios especiales se activan solo para cuentas aprobadas.
-          </p>
-        </section>
-      </aside>
     </section>
+  );
+}
+
+function PaginationLink({
+  href,
+  label,
+  disabled = false,
+  isCurrent = false,
+}: {
+  href: string;
+  label: string;
+  disabled?: boolean;
+  isCurrent?: boolean;
+}) {
+  const className = [
+    "inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2",
+    isCurrent ? "border-[#e4252c] bg-[#e4252c] text-white" : "border-black/10 bg-white text-[#080808] hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]",
+    disabled ? "pointer-events-none border-black/5 bg-black/5 text-black/30" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (disabled) {
+    return (
+      <span className={className} aria-disabled="true">
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <Link href={href} className={className} aria-current={isCurrent ? "page" : undefined}>
+      {label}
+    </Link>
   );
 }
 
