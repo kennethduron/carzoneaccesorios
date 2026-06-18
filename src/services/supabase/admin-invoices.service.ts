@@ -75,6 +75,7 @@ type InvoiceDetailQueryRow = InvoiceQueryRow & {
   company_logo_url: string | null;
   fiscal_range_start: string | null;
   fiscal_range_end: string | null;
+  cai_authorization_date: string | null;
   due_at: string | null;
   invoice_items: InvoiceItemQueryRow[] | null;
 };
@@ -143,6 +144,7 @@ function normalizeDetail(row: InvoiceDetailQueryRow, paymentByOrder: Map<string,
     company_logo_url: row.company_logo_url,
     fiscal_range_start: row.fiscal_range_start,
     fiscal_range_end: row.fiscal_range_end,
+    cai_authorization_date: row.cai_authorization_date,
     due_at: row.due_at,
     items: normalizeItems(row.invoice_items),
     fiscal_correction_history: [],
@@ -303,6 +305,7 @@ export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInv
       company_logo_url,
       fiscal_range_start,
       fiscal_range_end,
+      cai_authorization_date,
       created_at,
       orders(order_number, customer_name, phone, delivery_address, payment_method),
       invoice_items(

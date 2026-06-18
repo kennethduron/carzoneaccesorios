@@ -71,6 +71,7 @@ import type {
 import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { formatHnDateTime } from "@/utils/format";
+import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 type CrmManagerProps = {
@@ -151,9 +152,8 @@ const orderStatusLabels: Record<string, string> = {
 };
 
 const paymentMethodLabels: Record<string, string> = {
-  bank_transfer: "Transferencia bancaria",
+  ...detailedPaymentMethodLabels,
   card: "Tarjeta mediante enlace",
-  cash: "Efectivo",
 };
 
 const emptyLead: CrmLeadInput = {
@@ -2476,7 +2476,7 @@ function CustomerProfilePurchases({
           </div>
           <InfoPill>{orderStatusLabels[order.status] ?? order.status}</InfoPill>
           <div className="text-sm">
-            <p>{paymentMethodLabels[order.payment_method] ?? order.payment_method}</p>
+            <p>{paymentMethodLabels[order.payment_method] ?? paymentMethodLabel(order.payment_method, { detailedCard: true })}</p>
             <p className="text-xs text-black/45">{paymentStatusLabel(order.payment_status)}</p>
             {order.payment_method === "bank_transfer" ? (
               <p className="text-xs text-black/45">

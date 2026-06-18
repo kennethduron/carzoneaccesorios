@@ -20,6 +20,7 @@ import type { AdminInvoiceDetail, AdminInvoiceRow, InvoiceStatus } from "@/types
 import { formatHnDate } from "@/utils/format";
 import { adminInvoiceToOfficialInvoice } from "@/utils/invoice-document-mappers";
 import { buildOfficialInvoicePrintHtml } from "@/utils/official-invoice-document";
+import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 import type { FiscalCorrectionHistoryEntry, FiscalCorrectionValueKey } from "@/types/fiscal-corrections";
 
@@ -46,12 +47,6 @@ const statusLabels: Record<InvoiceStatus, string> = {
   cancelled: "Anulada",
 };
 
-const paymentLabels: Record<string, string> = {
-  bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta mediante enlace",
-  cash: "Efectivo",
-};
-
 const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
   customer_name: "Nombre fiscal",
   customer_rtn: "RTN",
@@ -64,6 +59,11 @@ const fiscalCorrectionWarning =
   "Esta acción actualizará datos fiscales del cliente. Si la factura ya fue emitida, conservará el mismo número fiscal y quedará registrada en auditoría.";
 
 function formatDate(value: string | null) {
+  const dateOnly = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  }
+
   return formatHnDate(value);
 }
 
@@ -194,7 +194,7 @@ export function AdminInvoicesManager({
       invoice.customer_name,
       invoice.customer_rtn ?? "-",
       formatDate(invoice.issued_at ?? invoice.created_at),
-      paymentLabels[invoice.payment_method] ?? invoice.payment_method,
+      paymentMethodLabel(invoice.payment_method, { detailedCard: true }),
       invoice.bank_reference_number ?? "-",
       formatCurrency(invoice.subtotal),
       formatCurrency(invoice.tax),
@@ -241,7 +241,19 @@ export function AdminInvoicesManager({
     setInvoiceToCancel(invoice);
   }
 
-  function cancelInvoiceWithReason(invoice: AdminInvoiceRow, cancellationReason: string) {
+  async function cancelInvoiceWithReason(invoice: AdminInvoiceRow, cancellationReason: string) {
+    const confirmed = await toast.confirm({
+      title: "Confirmar anulación",
+      message: "Esta acción será definitiva y quedará registrada en auditoría. ¿Confirmas que deseas anular esta factura?",
+      confirmLabel: "Confirmar anulación",
+      cancelLabel: "Volver",
+      tone: "danger",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     startTransition(async () => {
       const result = await cancelInvoiceAction(invoice.id, cancellationReason);
       showInvoiceMessage(result.message, result.ok);
@@ -384,6 +396,7 @@ export function AdminInvoicesManager({
               <option value="bank_transfer">Transferencia bancaria</option>
               <option value="card">Tarjeta mediante enlace</option>
               <option value="cash">Efectivo</option>
+              <option value="commercial_credit">Crédito comercial</option>
             </select>
           </label>
           <Button onClick={exportExcel} variant="ghost">
@@ -453,7 +466,7 @@ export function AdminInvoicesManager({
                     <td className="px-4 py-3">{invoice.customer_name}</td>
                     <td className="px-4 py-3">{invoice.customer_rtn ?? "-"}</td>
                     <td className="px-4 py-3">{formatDate(invoice.issued_at ?? invoice.created_at)}</td>
-                    <td className="px-4 py-3">{paymentLabels[invoice.payment_method] ?? invoice.payment_method}</td>
+                    <td className="px-4 py-3">{paymentMethodLabel(invoice.payment_method, { detailedCard: true })}</td>
                     <td className="px-4 py-3">{invoice.bank_reference_number ?? "-"}</td>
                     <td className="px-4 py-3">{formatCurrency(invoice.subtotal)}</td>
                     <td className="px-4 py-3">{formatCurrency(invoice.tax)}</td>
@@ -610,14 +623,15 @@ function InvoiceModal({
           <Info label="CAI" value={invoice.cai ?? "-"} />
           <Info label="Rango autorizado desde" value={invoice.fiscal_range_start ?? "-"} />
           <Info label="Rango autorizado hasta" value={invoice.fiscal_range_end ?? "-"} />
-          <Info label="Fecha límite de emisión" value={formatDate(invoice.due_at)} />
-          <Info label="Fecha de emisión" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
+          <Info label="Fecha de emisión" value={formatDate(invoice.cai_authorization_date)} />
+          <Info label="Fecha de vencimiento" value={formatDate(invoice.due_at)} />
+          <Info label="Fecha registrada" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
           <Info label="Cliente" value={invoice.customer_name} />
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
           <Info label="Correo electrónico" value={invoice.customer_email ?? "-"} />
           <Info label="Teléfono" value={invoice.customer_phone ?? "-"} />
           <Info label="Dirección" value={invoice.customer_address ?? "-"} />
-          <Info label="Método de pago" value={paymentLabels[invoice.payment_method] ?? invoice.payment_method} />
+          <Info label="Método de pago" value={paymentMethodLabel(invoice.payment_method, { detailedCard: true })} />
           <Info label="Referencia bancaria" value={invoice.bank_reference_number ?? "-"} />
           <Info label="Estado del pago" value={invoice.payment_status ?? "-"} />
           <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
@@ -822,8 +836,7 @@ function CancelInvoiceModal({
   onClose: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === invoice.invoice_number;
+  const canSubmit = reason.trim().length >= 8;
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
@@ -835,20 +848,15 @@ function CancelInvoiceModal({
             Esta acción queda auditada y requiere motivo formal. No elimina la factura ni libera el correlativo fiscal.
           </p>
         </div>
+        <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm font-medium text-[#7c2d12]">
+          Esta acción será definitiva y quedará registrada en auditoría.
+        </p>
         <label className="mt-4 block">
           <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de anulación</span>
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
-          />
-        </label>
-        <label className="mt-4 block">
-          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmación fuerte</span>
-          <Input
-            value={confirmation}
-            onChange={(event) => setConfirmation(event.target.value)}
-            placeholder={`Escribe ${invoice.invoice_number}`}
           />
         </label>
         <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">

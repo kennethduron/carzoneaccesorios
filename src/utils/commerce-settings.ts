@@ -94,6 +94,7 @@ export function calculateCheckoutFees({
     | "Tarjeta mediante enlace de pago"
     | "Efectivo"
     | "Crédito Comercial"
+    | "Crédito comercial"
     | "bank_transfer"
     | "card"
     | "cash"

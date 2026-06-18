@@ -149,6 +149,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
     formData.set("invoice_range_start", form.invoice_range_start);
     formData.set("invoice_range_end", form.invoice_range_end);
     formData.set("current_invoice_number", form.current_invoice_number);
+    formData.set("cai_authorization_date", form.cai_authorization_date ?? "");
     formData.set("emission_deadline", form.emission_deadline ?? "");
     formData.set("fiscal_address", form.fiscal_address);
     formData.set("phone", form.phone);
@@ -222,7 +223,15 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
           <Field label="CAI">
             <Input disabled={!canEdit} value={form.cai} onChange={(event) => updateField("cai", event.target.value)} />
           </Field>
-          <Field label="Fecha límite de emisión">
+          <Field label="Fecha de emisión">
+            <Input
+              type="date"
+              disabled={!canEdit}
+              value={form.cai_authorization_date ?? ""}
+              onChange={(event) => updateField("cai_authorization_date", event.target.value || null)}
+            />
+          </Field>
+          <Field label="Fecha de vencimiento">
             <Input
               type="date"
               disabled={!canEdit}

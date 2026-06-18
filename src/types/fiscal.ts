@@ -5,6 +5,7 @@ export type FiscalSettings = {
   invoice_range_start: string;
   invoice_range_end: string;
   current_invoice_number: string;
+  cai_authorization_date: string | null;
   emission_deadline: string | null;
   fiscal_address: string;
   phone: string;

@@ -8,8 +8,7 @@ import {
   getOfficialInvoiceTotals,
   paymentLabel,
   statusLabel,
-  summaryLabels,
-  summaryValues,
+  summaryRows,
   valueOrDash,
   type OfficialInvoiceInput,
 } from "@/utils/official-invoice-document";
@@ -22,12 +21,22 @@ const pageWidth = 210;
 const pageHeight = 297;
 const marginX = 10;
 const black: [number, number, number] = [0, 0, 0];
+const publicAssetBaseUrl = "https://carzoneaccesorios.com";
+
+function resolveImageUrl(url: string) {
+  if (url.startsWith("/") && !url.startsWith("//")) {
+    if (typeof window !== "undefined") return url;
+    return `${publicAssetBaseUrl}${url}`;
+  }
+
+  return url;
+}
 
 async function imageUrlToDataUrl(url: string | null | undefined) {
   if (!url) return null;
 
   try {
-    const response = await fetch(url, { cache: "force-cache" });
+    const response = await fetch(resolveImageUrl(url), { cache: "force-cache" });
     if (!response.ok) return null;
 
     const contentType = response.headers.get("content-type") || "image/jpeg";
@@ -93,9 +102,8 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
   const address = valueOrDash(invoice.companyAddress);
 
   if (logoDataUrl) {
-    const logoAreaWidth = 130 - marginX;
-    const logoMaxWidth = logoAreaWidth * 0.43;
-    const logoMaxHeight = 26;
+    const logoMaxWidth = 68;
+    const logoMaxHeight = 30;
     let logoSize = await getImageSize(logoDataUrl);
     if (!logoSize) {
       try {
@@ -108,7 +116,7 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
 
     if (logoSize) {
       const fittedLogo = containSize(logoSize.width, logoSize.height, logoMaxWidth, logoMaxHeight);
-      doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 17, 22, fittedLogo.width, fittedLogo.height, undefined, "FAST");
+      doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 17, 18, fittedLogo.width, fittedLogo.height, undefined, "FAST");
     }
   }
 
@@ -125,7 +133,6 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
     `Dirección de establecimiento: ${address}`,
     `Rango autorizado: ${valueOrDash(invoice.fiscalRangeStart)} a ${valueOrDash(invoice.fiscalRangeEnd)}`,
     "Vendedor: -",
-    `Fecha límite de emisión: ${dates.fiscalDeadline}`,
     `Dirección casa matriz: ${address}`,
     `Teléfono: ${valueOrDash(invoice.companyPhone)} / Correo: ${valueOrDash(invoice.companyEmail)}`,
   ];
@@ -171,15 +178,11 @@ function drawCustomer(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number
 
 function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number) {
   const totals = getOfficialInvoiceTotals(invoice);
-  const labels = summaryLabels();
-  const values = summaryValues(totals);
+  const rows = summaryRows(totals);
   const observations = [
     invoice.notes ? `Observaciones: ${invoice.notes}` : "Observaciones: -",
     invoice.paymentReference ? `Referencia bancaria: ${invoice.paymentReference}` : null,
     invoice.transferReceiptUrl ? "Comprobante de transferencia: recibido." : null,
-    totals.otherFees > 0 ? `Otros cargos incluidos: ${formatCurrency(totals.otherFees)}` : null,
-    invoice.shippingFee > 0 ? `Envío incluido: ${formatCurrency(invoice.shippingFee)}` : null,
-    invoice.cashOnDeliveryFee > 0 ? `Contra entrega incluido: ${formatCurrency(invoice.cashOnDeliveryFee)}` : null,
     `Total en letras: ${amountToSpanishWords(invoice.total)}`,
   ].filter(Boolean) as string[];
 
@@ -188,7 +191,7 @@ function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number)
   const valuesX = 164;
   const summaryLabelTextX = labelsX + 1;
   const boxW = pageWidth - marginX * 2;
-  const boxH = 47;
+  const boxH = Math.max(47, 15 + rows.length * 4);
 
   doc.setDrawColor(...black);
   doc.rect(leftX, startY, boxW, boxH);
@@ -209,12 +212,11 @@ function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number)
 
   doc.line(labelsX, totalSeparatorY, pageWidth - marginX, totalSeparatorY);
 
-  labels.forEach((label, index) => {
-    const isTotalRow = index === labels.length - 1;
-    const y = isTotalRow ? totalTextY : summaryTextY + index * summaryRowGap;
-    doc.setFont("helvetica", index === labels.length - 1 ? "bold" : "normal");
-    doc.text(label, summaryLabelTextX, y);
-    doc.text(values[index], pageWidth - marginX - 2, y, { align: "right" });
+  rows.forEach((row, index) => {
+    const y = row.isTotal ? totalTextY : summaryTextY + index * summaryRowGap;
+    doc.setFont("helvetica", row.isTotal ? "bold" : "normal");
+    doc.text(row.label, summaryLabelTextX, y);
+    doc.text(row.value, pageWidth - marginX - 2, y, { align: "right" });
   });
 
   const extraY = startY + boxH;
@@ -320,7 +322,7 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
   });
 
   let finalY = getLastAutoTableY(doc, 143);
-  if (finalY > 212) {
+  if (finalY > 194) {
     doc.addPage();
     finalY = 18;
   }

@@ -5,7 +5,9 @@ import { Search } from "lucide-react";
 import { getPublicOrderTrackingAction, type PublicTrackingOrder } from "@/app/rastreo/actions";
 import { useToast } from "@/contexts/toast-context";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
+import { formatHnDateTime } from "@/utils/format";
 import { canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
+import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 const cashProgressSteps = [
@@ -42,13 +44,21 @@ const cardProgressSteps = [
   { key: "entregado", label: "Entregado" },
 ];
 
-const paymentMethodLabels: Record<string, string> = {
-  bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta mediante enlace de pago",
-  cash: "Efectivo",
-};
+const creditProgressSteps = [
+  { key: "recibido", label: "Pedido recibido" },
+  { key: "credito_abierto", label: "Crédito comercial abierto" },
+  { key: "preparacion", label: "En preparación" },
+  { key: "empacado", label: "Empacado" },
+  { key: "enviado", label: "Enviado" },
+  { key: "en_ruta", label: "En ruta" },
+  { key: "entregado", label: "Entregado" },
+  { key: "credito_pagado", label: "Crédito pagado" },
+];
+
+const paymentMethodLabels: Record<string, string> = detailedPaymentMethodLabels;
 
 function trackingSteps(order: PublicTrackingOrder) {
+  if (order.paymentMethod === "commercial_credit") return creditProgressSteps;
   if (order.paymentMethod === "cash" || order.paymentTiming === "on_delivery") return cashProgressSteps;
   if (order.paymentMethod === "bank_transfer") return transferProgressSteps;
   return cardProgressSteps;
@@ -74,8 +84,10 @@ function customerPaymentLabel(order: PublicTrackingOrder) {
   if (isPaymentConfirmed(order.paymentStatus)) {
     if (order.paymentMethod === "cash") return "Pago recibido";
     if (order.paymentMethod === "card") return "Pago aprobado";
+    if (order.paymentMethod === "commercial_credit") return "Crédito pagado";
     return "Pago confirmado";
   }
+  if (order.paymentMethod === "commercial_credit") return "Crédito comercial pendiente";
   if (order.paymentMethod === "bank_transfer") {
     if (order.paymentTiming === "on_delivery") return "Pago pendiente al recibir";
     return "Pago en revisión";
@@ -106,6 +118,16 @@ function activeProgressIndex(order: PublicTrackingOrder) {
     if (status === "empacado") return 4;
     if (status === "preparacion") return 3;
     if (isPaymentConfirmed(order.paymentStatus)) return 2;
+    return 1;
+  }
+
+  if (order.paymentMethod === "commercial_credit") {
+    if (isPaymentConfirmed(order.paymentStatus) && status === "entregado") return 7;
+    if (status === "entregado") return 6;
+    if (status === "en_ruta") return 5;
+    if (status === "enviado") return 4;
+    if (status === "empacado") return 3;
+    if (status === "preparacion") return 2;
     return 1;
   }
 
@@ -196,7 +218,7 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
         <section className="rounded-lg border border-black/10 bg-white p-5">
           <div className="flex flex-col justify-between gap-3 border-b border-black/10 pb-4 sm:flex-row">
             <div>
-              <p className="text-sm text-black/50">{new Date(order.createdAt).toLocaleString("es-HN")}</p>
+              <p className="text-sm text-black/50">{formatHnDateTime(order.createdAt)}</p>
               <h2 className="mt-1 text-2xl font-semibold">{order.orderNumber}</h2>
               <p className="mt-1 text-sm text-black/55">
                 {order.customerNameMasked} / teléfono termina en {order.phoneLast4 || "----"}
@@ -204,7 +226,7 @@ export function PublicOrderTracking({ initialCode = "" }: { initialCode?: string
             </div>
             <div className="text-sm sm:text-right">
               <p className="font-semibold">{formatCurrency(order.total)}</p>
-              <p className="text-black/55">{paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod}</p>
+              <p className="text-black/55">{paymentMethodLabels[order.paymentMethod] ?? paymentMethodLabel(order.paymentMethod, { detailedCard: true })}</p>
             </div>
           </div>
 

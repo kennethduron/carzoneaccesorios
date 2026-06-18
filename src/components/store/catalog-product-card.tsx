@@ -57,7 +57,7 @@ export function CatalogProductCard({ product, eagerImage = false }: { product: P
               alt={getProductImageAlt(product.name, primaryImage?.alt)}
               width={400}
               height={276}
-              sizes="(min-width: 1280px) 390px, (min-width: 768px) 50vw, 100vw"
+              sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, 50vw"
               loading={eagerImage ? "eager" : "lazy"}
               quality={70}
               unoptimized={isCloudinaryImageUrl(imageUrl)}
@@ -66,15 +66,15 @@ export function CatalogProductCard({ product, eagerImage = false }: { product: P
             />
           )}
         </div>
-        <div className="space-y-2 p-3 sm:space-y-3 sm:p-4">
-          <div className="flex items-start justify-between gap-2">
+        <div className="space-y-2 p-2.5 sm:space-y-3 sm:p-4">
+          <div className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-2">
             <div className="min-w-0">
               <p className="truncate text-xs uppercase text-black/45">{product.sku}</p>
               <h2 className="mt-1 line-clamp-2 text-sm font-semibold leading-tight sm:text-lg">{product.name}</h2>
             </div>
-            <span className="max-w-24 shrink-0 truncate rounded-md bg-[#e7e5e4] px-2 py-1 text-[11px] text-black/65 sm:max-w-28 sm:text-xs">{product.category}</span>
+            <span className="max-w-full shrink-0 truncate rounded-md bg-[#e7e5e4] px-1.5 py-1 text-[10px] text-black/65 sm:max-w-28 sm:px-2 sm:text-xs">{product.category}</span>
           </div>
-          {cardDescription ? <p className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-black/60">{cardDescription}</p> : null}
+          {cardDescription ? <p className="line-clamp-2 min-h-8 text-xs leading-4 text-black/60 sm:min-h-[2.5rem] sm:text-sm sm:leading-5">{cardDescription}</p> : null}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs text-black/45">{priceLabel}</p>
@@ -89,20 +89,20 @@ export function CatalogProductCard({ product, eagerImage = false }: { product: P
           </div>
         </div>
       </Link>
-      <div className="mt-auto grid gap-2 border-t border-black/10 p-3 sm:grid-cols-2 sm:p-4">
+      <div className="mt-auto grid grid-cols-2 gap-1.5 border-t border-black/10 p-2 sm:gap-2 sm:p-4">
         <Link
           href={`/producto/${product.slug}`}
-          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-black/10 px-2 text-xs font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] sm:text-sm"
+          className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md border border-black/10 px-1 text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] sm:min-h-10 sm:gap-2 sm:px-2 sm:text-sm"
         >
-          <Eye size={16} />
+          <Eye size={14} className="sm:size-4" />
           Detalle
         </Link>
         <button
           onClick={() => addToCart(product.id)}
           disabled={product.stock <= 0}
-          className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-2 text-xs font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#e4252c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/45 disabled:hover:translate-y-0 sm:text-sm"
+          className="inline-flex min-h-9 w-full items-center justify-center gap-1 rounded-md bg-[#080808] px-1 text-[11px] font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-[#e4252c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/45 disabled:hover:translate-y-0 sm:min-h-10 sm:gap-2 sm:px-2 sm:text-sm"
         >
-          <Plus size={16} />
+          <Plus size={14} className="sm:size-4" />
           {product.stock <= 0 ? "Sin stock" : "Agregar"}
         </button>
         {cartMessage ? <p className="col-span-full mt-1 text-sm font-medium text-[#9b341b]">{cartMessage}</p> : null}

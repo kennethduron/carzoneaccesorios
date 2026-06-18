@@ -10,6 +10,7 @@ import type { AdminReportsData, ReportAccessMode, ReportOrder } from "@/types/re
 import { invoiceNumberValue } from "@/utils/fiscal";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatHnDate, formatHnMonth } from "@/utils/format";
+import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 type ReportKey =
@@ -54,10 +55,15 @@ type ReportsDashboardProps = {
 };
 
 const paymentLabels: Record<string, string> = {
+  ...detailedPaymentMethodLabels,
   bank_transfer: "Transferencia",
   card: "Tarjeta mediante enlace",
-  cash: "Efectivo",
 };
+
+function reportPaymentLabel(method: string | null | undefined) {
+  if (!method) return "-";
+  return paymentLabels[method] ?? paymentMethodLabel(method, { detailedCard: true });
+}
 
 const priceModeLabels: Record<string, string> = {
   retail: "Detalle",
@@ -390,7 +396,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         "Precio unitario": formatCurrency(item.unit_price),
         Subtotal: formatCurrency(item.line_total),
         "Tipo de precio": priceModeLabels[item.applied_price_mode] ?? priceModeLabels[order.price_mode] ?? order.price_mode,
-        "Método de pago": paymentLabels[payment?.payment_method ?? order.payment_method] ?? order.payment_method,
+        "Método de pago": reportPaymentLabel(payment?.payment_method ?? order.payment_method),
         Estado: orderStatusLabels[order.status] ?? order.status,
       }));
     });
@@ -421,7 +427,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           Cliente: invoice.customer_name ?? "-",
           RTN: invoice.customer_rtn ?? invoice.rtn ?? "-",
           Pedido: invoice.order_number ?? "-",
-          "Método de pago": invoice.payment_method ? paymentLabels[invoice.payment_method] ?? invoice.payment_method : "-",
+          "Método de pago": reportPaymentLabel(invoice.payment_method),
           "Referencia bancaria": invoice.bank_reference_number ?? invoice.reference ?? "-",
           Estado: invoiceStatusLabels[invoice.status] ?? invoice.status,
           Subtotal: formatCurrency(invoice.subtotal),
@@ -474,7 +480,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           "Estado pago": paymentStatusLabels[String(order.payment_status ?? "")] ?? order.payment_status ?? "Sin estado",
           Reserva: reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status,
           "Requiere revisión": order.reservation_review_required ? "Sí" : "No",
-          "Método de pago": paymentLabels[order.payment_method] ?? order.payment_method,
+          "Método de pago": reportPaymentLabel(order.payment_method),
           Total: formatCurrency(order.total),
           "Venta real": isRevenueOrder(order) ? "Sí" : "No",
         })),
@@ -615,7 +621,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         description: "Totales de venta agrupados por método de pago.",
         columns: ["Método de pago", "Pedidos", "Subtotal", "ISV", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
-          "Método de pago": paymentLabels[method] ?? method,
+          "Método de pago": reportPaymentLabel(method),
           Pedidos: value.orders.size,
           Subtotal: formatCurrency(value.subtotal),
           ISV: formatCurrency(value.tax),
@@ -734,10 +740,10 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       {
         key: "paymentMethodDetails",
         label: "Detalle por método de pago",
-        description: "Pedidos, total vendido y total facturado por método: efectivo, transferencia, tarjeta mediante enlace y otros.",
+        description: "Pedidos, total vendido y total facturado por método: efectivo, transferencia, tarjeta mediante enlace, crédito comercial y otros.",
         columns: ["Método", "Pedidos", "Envío", "Contra entrega", "Recargos", "Descuentos", "Total vendido", "Total facturado"],
         rows: Array.from(paymentSales.entries()).map(([method, value]) => ({
-          Método: paymentLabels[method] ?? "Otros",
+          Método: reportPaymentLabel(method),
           Pedidos: value.orders.size,
           Envío: formatCurrency(value.shipping),
           "Contra entrega": formatCurrency(value.cod),
@@ -954,6 +960,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               <option value="cash">Efectivo</option>
               <option value="bank_transfer">Transferencia</option>
               <option value="card">Tarjeta mediante enlace</option>
+              <option value="commercial_credit">Crédito comercial</option>
             </SelectField>
           ) : null}
           <SelectField label="Tipo cliente" name="priceMode" defaultValue={data.filters.priceMode}>

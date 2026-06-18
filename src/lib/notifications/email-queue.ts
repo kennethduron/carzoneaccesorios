@@ -1,5 +1,6 @@
 import "server-only";
 
+import { writeErrorLog } from "@/lib/error-logging";
 import { getEmailProviderStatus, sendTransactionalEmail } from "@/lib/email/email-provider";
 import { createTechnicalNotification } from "@/lib/notifications/notification-center";
 import { getSupabaseAdminClient } from "@/lib/supabase";
@@ -21,6 +22,7 @@ type EnqueueEmailInput = {
 
 type ProcessEmailQueueOptions = {
   limit?: number;
+  queueIds?: string[];
 };
 
 function normalizeEmail(value: string) {
@@ -183,7 +185,9 @@ function claimExpiresAt() {
 
 export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) {
   const providerStatus = getEmailProviderStatus();
-  const limit = Math.min(Math.max(options.limit ?? 25, 1), 50);
+  const queueIds = [...new Set((options.queueIds ?? []).filter(Boolean))];
+  const requestedLimit = options.limit ?? (queueIds.length > 0 ? queueIds.length : 25);
+  const limit = Math.min(Math.max(requestedLimit, 1), 50);
 
   if (!providerStatus.configured) {
     return {
@@ -199,11 +203,17 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
   }
 
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
+  let query = admin
     .from("email_queue")
     .select("*")
     .in("status", ["pending", "retrying"])
-    .lte("scheduled_at", new Date().toISOString())
+    .lte("scheduled_at", new Date().toISOString());
+
+  if (queueIds.length > 0) {
+    query = query.in("id", queueIds);
+  }
+
+  const { data, error } = await query
     .order("priority", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(limit)
@@ -324,4 +334,38 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
     failed,
     retrying,
   };
+}
+
+export async function processCriticalEmailQueue(input: {
+  queueIds: Array<string | null | undefined>;
+  limit?: number;
+  route: string;
+  action: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const queueIds = [...new Set(input.queueIds.filter((id): id is string => Boolean(id)))];
+
+  if (queueIds.length === 0) {
+    return { ok: true, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: true };
+  }
+
+  try {
+    return await processEmailQueue({
+      queueIds,
+      limit: Math.min(input.limit ?? Math.max(queueIds.length, 5), 10),
+    });
+  } catch (error) {
+    await writeErrorLog({
+      route: input.route,
+      action: input.action,
+      errorMessage: error instanceof Error ? error.message : "No se pudo procesar la cola de correo inmediata.",
+      errorStack: error instanceof Error ? error.stack : null,
+      metadata: {
+        ...input.metadata,
+        queue_ids: queueIds,
+      },
+    });
+
+    return { ok: false, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: false };
+  }
 }

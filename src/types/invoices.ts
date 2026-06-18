@@ -18,6 +18,7 @@ export type StoreInvoice = {
   companyLogoUrl: string | null;
   fiscalRangeStart: string | null;
   fiscalRangeEnd: string | null;
+  caiAuthorizationDate: string | null;
   fiscalDeadline: string | null;
   customerName: string;
   customerRtn: string | null;
@@ -102,6 +103,7 @@ export type AdminInvoiceDetail = AdminInvoiceRow & {
   company_logo_url: string | null;
   fiscal_range_start: string | null;
   fiscal_range_end: string | null;
+  cai_authorization_date: string | null;
   due_at: string | null;
   items: AdminInvoiceItem[];
   fiscal_correction_history: FiscalCorrectionHistoryEntry[];

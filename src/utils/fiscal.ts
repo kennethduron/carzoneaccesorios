@@ -94,6 +94,10 @@ export function validateFiscalInvoiceSettings(settings: FiscalSettings, now = ne
     return { ok: false, message: "Error fiscal: configura un CAI autorizado antes de generar facturas." };
   }
 
+  if (!settings.cai_authorization_date) {
+    return { ok: false, message: "Error fiscal: configura la fecha de emisión." };
+  }
+
   if (!invoiceNumber || !rangeStartText || !rangeEndText || current === null || rangeStart === null || rangeEnd === null) {
     return {
       ok: false,
@@ -110,12 +114,16 @@ export function validateFiscalInvoiceSettings(settings: FiscalSettings, now = ne
   }
 
   if (!settings.emission_deadline) {
-    return { ok: false, message: "Error fiscal: configura la fecha límite de emisión del CAI." };
+    return { ok: false, message: "Error fiscal: configura la fecha de vencimiento." };
+  }
+
+  if (settings.cai_authorization_date > settings.emission_deadline) {
+    return { ok: false, message: "La fecha de emisión no puede ser posterior a la fecha de vencimiento." };
   }
 
   const remainingDays = daysUntilFiscalDeadline(settings.emission_deadline, now);
   if (remainingDays === null || remainingDays < 0) {
-    return { ok: false, message: "Error fiscal: la fecha límite de emisión del CAI está vencida." };
+    return { ok: false, message: "Error fiscal: la fecha de vencimiento está vencida." };
   }
 
   return { ok: true, invoiceNumber, nextInvoiceNumber: incrementInvoiceNumber(invoiceNumber) };
@@ -139,6 +147,13 @@ export function getFiscalAlerts(
     alerts.push({
       type: "danger",
       message: "Error fiscal: el CAI no está configurado.",
+    });
+  }
+
+  if (cai && !settings.cai_authorization_date) {
+    alerts.push({
+      type: "danger",
+      message: "Error fiscal: la fecha de emisión no está configurada.",
     });
   }
 
@@ -174,36 +189,43 @@ export function getFiscalAlerts(
   if (!settings.emission_deadline) {
     alerts.push({
       type: "danger",
-      message: "Error fiscal: la fecha límite de emisión del CAI no está configurada.",
+      message: "Error fiscal: la fecha de vencimiento no está configurada.",
     });
   } else {
     const remainingDays = daysUntilFiscalDeadline(settings.emission_deadline, now);
     if (remainingDays === null) {
       alerts.push({
         type: "danger",
-        message: "Error fiscal: la fecha límite de emisión no tiene un formato válido.",
+        message: "Error fiscal: la fecha de vencimiento no tiene un formato válido.",
       });
     } else if (remainingDays < 0) {
       alerts.push({
         type: "danger",
-        message: "La fecha límite de emisión del CAI está vencida. Actualiza el CAI antes de emitir facturas.",
+        message: "La fecha de vencimiento está vencida. Actualiza el CAI antes de emitir facturas.",
       });
     } else if (remainingDays === 0) {
       alerts.push({
         type: "warning",
-        message: "La fecha límite de emisión vence hoy. Este es el último día para emitir facturas con este CAI.",
+        message: "La fecha de vencimiento es hoy. Este es el último día para emitir facturas con este CAI.",
       });
     } else if (remainingDays === 1) {
       alerts.push({
         type: "warning",
-        message: "La fecha límite de emisión está próxima: falta 1 día.",
+        message: "La fecha de vencimiento está próxima: falta 1 día.",
       });
     } else if (remainingDays <= 15) {
       alerts.push({
         type: "warning",
-        message: `La fecha límite de emisión está próxima: faltan ${remainingDays.toLocaleString("es-HN")} días.`,
+        message: `La fecha de vencimiento está próxima: faltan ${remainingDays.toLocaleString("es-HN")} días.`,
       });
     }
+  }
+
+  if (settings.cai_authorization_date && settings.emission_deadline && settings.cai_authorization_date > settings.emission_deadline) {
+    alerts.push({
+      type: "danger",
+      message: "La fecha de emisión no puede ser posterior a la fecha de vencimiento.",
+    });
   }
 
   const cancelledInvoices = invoices.filter((invoice) => invoice.status === "anulada");

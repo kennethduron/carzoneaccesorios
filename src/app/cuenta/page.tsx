@@ -16,6 +16,7 @@ import {
 } from "@/services/supabase/customer-account.service";
 import { getActiveCreditAccountForUser, getCustomerReceivablesForUser, getUnreadCustomerCreditNotifications } from "@/services/supabase/credit.service";
 import type { StoreInvoice } from "@/types/invoices";
+import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
 export const dynamic = "force-dynamic";
@@ -59,11 +60,15 @@ function formatDate(value: string | null) {
     return "No disponible";
   }
 
-  return new Date(value).toLocaleDateString("es-HN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatHnDate(value);
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) {
+    return "No disponible";
+  }
+
+  return formatHnDateTime(value);
 }
 
 function invoiceIsIssued(invoice: StoreInvoice) {
@@ -276,7 +281,7 @@ export default async function CuentaPage({
                   <article key={order.id} className="rounded-md border border-black/10 p-4">
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                       <div>
-                        <p className="text-xs uppercase text-black/45">{formatDate(order.created_at)}</p>
+                        <p className="text-xs uppercase text-black/45">{formatDateTime(order.created_at)}</p>
                         <h3 className="mt-1 font-semibold">Pedido {order.order_number}</h3>
                         {order.payment_status === "pending" ? (
                           <p className="mt-1 text-sm text-black/55">Estamos revisando tu pago.</p>
@@ -334,7 +339,7 @@ export default async function CuentaPage({
                 <article key={invoice.id} className="rounded-md border border-black/10 p-4">
                   <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div>
-                      <p className="text-xs uppercase text-black/45">{formatDate(invoice.issuedAt)}</p>
+                      <p className="text-xs uppercase text-black/45">{formatDateTime(invoice.issuedAt)}</p>
                       <h3 className="mt-1 font-semibold">Factura {invoice.invoiceNumber}</h3>
                       <p className="mt-1 text-sm text-black/55">Pedido {invoice.orderNumber}</p>
                     </div>

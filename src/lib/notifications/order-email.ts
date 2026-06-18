@@ -1,6 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { writeErrorLog } from "@/lib/error-logging";
-import { enqueueEmail } from "@/lib/notifications/email-queue";
+import { enqueueEmail, processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { queuePreferenceEmail } from "@/lib/notifications/cron-jobs";
 import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { formatCurrency } from "@/utils/pricing";
@@ -394,7 +394,8 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
     });
   }
 
-  await queuePreferenceEmail({
+  const queuedEmailIds: string[] = [];
+  const internalEmail = await queuePreferenceEmail({
     type: "order.created",
     subject,
     payload: {
@@ -414,9 +415,10 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
     priority: 3,
     idempotencyScope: `order-created-admin:${createdOrder.orderId}`,
   });
+  queuedEmailIds.push(...internalEmail.queuedIds);
 
   if (order.email) {
-    await enqueueEmail({
+    const customerEmail = await enqueueEmail({
       toEmail: order.email,
       toName: order.customer_name,
       subject: "Pedido recibido - Car Zone Accesorios",
@@ -442,7 +444,20 @@ export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated)
       priority: 4,
       idempotencyKey: `customer-order-received:${createdOrder.orderId}:${order.email.toLowerCase()}`,
     });
+    if (customerEmail.queued && customerEmail.id) queuedEmailIds.push(customerEmail.id);
   }
+
+  await processCriticalEmailQueue({
+    queueIds: queuedEmailIds,
+    limit: Math.max(5, queuedEmailIds.length),
+    route: "/checkout",
+    action: "notifications.order_created_immediate_send_failed",
+    metadata: {
+      order_id: createdOrder.orderId,
+      order_number: order.order_number,
+      queued_email_count: queuedEmailIds.length,
+    },
+  });
 }
 
 export async function notifyCustomerOfOrderChange(input: {
@@ -502,6 +517,21 @@ export async function notifyCustomerOfOrderChange(input: {
     priority: input.eventType === "order.cancelled" || input.eventType === "payment.rejected" ? 2 : 6,
     idempotencyKey: `customer-order-change:${input.eventType}:${order.id}:${input.status}:${order.email.toLowerCase()}`,
   });
+
+  if (result.queued && result.id) {
+    await processCriticalEmailQueue({
+      queueIds: [result.id],
+      limit: 1,
+      route: "/admin/pedidos",
+      action: "notifications.order_change_immediate_send_failed",
+      metadata: {
+        order_id: order.id,
+        order_number: order.order_number,
+        event_type: input.eventType,
+        status: input.status,
+      },
+    });
+  }
 
   return { queued: result.queued || result.reason === "duplicate", reason: result.reason };
 }

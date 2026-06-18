@@ -3,7 +3,7 @@ import type { AdditionalFee } from "@/types/financial";
 import type { InvoiceStatus } from "@/types/invoices";
 import type { OrderStatus } from "@/types/orders";
 
-export type ReportPaymentMethod = "bank_transfer" | "card" | "cash";
+export type ReportPaymentMethod = "bank_transfer" | "card" | "cash" | "commercial_credit";
 export type ReportAccessMode = "full" | "limited" | "fiscal";
 
 export type ReportFilters = {

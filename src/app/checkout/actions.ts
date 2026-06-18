@@ -100,6 +100,7 @@ function isUuid(value: string) {
 
 function safeCheckoutErrorMessage(message: string) {
   const normalized = message.toLowerCase();
+  const genericCheckoutMessage = "No se pudo crear el pedido. Revisa la información e inténtalo nuevamente.";
 
   if (
     normalized.includes("solo hay") ||
@@ -133,6 +134,18 @@ function safeCheckoutErrorMessage(message: string) {
     normalized.includes("cantidad mínima mayorista")
   ) {
     return message;
+  }
+
+  if (
+    normalized.includes("credit_account") ||
+    normalized.includes("record \"") ||
+    normalized.includes("pl/pgsql") ||
+    normalized.includes("tuple structure") ||
+    normalized.includes("not-yet-assigned") ||
+    normalized.includes("sql state") ||
+    /\b[a-z]+(?:_[a-z0-9]+)+\b/.test(message)
+  ) {
+    return genericCheckoutMessage;
   }
 
   if (normalized.includes("checkout") || normalized.includes("products") || normalized.includes("uuid") || normalized.includes("rpc")) {

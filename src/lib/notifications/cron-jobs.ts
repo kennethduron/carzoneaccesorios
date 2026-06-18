@@ -1,9 +1,10 @@
 import "server-only";
 
-import { enqueueEmail, processEmailQueue } from "@/lib/notifications/email-queue";
+import { enqueueEmail, processCriticalEmailQueue, processEmailQueue } from "@/lib/notifications/email-queue";
 import { createInternalNotification, createTechnicalNotification, getPreferenceDelivery } from "@/lib/notifications/notification-center";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { NotificationModule, NotificationSeverity } from "@/types/notifications";
+import { isSafeTestAccountEmail } from "@/utils/test-accounts";
 
 type StaffUser = {
   id: string;
@@ -67,6 +68,7 @@ async function getStaffEmailsForRoles(roleNames: string[], notificationType: str
     ...new Map(
       (data ?? [])
         .filter((user) => user.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email))
+        .filter((user) => !isSafeTestAccountEmail(user.email!))
         .map((user) => [user.email!.trim().toLowerCase(), user]),
     ).values(),
   ];
@@ -105,11 +107,12 @@ export async function queuePreferenceEmail(input: NotificationEmailInput) {
   const delivery = await getPreferenceDelivery({ type: input.type, fallbackRoles: input.fallbackRoles });
 
   if (!delivery.emailEnabled) {
-    return { queued: 0, skipped: 1, reason: "email_disabled" };
+    return { queued: 0, skipped: 1, reason: "email_disabled", queuedIds: [] as string[] };
   }
 
   const recipients = await getStaffEmailsForRoles(delivery.destinationRoles, input.type);
   let queued = 0;
+  const queuedIds: string[] = [];
 
   for (const recipient of recipients) {
     const result = await enqueueEmail({
@@ -124,10 +127,13 @@ export async function queuePreferenceEmail(input: NotificationEmailInput) {
       idempotencyKey: `${input.idempotencyScope}:${recipient.email!.trim().toLowerCase()}`,
     });
 
-    if (result.queued) queued += 1;
+    if (result.queued) {
+      queued += 1;
+      if (result.id) queuedIds.push(result.id);
+    }
   }
 
-  return { queued, skipped: recipients.length - queued, reason: recipients.length === 0 ? "no_recipients" : null };
+  return { queued, skipped: recipients.length - queued, reason: recipients.length === 0 ? "no_recipients" : null, queuedIds };
 }
 
 export async function queuePendingReservationReviewEmails() {
@@ -287,6 +293,7 @@ export async function checkOverdueFollowupsJob() {
 
   let notifications = 0;
   let emailsQueued = 0;
+  const queuedEmailIds: string[] = [];
 
   for (const followup of data ?? []) {
     const followupId = safeString(followup.id);
@@ -326,7 +333,18 @@ export async function checkOverdueFollowupsJob() {
       idempotencyScope: `crm-followup-overdue:${followupId}`,
     });
     emailsQueued += email.queued;
+    queuedEmailIds.push(...email.queuedIds);
   }
+
+  await processCriticalEmailQueue({
+    queueIds: queuedEmailIds,
+    limit: Math.max(5, queuedEmailIds.length),
+    route: "/api/cron/check-overdue-followups",
+    action: "notifications.crm_followup_immediate_send_failed",
+    metadata: {
+      queued_email_count: queuedEmailIds.length,
+    },
+  });
 
   return { scanned: data?.length ?? 0, notifications, emailsQueued };
 }

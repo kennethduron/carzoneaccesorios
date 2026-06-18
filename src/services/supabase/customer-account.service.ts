@@ -22,6 +22,7 @@ export type CustomerOrderInvoice = {
   company_logo_url: string | null;
   fiscal_range_start: string | null;
   fiscal_range_end: string | null;
+  cai_authorization_date: string | null;
   due_at: string | null;
   subtotal: number;
   tax: number;
@@ -157,6 +158,7 @@ type CustomerInvoiceQueryRow = {
   company_logo_url: string | null;
   fiscal_range_start: string | null;
   fiscal_range_end: string | null;
+  cai_authorization_date: string | null;
   due_at: string | null;
   shipping_fee: unknown;
   cash_on_delivery_fee: unknown;
@@ -209,7 +211,7 @@ function normalizePageSize(value: unknown) {
 
 function paymentMethodLabel(value: string): StoreInvoice["paymentMethod"] {
   if (value === "commercial_credit") {
-    return "Crédito Comercial";
+    return "Crédito comercial";
   }
 
   if (value === "bank_transfer") {
@@ -305,6 +307,7 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     companyLogoUrl: row.company_logo_url,
     fiscalRangeStart: row.fiscal_range_start,
     fiscalRangeEnd: row.fiscal_range_end,
+    caiAuthorizationDate: row.cai_authorization_date,
     fiscalDeadline: row.due_at,
     customerName: row.customer_name ?? row.orders?.customer_name ?? "Cliente",
     customerRtn: row.customer_rtn,
@@ -487,6 +490,7 @@ export async function getCustomerOrdersPage(
         company_logo_url,
         fiscal_range_start,
         fiscal_range_end,
+        cai_authorization_date,
         due_at,
         subtotal,
         tax,
@@ -578,6 +582,7 @@ export async function getCustomerIssuedInvoicesPage(
       company_logo_url,
       fiscal_range_start,
       fiscal_range_end,
+      cai_authorization_date,
       due_at,
       status,
       price_mode,
@@ -660,6 +665,7 @@ export async function getCustomerInvoiceDetail(userId: string, invoiceId: string
       company_logo_url,
       fiscal_range_start,
       fiscal_range_end,
+      cai_authorization_date,
       due_at,
       status,
       price_mode,

@@ -2,7 +2,7 @@ import "server-only";
 
 import { isIP } from "node:net";
 import { headers } from "next/headers";
-import { enqueueEmail } from "@/lib/notifications/email-queue";
+import { enqueueEmail, processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { queuePreferenceEmail } from "@/lib/notifications/cron-jobs";
 import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { writeErrorLog } from "@/lib/error-logging";
@@ -278,6 +278,21 @@ async function sendAndLog(input: {
       },
     });
   }
+
+  if (result.queued && result.id) {
+    await processCriticalEmailQueue({
+      queueIds: [result.id],
+      limit: 1,
+      route: "/contacto",
+      action: `${input.eventType}.immediate_send_failed`,
+      metadata: {
+        customer_id: input.form.customerId,
+        followup_id: input.form.followupId,
+        audience: input.audience,
+        queue_id: result.id,
+      },
+    });
+  }
 }
 
 export async function getPublicRequestContext(): Promise<PublicRequestContext> {
@@ -336,7 +351,7 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
       dedupeKey: `public_form.${input.kind}:${input.customerId}:${input.followupId ?? "none"}`,
     });
 
-    await queuePreferenceEmail({
+    const internalQueue = await queuePreferenceEmail({
       type: input.kind === "wholesale" ? "wholesale.request_new" : "crm.general_contact",
       subject: internalEmail.subject,
       payload: {
@@ -351,6 +366,18 @@ export async function notifyPublicFormSubmission(input: PublicFormNotification) 
       fallbackRoles: input.kind === "wholesale" ? ["technical_owner", "business_owner", "admin"] : ["business_owner", "admin", "soporte", "vendedor"],
       priority: 3,
       idempotencyScope: `public-form-internal:${input.kind}:${input.customerId}:${input.followupId ?? "none"}`,
+    });
+
+    await processCriticalEmailQueue({
+      queueIds: internalQueue.queuedIds,
+      limit: Math.max(5, internalQueue.queuedIds.length),
+      route: "/contacto",
+      action: `public_form.${input.kind}.internal_immediate_send_failed`,
+      metadata: {
+        customer_id: input.customerId,
+        followup_id: input.followupId,
+        queued_email_count: internalQueue.queuedIds.length,
+      },
     });
   } else {
     await logNotification({

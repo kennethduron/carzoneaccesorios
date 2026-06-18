@@ -6,6 +6,8 @@ import type { CustomerOrderRow } from "@/services/supabase/customer-account.serv
 import type { StoreInvoice } from "@/types/invoices";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { additionalFeesTotal } from "@/utils/financial-summary";
+import { formatHnDateTime } from "@/utils/format";
+import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 const orderStatusLabels: Record<string, string> = {
@@ -34,8 +36,8 @@ const paymentStatusLabels: Record<string, string> = {
 };
 
 const paymentMethodLabels: Record<string, string> = {
+  ...detailedPaymentMethodLabels,
   bank_transfer: "Transferencia",
-  cash: "Efectivo",
   card: "Tarjeta mediante enlace",
 };
 
@@ -67,7 +69,18 @@ function invoiceStatusMessage(order: CustomerOrderRow) {
     return "Factura pendiente. Estara disponible cuando el pago sea confirmado.";
   }
 
+  if (order.payment_method === "commercial_credit") {
+    return "Factura pendiente. Estara disponible cuando el equipo la emita.";
+  }
+
   return "Factura pendiente. Disponible después de confirmar el pago mediante enlace.";
+}
+
+function storeInvoicePaymentMethod(method: string): StoreInvoice["paymentMethod"] {
+  if (method === "commercial_credit") return "Crédito comercial";
+  if (method === "bank_transfer") return "Transferencia bancaria";
+  if (method === "card") return "Tarjeta mediante enlace de pago";
+  return "Efectivo";
 }
 
 function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
@@ -90,6 +103,7 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     companyLogoUrl: invoice.company_logo_url,
     fiscalRangeStart: invoice.fiscal_range_start,
     fiscalRangeEnd: invoice.fiscal_range_end,
+    caiAuthorizationDate: invoice.cai_authorization_date,
     fiscalDeadline: invoice.due_at,
     customerName: invoice.customer_name ?? order.customer_name,
     customerRtn: invoice.customer_rtn,
@@ -127,8 +141,7 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     additionalFees: invoice.additional_fees,
     total: invoice.total,
     priceMode: invoice.price_mode ?? order.price_mode,
-    paymentMethod:
-      order.payment_method === "bank_transfer" ? "Transferencia bancaria" : order.payment_method === "card" ? "Tarjeta mediante enlace de pago" : "Efectivo",
+    paymentMethod: storeInvoicePaymentMethod(order.payment_method),
     paymentReference: order.bank_reference_number,
     status: invoice.status,
     issuedAt: invoice.issued_at ?? order.created_at,
@@ -174,7 +187,7 @@ export function OrdersList({
           <article key={order.id} className="rounded-lg border border-black/10 bg-white p-5">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
-                <p className="text-sm text-black/50">{new Date(order.created_at).toLocaleString("es-HN")}</p>
+                <p className="text-sm text-black/50">{formatHnDateTime(order.created_at)}</p>
                 <h2 className="mt-1 flex items-center gap-2 text-xl font-semibold">
                   <PackageCheck size={20} />
                   Pedido: {order.order_number}
@@ -188,7 +201,7 @@ export function OrdersList({
 
             <div className="mt-4 grid gap-2 text-sm md:grid-cols-5">
               <Info label="Pago" value={paymentStatusLabels[order.payment_status ?? "pending"] ?? "Pendiente"} />
-              <Info label="Método" value={paymentMethodLabels[order.payment_method] ?? order.payment_method} />
+              <Info label="Método" value={paymentMethodLabels[order.payment_method] ?? paymentMethodLabel(order.payment_method, { detailedCard: true })} />
               <Info
                 label="Reserva"
                 value={order.reservation_review_required ? "Requiere revisión interna" : reservationLabels[order.order_reservation_status] ?? order.order_reservation_status}

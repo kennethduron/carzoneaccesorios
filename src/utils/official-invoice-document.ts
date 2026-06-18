@@ -1,6 +1,7 @@
 import type { AdditionalFee } from "@/types/financial";
 import { additionalFeesTotal, roundMoney } from "@/utils/financial-summary";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
+import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 export type OfficialInvoiceItem = {
@@ -27,6 +28,7 @@ export type OfficialInvoiceInput = {
   cai: string | null;
   fiscalRangeStart: string | null;
   fiscalRangeEnd: string | null;
+  caiAuthorizationDate: string | null;
   fiscalDeadline: string | null;
   customerName: string;
   customerRtn: string | null;
@@ -49,7 +51,11 @@ export type OfficialInvoiceInput = {
   notes?: string | null;
 };
 
-const fallbackLogoPath = "/brand/car-zone-logo.jpeg";
+const invoiceLogoPath = "/brand/car-zone-logo-nav.png";
+const legacySquareLogoSources = [
+  "/brand/car-zone-logo.jpeg",
+  "fiscal-logo-1779667712816-e5d6974a.webp",
+];
 
 const units = [
   "",
@@ -117,11 +123,13 @@ export const officialInvoiceCss = `
 
   .cz-official-logo {
     display: block;
-    width: 46mm;
-    max-height: 24mm;
+    width: auto;
+    height: auto;
+    max-width: 68mm;
+    max-height: 30mm;
     object-fit: contain;
     object-position: left center;
-    margin: 7mm 0 20mm 7mm;
+    margin: 5mm 0 17mm 7mm;
   }
 
   .cz-official-company {
@@ -558,7 +566,8 @@ export function paymentLabel(method: string) {
   if (method === "bank_transfer" || method === "Transferencia bancaria") return "Transferencia bancaria";
   if (method === "card" || method === "Tarjeta") return "Tarjeta mediante enlace de pago";
   if (method === "cash" || method === "Efectivo") return "Efectivo";
-  return method || "-";
+  if (method === "commercial_credit" || method === "Crédito Comercial" || method === "Crédito comercial") return "Crédito comercial";
+  return paymentMethodLabel(method, { detailedCard: true });
 }
 
 export function statusLabel(status: string) {
@@ -568,26 +577,40 @@ export function statusLabel(status: string) {
 }
 
 export function getOfficialInvoiceLogoSrc(invoice: OfficialInvoiceInput) {
-  return valueOrDash(invoice.companyLogoUrl) === "-" ? fallbackLogoPath : invoice.companyLogoUrl;
+  const configuredLogo = invoice.companyLogoUrl?.trim();
+  if (!configuredLogo) return invoiceLogoPath;
+
+  return legacySquareLogoSources.some((source) => configuredLogo.includes(source)) ? invoiceLogoPath : configuredLogo;
+}
+
+function formatOfficialDate(value: string | null | undefined) {
+  if (!value) return "-";
+
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  }
+
+  const formatted = formatHnDate(value);
+  const parts = formatted.split("/");
+  return parts.length === 3 ? `${parts[0].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[2]}` : formatted;
 }
 
 export function getOfficialInvoiceDates(invoice: OfficialInvoiceInput) {
-  const officialDate = (value: string | null) => {
-    const formatted = formatHnDate(value);
-    const parts = formatted.split("/");
-    return parts.length === 3 ? `${parts[0].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[2]}` : formatted;
-  };
-
   return {
-    issuedDate: officialDate(invoice.issuedAt ?? invoice.createdAt),
-    dueDate: officialDate(invoice.dueAt ?? invoice.fiscalDeadline),
-    fiscalDeadline: officialDate(invoice.fiscalDeadline ?? invoice.dueAt),
+    issuedDate: formatOfficialDate(invoice.caiAuthorizationDate ?? invoice.issuedAt ?? invoice.createdAt),
+    dueDate: formatOfficialDate(invoice.dueAt ?? invoice.fiscalDeadline),
+    caiAuthorizationDate: formatOfficialDate(invoice.caiAuthorizationDate),
+    fiscalDeadline: formatOfficialDate(invoice.fiscalDeadline ?? invoice.dueAt),
   };
 }
 
 export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
   const otherFees = additionalFeesTotal(invoice.additionalFees ?? []);
   const discountTotal = roundMoney(invoice.discountTotal ?? 0);
+  const shippingFee = roundMoney(invoice.shippingFee ?? 0);
+  const cashOnDeliveryFee = roundMoney(invoice.cashOnDeliveryFee ?? 0);
+  const smallOrderFee = roundMoney(invoice.smallOrderFee ?? 0);
   const taxableBase = roundMoney(Math.max(0, invoice.subtotal - discountTotal));
 
   return {
@@ -601,6 +624,9 @@ export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
     discountTotal,
     total: invoice.total,
     otherFees,
+    shippingFee,
+    cashOnDeliveryFee,
+    smallOrderFee,
   };
 }
 
@@ -616,11 +642,9 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
     invoice.notes ? `Observaciones: ${invoice.notes}` : "Observaciones: -",
     invoice.paymentReference ? `Referencia bancaria: ${invoice.paymentReference}` : null,
     invoice.transferReceiptUrl ? "Comprobante de transferencia: recibido." : null,
-    totals.otherFees > 0 ? `Otros cargos incluidos: ${formatCurrency(totals.otherFees)}` : null,
-    invoice.shippingFee > 0 ? `Envío incluido: ${formatCurrency(invoice.shippingFee)}` : null,
-    invoice.cashOnDeliveryFee > 0 ? `Contra entrega incluido: ${formatCurrency(invoice.cashOnDeliveryFee)}` : null,
     `Total en letras: ${amountToSpanishWords(invoice.total)}`,
   ].filter(Boolean);
+  const summary = summaryRows(totals);
 
   return `
     <div class="cz-official-page-wrap">
@@ -637,7 +661,6 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
                 <p>Dirección de establecimiento: ${escapeHtml(address)}</p>
                 <p>Rango autorizado: ${escapeHtml(valueOrDash(invoice.fiscalRangeStart))} a ${escapeHtml(valueOrDash(invoice.fiscalRangeEnd))}</p>
                 <p>Vendedor: -</p>
-                <p>Fecha límite de emisión: ${escapeHtml(dates.fiscalDeadline)}</p>
                 <p>Dirección casa matriz: ${escapeHtml(address)}</p>
                 <p>Teléfono: ${escapeHtml(valueOrDash(invoice.companyPhone))} / Correo: ${escapeHtml(valueOrDash(invoice.companyEmail))}</p>
               </div>
@@ -694,10 +717,10 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
             ${observations.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
           </div>
           <div class="cz-official-totals-labels">
-            ${summaryLabels().map((label, index) => `<p class="cz-official-total-row ${index === 8 ? "cz-official-total-final" : ""}">${escapeHtml(label)}</p>`).join("")}
+            ${summary.map((row) => `<p class="cz-official-total-row ${row.isTotal ? "cz-official-total-final" : ""}">${escapeHtml(row.label)}</p>`).join("")}
           </div>
           <div class="cz-official-totals-values">
-            ${summaryValues(totals).map((value, index) => `<p data-label="${escapeHtml(summaryLabels()[index])}" class="cz-official-total-row ${index === 8 ? "cz-official-total-final" : ""}">${escapeHtml(value)}</p>`).join("")}
+            ${summary.map((row) => `<p data-label="${escapeHtml(row.label)}" class="cz-official-total-row ${row.isTotal ? "cz-official-total-final" : ""}">${escapeHtml(row.value)}</p>`).join("")}
           </div>
         </section>
 
@@ -742,32 +765,32 @@ export function buildOfficialInvoicePrintHtml(invoice: OfficialInvoiceInput, opt
     </html>`;
 }
 
-export function summaryLabels() {
-  return [
-    "Subtotal",
-    "Importe exonerado",
-    "Importe exento",
-    "Importe gravado 15% ISV",
-    "Importe gravado 18% ISV",
-    "Total 15% ISV",
-    "Total 18% ISV",
-    "Descuentos y rebajas otorgados",
-    "Total",
+export function summaryRows(totals: ReturnType<typeof getOfficialInvoiceTotals>) {
+  const rows = [
+    { label: "Subtotal antes de ISV", value: formatCurrency(totals.subtotal) },
+    { label: "Importe exonerado", value: formatCurrency(totals.exonerated) },
+    { label: "Importe exento", value: formatCurrency(totals.exempt) },
+    { label: "Importe gravado 15% ISV", value: formatCurrency(totals.taxable15) },
+    { label: "Importe gravado 18% ISV", value: formatCurrency(totals.taxable18) },
+    { label: "Total 15% ISV", value: formatCurrency(totals.tax15) },
+    { label: "Total 18% ISV", value: formatCurrency(totals.tax18) },
+    totals.shippingFee > 0 ? { label: "Envío estándar", value: formatCurrency(totals.shippingFee) } : null,
+    totals.cashOnDeliveryFee > 0 ? { label: "Contra entrega", value: formatCurrency(totals.cashOnDeliveryFee) } : null,
+    totals.smallOrderFee > 0 ? { label: "Recargo pedido mínimo", value: formatCurrency(totals.smallOrderFee) } : null,
+    totals.otherFees > 0 ? { label: "Otros cargos", value: formatCurrency(totals.otherFees) } : null,
+    totals.discountTotal > 0 ? { label: "Descuento", value: formatCurrency(totals.discountTotal) } : null,
+    { label: "Total", value: formatCurrency(totals.total), isTotal: true },
   ];
+
+  return rows.filter(Boolean) as Array<{ label: string; value: string; isTotal?: boolean }>;
+}
+
+export function summaryLabels(totals: ReturnType<typeof getOfficialInvoiceTotals>) {
+  return summaryRows(totals).map((row) => row.label);
 }
 
 export function summaryValues(totals: ReturnType<typeof getOfficialInvoiceTotals>) {
-  return [
-    formatCurrency(totals.subtotal),
-    formatCurrency(totals.exonerated),
-    formatCurrency(totals.exempt),
-    formatCurrency(totals.taxable15),
-    formatCurrency(totals.taxable18),
-    formatCurrency(totals.tax15),
-    formatCurrency(totals.tax18),
-    formatCurrency(totals.discountTotal),
-    formatCurrency(totals.total),
-  ];
+  return summaryRows(totals).map((row) => row.value);
 }
 
 export function escapeHtml(value: string | number | null | undefined) {

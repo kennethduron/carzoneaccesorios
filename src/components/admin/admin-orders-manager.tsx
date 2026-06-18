@@ -37,6 +37,7 @@ import {
   paymentDisplayLabel,
   recommendedOrderAction,
 } from "@/utils/order-workflow";
+import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 type AdminOrdersManagerProps = {
@@ -113,7 +114,7 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
     productLines.push(`* ${remainingItems} productos adicionales. Ver detalle completo en el pedido.`);
   }
 
-  const paymentMethod = paymentLabels[order.payment_method] ?? order.payment_method;
+  const paymentMethod = paymentLabels[order.payment_method] ?? paymentMethodLabel(order.payment_method, { detailedCard: true });
   const commonIntro = [
     "Hola, gracias por contactar con Car Zone Accesorios.",
     "",
@@ -546,7 +547,19 @@ export function AdminOrdersManager({
           order={orderToCancel}
           isPending={isPending}
           onClose={() => setOrderToCancel(null)}
-          onCancel={(reason) => {
+          onCancel={async (reason) => {
+            const confirmed = await toast.confirm({
+              title: "Confirmar cancelación",
+              message: "Esta acción será definitiva y quedará registrada en auditoría. ¿Confirmas que deseas cancelar este pedido?",
+              confirmLabel: "Confirmar cancelación",
+              cancelLabel: "Volver",
+              tone: "danger",
+            });
+
+            if (!confirmed) {
+              return;
+            }
+
             updateOrderStatus(orderToCancel, "cancelado", reason);
             setOrderToCancel(null);
           }}
@@ -568,7 +581,21 @@ export function AdminOrdersManager({
           order={invoiceToCancel}
           isPending={isPending}
           onClose={() => setInvoiceToCancel(null)}
-          onCancel={(reason) => cancelInvoice(invoiceToCancel, reason)}
+          onCancel={async (reason) => {
+            const confirmed = await toast.confirm({
+              title: "Confirmar anulación",
+              message: "Esta acción será definitiva y quedará registrada en auditoría. ¿Confirmas que deseas anular esta factura?",
+              confirmLabel: "Confirmar anulación",
+              cancelLabel: "Volver",
+              tone: "danger",
+            });
+
+            if (!confirmed) {
+              return;
+            }
+
+            cancelInvoice(invoiceToCancel, reason);
+          }}
         />
       ) : null}
       {orderToCorrectFiscalData ? (
@@ -972,7 +999,7 @@ function OrderDetail({
             <summary className="cursor-pointer text-sm font-semibold">Detalles operativos y fiscales</summary>
             <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
-              <CompactInfo label="Método de pago" value={paymentLabels[order.payment_method] ?? order.payment_method} />
+              <CompactInfo label="Método de pago" value={paymentLabels[order.payment_method] ?? paymentMethodLabel(order.payment_method, { detailedCard: true })} />
               <CompactInfo label="Momento del pago" value={paymentTimingLabels[order.payment_timing] ?? order.payment_timing} />
               <CompactInfo label="Subtotal antes de ISV" value={formatCurrency(order.subtotal)} />
               <CompactInfo label="ISV incluido 15%" value={formatCurrency(order.tax)} />
@@ -1141,8 +1168,7 @@ function CancelOrderModal({
   onClose: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [confirmation, setConfirmation] = useState("");
-  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === order.order_number;
+  const canSubmit = reason.trim().length >= 8;
 
   return (
     <ConfirmReasonModal
@@ -1150,14 +1176,13 @@ function CancelOrderModal({
       identifier={order.order_number}
       reasonLabel="Motivo de cancelación"
       description="El pedido quedará como estado final y la reserva se liberará si aplica."
+      notice="Esta acción será definitiva y quedará registrada en auditoría."
       icon={<XCircle size={18} />}
       reason={reason}
-      confirmation={confirmation}
       isPending={isPending}
       canSubmit={canSubmit}
       submitLabel="Cancelar pedido"
       onReasonChange={setReason}
-      onConfirmationChange={setConfirmation}
       onSubmit={() => onCancel(reason)}
       onClose={onClose}
     />
@@ -1553,9 +1578,8 @@ function CancelOrderInvoiceModal({
   onClose: () => void;
 }) {
   const [reason, setReason] = useState("");
-  const [confirmation, setConfirmation] = useState("");
   const invoiceNumber = order.invoice_number ?? "";
-  const canSubmit = reason.trim().length >= 8 && confirmation.trim() === invoiceNumber;
+  const canSubmit = reason.trim().length >= 8;
 
   return (
     <ConfirmReasonModal
@@ -1563,14 +1587,13 @@ function CancelOrderInvoiceModal({
       identifier={invoiceNumber}
       reasonLabel="Motivo de anulación"
       description="No se elimina la factura: conserva número fiscal, CAI, fecha, motivo y auditoría."
+      notice="Esta acción será definitiva y quedará registrada en auditoría."
       icon={<Ban size={18} />}
       reason={reason}
-      confirmation={confirmation}
       isPending={isPending}
       canSubmit={canSubmit}
       submitLabel="Anular factura"
       onReasonChange={setReason}
-      onConfirmationChange={setConfirmation}
       onSubmit={() => onCancel(reason)}
       onClose={onClose}
     />
@@ -1582,6 +1605,7 @@ function ConfirmReasonModal({
   identifier,
   reasonLabel,
   description,
+  notice,
   icon,
   reason,
   confirmation,
@@ -1597,14 +1621,15 @@ function ConfirmReasonModal({
   identifier: string;
   reasonLabel: string;
   description: string;
+  notice?: string;
   icon: React.ReactNode;
   reason: string;
-  confirmation: string;
+  confirmation?: string;
   isPending: boolean;
   canSubmit: boolean;
   submitLabel: string;
   onReasonChange: (value: string) => void;
-  onConfirmationChange: (value: string) => void;
+  onConfirmationChange?: (value: string) => void;
   onSubmit: () => void;
   onClose: () => void;
 }) {
@@ -1619,6 +1644,7 @@ function ConfirmReasonModal({
           <h2 className="mt-1 text-2xl font-semibold">{identifier}</h2>
           <p className="mt-2 text-sm text-black/60">{description}</p>
         </div>
+        {notice ? <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm font-medium text-[#7c2d12]">{notice}</p> : null}
         <label className="mt-4 block">
           <span className="mb-1 block text-xs font-medium uppercase text-black/50">{reasonLabel}</span>
           <textarea
@@ -1627,15 +1653,17 @@ function ConfirmReasonModal({
             className="min-h-28 w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
           />
         </label>
-        <label className="mt-4 block">
-          <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmación fuerte</span>
-          <input
-            value={confirmation}
-            onChange={(event) => onConfirmationChange(event.target.value)}
-            placeholder={`Escribe ${identifier}`}
-            className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
-          />
-        </label>
+        {onConfirmationChange ? (
+          <label className="mt-4 block">
+            <span className="mb-1 block text-xs font-medium uppercase text-black/50">Confirmación del pedido</span>
+            <input
+              value={confirmation ?? ""}
+              onChange={(event) => onConfirmationChange(event.target.value)}
+              placeholder={`Escribe ${identifier}`}
+              className="w-full rounded-md border border-black/10 px-3 py-2 text-sm outline-none focus:border-[#e4252c]"
+            />
+          </label>
+        ) : null}
         <div className="mt-5 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <Button onClick={onClose} variant="ghost" className="w-full sm:w-auto">
             Cerrar

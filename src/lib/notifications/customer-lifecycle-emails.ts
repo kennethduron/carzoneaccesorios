@@ -1,7 +1,7 @@
 import "server-only";
 
 import { writeErrorLog } from "@/lib/error-logging";
-import { enqueueEmail, processEmailQueue } from "@/lib/notifications/email-queue";
+import { enqueueEmail, processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import type { WholesaleCustomerType } from "@/types/wholesale";
 
 const officialSiteUrl = "https://carzoneaccesorios.com";
@@ -159,21 +159,17 @@ async function safeEnqueueCustomerEmail(input: {
     }
 
     if (result.queued) {
-      try {
-        await processEmailQueue({ limit: 5 });
-      } catch (processError) {
-        await writeErrorLog({
-          route: "/email/customer-lifecycle",
-          action: `${input.errorAction}.queue_process_failed`,
-          errorMessage: processError instanceof Error ? processError.message : "No se pudo procesar la cola de correo.",
-          userEmail: input.email,
-          metadata: {
-            template_key: input.templateKey,
-            related_id: input.relatedId,
-            queue_id: result.id,
-          },
-        });
-      }
+      await processCriticalEmailQueue({
+        queueIds: [result.id],
+        limit: 1,
+        route: "/email/customer-lifecycle",
+        action: `${input.errorAction}.queue_process_failed`,
+        metadata: {
+          template_key: input.templateKey,
+          related_id: input.relatedId,
+          queue_id: result.id,
+        },
+      });
     }
 
     return result;

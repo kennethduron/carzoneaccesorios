@@ -6,6 +6,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission, requireSession } from "@/lib/auth/session";
 import { writeErrorLog } from "@/lib/error-logging";
+import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { queueWholesaleApprovedEmail, queueWholesaleRejectedEmail } from "@/lib/notifications/customer-lifecycle-emails";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -435,6 +436,31 @@ export async function saveCustomerCommercialCreditAction(input: {
 
   if (error || !Array.isArray(data) || data.length === 0) {
     return { ok: false, message: error?.message || "No se pudo actualizar el crédito comercial." };
+  }
+
+  if (input.isCreditEnabled) {
+    const admin = getSupabaseAdminClient();
+    const { data: creditEmail } = await admin
+      .from("email_queue")
+      .select("id")
+      .eq("idempotency_key", `credit.enabled:${customerId.value}`)
+      .in("status", ["pending", "retrying"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    if (creditEmail?.id) {
+      await processCriticalEmailQueue({
+        queueIds: [creditEmail.id],
+        limit: 1,
+        route: "/admin/crm",
+        action: "notifications.commercial_credit_enabled_immediate_send_failed",
+        metadata: {
+          customer_id: customerId.value,
+          queue_id: creditEmail.id,
+        },
+      });
+    }
   }
 
   revalidatePath("/admin/crm");

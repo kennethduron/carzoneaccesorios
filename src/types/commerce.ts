@@ -57,7 +57,8 @@ export type CheckoutData = {
     | "Tarjeta por link de pago"
     | "Tarjeta mediante enlace de pago"
     | "Efectivo"
-    | "Crédito Comercial";
+    | "Crédito Comercial"
+    | "Crédito comercial";
   paymentTiming: "before_delivery" | "on_delivery";
   bankTransferReference: string;
   receiveOrderEmailUpdates: boolean;

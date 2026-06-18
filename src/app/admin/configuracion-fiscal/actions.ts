@@ -46,6 +46,7 @@ function fiscalSettingsChanges(previous: FiscalSettings, next: FiscalSettings) {
     "invoice_range_start",
     "invoice_range_end",
     "current_invoice_number",
+    "cai_authorization_date",
     "emission_deadline",
     "fiscal_address",
     "phone",
@@ -186,12 +187,48 @@ function parseFiscalSettingsForm(formData: FormData, fallbackLogoUrl: string | n
     invoice_range_start: String(formData.get("invoice_range_start") ?? ""),
     invoice_range_end: String(formData.get("invoice_range_end") ?? ""),
     current_invoice_number: String(formData.get("current_invoice_number") ?? ""),
+    cai_authorization_date: String(formData.get("cai_authorization_date") ?? "") || null,
     emission_deadline: String(formData.get("emission_deadline") ?? "") || null,
     fiscal_address: String(formData.get("fiscal_address") ?? ""),
     phone: String(formData.get("phone") ?? ""),
     email: String(formData.get("email") ?? ""),
     logo_url: fallbackLogoUrl,
   };
+}
+
+function isValidDateInput(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function validateFiscalDates(input: FiscalSettings) {
+  if (input.cai.trim() && !input.cai_authorization_date) {
+    return "La fecha de emisión es obligatoria cuando hay un CAI configurado.";
+  }
+
+  if (input.cai_authorization_date && !isValidDateInput(input.cai_authorization_date)) {
+    return "La fecha de emisión no tiene un formato válido.";
+  }
+
+  if (input.emission_deadline && !isValidDateInput(input.emission_deadline)) {
+    return "La fecha de vencimiento no tiene un formato válido.";
+  }
+
+  if (input.cai_authorization_date && input.emission_deadline && input.cai_authorization_date > input.emission_deadline) {
+    return "La fecha de emisión no puede ser posterior a la fecha de vencimiento.";
+  }
+
+  return null;
 }
 
 function getCloudinaryLogoPublicId(url: string | null | undefined) {
@@ -376,6 +413,14 @@ export async function saveFiscalSettingsAction(formData: FormData) {
       await deleteFiscalLogoIfOwned(logoResult.logoUrl, { reason: "fiscal_settings_validation_failed" });
     }
     return { ok: false, message: "El nombre legal de la empresa es obligatorio." };
+  }
+
+  const dateError = validateFiscalDates(input);
+  if (dateError) {
+    if (logoResult.uploadedPublicId) {
+      await deleteFiscalLogoIfOwned(logoResult.logoUrl, { reason: "fiscal_settings_validation_failed" });
+    }
+    return { ok: false, message: dateError };
   }
 
   try {

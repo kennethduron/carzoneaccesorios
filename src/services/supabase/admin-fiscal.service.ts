@@ -8,6 +8,7 @@ export const defaultFiscalSettings: FiscalSettings = {
   invoice_range_start: "",
   invoice_range_end: "",
   current_invoice_number: "",
+  cai_authorization_date: null,
   emission_deadline: null,
   fiscal_address: "",
   phone: "",
@@ -20,7 +21,7 @@ export async function getFiscalSettings(): Promise<FiscalSettings> {
   const { data, error } = await supabase
     .from("fiscal_settings")
     .select(
-      "legal_name, rtn, cai, invoice_range_start, invoice_range_end, current_invoice_number, emission_deadline, fiscal_address, phone, email, logo_url, updated_at",
+      "legal_name, rtn, cai, invoice_range_start, invoice_range_end, current_invoice_number, cai_authorization_date, emission_deadline, fiscal_address, phone, email, logo_url, updated_at",
     )
     .eq("id", true)
     .maybeSingle<FiscalSettings>();
@@ -45,6 +46,7 @@ export async function saveFiscalSettings(input: FiscalSettings) {
     invoice_range_start: input.invoice_range_start.trim(),
     invoice_range_end: input.invoice_range_end.trim(),
     current_invoice_number: input.current_invoice_number.trim(),
+    cai_authorization_date: input.cai_authorization_date || null,
     emission_deadline: input.emission_deadline || null,
     fiscal_address: input.fiscal_address.trim(),
     phone: input.phone.trim(),

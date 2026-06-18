@@ -426,7 +426,7 @@ export function CatalogBrowser({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3 lg:pr-20 xl:grid-cols-4 2xl:pr-0">
             {products.map((product, index) => (
               <CatalogProductCard key={product.id} product={product} eagerImage={index < 4} />
             ))}
