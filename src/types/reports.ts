@@ -157,12 +157,33 @@ export type ReportPayment = {
   created_at: string;
 };
 
+export type ReportReceivablePayment = {
+  id: string;
+  receivable_id: string;
+  customer_id: string;
+  customer_name: string;
+  customer_email: string | null;
+  order_id: string;
+  order_number: string | null;
+  original_amount: number;
+  total_paid: number;
+  balance_due: number;
+  receivable_status: string;
+  due_date: string;
+  amount: number;
+  payment_method: "bank_transfer" | "card" | "cash";
+  reference: string | null;
+  received_at: string;
+  voided_at: string | null;
+};
+
 export type AdminReportsData = {
   orders: ReportOrder[];
   invoices: ReportInvoice[];
   products: ReportProduct[];
   customers: ReportCustomer[];
   payments: ReportPayment[];
+  receivablePayments: ReportReceivablePayment[];
   totalRecords: number;
   page: number;
   pageSize: number;

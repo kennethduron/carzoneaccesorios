@@ -191,7 +191,7 @@ type CreditReminderRow = {
   order_id: string;
   balance_due: unknown;
   due_date: string;
-  status: "open" | "overdue";
+  status: "open" | "partial" | "overdue";
   customers: { contact_name: string | null; business_name: string | null } | null;
   orders: { order_number: string | null } | null;
 };
@@ -217,7 +217,7 @@ export async function checkCommercialCreditRemindersJob() {
   const { data, error } = await admin
     .from("accounts_receivable")
     .select("id, customer_id, order_id, balance_due, due_date, status, customers(contact_name, business_name), orders(order_number)")
-    .in("status", ["open", "overdue"])
+    .in("status", ["open", "partial", "overdue"])
     .or(`due_date.in.(${reminderDates.join(",")}),status.eq.overdue`)
     .limit(500)
     .returns<CreditReminderRow[]>();

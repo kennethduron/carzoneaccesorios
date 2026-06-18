@@ -356,11 +356,51 @@ try {
     .from("accounts_receivable")
     .update({ balance_due: Number(receivable.balance_due) / 2 })
     .eq("id", receivable.id);
-  assert.ok(partialAttempt.error, "Partial payments must be rejected by the database constraint");
+  assert.ok(partialAttempt.error, "Manual balance edits must be rejected by the database constraint");
 
   const secondOrder = await createCreditOrder(creditCustomerUser.client, productId, "99990101");
   assert.ok(secondOrder.error, "Credit limit must block a second order");
   assert.match(secondOrder.error.message, /supera el cr/i);
+
+  const partialPaymentResult = await roles.admin.client.rpc("register_credit_receivable_payment", {
+    target_receivable_id: receivable.id,
+    payment_amount: 300,
+    received_payment_method: "bank_transfer",
+    payment_reference: "PARTIAL-REF-123",
+    payment_received_at: new Date().toISOString(),
+    payment_note: "Abono parcial de prueba remota",
+    payment_receipt_url: null,
+    payment_receipt_public_id: null,
+    request_key: `remote-partial:${receivable.id}:${suffix}`,
+  });
+  assert.ifError(partialPaymentResult.error);
+  assert.equal(partialPaymentResult.data.length, 1);
+  assert.equal(partialPaymentResult.data[0].receivable_status, "partial");
+  assert.equal(Number(partialPaymentResult.data[0].total_paid), 300);
+  assert.equal(Number(partialPaymentResult.data[0].balance_due), Number(receivable.balance_due) - 300);
+
+  const { data: partialReceivable, error: partialReceivableError } = await admin
+    .from("accounts_receivable")
+    .select("status, balance_due")
+    .eq("id", receivable.id)
+    .single();
+  assert.ifError(partialReceivableError);
+  assert.equal(partialReceivable.status, "partial");
+  assert.equal(Number(partialReceivable.balance_due), Number(receivable.balance_due) - 300);
+
+  const overpaymentResult = await roles.admin.client.rpc("register_credit_receivable_payment", {
+    target_receivable_id: receivable.id,
+    payment_amount: Number(partialReceivable.balance_due) + 1,
+    received_payment_method: "cash",
+    payment_reference: null,
+    payment_received_at: new Date().toISOString(),
+    payment_note: "Intento de sobrepago de prueba",
+    payment_receipt_url: null,
+    payment_receipt_public_id: null,
+    request_key: `remote-overpay:${receivable.id}:${suffix}`,
+  });
+  assert.ok(overpaymentResult.error, "Overpayment must be blocked");
+  assert.match(overpaymentResult.error.message, /saldo pendiente/i);
 
   const { data: accountantReceivables, error: accountantReadError } = await roles.contadora.client
     .from("accounts_receivable")
@@ -452,17 +492,25 @@ try {
     .from("accounts_receivable")
     .select("id")
     .eq("id", receivable.id)
-    .in("status", ["open", "overdue"]);
+    .in("status", ["open", "partial", "overdue"]);
   assert.ifError(pendingAfterPaidError);
   assert.equal(pendingAfterPaid.length, 0);
 
-  const { data: cancelledEmails, error: cancelledEmailsError } = await admin
+  const { data: creditEmailsAfterPaid, error: cancelledEmailsError } = await admin
     .from("email_queue")
     .select("template_key, status")
     .eq("related_id", receivable.id)
     .neq("template_key", "commercial_credit.created");
   assert.ifError(cancelledEmailsError);
-  assert.equal(cancelledEmails.every((row) => row.status === "cancelled"), true);
+  const reminderEmails = creditEmailsAfterPaid.filter((row) =>
+    !["commercial_credit.payment_registered", "commercial_credit.paid_complete"].includes(row.template_key),
+  );
+  const collectionEmails = creditEmailsAfterPaid.filter((row) =>
+    ["commercial_credit.payment_registered", "commercial_credit.paid_complete"].includes(row.template_key),
+  );
+  assert.equal(reminderEmails.every((row) => row.status === "cancelled"), true);
+  assert.equal(collectionEmails.some((row) => row.template_key === "commercial_credit.payment_registered"), true);
+  assert.equal(collectionEmails.some((row) => row.template_key === "commercial_credit.paid_complete"), true);
 
   const { data: roleRows, error: roleRowsError } = await admin
     .from("roles")
@@ -485,8 +533,8 @@ try {
     customerWithoutCreditBlocked: true,
     customerWithCreditPurchased: true,
     limitExceededBlocked: true,
-    fullPaymentOnly: true,
-    partialPaymentRejected: true,
+    partialPaymentAccepted: true,
+    overpaymentRejected: true,
     inventoryDeductedOnDeliveryOnce: true,
     permissionsVerified: roleRows.map((row) => row.name).sort(),
   });

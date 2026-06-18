@@ -22,6 +22,7 @@ type ReportKey =
   | "fiscalCorrelatives"
   | "missingCorrelatives"
   | "paymentMethods"
+  | "creditReceivablePayments"
   | "bankTransfers"
   | "soldProductsDetail"
   | "customerSales"
@@ -58,6 +59,14 @@ const paymentLabels: Record<string, string> = {
   ...detailedPaymentMethodLabels,
   bank_transfer: "Transferencia",
   card: "Tarjeta mediante enlace",
+};
+
+const receivableStatusLabels: Record<string, string> = {
+  open: "Abierto",
+  partial: "Pago parcial",
+  paid: "Pagado",
+  overdue: "Vencido",
+  cancelled: "Cancelado",
 };
 
 function reportPaymentLabel(method: string | null | undefined) {
@@ -755,6 +764,28 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         financial: true,
       },
       {
+        key: "creditReceivablePayments",
+        label: "Cobranza de crédito comercial",
+        description: "Abonos registrados por pedido a crédito; separado de facturación fiscal.",
+        columns: ["Cliente", "Pedido", "Total original", "Total abonado", "Saldo pendiente", "Estado", "Fecha de vencimiento", "Método de abono", "Referencia", "Fecha de abono", "Monto de abono"],
+        rows: data.receivablePayments
+          .filter((payment) => !payment.voided_at)
+          .map((payment) => ({
+            Cliente: payment.customer_name,
+            Pedido: payment.order_number ?? payment.order_id.slice(0, 8),
+            "Total original": formatCurrency(payment.original_amount),
+            "Total abonado": formatCurrency(payment.total_paid),
+            "Saldo pendiente": formatCurrency(payment.balance_due),
+            Estado: receivableStatusLabels[payment.receivable_status] ?? "Abierto",
+            "Fecha de vencimiento": formatDate(payment.due_date),
+            "Método de abono": reportPaymentLabel(payment.payment_method),
+            Referencia: payment.reference ?? "-",
+            "Fecha de abono": formatDate(payment.received_at),
+            "Monto de abono": formatCurrency(payment.amount),
+          })),
+        financial: true,
+      },
+      {
         key: "topProducts",
         label: "Productos más vendidos",
         description: "Ranking operativo por cantidad vendida e ingresos generados.",
@@ -822,6 +853,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     data.invoices,
     data.orders,
     data.products,
+    data.receivablePayments,
     fiscalSettings,
     invoiceByOrder,
     paymentByOrder,

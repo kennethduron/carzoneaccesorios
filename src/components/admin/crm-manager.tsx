@@ -2662,9 +2662,23 @@ function CustomerProfileCredit({
   const [creditLimit, setCreditLimit] = useState(String(account?.credit_limit ?? 0));
   const [termsDays, setTermsDays] = useState(String(account?.terms_days ?? 30));
   const [status, setStatus] = useState<"active" | "suspended">(account?.status ?? "active");
-  const pendingReceivables = profile.receivables.filter((item) => item.status !== "paid");
+  const pendingReceivables = profile.receivables.filter((item) => item.status !== "paid" && item.status !== "cancelled");
+  const totalCreditUsed = profile.receivables.reduce((sum, item) => sum + item.original_amount, 0);
+  const totalCreditPaid = profile.receivables.reduce((sum, item) => sum + item.total_paid, 0);
   const pendingBalance = pendingReceivables.reduce((sum, item) => sum + item.balance_due, 0);
   const availableCredit = Math.max(Number(creditLimit || 0) - pendingBalance, 0);
+  const creditStatusLabel: Record<string, string> = {
+    open: "Abierto",
+    partial: "Pago parcial",
+    paid: "Pagado",
+    overdue: "Vencido",
+    cancelled: "Cancelado",
+  };
+  const creditPaymentMethodLabel: Record<string, string> = {
+    bank_transfer: "Transferencia bancaria",
+    card: "Tarjeta",
+    cash: "Efectivo",
+  };
 
   function saveCredit() {
     startTransition(async () => {
@@ -2696,7 +2710,7 @@ function CustomerProfileCredit({
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
             <h2 className="font-semibold">Crédito comercial</h2>
-            <p className="mt-1 text-sm text-black/55">Configuración interna. El pago de cada cuenta por cobrar es completo.</p>
+            <p className="mt-1 text-sm text-black/55">Configuración interna y saldos por pedido.</p>
           </div>
           <label className="flex items-center gap-2 text-sm font-semibold">
             <input
@@ -2753,38 +2767,58 @@ function CustomerProfileCredit({
       </section>
 
       <section>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <Metric label="Crédito utilizado" value={formatCurrency(totalCreditUsed)} />
+          <Metric label="Total abonado" value={formatCurrency(totalCreditPaid)} />
           <Metric label="Saldo pendiente" value={formatCurrency(pendingBalance)} />
           <Metric label="Crédito disponible" value={formatCurrency(availableCredit)} />
           <Metric label="Cuentas abiertas" value={pendingReceivables.length.toLocaleString("es-HN")} />
         </div>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase text-black/45">
               <tr>
                 <th className="px-2 py-2">Pedido</th>
                 <th className="px-2 py-2">Total</th>
+                <th className="px-2 py-2">Abonado</th>
                 <th className="px-2 py-2">Saldo</th>
                 <th className="px-2 py-2">Vencimiento</th>
                 <th className="px-2 py-2">Estado</th>
+                <th className="px-2 py-2">Abonos</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
               {profile.receivables.map((item) => {
                 const order = profile.orders.find((candidate) => candidate.id === item.order_id);
+                const activePayments = item.payments.filter((payment) => !payment.voided_at);
                 return (
                   <tr key={item.id}>
                     <td className="px-2 py-2">{order?.order_number ?? item.order_id.slice(0, 8)}</td>
                     <td className="px-2 py-2">{formatCurrency(item.original_amount)}</td>
+                    <td className="px-2 py-2">{formatCurrency(item.total_paid)}</td>
                     <td className="px-2 py-2 font-semibold">{formatCurrency(item.balance_due)}</td>
                     <td className="px-2 py-2">{item.due_date}</td>
-                    <td className="px-2 py-2">{item.status === "paid" ? "Pagado" : item.status === "overdue" ? "Vencido" : "Abierto"}</td>
+                    <td className="px-2 py-2">{creditStatusLabel[item.status] ?? "Abierto"}</td>
+                    <td className="px-2 py-2">
+                      {activePayments.length > 0 ? (
+                        <div className="space-y-1 text-xs text-black/60">
+                          {activePayments.slice(0, 3).map((payment) => (
+                            <p key={payment.id}>
+                              {formatCurrency(payment.amount)} · {creditPaymentMethodLabel[payment.payment_method] ?? "Abono"}
+                            </p>
+                          ))}
+                          {activePayments.length > 3 ? <p>Y {activePayments.length - 3} más</p> : null}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-black/45">Sin abonos</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {profile.receivables.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-2 py-5 text-center text-black/50">
+                  <td colSpan={7} className="px-2 py-5 text-center text-black/50">
                     Este cliente no tiene cuentas por cobrar.
                   </td>
                 </tr>

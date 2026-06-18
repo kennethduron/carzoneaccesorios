@@ -116,7 +116,7 @@ type OrderQueryRow = Omit<
   } | null;
   accounts_receivable: {
     id: string;
-    status: "open" | "paid" | "overdue" | null;
+    status: "open" | "partial" | "paid" | "overdue" | "cancelled" | null;
     due_date: string | null;
     balance_due: unknown;
     paid_at: string | null;
@@ -125,7 +125,7 @@ type OrderQueryRow = Omit<
     payment_recorded_by: string | null;
   } | Array<{
     id: string;
-    status: "open" | "paid" | "overdue" | null;
+    status: "open" | "partial" | "paid" | "overdue" | "cancelled" | null;
     due_date: string | null;
     balance_due: unknown;
     paid_at: string | null;

@@ -3,6 +3,7 @@ import "server-only";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type {
   AccountsReceivableRow,
+  AccountsReceivablePaymentRow,
   AdminAccountsReceivableRow,
   CustomerCreditAccount,
   ReceivablesSummary,
@@ -23,9 +24,17 @@ type CreditAccountQueryRow = Omit<CustomerCreditAccount, "credit_limit"> & {
   credit_limit: unknown;
 };
 
-type ReceivableQueryRow = Omit<AccountsReceivableRow, "original_amount" | "balance_due"> & {
+type ReceivableQueryRow = Omit<AccountsReceivableRow, "original_amount" | "total_paid" | "balance_due" | "payments" | "order_number"> & {
   original_amount: unknown;
   balance_due: unknown;
+  orders?: {
+    order_number: string | null;
+  } | null;
+  accounts_receivable_payments?: PaymentQueryRow[] | null;
+};
+
+type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount"> & {
+  amount: unknown;
 };
 
 type AdminReceivableQueryRow = ReceivableQueryRow & {
@@ -51,10 +60,25 @@ export function normalizeCreditAccount(row: CreditAccountQueryRow): CustomerCred
 }
 
 export function normalizeReceivable(row: ReceivableQueryRow): AccountsReceivableRow {
+  const payments = (row.accounts_receivable_payments ?? []).map(normalizeReceivablePayment);
+  const totalPaid = payments
+    .filter((payment) => !payment.voided_at)
+    .reduce((sum, payment) => sum + payment.amount, 0);
+
   return {
     ...row,
     original_amount: toNumber(row.original_amount),
+    total_paid: Math.round(totalPaid * 100) / 100,
     balance_due: toNumber(row.balance_due),
+    order_number: row.orders?.order_number ?? null,
+    payments,
+  };
+}
+
+export function normalizeReceivablePayment(row: PaymentQueryRow): AccountsReceivablePaymentRow {
+  return {
+    ...row,
+    amount: toNumber(row.amount),
   };
 }
 
@@ -101,7 +125,7 @@ export async function getOpenCreditBalance(customerId: string) {
     .from("accounts_receivable")
     .select("balance_due")
     .eq("customer_id", customerId)
-    .in("status", ["open", "overdue"])
+    .in("status", ["open", "partial", "overdue"])
     .returns<Array<{ balance_due: unknown }>>();
 
   if (error) {
@@ -131,7 +155,25 @@ export async function getCustomerReceivablesForUser(userId: string, limit = 20) 
 
   const { data, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, payment_received_method, payment_received_reference, payment_recorded_by, created_at, updated_at")
+    .select(`
+      id,
+      customer_id,
+      order_id,
+      invoice_id,
+      original_amount,
+      balance_due,
+      due_date,
+      status,
+      paid_at,
+      overdue_at,
+      payment_received_method,
+      payment_received_reference,
+      payment_recorded_by,
+      created_at,
+      updated_at,
+      orders(order_number),
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at)
+    `)
     .in("customer_id", customerIds)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -163,7 +205,25 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, overdue_at, payment_received_method, payment_received_reference, payment_recorded_by, created_at, updated_at")
+    .select(`
+      id,
+      customer_id,
+      order_id,
+      invoice_id,
+      original_amount,
+      balance_due,
+      due_date,
+      status,
+      paid_at,
+      overdue_at,
+      payment_received_method,
+      payment_received_reference,
+      payment_recorded_by,
+      created_at,
+      updated_at,
+      orders(order_number),
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at)
+    `)
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -200,6 +260,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       payment_recorded_by,
       created_at,
       updated_at,
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at),
       customers(contact_name, business_name, email, phone),
       orders(order_number),
       invoices(invoice_number)
@@ -225,7 +286,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       invoice_number: row.invoices?.invoice_number ?? null,
     };
   });
-  const pendingRows = rows.filter((row) => row.status !== "paid");
+  const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled");
   const uniqueCustomers = new Set(pendingRows.map((row) => row.customer_id));
   const now = new Date();
   const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);

@@ -9,6 +9,7 @@ const [
   invoiceMigration,
   permissionAuditMigration,
   finalMigration,
+  partialPaymentsMigration,
   permissions,
   checkoutAction,
   checkoutView,
@@ -31,6 +32,7 @@ const [
   read("supabase/migrations/202606130003_commercial_credit_invoice_independence.sql"),
   read("supabase/migrations/202606130004_commercial_credit_permission_audit.sql"),
   read("supabase/migrations/202606140001_commercial_credit_final_adjustments.sql"),
+  read("supabase/migrations/202606180001_commercial_credit_partial_payments.sql"),
   read("src/lib/auth/permissions.ts"),
   read("src/app/checkout/actions.ts"),
   read("src/components/store/checkout-view.tsx"),
@@ -55,6 +57,14 @@ assert.match(creditMigration, /create table if not exists public\.accounts_recei
 assert.match(creditMigration, /accounts_receivable_no_partial_payments/);
 assert.match(creditMigration, /status in \('open', 'overdue'\) and balance_due = original_amount/);
 assert.match(creditMigration, /status = 'paid' and balance_due = 0/);
+assert.match(partialPaymentsMigration, /create table if not exists public\.accounts_receivable_payments/);
+assert.match(partialPaymentsMigration, /drop constraint if exists accounts_receivable_no_partial_payments/);
+assert.match(partialPaymentsMigration, /status in \('open', 'partial', 'paid', 'overdue', 'cancelled'\)/);
+assert.match(partialPaymentsMigration, /register_credit_receivable_payment/);
+assert.match(partialPaymentsMigration, /for update of ar/);
+assert.match(partialPaymentsMigration, /El abono no puede ser mayor que el saldo pendiente de este pedido\./);
+assert.match(partialPaymentsMigration, /commercial_credit\.overpayment_denied/);
+assert.match(partialPaymentsMigration, /status in \('open', 'partial', 'overdue'\)/);
 assert.match(permissionAuditMigration, /commercial_credit\.permission_denied/);
 assert.match(permissionAuditMigration, /return false/);
 
@@ -71,6 +81,7 @@ assert.match(checkoutView, /methods\.push\(\["Crédito Comercial"/);
 assert.match(checkoutView, /blocksCommercialCreditLimit/);
 assert.match(checkoutAction, /paymentMethod === "commercial_credit" && !user/);
 assert.match(creditMigration, /open_credit_balance \+ recalculated_total > credit_account\.credit_limit/);
+assert.match(partialPaymentsMigration, /status in \(''open'', ''partial'', ''overdue''\)/);
 assert.match(creditMigration, /raise exception 'Este pedido supera/);
 assert.match(orderWorkflow, /order\.payment_method === "commercial_credit"/);
 
@@ -83,10 +94,13 @@ assert.match(finalMigration, /commercial_credit\.paid_edit_denied/);
 assert.match(finalMigration, /commercial_credit\.payment_method_required/);
 assert.match(finalMigration, /set status = 'paid',[\s\S]*?balance_due = 0,[\s\S]*?paid_at = now\(\)/);
 assert.match(orderActions, /markCreditReceivablePaidAction\(input: \{/);
+assert.match(orderActions, /registerCreditReceivablePaymentAction\(input: \{/);
 assert.match(orderActions, /paymentMethod: CreditPaymentReceivedMethod/);
 assert.match(orderActions, /received_payment_method: paymentMethod/);
-assert.match(receivablesManager, /Método con el que pagó el cliente/);
-assert.match(receivablesManager, /payment_received_reference/);
+assert.match(orderActions, /register_credit_receivable_payment/);
+assert.match(receivablesManager, /Registrar abono/);
+assert.match(receivablesManager, /Historial/);
+assert.match(receivablesManager, /El abono no puede ser mayor que el saldo pendiente de este pedido\./);
 assert.match(ordersManager, /Método con el que pagó el cliente/);
 assert.match(ordersManager, /creditPaymentIsPaid/);
 assert.doesNotMatch(orderActions, /markCreditReceivablePaidAction\(receivableId: string\)/);
@@ -101,9 +115,11 @@ assert.doesNotMatch(creditComponent, /textarea/);
 
 assert.match(receivablesPage, /receivables:read/);
 assert.match(receivablesPage, /\["technical_owner", "business_owner", "admin"\]\.includes\(profile\.role\)/);
-assert.match(receivablesManager, /Pago completo únicamente/);
-assert.match(receivablesManager, /canMarkPaid && row\.status !== "paid"/);
+assert.doesNotMatch(receivablesManager, /Pago completo únicamente/);
+assert.match(receivablesManager, /row\.status !== "paid" && row\.status !== "cancelled"/);
 assert.match(accountPage, /\{creditAccount \? \(/);
+assert.match(accountPage, /Total abonado/);
+assert.match(accountPage, /Historial de abonos/);
 assert.match(accountPage, /CustomerCreditNotificationToast/);
 assert.match(accountActions, /eq\("user_id", profile\.id\)/);
 assert.match(notificationToast, /Crédito comercial habilitado\. Ahora puedes realizar compras a crédito según las condiciones asignadas\./);
@@ -126,6 +142,12 @@ for (const template of [
 ]) {
   assert.match(creditMigration, new RegExp(template.replaceAll(".", "\\.")));
 }
+for (const template of [
+  "commercial_credit.payment_registered",
+  "commercial_credit.paid_complete",
+]) {
+  assert.match(partialPaymentsMigration, new RegExp(template.replaceAll(".", "\\.")));
+}
 assert.match(creditMigration, /scheduled_at/);
 assert.match(creditMigration, /idempotency_key/);
 assert.match(finalMigration, /status in \('pending', 'retrying'\)/);
@@ -135,7 +157,7 @@ assert.match(invoiceMigration, /order_record\.payment_method <> 'commercial_cred
 
 console.log("Commercial credit final structure checks passed.", {
   checkoutFourthOptionKept: true,
-  partialPayments: false,
+  partialPayments: true,
   realPaymentMethodRequired: true,
   enabledEmailIdempotent: true,
   customerToast: true,

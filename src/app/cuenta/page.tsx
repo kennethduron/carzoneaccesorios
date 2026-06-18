@@ -46,6 +46,20 @@ const paymentStatusLabels: Record<string, string> = {
   refunded: "Reembolsado",
 };
 
+const creditStatusLabels: Record<string, string> = {
+  open: "Abierto",
+  partial: "Pago parcial",
+  paid: "Pagado",
+  overdue: "Vencido",
+  cancelled: "Cancelado",
+};
+
+const creditPaymentMethodLabels: Record<string, string> = {
+  bank_transfer: "Transferencia bancaria",
+  card: "Tarjeta",
+  cash: "Efectivo",
+};
+
 const wholesaleStatusLabels: Record<string, string> = {
   regular: "No solicitado",
   pending: "En revisión",
@@ -129,7 +143,9 @@ export default async function CuentaPage({
         : "Pendiente de primera compra"
       : wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado";
   const pendingInvoiceOrders = recentOrders.filter((order) => !orderHasIssuedInvoice(order)).slice(0, 3);
-  const openReceivables = creditReceivables.filter((item) => item.status !== "paid");
+  const openReceivables = creditReceivables.filter((item) => item.status !== "paid" && item.status !== "cancelled");
+  const totalCreditOriginal = creditReceivables.reduce((sum, item) => sum + item.original_amount, 0);
+  const totalCreditPaid = creditReceivables.reduce((sum, item) => sum + item.total_paid, 0);
   const pendingCreditBalance = openReceivables.reduce((sum, item) => sum + item.balance_due, 0);
 
   return (
@@ -220,35 +236,61 @@ export default async function CuentaPage({
                 <p className="text-sm text-black/50">Crédito comercial</p>
                 <h2 className="mt-1 text-xl font-semibold">Crédito activo</h2>
                 <p className="mt-2 text-sm text-black/60">
-                  Puedes comprar con Crédito Comercial. Cada pedido queda pendiente hasta que el equipo marque el crédito como pagado.
+                  Puedes comprar con Crédito Comercial. Cada pedido muestra sus abonos y saldo pendiente.
                 </p>
               </div>
               <Link href="/catalogo" className="inline-flex rounded-md bg-[#080808] px-4 py-2 text-sm font-semibold text-white">
                 Comprar con crédito
               </Link>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <Info label="Límite autorizado" value={formatCurrency(creditAccount.credit_limit)} />
+              <Info label="Total crédito utilizado" value={formatCurrency(totalCreditOriginal)} />
+              <Info label="Total abonado" value={formatCurrency(totalCreditPaid)} />
               <Info label="Saldo pendiente" value={formatCurrency(pendingCreditBalance)} />
               <Info label="Plazo de pago" value={`${creditAccount.terms_days} días`} />
             </div>
-            {openReceivables.length > 0 ? (
+            {creditReceivables.length > 0 ? (
               <div className="mt-4 grid gap-2">
-                {openReceivables.slice(0, 5).map((item) => (
+                {creditReceivables.slice(0, 10).map((item) => (
                   <div key={item.id} className="rounded-md border border-black/10 p-3 text-sm">
                     <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                      <p className="font-semibold">{formatCurrency(item.balance_due)}</p>
+                      <div>
+                        <p className="font-semibold">Pedido {item.order_number ?? item.order_id.slice(0, 8)}</p>
+                        <p className="text-xs text-black/50">Fecha límite: {formatDate(item.due_date)}</p>
+                      </div>
                       <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">
-                        {item.status === "overdue" ? "Vencido" : "Abierto"}
+                        {creditStatusLabels[item.status] ?? "Abierto"}
                       </span>
                     </div>
-                    <p className="mt-1 text-black/55">Fecha límite: {formatDate(item.due_date)}</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <MiniInfo label="Total original" value={formatCurrency(item.original_amount)} />
+                      <MiniInfo label="Total abonado" value={formatCurrency(item.total_paid)} />
+                      <MiniInfo label="Saldo pendiente" value={formatCurrency(item.balance_due)} />
+                    </div>
+                    {item.payments.filter((payment) => !payment.voided_at).length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-semibold uppercase text-black/45">Historial de abonos</p>
+                        {item.payments
+                          .filter((payment) => !payment.voided_at)
+                          .slice(0, 5)
+                          .map((payment) => (
+                            <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs">
+                              <p className="font-semibold">{formatCurrency(payment.amount)}</p>
+                              <p className="text-black/60">
+                                {creditPaymentMethodLabels[payment.payment_method]} · {formatDate(payment.received_at)}
+                              </p>
+                              {payment.reference ? <p className="text-black/50">Referencia: {payment.reference}</p> : null}
+                            </div>
+                          ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
             ) : (
               <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
-                No tienes cuentas por cobrar pendientes.
+                No tienes cuentas por cobrar.
               </p>
             )}
           </section>

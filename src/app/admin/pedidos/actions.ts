@@ -5,7 +5,9 @@ import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
+import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";
@@ -108,6 +110,42 @@ function normalizeCreditPaymentMethod(value: unknown): CreditPaymentReceivedMeth
   return value === "bank_transfer" || value === "card" || value === "cash" ? value : null;
 }
 
+function normalizePositiveMoney(value: unknown) {
+  const amount = Math.round(Number(value) * 100) / 100;
+  return Number.isFinite(amount) ? amount : Number.NaN;
+}
+
+async function processCreditPaymentEmails(receivableId: string, queueIds: Array<string | null | undefined> = []) {
+  const ids = new Set(queueIds.filter((id): id is string => Boolean(id)));
+  const admin = getSupabaseAdminClient();
+  const { data } = await admin
+    .from("email_queue")
+    .select("id")
+    .eq("related_id", receivableId)
+    .in("status", ["pending", "retrying"])
+    .in("template_key", ["commercial_credit.payment_registered", "commercial_credit.paid_complete"])
+    .order("created_at", { ascending: false })
+    .limit(3)
+    .returns<Array<{ id: string }>>();
+
+  (data ?? []).forEach((row) => ids.add(row.id));
+
+  if (ids.size === 0) {
+    return;
+  }
+
+  await processCriticalEmailQueue({
+    queueIds: [...ids],
+    limit: Math.min(Math.max(ids.size, 1), 3),
+    route: "/admin/cuentas-por-cobrar",
+    action: "notifications.credit_payment_immediate_send_failed",
+    metadata: {
+      receivable_id: receivableId,
+      queue_ids: [...ids],
+    },
+  });
+}
+
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
   await requirePermission(status === "approved" ? "payments:confirm" : "payments:reject");
   const rejectionReason = reason.trim();
@@ -186,8 +224,98 @@ export async function markCreditReceivablePaidAction(input: {
     return { ok: false, message: safeAdminOrderMessage(error?.message || "No se pudo marcar el crédito como pagado.") };
   }
 
+  await processCreditPaymentEmails(receivableId);
   revalidateOperationalPaths();
   return { ok: true, message: "Crédito marcado como pagado correctamente." };
+}
+
+export async function registerCreditReceivablePaymentAction(input: {
+  receivableId: string;
+  amount: number | string;
+  paymentMethod: CreditPaymentReceivedMethod;
+  paymentReference?: string;
+  receivedAt?: string;
+  note?: string;
+  receiptUrl?: string;
+  receiptPublicId?: string;
+  idempotencyKey?: string;
+}) {
+  const profile = await requirePermission("admin:access");
+  const receivableId = input.receivableId.trim();
+  const amount = normalizePositiveMoney(input.amount);
+  const paymentMethod = normalizeCreditPaymentMethod(input.paymentMethod);
+  const paymentReference = (input.paymentReference ?? "").trim();
+  const note = (input.note ?? "").trim();
+  const receiptUrl = (input.receiptUrl ?? "").trim();
+  const receiptPublicId = (input.receiptPublicId ?? "").trim();
+  const idempotencyKey = (input.idempotencyKey ?? "").trim();
+  const receivedAt = (input.receivedAt ?? "").trim();
+
+  if (!canManageCommercialCredit(profile.role, profile.permissions, profile.email)) {
+    await writeAuditLog({
+      tableName: "accounts_receivable",
+      recordId: receivableId,
+      action: "commercial_credit.permission_denied",
+      newData: {
+        attempted_action: "register_payment",
+        role: profile.role,
+      },
+    });
+    return { ok: false, message: "Solo usuarios autorizados pueden registrar abonos de crédito comercial." };
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, message: "El abono debe ser mayor que cero." };
+  }
+
+  if (!paymentMethod) {
+    return { ok: false, message: "Selecciona el método de pago del abono." };
+  }
+
+  if (paymentReference.length > 200) {
+    return { ok: false, message: "La referencia no puede exceder 200 caracteres." };
+  }
+
+  if (note.length > 1000) {
+    return { ok: false, message: "La nota no puede exceder 1000 caracteres." };
+  }
+
+  if (receiptUrl.length > 1000 || receiptPublicId.length > 300) {
+    return { ok: false, message: "El comprobante no tiene un formato válido." };
+  }
+
+  const receivedAtDate = receivedAt ? new Date(`${receivedAt}T12:00:00-06:00`) : new Date();
+  if (Number.isNaN(receivedAtDate.getTime())) {
+    return { ok: false, message: "Selecciona una fecha de recepción válida." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .rpc("register_credit_receivable_payment", {
+      target_receivable_id: receivableId,
+      payment_amount: amount,
+      received_payment_method: paymentMethod,
+      payment_reference: paymentReference || null,
+      payment_received_at: receivedAtDate.toISOString(),
+      payment_note: note || null,
+      payment_receipt_url: receiptUrl || null,
+      payment_receipt_public_id: receiptPublicId || null,
+      request_key: idempotencyKey || null,
+    })
+    .returns<Array<{ payment_id: string; receivable_status: string; balance_due: unknown; total_paid: unknown; queued_email_id: string | null }>>();
+
+  if (error || !Array.isArray(data) || data.length === 0) {
+    return { ok: false, message: safeAdminOrderMessage(error?.message || "No se pudo registrar el abono.") };
+  }
+
+  const result = data[0];
+  await processCreditPaymentEmails(receivableId, [result.queued_email_id]);
+  revalidateOperationalPaths();
+
+  return {
+    ok: true,
+    message: Number(result.balance_due ?? 0) <= 0 ? "Abono registrado. El crédito quedó pagado completamente." : "Abono registrado correctamente.",
+  };
 }
 
 export async function extendOrderReservationAction(orderId: string, minutes: 720 | 1440 | 2880, reason: string) {

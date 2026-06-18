@@ -916,7 +916,7 @@ function OrderDetail({
               {isPending ? "Procesando..." : paymentActionLabel}
             </Button>
           ) : null}
-          {canMarkCreditPaid && isCredit && order.receivable_id && order.receivable_status !== "paid" ? (
+          {canMarkCreditPaid && isCredit && order.receivable_id && order.receivable_status !== "paid" && order.receivable_status !== "cancelled" ? (
             <Button
               onClick={() =>
                 creditPaymentMethod
@@ -1017,7 +1017,22 @@ function OrderDetail({
               <CompactInfo label="Dirección fiscal" value={order.fiscal_customer_address ?? "Sin dirección"} />
               <CompactInfo label="Factura fiscal" value={order.invoice_number ?? "Sin factura"} />
               <CompactInfo label="Estado factura" value={invoiceIsCancelled ? "Factura anulada" : order.invoice_number ? "Factura emitida" : "Sin factura"} />
-              {isCredit ? <CompactInfo label="Estado crédito" value={order.receivable_status === "paid" ? "Pagado" : order.receivable_status === "overdue" ? "Vencido" : "Abierto"} /> : null}
+              {isCredit ? (
+                <CompactInfo
+                  label="Estado crédito"
+                  value={
+                    order.receivable_status === "paid"
+                      ? "Pagado"
+                      : order.receivable_status === "partial"
+                        ? "Pago parcial"
+                        : order.receivable_status === "overdue"
+                          ? "Vencido"
+                          : order.receivable_status === "cancelled"
+                            ? "Cancelado"
+                            : "Abierto"
+                  }
+                />
+              ) : null}
               {isCredit ? <CompactInfo label="Saldo por cobrar" value={formatCurrency(order.receivable_balance_due ?? 0)} /> : null}
               {isCredit ? <CompactInfo label="Vence" value={order.receivable_due_date ?? "Sin fecha"} /> : null}
             </div>

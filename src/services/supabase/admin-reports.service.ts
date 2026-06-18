@@ -10,6 +10,7 @@ import type {
   ReportPayment,
   ReportPaymentMethod,
   ReportProduct,
+  ReportReceivablePayment,
 } from "@/types/reports";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
@@ -171,6 +172,24 @@ type PaymentQueryRow = Omit<ReportPayment, "amount"> & {
   amount: unknown;
 };
 
+type ReceivablePaymentQueryRow = Omit<ReportReceivablePayment, "amount" | "original_amount" | "total_paid" | "balance_due" | "customer_name" | "customer_email" | "order_number" | "receivable_status" | "due_date"> & {
+  amount: unknown;
+  customers: {
+    contact_name: string | null;
+    business_name: string | null;
+    email: string | null;
+  } | null;
+  orders: {
+    order_number: string | null;
+  } | null;
+  accounts_receivable: {
+    original_amount: unknown;
+    balance_due: unknown;
+    status: string;
+    due_date: string;
+  } | null;
+};
+
 function normalizeOrder(row: OrderQueryRow): ReportOrder {
   const invoices = Array.isArray(row.invoices) ? row.invoices : row.invoices ? [row.invoices] : [];
   const payments = Array.isArray(row.payments) ? row.payments : row.payments ? [row.payments] : [];
@@ -254,6 +273,31 @@ function normalizePayment(row: PaymentQueryRow): ReportPayment {
   };
 }
 
+function normalizeReceivablePayment(row: ReceivablePaymentQueryRow): ReportReceivablePayment {
+  const originalAmount = toNumber(row.accounts_receivable?.original_amount);
+  const balanceDue = toNumber(row.accounts_receivable?.balance_due);
+
+  return {
+    id: row.id,
+    receivable_id: row.receivable_id,
+    customer_id: row.customer_id,
+    customer_name: row.customers?.business_name || row.customers?.contact_name || "Cliente",
+    customer_email: row.customers?.email ?? null,
+    order_id: row.order_id,
+    order_number: row.orders?.order_number ?? null,
+    original_amount: originalAmount,
+    total_paid: Math.max(originalAmount - balanceDue, 0),
+    balance_due: balanceDue,
+    receivable_status: row.accounts_receivable?.status ?? "open",
+    due_date: row.accounts_receivable?.due_date ?? "",
+    amount: toNumber(row.amount),
+    payment_method: row.payment_method,
+    reference: row.reference,
+    received_at: row.received_at,
+    voided_at: row.voided_at,
+  };
+}
+
 async function findOrderIdsByItemFilters(filters: AdminReportsData["filters"]) {
   if (!filters.product && !filters.sku) {
     return null;
@@ -333,6 +377,7 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
       products: [],
       customers: [],
       payments: [],
+      receivablePayments: [],
       totalRecords: 0,
       page,
       pageSize,
@@ -532,18 +577,65 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     paymentsQuery = paymentsQuery.in("order_id", filteredOrderIds);
   }
 
+  let receivablePaymentsQuery = supabase
+    .from("accounts_receivable_payments")
+    .select(
+      `
+      id,
+      receivable_id,
+      customer_id,
+      order_id,
+      amount,
+      payment_method,
+      reference,
+      received_at,
+      voided_at,
+      customers(contact_name, business_name, email),
+      orders(order_number),
+      accounts_receivable(original_amount, balance_due, status, due_date)
+    `,
+      { count: "exact" },
+    );
+
+  if (filters.startDate) {
+    receivablePaymentsQuery = receivablePaymentsQuery.gte("received_at", dateStart(filters.startDate));
+  }
+
+  if (filters.endDate) {
+    receivablePaymentsQuery = receivablePaymentsQuery.lte("received_at", dateEnd(filters.endDate));
+  }
+
+  if (filters.paymentMethod !== "all" && filters.paymentMethod !== "commercial_credit") {
+    receivablePaymentsQuery = receivablePaymentsQuery.eq("payment_method", filters.paymentMethod);
+  }
+
+  if (filters.paymentMethod === "commercial_credit") {
+    receivablePaymentsQuery = receivablePaymentsQuery.not("id", "is", null);
+  }
+
+  if (filters.customer) {
+    const search = like(filters.customer);
+    receivablePaymentsQuery = receivablePaymentsQuery.or(`contact_name.ilike.${search},business_name.ilike.${search},email.ilike.${search}`, { referencedTable: "customers" });
+  }
+
+  if (filteredOrderIds) {
+    receivablePaymentsQuery = receivablePaymentsQuery.in("order_id", filteredOrderIds);
+  }
+
   const [
     { data: orders, error: ordersError, count: ordersTotal },
     { data: invoices, error: invoicesError, count: invoicesTotal },
     { data: products, error: productsError, count: productsTotal },
     { data: customers, error: customersError, count: customersTotal },
     { data: payments, error: paymentsError, count: paymentsTotal },
+    { data: receivablePayments, error: receivablePaymentsError, count: receivablePaymentsTotal },
   ] = await Promise.all([
     ordersQuery.order("created_at", { ascending: false }).range(from, to).returns<OrderQueryRow[]>(),
     invoicesQuery.order("created_at", { ascending: false }).range(from, to).returns<InvoiceQueryRow[]>(),
     productsQuery.order("name", { ascending: true }).range(from, to).returns<ProductQueryRow[]>(),
     customersQuery.order("created_at", { ascending: false }).range(from, to).returns<ReportCustomer[]>(),
     paymentsQuery.order("created_at", { ascending: false }).range(from, to).returns<PaymentQueryRow[]>(),
+    receivablePaymentsQuery.order("received_at", { ascending: false }).range(from, to).returns<ReceivablePaymentQueryRow[]>(),
   ]);
 
   if (ordersError) {
@@ -564,6 +656,10 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
 
   if (paymentsError) {
     throw new Error(paymentsError.message);
+  }
+
+  if (receivablePaymentsError) {
+    throw new Error(receivablePaymentsError.message);
   }
 
   const invoiceOrderIdsForPayments = [...new Set((invoices ?? []).map((invoice) => invoice.order_id))];
@@ -597,7 +693,8 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     products: (products ?? []).map(normalizeProduct),
     customers: customers ?? [],
     payments: (payments ?? []).map(normalizePayment),
-    totalRecords: Math.max(ordersTotal ?? 0, invoicesTotal ?? 0, productsTotal ?? 0, customersTotal ?? 0, paymentsTotal ?? 0),
+    receivablePayments: (receivablePayments ?? []).map(normalizeReceivablePayment),
+    totalRecords: Math.max(ordersTotal ?? 0, invoicesTotal ?? 0, productsTotal ?? 0, customersTotal ?? 0, paymentsTotal ?? 0, receivablePaymentsTotal ?? 0),
     page,
     pageSize,
     filters,
@@ -703,6 +800,7 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
     products: [],
     customers: [],
     payments: [],
+    receivablePayments: [],
     totalRecords: count ?? 0,
     page,
     pageSize,

@@ -28,6 +28,8 @@ export const notificationCatalog = [
   { type: "credit.due_3_days", module: "pagos", label: "Crédito vence en 3 días", defaultSeverity: "warning", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },
   { type: "credit.due_1_day", module: "pagos", label: "Crédito vence mañana", defaultSeverity: "warning", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },
   { type: "credit.overdue", module: "pagos", label: "Crédito comercial vencido", defaultSeverity: "critical", defaultRoles: ["business_owner", "admin", "contadora"], emailDefault: false },
+  { type: "commercial_credit.payment_registered", module: "pagos", label: "Abono de crédito registrado", defaultSeverity: "info", defaultRoles: ["technical_owner", "business_owner", "admin"], emailDefault: false },
+  { type: "commercial_credit.paid_complete", module: "pagos", label: "Crédito comercial pagado completamente", defaultSeverity: "info", defaultRoles: ["technical_owner", "business_owner", "admin"], emailDefault: false },
   { type: "reservation.expired_review_required", module: "reservas", label: "Reserva vencida", defaultSeverity: "warning", defaultRoles: ["technical_owner", "business_owner", "admin", "bodega"], emailDefault: false },
   { type: "reservation.expiring_soon", module: "reservas", label: "Reserva por vencer", defaultSeverity: "warning", defaultRoles: ["business_owner", "admin", "bodega"], emailDefault: false },
   { type: "reservation.extended", module: "reservas", label: "Reserva extendida", defaultSeverity: "info", defaultRoles: ["business_owner", "admin", "bodega"], emailDefault: false },

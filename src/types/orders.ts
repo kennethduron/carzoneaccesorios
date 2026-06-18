@@ -139,7 +139,7 @@ export type AdminOrderRow = {
   invoice_cancellation_reason: string | null;
   fiscal_correction_history: FiscalCorrectionHistoryEntry[];
   receivable_id: string | null;
-  receivable_status: "open" | "paid" | "overdue" | null;
+  receivable_status: "open" | "partial" | "paid" | "overdue" | "cancelled" | null;
   receivable_due_date: string | null;
   receivable_balance_due: number | null;
   receivable_paid_at: string | null;
