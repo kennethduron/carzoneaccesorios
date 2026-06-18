@@ -476,7 +476,7 @@ export function AdminOrdersManager({
             <h2 className="font-semibold">Pedidos</h2>
             <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta página</p>
           </div>
-          <div className="divide-y divide-black/10">
+          <div className="divide-y divide-black/10 lg:max-h-[calc(100vh-280px)] lg:overflow-y-auto lg:overscroll-contain">
             {filteredOrders.length === 0 ? <p className="p-4 text-sm text-black/55">No se encontraron resultados.</p> : null}
             {filteredOrders.map((order) => (
               <button
