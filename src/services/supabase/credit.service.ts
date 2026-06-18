@@ -33,8 +33,15 @@ type ReceivableQueryRow = Omit<AccountsReceivableRow, "original_amount" | "total
   accounts_receivable_payments?: PaymentQueryRow[] | null;
 };
 
-type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount"> & {
+type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount" | "recorded_by_name" | "recorded_by_email"> & {
   amount: unknown;
+  recorded_by_user?: {
+    full_name: string | null;
+    email: string | null;
+  } | Array<{
+    full_name: string | null;
+    email: string | null;
+  }> | null;
 };
 
 type AdminReceivableQueryRow = ReceivableQueryRow & {
@@ -76,9 +83,14 @@ export function normalizeReceivable(row: ReceivableQueryRow): AccountsReceivable
 }
 
 export function normalizeReceivablePayment(row: PaymentQueryRow): AccountsReceivablePaymentRow {
+  const { recorded_by_user: recordedByUser, ...payment } = row;
+  const recorder = Array.isArray(recordedByUser) ? recordedByUser[0] : recordedByUser;
+
   return {
-    ...row,
-    amount: toNumber(row.amount),
+    ...payment,
+    amount: toNumber(payment.amount),
+    recorded_by_name: recorder?.full_name ?? null,
+    recorded_by_email: recorder?.email ?? null,
   };
 }
 
@@ -222,7 +234,7 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
       created_at,
       updated_at,
       orders(order_number),
-      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at)
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email))
     `)
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
@@ -260,7 +272,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       payment_recorded_by,
       created_at,
       updated_at,
-      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at),
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email)),
       customers(contact_name, business_name, email, phone),
       orders(order_number),
       invoices(invoice_number)

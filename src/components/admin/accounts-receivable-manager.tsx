@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Download, History, PlusCircle, ReceiptText, X } from "lucide-react";
 import { markCreditReceivablePaidAction, registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import type { AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod, ReceivablesSummary } from "@/types/credit";
+import type { AccountsReceivablePaymentRow, AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod, ReceivablesSummary } from "@/types/credit";
+import { formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
 const statusLabels: Record<string, string> = {
@@ -41,6 +42,14 @@ type PaymentModalDraft = {
 function formatDate(value: string | null) {
   if (!value) return "Sin fecha";
   return new Intl.DateTimeFormat("es-HN", { dateStyle: "medium" }).format(new Date(`${value.slice(0, 10)}T00:00:00-06:00`));
+}
+
+function formatPaymentDate(payment: Pick<AccountsReceivablePaymentRow, "received_at" | "created_at">) {
+  return formatHnDateTime(payment.received_at ?? payment.created_at);
+}
+
+function paymentRecorderLabel(payment: Pick<AccountsReceivablePaymentRow, "recorded_by_name" | "recorded_by_email">) {
+  return payment.recorded_by_name ?? payment.recorded_by_email ?? "Usuario interno";
 }
 
 function daysRemaining(value: string) {
@@ -84,6 +93,8 @@ export function AccountsReceivableManager({
   const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
   const [selectedRow, setSelectedRow] = useState<AdminAccountsReceivableRow | null>(null);
   const [modalDraft, setModalDraft] = useState<PaymentModalDraft | null>(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const isSubmittingPaymentRef = useRef(false);
   const [isPending, startTransition] = useTransition();
   const visibleRows = useMemo(() => {
     if (filter === "all") return rows;
@@ -103,6 +114,8 @@ export function AccountsReceivableManager({
   }
 
   function openPaymentModal(row: AdminAccountsReceivableRow) {
+    isSubmittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
     setSelectedRow(row);
     setModalDraft({
       amount: "",
@@ -116,13 +129,16 @@ export function AccountsReceivableManager({
   }
 
   function closePaymentModal() {
-    if (isPending) return;
+    if (isPending || isSubmittingPaymentRef.current) return;
+    isSubmittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
     setSelectedRow(null);
     setModalDraft(null);
   }
 
   function registerPayment() {
     if (!selectedRow || !modalDraft) return;
+    if (isSubmittingPaymentRef.current) return;
     const amount = Math.round(Number(modalDraft.amount) * 100) / 100;
 
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -140,6 +156,9 @@ export function AccountsReceivableManager({
       return;
     }
 
+    isSubmittingPaymentRef.current = true;
+    setIsSubmittingPayment(true);
+
     startTransition(async () => {
       const result = await registerCreditReceivablePaymentAction({
         receivableId: selectedRow.id,
@@ -150,14 +169,23 @@ export function AccountsReceivableManager({
         note: modalDraft.note,
         receiptUrl: modalDraft.receiptUrl,
         idempotencyKey: modalDraft.idempotencyKey,
-      });
+      }).catch(() => ({
+        ok: false as const,
+        message: "No se pudo registrar el abono. Inténtalo de nuevo.",
+      }));
 
       if (result.ok) {
         toast.success(result.message);
+        isSubmittingPaymentRef.current = false;
+        setIsSubmittingPayment(false);
+        setModalDraft((current) => (current ? { ...current, idempotencyKey: newIdempotencyKey(selectedRow.id) } : current));
         setSelectedRow(null);
         setModalDraft(null);
         router.refresh();
       } else {
+        isSubmittingPaymentRef.current = false;
+        setIsSubmittingPayment(false);
+        setModalDraft((current) => (current ? { ...current, idempotencyKey: newIdempotencyKey(selectedRow.id) } : current));
         toast.error(result.message);
       }
     });
@@ -309,7 +337,7 @@ export function AccountsReceivableManager({
                     <td className="px-3 py-3 align-top">
                       {canCollect ? (
                         <div className="grid min-w-60 gap-2">
-                          <Button onClick={() => openPaymentModal(row)} disabled={isPending} variant="ghost">
+                          <Button onClick={() => openPaymentModal(row)} disabled={isPending || isSubmittingPayment} variant="ghost">
                             <PlusCircle size={16} />
                             Registrar abono
                           </Button>
@@ -371,7 +399,13 @@ export function AccountsReceivableManager({
                 <p className="text-sm text-black/50">Pedido {selectedRow.order_number ?? ""}</p>
                 <h2 className="mt-1 text-xl font-semibold">Registrar abono</h2>
               </div>
-              <button type="button" onClick={closePaymentModal} className="rounded-md border border-black/10 p-2" aria-label="Cerrar">
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                disabled={isPending || isSubmittingPayment}
+                className="rounded-md border border-black/10 p-2 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Cerrar"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -454,12 +488,12 @@ export function AccountsReceivableManager({
             </div>
 
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" onClick={closePaymentModal} variant="ghost" disabled={isPending}>
+              <Button type="button" onClick={closePaymentModal} variant="ghost" disabled={isPending || isSubmittingPayment}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={registerPayment} variant="primary" disabled={isPending}>
+              <Button type="button" onClick={registerPayment} variant="primary" disabled={isPending || isSubmittingPayment}>
                 <ReceiptText size={16} />
-                {isPending ? "Registrando..." : "Registrar abono"}
+                {isPending || isSubmittingPayment ? "Registrando..." : "Registrar abono"}
               </Button>
             </div>
           </section>
@@ -485,11 +519,13 @@ function PaymentHistory({ row }: { row: AdminAccountsReceivableRow }) {
       <div className="space-y-1">
         {activePayments.slice(0, 3).map((payment) => (
           <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs">
-            <p className="font-semibold">{formatCurrency(payment.amount)}</p>
+            <p className="font-semibold">{formatPaymentDate(payment)}</p>
             <p className="text-black/60">
-              {paymentReceivedLabels[payment.payment_method]} · {formatDate(payment.received_at)}
+              {formatCurrency(payment.amount)} · {paymentReceivedLabels[payment.payment_method]}
             </p>
+            <p className="text-black/50">Registrado por: {paymentRecorderLabel(payment)}</p>
             {payment.reference ? <p className="text-black/50">Ref. {payment.reference}</p> : null}
+            {payment.note ? <p className="text-black/50">{payment.note}</p> : null}
           </div>
         ))}
         {activePayments.length > 3 ? <p className="text-xs text-black/45">Y {activePayments.length - 3} más</p> : null}

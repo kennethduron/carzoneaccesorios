@@ -21,7 +21,7 @@ export default async function AdminCrmPage({
   const profile = await requirePermission("crm:manage");
   const canManageCredit =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
-    hasEffectivePermission(profile.role, profile.permissions, "credit:manage", profile.email);
+    hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
   const params = await searchParams;
   const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
   const crm = await getAdminCrm({

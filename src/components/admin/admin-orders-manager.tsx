@@ -87,6 +87,17 @@ const reservationStatusLabels: Record<string, string> = {
   canceled: "Cancelado",
 };
 
+const nonCancelableOrderStatuses = new Set([
+  "entregado",
+  "delivered",
+  "cancelado",
+  "cancelled",
+  "cerrado",
+  "closed",
+  "completado",
+  "completed",
+]);
+
 const fiscalCorrectionFieldLabels: Record<FiscalCorrectionValueKey, string> = {
   customer_name: "Nombre fiscal",
   customer_rtn: "RTN",
@@ -757,7 +768,10 @@ function OrderDetail({
     orderId: order.id,
     value: String(order.cash_on_delivery_fee ?? 0),
   });
-  const canCancelOrder = normalizedStatus !== "cancelado" && allowedStatuses.some((option) => option.value === "cancelado");
+  const currentOrderStatus = String(order.status ?? "").toLowerCase();
+  const cancellationBlocked =
+    nonCancelableOrderStatuses.has(currentOrderStatus) || nonCancelableOrderStatuses.has(normalizedStatus);
+  const canCancelOrder = !cancellationBlocked && allowedStatuses.some((option) => option.value === "cancelado");
   const canAcceptOrder = normalizedStatus === "recibido" && allowedStatuses.some((option) => option.value === "confirmado");
   const canConfirmPayment =
     canConfirmPayments &&

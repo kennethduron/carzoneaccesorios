@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Archive,
   Ban,
@@ -18,6 +18,8 @@ import {
   PackageSearch,
   PhoneCall,
   Pencil,
+  PlusCircle,
+  ReceiptText,
   Save,
   Search,
   ShieldAlert,
@@ -46,6 +48,7 @@ import {
   suspendCustomerAccountAction,
   suspendWholesaleAccessAction,
 } from "@/app/admin/crm/actions";
+import { registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -68,9 +71,10 @@ import type {
   CrmNoteRow,
   CrmPriority,
 } from "@/types/crm";
+import type { AccountsReceivablePaymentRow, AccountsReceivableRow, CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
-import { formatHnDateTime } from "@/utils/format";
+import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -187,6 +191,38 @@ const emptyNote: CrmNoteInput = {
   customer_id: "",
   note: "",
 };
+
+type CreditPaymentModalDraft = {
+  amount: string;
+  method: CommercialCreditPaymentReceivedMethod | "";
+  reference: string;
+  receivedAt: string;
+  note: string;
+  receiptUrl: string;
+  idempotencyKey: string;
+};
+
+function todayInputValue() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function newCreditPaymentIdempotencyKey(receivableId: string) {
+  const randomValue = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  return `credit-payment:${receivableId}:${randomValue}`;
+}
+
+function formatReceivablePaymentDate(payment: Pick<AccountsReceivablePaymentRow, "received_at" | "created_at">) {
+  return formatHnDateTime(payment.received_at ?? payment.created_at);
+}
+
+function receivablePaymentRecorderLabel(payment: Pick<AccountsReceivablePaymentRow, "recorded_by_name" | "recorded_by_email">) {
+  return payment.recorded_by_name ?? payment.recorded_by_email ?? "Usuario interno";
+}
 
 function numberValue(value: string) {
   const parsed = Number(value);
@@ -2662,6 +2698,10 @@ function CustomerProfileCredit({
   const [creditLimit, setCreditLimit] = useState(String(account?.credit_limit ?? 0));
   const [termsDays, setTermsDays] = useState(String(account?.terms_days ?? 30));
   const [status, setStatus] = useState<"active" | "suspended">(account?.status ?? "active");
+  const [selectedReceivable, setSelectedReceivable] = useState<AccountsReceivableRow | null>(null);
+  const [paymentDraft, setPaymentDraft] = useState<CreditPaymentModalDraft | null>(null);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const isSubmittingPaymentRef = useRef(false);
   const pendingReceivables = profile.receivables.filter((item) => item.status !== "paid" && item.status !== "cancelled");
   const totalCreditUsed = profile.receivables.reduce((sum, item) => sum + item.original_amount, 0);
   const totalCreditPaid = profile.receivables.reduce((sum, item) => sum + item.total_paid, 0);
@@ -2700,6 +2740,88 @@ function CustomerProfileCredit({
       if (refreshed.ok && refreshed.profile) {
         onProfileUpdated(refreshed.profile);
       }
+      toast.success(result.message);
+    });
+  }
+
+  function openPaymentModal(receivable: AccountsReceivableRow) {
+    isSubmittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
+    setSelectedReceivable(receivable);
+    setPaymentDraft({
+      amount: "",
+      method: "",
+      reference: "",
+      receivedAt: todayInputValue(),
+      note: "",
+      receiptUrl: "",
+      idempotencyKey: newCreditPaymentIdempotencyKey(receivable.id),
+    });
+  }
+
+  function closePaymentModal() {
+    if (isPending || isSubmittingPaymentRef.current) return;
+    isSubmittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
+    setSelectedReceivable(null);
+    setPaymentDraft(null);
+  }
+
+  function registerPayment() {
+    if (!selectedReceivable || !paymentDraft) return;
+    if (isSubmittingPaymentRef.current) return;
+
+    const amount = Math.round(Number(paymentDraft.amount) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("El abono debe ser mayor que cero.");
+      return;
+    }
+
+    if (amount > selectedReceivable.balance_due) {
+      toast.error("El abono no puede ser mayor que el saldo pendiente de este pedido.");
+      return;
+    }
+
+    if (!paymentDraft.method) {
+      toast.error("Selecciona el método de pago del abono.");
+      return;
+    }
+    const paymentMethod = paymentDraft.method;
+
+    isSubmittingPaymentRef.current = true;
+    setIsSubmittingPayment(true);
+
+    startTransition(async () => {
+      const result = await registerCreditReceivablePaymentAction({
+        receivableId: selectedReceivable.id,
+        amount,
+        paymentMethod,
+        paymentReference: paymentDraft.reference,
+        receivedAt: paymentDraft.receivedAt,
+        note: paymentDraft.note,
+        receiptUrl: paymentDraft.receiptUrl,
+        idempotencyKey: paymentDraft.idempotencyKey,
+      }).catch(() => ({
+        ok: false as const,
+        message: "No se pudo registrar el abono. Inténtalo de nuevo.",
+      }));
+
+      isSubmittingPaymentRef.current = false;
+      setIsSubmittingPayment(false);
+
+      if (!result.ok) {
+        setPaymentDraft((current) => (current ? { ...current, idempotencyKey: newCreditPaymentIdempotencyKey(selectedReceivable.id) } : current));
+        toast.error(result.message);
+        return;
+      }
+
+      setPaymentDraft((current) => (current ? { ...current, idempotencyKey: newCreditPaymentIdempotencyKey(selectedReceivable.id) } : current));
+      const refreshed = await getCustomerProfileAction(profile.customer.id);
+      if (refreshed.ok && refreshed.profile) {
+        onProfileUpdated(refreshed.profile);
+      }
+      setSelectedReceivable(null);
+      setPaymentDraft(null);
       toast.success(result.message);
     });
   }
@@ -2785,6 +2907,7 @@ function CustomerProfileCredit({
                 <th className="px-2 py-2">Vencimiento</th>
                 <th className="px-2 py-2">Estado</th>
                 <th className="px-2 py-2">Abonos</th>
+                <th className="px-2 py-2">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
@@ -2797,15 +2920,19 @@ function CustomerProfileCredit({
                     <td className="px-2 py-2">{formatCurrency(item.original_amount)}</td>
                     <td className="px-2 py-2">{formatCurrency(item.total_paid)}</td>
                     <td className="px-2 py-2 font-semibold">{formatCurrency(item.balance_due)}</td>
-                    <td className="px-2 py-2">{item.due_date}</td>
+                    <td className="px-2 py-2">{formatHnDate(item.due_date)}</td>
                     <td className="px-2 py-2">{creditStatusLabel[item.status] ?? "Abierto"}</td>
                     <td className="px-2 py-2">
                       {activePayments.length > 0 ? (
-                        <div className="space-y-1 text-xs text-black/60">
+                        <div className="min-w-60 space-y-2 text-xs text-black/60">
                           {activePayments.slice(0, 3).map((payment) => (
-                            <p key={payment.id}>
-                              {formatCurrency(payment.amount)} · {creditPaymentMethodLabel[payment.payment_method] ?? "Abono"}
-                            </p>
+                            <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2">
+                              <p className="font-semibold text-black">{formatReceivablePaymentDate(payment)}</p>
+                              <p>{formatCurrency(payment.amount)} · {creditPaymentMethodLabel[payment.payment_method] ?? "Abono"}</p>
+                              <p className="text-black/50">Registrado por: {receivablePaymentRecorderLabel(payment)}</p>
+                              {payment.reference ? <p className="text-black/50">Referencia: {payment.reference}</p> : null}
+                              {payment.note ? <p className="text-black/50">{payment.note}</p> : null}
+                            </div>
                           ))}
                           {activePayments.length > 3 ? <p>Y {activePayments.length - 3} más</p> : null}
                         </div>
@@ -2813,12 +2940,22 @@ function CustomerProfileCredit({
                         <span className="text-xs text-black/45">Sin abonos</span>
                       )}
                     </td>
+                    <td className="px-2 py-2">
+                      {item.status !== "paid" && item.status !== "cancelled" && item.balance_due > 0 ? (
+                        <Button type="button" onClick={() => openPaymentModal(item)} disabled={isPending || isSubmittingPayment} variant="ghost">
+                          <PlusCircle size={16} />
+                          Registrar abono
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-black/45">Sin saldo</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
               {profile.receivables.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-2 py-5 text-center text-black/50">
+                  <td colSpan={8} className="px-2 py-5 text-center text-black/50">
                     Este cliente no tiene cuentas por cobrar.
                   </td>
                 </tr>
@@ -2827,6 +2964,104 @@ function CustomerProfileCredit({
           </table>
         </div>
       </section>
+
+      {selectedReceivable && paymentDraft ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-black/45 px-4 py-6">
+          <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-black/50">Pedido {selectedReceivable.order_number ?? selectedReceivable.order_id.slice(0, 8)}</p>
+                <h2 className="mt-1 text-xl font-semibold">Registrar abono</h2>
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentModal}
+                disabled={isPending || isSubmittingPayment}
+                className="rounded-md border border-black/10 p-2 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Cerrar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Metric label="Total original" value={formatCurrency(selectedReceivable.original_amount)} />
+              <Metric label="Total abonado" value={formatCurrency(selectedReceivable.total_paid)} />
+              <Metric label="Saldo pendiente" value={formatCurrency(selectedReceivable.balance_due)} />
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1 text-sm font-semibold">
+                Monto
+                <Input
+                  type="number"
+                  min="0.01"
+                  max={selectedReceivable.balance_due}
+                  step="0.01"
+                  value={paymentDraft.amount}
+                  onChange={(event) => setPaymentDraft({ ...paymentDraft, amount: event.target.value })}
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold">
+                Método de pago
+                <select
+                  value={paymentDraft.method}
+                  onChange={(event) =>
+                    setPaymentDraft({
+                      ...paymentDraft,
+                      method: event.target.value as CommercialCreditPaymentReceivedMethod | "",
+                      reference: event.target.value === "cash" ? "" : paymentDraft.reference,
+                    })
+                  }
+                  className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm font-normal outline-none focus:border-[#e4252c]"
+                >
+                  <option value="">Seleccionar</option>
+                  <option value="bank_transfer">Transferencia bancaria</option>
+                  <option value="card">Tarjeta</option>
+                  <option value="cash">Efectivo</option>
+                </select>
+              </label>
+              {paymentDraft.method !== "cash" ? (
+                <label className="grid gap-1 text-sm font-semibold">
+                  Referencia
+                  <Input value={paymentDraft.reference} onChange={(event) => setPaymentDraft({ ...paymentDraft, reference: event.target.value })} />
+                </label>
+              ) : null}
+              <label className="grid gap-1 text-sm font-semibold">
+                Fecha de recepción
+                <Input type="date" value={paymentDraft.receivedAt} onChange={(event) => setPaymentDraft({ ...paymentDraft, receivedAt: event.target.value })} />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold sm:col-span-2">
+                Comprobante opcional
+                <Input
+                  value={paymentDraft.receiptUrl}
+                  onChange={(event) => setPaymentDraft({ ...paymentDraft, receiptUrl: event.target.value })}
+                  placeholder="Enlace del comprobante"
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-semibold sm:col-span-2">
+                Nota
+                <textarea
+                  value={paymentDraft.note}
+                  onChange={(event) => setPaymentDraft({ ...paymentDraft, note: event.target.value })}
+                  rows={3}
+                  className="rounded-md border border-black/10 px-3 py-2 font-normal outline-none focus:border-[#e4252c]"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" onClick={closePaymentModal} variant="ghost" disabled={isPending || isSubmittingPayment}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={registerPayment} variant="primary" disabled={isPending || isSubmittingPayment}>
+                <ReceiptText size={16} />
+                {isPending || isSubmittingPayment ? "Registrando..." : "Registrar abono"}
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

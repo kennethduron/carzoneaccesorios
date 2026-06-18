@@ -15,6 +15,8 @@ export type AccountsReceivablePaymentRow = {
   receipt_url: string | null;
   receipt_public_id: string | null;
   recorded_by: string | null;
+  recorded_by_name: string | null;
+  recorded_by_email: string | null;
   voided_at: string | null;
   voided_by: string | null;
   void_reason: string | null;

@@ -21,7 +21,7 @@ export default async function AdminCustomersPage({
   const profile = await requirePermission("crm:manage");
   const canManageCredit =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
-    hasEffectivePermission(profile.role, profile.permissions, "credit:manage", profile.email);
+    hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
   const params = await searchParams;
   const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role });
 

@@ -56,8 +56,20 @@ export function formatHnDateTime(value: string | null) {
     return "-";
   }
 
-  const parts = getDateParts(value);
-  return parts ? `${Number(parts.day)}/${Number(parts.month)}/${parts.year}, ${parts.hour}:${parts.minute}:${parts.second}` : "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("es-HN", {
+    timeZone: hondurasTimeZone,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
 }
 
 export function formatHnMonth(value: string) {

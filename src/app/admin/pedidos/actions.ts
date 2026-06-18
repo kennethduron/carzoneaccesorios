@@ -57,6 +57,14 @@ function safeAdminOrderMessage(message: string) {
   if (normalized.includes("row-level security") || normalized.includes("permission denied")) {
     return "No tienes permiso para realizar esta acción.";
   }
+  if (
+    normalized.includes("accounts_receivable_payments_idempotency_idx") ||
+    normalized.includes("idempotency") ||
+    normalized.includes("duplicate key") ||
+    normalized.includes("ya está registrado")
+  ) {
+    return "Este abono ya estaba siendo procesado. Actualiza el historial antes de intentarlo de nuevo.";
+  }
   return message || "No se pudo actualizar el pedido.";
 }
 

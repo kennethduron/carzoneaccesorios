@@ -278,9 +278,10 @@ export default async function CuentaPage({
                             <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs">
                               <p className="font-semibold">{formatCurrency(payment.amount)}</p>
                               <p className="text-black/60">
-                                {creditPaymentMethodLabels[payment.payment_method]} · {formatDate(payment.received_at)}
+                                {creditPaymentMethodLabels[payment.payment_method]} · {formatDateTime(payment.received_at ?? payment.created_at)}
                               </p>
                               {payment.reference ? <p className="text-black/50">Referencia: {payment.reference}</p> : null}
+                              <p className="text-black/50">Saldo restante: {formatCurrency(item.balance_due)}</p>
                             </div>
                           ))}
                       </div>
