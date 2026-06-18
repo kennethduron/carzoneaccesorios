@@ -1,3 +1,4 @@
+import { AdminBackButton } from "@/components/admin/admin-back-button";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { WholesaleCustomersManager } from "@/components/admin/wholesale-customers-manager";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
@@ -18,6 +19,7 @@ export default async function AdminWholesaleCustomersPage({
 
   return (
     <AdminShell title="Clientes Mayoristas">
+      <AdminBackButton />
       <WholesaleCustomersManager
         customers={data.customers}
         activeFilter={activeStatus}

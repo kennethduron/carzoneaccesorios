@@ -27,6 +27,12 @@ type MovementQueryRow = Omit<InventoryMovementRow, "product_name" | "product_sku
   } | null;
 };
 
+type ProductOptionQueryRow = InventoryProductOption & {
+  categories?: {
+    name: string | null;
+  } | null;
+};
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -46,6 +52,26 @@ function normalizeMovement(row: MovementQueryRow): InventoryMovementRow {
     reference_id: row.reference_id,
     notes: row.notes,
     created_at: row.created_at,
+  };
+}
+
+function normalizeProductOption(product: InventoryProductOption | ProductOptionQueryRow): InventoryProductOption {
+  const categoryName =
+    "categories" in product
+      ? ((product.categories as { name?: string | null } | null | undefined)?.name ?? null)
+      : product.category_name ?? null;
+
+  return {
+    id: product.id,
+    sku: product.sku,
+    internal_code: product.internal_code ?? null,
+    name: product.name,
+    brand: product.brand ?? null,
+    category_name: categoryName,
+    stock: toNumber(product.stock),
+    reserved_stock: toNumber(product.reserved_stock),
+    available_stock: toNumber(product.available_stock ?? product.stock),
+    min_stock: toNumber(product.min_stock),
   };
 }
 
@@ -70,10 +96,11 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
   const movementPageSize = normalizePageSize(filters.movementPageSize);
   const movementFrom = (movementPage - 1) * movementPageSize;
   const movementTo = movementFrom + movementPageSize - 1;
+  const productOptionSelect = "id, sku, internal_code, name, brand, stock, reserved_stock, available_stock, min_stock, categories(name)";
 
   let productsQuery = supabase
     .from("products")
-    .select("id, sku, name, stock, reserved_stock, available_stock, min_stock", { count: "exact" })
+    .select(productOptionSelect, { count: "exact" })
     .order("name", { ascending: true })
     .limit(50);
 
@@ -89,11 +116,24 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
             search_query: query || null,
           })
           .returns<InventoryProductOption[]>()
-      : productsQuery.returns<InventoryProductOption[]>();
+      : productsQuery.returns<ProductOptionQueryRow[]>();
 
-  const [{ data: products, error: productsError, count }, { data: movements, error: movementsError, count: movementsTotal }, overview] =
+  const productOptionsRequest = supabase
+    .from("products")
+    .select(productOptionSelect)
+    .order("name", { ascending: true })
+    .limit(1000)
+    .returns<ProductOptionQueryRow[]>();
+
+  const [
+    { data: products, error: productsError, count },
+    { data: productOptions, error: productOptionsError },
+    { data: movements, error: movementsError, count: movementsTotal },
+    overview,
+  ] =
     await Promise.all([
       productsRequest,
+      productOptionsRequest,
       supabase
         .from("inventory_movements")
         .select(
@@ -123,24 +163,24 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
     throw new Error(productsError.message);
   }
 
+  if (productOptionsError) {
+    throw new Error(productOptionsError.message);
+  }
+
   if (movementsError) {
     throw new Error(movementsError.message);
   }
 
-  const productRows: InventoryProductOption[] = Array.isArray(products) ? products : [];
-  const normalizedProducts = productRows.map((product) => ({
-      ...product,
-      stock: toNumber(product.stock),
-      reserved_stock: toNumber(product.reserved_stock),
-      available_stock: toNumber(product.available_stock ?? product.stock),
-      min_stock: toNumber(product.min_stock),
-    }));
+  const productRows = Array.isArray(products) ? products : [];
+  const normalizedProducts = productRows.map(normalizeProductOption);
+  const normalizedProductOptions = (productOptions ?? []).map(normalizeProductOption);
 
   return {
     products: normalizedProducts,
+    productOptions: normalizedProductOptions,
     summary: {
       productsTotal: count ?? normalizedProducts.length,
-      productOptionsLoaded: normalizedProducts.length,
+      productOptionsLoaded: normalizedProductOptions.length,
       lowStockProducts: overview.lowStockProducts,
       outOfStockProducts: overview.outOfStockProducts,
       activeReservations: overview.activeReservations,

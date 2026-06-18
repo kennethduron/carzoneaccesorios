@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { AdminBackButton } from "@/components/admin/admin-back-button";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
 import type { AppRole, AuthProfile, Permission } from "@/types/auth";
@@ -644,6 +645,7 @@ export default async function AdminGuidePage() {
 
   return (
     <AdminShell title="Guía interna">
+      <AdminBackButton />
       <section className="space-y-6">
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <p className="text-sm text-black/50">Manual operativo del CRM/Admin</p>

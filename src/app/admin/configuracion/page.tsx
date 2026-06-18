@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AdminBackButton } from "@/components/admin/admin-back-button";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { BusinessSettingsCenter } from "@/components/admin/business-settings-center";
 import { NotificationPreferencesForm } from "@/components/admin/notification-preferences-form";
@@ -36,6 +37,7 @@ export default async function AdminBusinessSettingsPage() {
 
   return (
     <AdminShell title="Configuración empresarial">
+      <AdminBackButton />
       <div className="space-y-4">
         {settings ? <BusinessSettingsCenter settings={settings} currentRole={profile.role} /> : null}
         <NotificationPreferencesForm
