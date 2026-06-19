@@ -591,7 +591,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
 
           <div>
             <span className="mb-2 block text-xs font-medium uppercase text-black/50">Ubicación</span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               {(["main", "secondary"] as BannerSlot[]).map((slot) => (
                 <label
                   key={slot}
@@ -616,7 +616,7 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
 
           <div>
             <span className="mb-2 block text-xs font-medium uppercase text-black/50">Tipo de banner</span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               <label className={`flex min-h-11 items-center gap-2 rounded-md border px-3 text-sm ${form.media_type === "image" ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10 bg-white"}`}>
                 <input type="radio" checked={form.media_type === "image"} onChange={() => changeMediaType("image")} />
                 Imagen
@@ -712,11 +712,11 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
               <p className="mt-1 text-xs text-black/50">Recomendado: /catalogo para enviar al cliente al catálogo de productos.</p>
             </Field>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={save} disabled={isPending || uploading || Boolean(selectedMediaError)} variant="primary">
+          <div className="grid gap-2 sm:flex sm:flex-wrap">
+            <Button onClick={save} disabled={isPending || uploading || Boolean(selectedMediaError)} variant="primary" className="w-full sm:w-auto">
               {isPending ? "Guardando..." : uploading ? "Subiendo..." : "Guardar banner"}
             </Button>
-            <Button onClick={resetForm} variant="ghost">
+            <Button onClick={resetForm} variant="ghost" className="w-full sm:w-auto">
               Nuevo
             </Button>
           </div>
@@ -742,11 +742,11 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
               </p>
             </div>
             {canViewTechnical ? (
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => reviewIntegrity(false)} variant="ghost" disabled={isPending}>
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                <Button onClick={() => reviewIntegrity(false)} variant="ghost" disabled={isPending} className="w-full sm:w-auto">
                   Revisar integridad
                 </Button>
-                <Button onClick={() => reviewIntegrity(true)} variant="secondary" disabled={isPending}>
+                <Button onClick={() => reviewIntegrity(true)} variant="secondary" disabled={isPending} className="w-full sm:w-auto">
                   Limpiar huérfanos
                 </Button>
               </div>
@@ -787,11 +787,11 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                     </p>
                     {canViewTechnical && banner.media_public_id ? <p className="mt-1 break-all text-xs text-black/40">{banner.media_public_id}</p> : null}
                   </div>
-                  <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                  <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-start lg:justify-end">
                     <select
                       value={banner.priority}
                       onChange={(event) => updatePriority(banner.id, numberValue(event.target.value))}
-                      className="h-10 rounded-md border border-black/10 bg-white px-2 text-sm"
+                      className="h-10 w-full rounded-md border border-black/10 bg-white px-2 text-sm sm:w-auto"
                       disabled={isPending}
                       aria-label={`Prioridad de ${banner.title}`}
                     >
@@ -801,13 +801,13 @@ export function HolidayBannersManager({ banners, auditEntries, storageSummary, t
                         </option>
                       ))}
                     </select>
-                    <Button onClick={() => editBanner(banner)} variant="ghost">
+                    <Button onClick={() => editBanner(banner)} variant="ghost" className="w-full sm:w-auto">
                       Editar
                     </Button>
-                    <Button onClick={() => toggle(banner.id, !banner.is_active)} variant="secondary" disabled={isPending}>
+                    <Button onClick={() => toggle(banner.id, !banner.is_active)} variant="secondary" disabled={isPending} className="w-full sm:w-auto">
                       {banner.is_active ? "Deshabilitar" : "Habilitar"}
                     </Button>
-                    <Button onClick={() => setBannerToDelete(banner)} variant="secondary" disabled={isPending}>
+                    <Button onClick={() => setBannerToDelete(banner)} variant="secondary" disabled={isPending} className="w-full sm:w-auto">
                       Eliminar
                     </Button>
                   </div>
@@ -844,7 +844,7 @@ function DeleteBannerModal({
 }) {
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 text-[#080808] shadow-xl sm:my-10 sm:p-5">
+      <section className="mx-auto my-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-4 text-[#080808] shadow-xl sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
           <p className="text-sm font-semibold text-[#b91c25]">Eliminar banner</p>
           <h2 className="mt-1 text-2xl font-semibold">{banner.title}</h2>
@@ -862,11 +862,11 @@ function DeleteBannerModal({
             <p className="font-medium">{banner.is_active ? "Activo" : "Inactivo"}</p>
           </div>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={onClose} variant="ghost" disabled={isPending}>
+        <div className="mt-5 grid gap-2 sm:flex sm:justify-end">
+          <Button onClick={onClose} variant="ghost" disabled={isPending} className="w-full sm:w-auto">
             Cancelar
           </Button>
-          <Button onClick={onConfirm} variant="secondary" disabled={isPending}>
+          <Button onClick={onConfirm} variant="secondary" disabled={isPending} className="w-full sm:w-auto">
             {isPending ? "Eliminando..." : "Eliminar banner"}
           </Button>
         </div>
@@ -1043,7 +1043,7 @@ function TechnicalAlertsPanel({
           />
         </Field>
         <div className="flex items-end">
-          <Button onClick={onSave} disabled={disabled} variant="secondary">
+          <Button onClick={onSave} disabled={disabled} variant="secondary" className="w-full">
             Guardar alertas
           </Button>
         </div>

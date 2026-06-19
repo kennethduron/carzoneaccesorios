@@ -1680,7 +1680,65 @@ export function ProductManager({
       </div>
 
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {filteredProducts.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/55">
+              {total === 0 && !filters.query && !filters.status && !filters.categoryId
+                ? "Aun no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
+                : "No se encontraron resultados con estos filtros."}
+            </p>
+          ) : (
+            filteredProducts.map((product) => (
+              <article key={product.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-base font-semibold [overflow-wrap:anywhere]">{product.name}</h3>
+                    {product.short_description ? <p className="mt-1 line-clamp-2 text-sm text-black/55">{product.short_description}</p> : null}
+                    <p className="mt-2 break-words text-xs text-black/50 [overflow-wrap:anywhere]">
+                      {product.sku} {product.internal_code ? `/ ${product.internal_code}` : ""}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{statusLabels[product.status]}</span>
+                </div>
+
+                <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Categoria</dt>
+                    <dd className="mt-1 font-medium">{product.category_name ?? "Sin categoria"}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Stock</dt>
+                    <dd className={product.stock <= product.min_stock ? "mt-1 font-semibold text-[#b91c25]" : "mt-1 font-semibold"}>
+                      {product.stock}
+                      <span className="font-normal text-black/45"> / min. {product.min_stock}</span>
+                    </dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Detalle</dt>
+                    <dd className="mt-1 font-semibold">{formatCurrency(product.retail_price)}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Mayorista</dt>
+                    <dd className="mt-1 font-semibold">{formatCurrency(product.wholesale_price)}</dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <IconButton label="Editar" onClick={() => openExistingProduct(product)}>
+                    <Pencil size={16} />
+                  </IconButton>
+                  <IconButton label={product.active ? "Desactivar" : "Activar"} onClick={() => toggleActive(product)}>
+                    {product.active ? <Archive size={16} /> : <CheckCircle2 size={16} />}
+                  </IconButton>
+                  <IconButton label="Eliminar" onClick={() => deleteProduct(product)}>
+                    <Trash2 size={16} />
+                  </IconButton>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -1848,6 +1906,41 @@ function ImportPreviewPanel({
       ) : null}
 
       <div className="mt-4 max-h-80 overflow-auto rounded-md border border-black/10 bg-white">
+        <div className="grid gap-2 p-3 md:hidden">
+          {preview.rows.slice(0, 200).map((row) => (
+            <article key={`${row.rowNumber}-${row.product.sku}-mobile`} className="rounded-md border border-black/10 p-3 text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold">Fila {row.rowNumber}</p>
+                  <p className="mt-1 break-words [overflow-wrap:anywhere]">{row.product.name || "-"}</p>
+                  <p className="mt-1 break-words text-black/50 [overflow-wrap:anywhere]">{row.product.sku || "-"}</p>
+                </div>
+                <span className="shrink-0 rounded-md bg-[#f4f4f5] px-2 py-1">
+                  {row.action === "create" ? "Crear" : row.action === "update" ? "Actualizar" : "Omitir"}
+                </span>
+              </div>
+              <dl className="mt-3 grid gap-2">
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Imagen Excel</dt>
+                  <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{row.imageName || "Sin nombre; se busco por SKU"}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Archivo encontrado</dt>
+                  <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">
+                    {row.matchedImagePath ?? (row.imageName ? "Imagen faltante" : "No se encontro imagen por SKU")}
+                  </dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Validacion</dt>
+                  <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">
+                    {row.errors.length > 0 ? row.errors.join(" ") : row.warnings.length > 0 ? row.warnings.join(" ") : "Listo"}
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[1120px] text-left text-xs">
           <thead className="bg-[#e7e5e4] uppercase text-black/55">
             <tr>
@@ -1892,13 +1985,14 @@ function ImportPreviewPanel({
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2">
-        <Button onClick={onCancel} variant="ghost" disabled={pending}>
+      <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
+        <Button onClick={onCancel} variant="ghost" disabled={pending} className="w-full sm:w-auto">
           Cancelar
         </Button>
-        <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0}>
+        <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0} className="w-full sm:w-auto">
           {pending ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
           Importar productos
         </Button>
@@ -1991,7 +2085,7 @@ function ProductEditor({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] sm:my-6">
+      <section className="mx-auto my-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] sm:my-6">
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">{product.id ? "Editar producto" : "Crear producto"}</p>

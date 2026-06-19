@@ -148,7 +148,7 @@ export default async function AdminUsagePage() {
         <div className="mt-4 grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="rounded-md border border-black/10 p-4">
             <p className="text-sm font-semibold">Notificaciones de las últimas 24 h</p>
-            <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+            <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
               <p>Enviadas: {formatNumber(usage.notificationStatus.sent24h)}</p>
               <p>Fallidas: {formatNumber(usage.notificationStatus.failed24h)}</p>
               <p>Omitidas: {formatNumber(usage.notificationStatus.skipped24h)}</p>
@@ -158,8 +158,23 @@ export default async function AdminUsagePage() {
               {usage.notificationStatus.brevoConfigured ? "Configurado" : "No configurado"}
             </p>
           </div>
-          <div className="overflow-x-auto rounded-md border border-black/10 p-4">
+          <div className="rounded-md border border-black/10 p-4">
             <p className="text-sm font-semibold">Últimas ejecuciones cron</p>
+            <div className="mt-3 grid gap-2 md:hidden">
+              {usage.latestCronRuns.length === 0 ? (
+                <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/50">Sin ejecuciones registradas.</p>
+              ) : (
+                usage.latestCronRuns.map((run) => (
+                  <article key={`${run.job_name}-${run.started_at}`} className="rounded-md border border-black/10 bg-white p-3 text-sm">
+                    <p className="font-semibold">{run.job_name}</p>
+                    <p className="mt-1 text-black/60">Estado: {run.status}</p>
+                    <p className="mt-1 text-black/60">Inicio: {formatDate(run.started_at)}</p>
+                    <p className="mt-1 text-black/60">Duracion: {run.duration_ms ? `${run.duration_ms} ms` : "-"}</p>
+                  </article>
+                ))
+              )}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="mt-3 w-full min-w-[640px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase text-black/45">
                 <tr>
@@ -188,6 +203,7 @@ export default async function AdminUsagePage() {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </section>
@@ -219,7 +235,38 @@ export default async function AdminUsagePage() {
           <AlertTriangle size={18} />
           <h2 className="font-semibold">Errores recientes</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 md:hidden">
+          {usage.recentErrors.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/50">Sin errores operativos recientes.</p>
+          ) : (
+            usage.recentErrors.map((error) => {
+              const severity = error.severity ?? "error";
+              const status = error.status ?? "open";
+              return (
+                <article key={error.id} className="rounded-md border border-black/10 bg-white p-4 text-sm shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-black/55">{formatDate(error.created_at)}</p>
+                      <h3 className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{error.module ?? error.category ?? "system"}</h3>
+                      <p className="mt-1 break-words text-xs text-black/50 [overflow-wrap:anywhere]">{error.action}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${severityStyles[severity]}`}>
+                      {severity}
+                    </span>
+                  </div>
+                  <p className="mt-3 break-words text-black/65 [overflow-wrap:anywhere]">
+                    {error.admin_reason ?? error.customer_message ?? "Error tecnico registrado sin clasificacion previa."}
+                  </p>
+                  <p className="mt-2 text-xs text-black/55">Estado: {statusLabels[status]}</p>
+                  <p className="mt-1 break-words text-xs text-black/55 [overflow-wrap:anywhere]">
+                    Cliente: {error.user_email ?? "Anonimo / sistema"}
+                  </p>
+                </article>
+              );
+            })
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase text-black/45">
               <tr>
@@ -287,7 +334,23 @@ export default async function AdminUsagePage() {
             <FileArchive size={18} />
             <h2 className="font-semibold">Logs y retencion</h2>
           </div>
-          <div className="overflow-x-auto">
+          <div className="grid gap-2 md:hidden">
+            {usage.logs.map((log) => (
+              <article key={log.table} className="rounded-md border border-black/10 bg-white p-3 text-sm">
+                <p className="font-semibold">{log.label}</p>
+                <p className="mt-1 text-black/60">Total: {formatNumber(log.total)}</p>
+                <p className="mt-1 text-black/60">Mas de {usage.retentionDays} dias: {formatNumber(log.olderThan90Days)}</p>
+                <span
+                  className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    log.olderThan90Days > 0 ? "bg-[#fff4e5] text-[#9b5b00]" : "bg-[#edf7ed] text-[#2f6f3e]"
+                  }`}
+                >
+                  {log.olderThan90Days > 0 ? "Listo para limpiar" : "Controlado"}
+                </span>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase text-black/45">
                 <tr>
@@ -392,7 +455,29 @@ export default async function AdminUsagePage() {
               </button>
             </form>
           </div>
-          <div className="overflow-x-auto">
+          <div className="grid gap-2 md:hidden">
+            {usage.backupChecklist.map((item) => (
+              <article key={item.area} className="rounded-md border border-black/10 bg-white p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold">{item.area}</p>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.status === "configured"
+                        ? "bg-[#edf7ed] text-[#2f6f3e]"
+                        : item.status === "manual"
+                          ? "bg-[#fff9db] text-[#806600]"
+                          : "bg-[#fdecec] text-[#a33a2d]"
+                    }`}
+                  >
+                    {item.status === "configured" ? "Configurado" : item.status === "manual" ? "Manual" : "Pendiente"}
+                  </span>
+                </div>
+                <p className="mt-2 text-black/60">Frecuencia: {item.cadence}</p>
+                <p className="mt-1 break-words text-black/60 [overflow-wrap:anywhere]">{item.recommendation}</p>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-black/10 text-xs uppercase text-black/45">
                 <tr>
@@ -454,7 +539,32 @@ export default async function AdminUsagePage() {
           <AlertTriangle size={18} />
           <h2 className="font-semibold">Tablas más pesadas</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-2 md:hidden">
+          {usage.heaviestTables.map((table) => (
+            <article key={table.tableName} className="rounded-md border border-black/10 bg-white p-3 text-sm">
+              <p className="break-words font-semibold [overflow-wrap:anywhere]">{table.tableName}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="text-xs uppercase text-black/45">Filas</dt>
+                  <dd className="mt-1 font-medium">{formatNumber(table.rowEstimate)}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="text-xs uppercase text-black/45">Datos</dt>
+                  <dd className="mt-1 font-medium">{formatBytes(table.tableSizeBytes)}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="text-xs uppercase text-black/45">Indices</dt>
+                  <dd className="mt-1 font-medium">{formatBytes(table.indexSizeBytes)}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="text-xs uppercase text-black/45">Total</dt>
+                  <dd className="mt-1 font-semibold">{formatBytes(table.totalSizeBytes)}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase text-black/45">
               <tr>

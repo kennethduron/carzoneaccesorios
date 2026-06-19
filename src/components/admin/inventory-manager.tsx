@@ -194,7 +194,51 @@ export function InventoryManager({ products, productOptions, movements, summary,
             Stock total, unidades reservadas por checkout y disponibilidad real para nuevas compras.
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {products.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-sm text-black/50">No hay productos cargados con ese filtro.</p>
+          ) : (
+            products.map((product) => (
+              <article key={product.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{product.name}</h3>
+                    <p className="mt-1 break-words text-xs text-black/45 [overflow-wrap:anywhere]">{product.sku}</p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      product.available_stock <= 0
+                        ? "bg-[#fdecec] text-[#a33a2d]"
+                        : product.available_stock <= product.min_stock
+                          ? "bg-[#fff4e5] text-[#9b5b00]"
+                          : "bg-[#edf7ed] text-[#2f6f3e]"
+                    }`}
+                  >
+                    {product.available_stock <= 0 ? "Sin stock" : product.available_stock <= product.min_stock ? "Bajo stock" : "Disponible"}
+                  </span>
+                </div>
+                <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Stock</dt>
+                    <dd className="mt-1 font-semibold">{product.stock}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Reservado</dt>
+                    <dd className="mt-1 font-semibold">{product.reserved_stock}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Disponible</dt>
+                    <dd className={`mt-1 font-semibold ${product.available_stock <= 0 ? "text-[#b91c25]" : "text-[#166534]"}`}>
+                      {product.available_stock}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-black/50">Stock minimo: {product.min_stock}</p>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -242,7 +286,42 @@ export function InventoryManager({ products, productOptions, movements, summary,
             {summary.movementsTotal.toLocaleString("es-HN")} movimientos registrados
           </p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {movements.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-sm text-black/50">Sin movimientos registrados todavia.</p>
+          ) : (
+            movements.map((item) => (
+              <article key={item.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs text-black/50">{formatHnDateTime(item.created_at)}</p>
+                    <h3 className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{item.product_name ?? "Producto"}</h3>
+                    <p className="mt-1 break-words text-xs text-black/45 [overflow-wrap:anywhere]">{item.product_sku}</p>
+                  </div>
+                  <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{movementLabels[item.movement_type]}</span>
+                </div>
+                <dl className="mt-4 grid grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Cantidad</dt>
+                    <dd className="mt-1 font-semibold">{item.quantity}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Antes</dt>
+                    <dd className="mt-1 font-semibold">{item.stock_before}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Despues</dt>
+                    <dd className="mt-1 font-semibold">{item.stock_after}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 break-words text-sm text-black/60 [overflow-wrap:anywhere]">
+                  {item.notes ?? item.reference_type ?? "Sin motivo registrado"}
+                </p>
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>

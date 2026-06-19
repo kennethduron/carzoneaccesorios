@@ -431,7 +431,74 @@ export function AdminInvoicesManager({
           </h2>
           <p className="mt-1 text-sm text-black/55">{filteredInvoices.length.toLocaleString("es-HN")} facturas en esta página</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {filteredInvoices.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">
+              {activeTask?.id === "pending_invoices" && !errorMessage
+                ? "No hay facturas pendientes en este momento."
+                : "No se encontraron resultados con estos filtros."}
+            </p>
+          ) : (
+            filteredInvoices.map((invoice) => (
+              <article key={invoice.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="break-words text-base font-semibold [overflow-wrap:anywhere]">{invoice.invoice_number}</h3>
+                    <p className="mt-1 break-words text-sm text-black/60 [overflow-wrap:anywhere]">{invoice.customer_name}</p>
+                    <p className="mt-1 text-xs text-black/45">Pedido: {invoice.order_number}</p>
+                  </div>
+                  <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{statusLabels[invoice.status]}</span>
+                </div>
+
+                <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Fecha</dt>
+                    <dd className="mt-1 font-medium">{formatDate(invoice.issued_at ?? invoice.created_at)}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Total</dt>
+                    <dd className="mt-1 font-semibold">{formatCurrency(invoice.total)}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Pago</dt>
+                    <dd className="mt-1 font-medium">{paymentMethodLabel(invoice.payment_method, { detailedCard: true })}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Referencia</dt>
+                    <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{invoice.bank_reference_number ?? "-"}</dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  <IconButton label="Ver detalle" onClick={() => openInvoiceDetail(invoice.id)} disabled={loadingDetailId === invoice.id}>
+                    <Eye size={16} />
+                  </IconButton>
+                  <IconLink label="Abrir factura PDF" href={adminInvoicePdfHref(invoice.id)}>
+                    <ExternalLink size={16} />
+                  </IconLink>
+                  <IconLink label="Descargar PDF" href={adminInvoicePdfHref(invoice.id, true)}>
+                    <Download size={16} />
+                  </IconLink>
+                  <IconButton label="Imprimir desde detalle" onClick={() => openInvoiceDetail(invoice.id)} disabled={loadingDetailId === invoice.id}>
+                    <Printer size={16} />
+                  </IconButton>
+                </div>
+                {canCancelInvoices ? (
+                  <Button
+                    onClick={() => cancelInvoice(invoice)}
+                    disabled={isPending || invoice.status === "anulada"}
+                    variant="ghost"
+                    className="mt-2 w-full justify-center"
+                  >
+                    <Ban size={16} />
+                    Anular
+                  </Button>
+                ) : null}
+              </article>
+            ))
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -576,7 +643,7 @@ function InvoiceModal({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
+      <section className="mx-auto my-4 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
         <div className="flex flex-col gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm text-black/50">{invoice.company_legal_name || "Car Zone Accesorios"}</p>
@@ -840,7 +907,7 @@ function CancelInvoiceModal({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
+      <section className="mx-auto my-4 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
           <p className="text-sm font-semibold text-[#9b341b]">Anular factura</p>
           <h2 className="mt-1 text-2xl font-semibold">{invoice.invoice_number}</h2>
@@ -878,7 +945,34 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
       {history.length === 0 ? (
         <p className="mt-2 text-sm text-black/55">Sin correcciones fiscales registradas.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <>
+        <div className="mt-3 grid gap-2 md:hidden">
+          {history.flatMap((entry) => {
+            const fields =
+              entry.fields_modified.length > 0
+                ? entry.fields_modified
+                : (Object.keys(entry.new_values) as FiscalCorrectionValueKey[]);
+            return fields.map((field) => (
+              <article key={`${entry.id}-${field}-mobile`} className="rounded-md border border-black/10 bg-white p-3 text-sm">
+                <p className="text-xs text-black/50">{formatDate(entry.created_at)}</p>
+                <p className="mt-1 font-semibold">{fiscalCorrectionFieldLabels[field] ?? field}</p>
+                <p className="mt-1 text-black/60">{entry.user_label ?? "Usuario"}{entry.actor_role ? ` / ${entry.actor_role}` : ""}</p>
+                <dl className="mt-3 grid gap-2">
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Anterior</dt>
+                    <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{entry.old_values[field] || "-"}</dd>
+                  </div>
+                  <div className="rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">Nuevo</dt>
+                    <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{entry.new_values[field] || "-"}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 break-words text-black/60 [overflow-wrap:anywhere]">{entry.correction_reason ?? "-"}</p>
+              </article>
+            ));
+          })}
+        </div>
+        <div className="mt-3 hidden overflow-x-auto md:block">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -913,6 +1007,7 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );

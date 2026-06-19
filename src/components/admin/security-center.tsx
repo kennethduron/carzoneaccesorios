@@ -477,7 +477,92 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 />
               </label>
             </div>
-            <div className="overflow-x-auto">
+            <div className="grid gap-3 p-3 md:hidden">
+              {filteredUsers.map((user) => {
+                const selectedRole = roleSelections[user.id] ?? user.role;
+                const canModify = canModifySecurityUser(currentUser, user);
+                const canChangeToSelected = canAssignRole(currentUser, selectedRole);
+
+                return (
+                  <article key={user.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{user.full_name || user.email || "Sin nombre"}</h3>
+                        <p className="mt-1 break-words text-xs text-black/50 [overflow-wrap:anywhere]">{user.email ?? "-"}</p>
+                        <p className="mt-1 text-xs text-black/40">{user.username ? `@${user.username}` : user.id.slice(0, 8)}</p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          user.active ? "bg-[#edf7ed] text-[#2f6f3e]" : "bg-[#fdecec] text-[#a33a2d]"
+                        }`}
+                      >
+                        {user.active ? "Activo" : "Suspendido"}
+                      </span>
+                    </div>
+                    <div className="mt-4 grid gap-3">
+                      <InputLabel label="Rol">
+                        <select
+                          value={selectedRole}
+                          onChange={(event) =>
+                            setRoleSelections((current) => ({ ...current, [user.id]: event.target.value as AppRole }))
+                          }
+                          className="w-full rounded-md border border-black/10 bg-white px-2 py-2 text-sm outline-none"
+                          disabled={!canModify}
+                        >
+                          {roleOptions.map((role) => (
+                            <option key={role} value={role}>
+                              {roleLabels[role]}
+                            </option>
+                          ))}
+                          {!roleOptions.includes(user.role) ? <option value={user.role}>{roleLabels[user.role]}</option> : null}
+                        </select>
+                      </InputLabel>
+                      <dl className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-md bg-[#f8fafc] p-2">
+                          <dt className="text-xs uppercase text-black/45">Creacion</dt>
+                          <dd className="mt-1 font-medium">{formatDateTime(user.created_at)}</dd>
+                        </div>
+                        <div className="rounded-md bg-[#f8fafc] p-2">
+                          <dt className="text-xs uppercase text-black/45">Acceso</dt>
+                          <dd className="mt-1 font-medium">{formatDateTime(user.last_sign_in_at)}</dd>
+                        </div>
+                        <div className="rounded-md bg-[#f8fafc] p-2">
+                          <dt className="text-xs uppercase text-black/45">Correo</dt>
+                          <dd className="mt-1 font-medium">{user.email_confirmed_at ? "Confirmado" : "Pendiente"}</dd>
+                        </div>
+                        <div className="rounded-md bg-[#f8fafc] p-2">
+                          <dt className="text-xs uppercase text-black/45">Perfil</dt>
+                          <dd className="mt-1 font-medium">{user.profile_label}</dd>
+                        </div>
+                      </dl>
+                      <div className="grid grid-cols-4 gap-2">
+                        <IconActionButton
+                          label="Asignar rol"
+                          disabled={!canModify || !canChangeToSelected || selectedRole === user.role || isPending}
+                          onClick={() => openRoleChange(user)}
+                        >
+                          <ShieldCheck size={15} />
+                        </IconActionButton>
+                        <IconActionButton
+                          label={user.active ? "Suspender usuario" : "Reactivar usuario"}
+                          disabled={!canModify || isPending}
+                          onClick={() => setActive(user, !user.active)}
+                        >
+                          {user.active ? <UserX size={15} /> : <CheckCircle2 size={15} />}
+                        </IconActionButton>
+                        <IconActionButton label="Ver actividad" onClick={() => setAuditUserId(user.id)}>
+                          <FileClock size={15} />
+                        </IconActionButton>
+                        <IconActionButton label="Ver perfil del usuario" onClick={() => setProfileUserId(user.id)}>
+                          <Eye size={15} />
+                        </IconActionButton>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[980px] table-fixed text-left text-sm">
                 <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                   <tr>
@@ -679,7 +764,22 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
           <LockKeyhole size={19} />
           <h2 className="font-semibold">Roles y permisos</h2>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {data.roles.map((role) => (
+            <article key={role.role} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+              <h3 className="font-semibold">{roleLabels[role.role]}</h3>
+              <p className="mt-1 text-sm text-black/55">{roleDescriptions[role.role]}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {role.permissions.map((permission) => (
+                  <span key={permission} className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">
+                    {permission}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -799,7 +899,45 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
             </InputLabel>
           </div>
 
-          <div className="max-h-[650px] overflow-auto">
+          <div className="grid max-h-[650px] gap-3 overflow-y-auto p-3 md:hidden">
+            {visibleAuditLogs.length === 0 ? (
+              <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">Sin registros para los filtros seleccionados.</p>
+            ) : (
+              visibleAuditLogs.map((log) => (
+                <article key={log.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-black/50">{formatDateTime(log.created_at)}</p>
+                      <h3 className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{log.action}</h3>
+                      <p className="mt-1 break-words text-sm text-black/60 [overflow-wrap:anywhere]">{log.user_name ?? log.user_email ?? "Sistema"}</p>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{auditModule(log)}</span>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-md bg-[#f8fafc] p-2">
+                      <dt className="text-xs uppercase text-black/45">Rol</dt>
+                      <dd className="mt-1 font-medium">{log.actor_role ?? "-"}</dd>
+                    </div>
+                    <div className="rounded-md bg-[#f8fafc] p-2">
+                      <dt className="text-xs uppercase text-black/45">Resultado</dt>
+                      <dd className="mt-1 font-medium">{auditResult(log)}</dd>
+                    </div>
+                    <div className="rounded-md bg-[#f8fafc] p-2">
+                      <dt className="text-xs uppercase text-black/45">Entidad</dt>
+                      <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{log.record_id ? `${log.table_name}:${log.record_id.slice(0, 8)}` : log.table_name}</dd>
+                    </div>
+                    <div className="rounded-md bg-[#f8fafc] p-2">
+                      <dt className="text-xs uppercase text-black/45">Dispositivo</dt>
+                      <dd className="mt-1 font-medium">{deviceLabel(log.user_agent)}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-3 break-words text-xs text-black/55 [overflow-wrap:anywhere]">Nuevo: {compactJson(log.new_data)}</p>
+                </article>
+              ))
+            )}
+          </div>
+
+          <div className="hidden max-h-[650px] overflow-auto md:block">
             <table className="w-full min-w-[1080px] text-left text-sm">
               <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                 <tr>
@@ -905,8 +1043,8 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
       ) : null}
 
       {roleDraft ? (
-        <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
-          <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
+        <div className="cz-layer-modal fixed inset-0 grid place-items-center overflow-y-auto bg-black/45 p-3 sm:p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold">Cambiar rol de usuario</h2>
             <p className="mt-2 text-sm leading-6 text-black/60">
               Esta acción modificará el acceso de este usuario al sistema. Verifica que el rol seleccionado sea correcto.
@@ -918,7 +1056,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                 {roleLabels[roleDraft.user.role]} {"->"} <span className="font-semibold">{roleLabels[roleDraft.role]}</span>
               </p>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 grid gap-2 sm:flex sm:justify-end">
               <Button type="button" variant="ghost" onClick={() => setRoleDraft(null)} disabled={isPending}>
                 Cancelar
               </Button>
@@ -973,8 +1111,8 @@ function UserProfileModal({
   const isInternal = user.profile_kind === "internal";
 
   return (
-    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 p-4">
-      <section className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+    <div className="cz-layer-modal fixed inset-0 grid place-items-center overflow-y-auto bg-black/45 p-3 sm:p-4">
+      <section className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
         <div className="flex flex-col gap-3 border-b border-black/10 pb-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -1062,7 +1200,7 @@ function UserProfileModal({
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <Button type="button" variant="ghost" onClick={onViewActivity}>
             <FileClock size={16} />
             Ver actividad
@@ -1134,7 +1272,26 @@ function DataTable({
         </div>
         {action}
       </div>
-      <div className="overflow-x-auto">
+      <div className="grid gap-3 p-3 md:hidden">
+        {rows.length === 0 ? (
+          <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">Sin registros.</p>
+        ) : (
+          rows.map((row, index) => (
+            <article key={`${title}-mobile-${index}`} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+              <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{row[0] ?? "-"}</h3>
+              <dl className="mt-3 grid gap-2 text-sm">
+                {columns.slice(1).map((column, cellIndex) => (
+                  <div key={`${title}-mobile-${index}-${column}`} className="grid grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)] gap-2 rounded-md bg-[#f8fafc] p-2">
+                    <dt className="text-xs uppercase text-black/45">{column}</dt>
+                    <dd className="break-words font-medium [overflow-wrap:anywhere]">{row[cellIndex + 1] ?? "-"}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          ))
+        )}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[680px] text-left text-sm">
           <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>

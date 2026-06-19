@@ -1019,12 +1019,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               ))}
             </SelectField>
           ) : null}
-          <div className="flex items-end gap-2">
-            <Button type="submit" variant="dark">
+          <div className="grid gap-2 sm:flex sm:items-end">
+            <Button type="submit" variant="dark" className="w-full sm:w-auto">
               <Search size={16} />
               Filtrar
             </Button>
-            <a href="/admin/reportes" className="inline-flex rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#080808]">
+            <a href="/admin/reportes" className="inline-flex w-full items-center justify-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#080808] sm:w-auto">
               Limpiar
             </a>
           </div>
@@ -1040,12 +1040,12 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               La exportación CSV técnica solo está disponible para el Technical Owner.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" onClick={exportExcel} disabled={!canExport}>
+          <div className="grid gap-2 sm:flex sm:flex-wrap">
+            <Button variant="ghost" onClick={exportExcel} disabled={!canExport} className="w-full sm:w-auto">
               <FileSpreadsheet size={16} />
               Excel
             </Button>
-            <Button variant="dark" onClick={() => void exportPdf()} disabled={!canExport || exportingPdf}>
+            <Button variant="dark" onClick={() => void exportPdf()} disabled={!canExport || exportingPdf} className="w-full sm:w-auto">
               <Printer size={16} />
               {exportingPdf ? "Generando..." : "PDF"}
             </Button>
@@ -1060,7 +1060,22 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         {!canExport ? <p className="mt-3 text-sm text-[#7c2d12]">Tu rol puede revisar reportes operativos, pero no exportar reportes financieros.</p> : null}
       </section>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <label className="block md:hidden">
+        <span className="mb-1 block text-xs font-medium uppercase text-black/50">Reporte</span>
+        <select
+          value={currentReport.key}
+          onChange={(event) => setActiveReport(event.target.value as ReportKey)}
+          className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+        >
+          {reportDefinitions.map((report) => (
+            <option key={report.key} value={report.key}>
+              {report.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="hidden gap-2 overflow-x-auto pb-1 md:flex">
         {reportDefinitions.map((report) => (
           <button
             key={report.key}
@@ -1088,7 +1103,34 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           </div>
           <p className="text-sm font-medium text-black/50">{currentReport.rows.length.toLocaleString("es-HN")} filas</p>
         </div>
-        <div className="overflow-x-auto">
+        <div className="grid gap-3 p-3 md:hidden">
+          {currentReport.rows.length === 0 ? (
+            <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">No hay datos para este reporte.</p>
+          ) : (
+            currentReport.rows.map((row, index) => {
+              const [titleColumn, ...detailColumns] = currentReport.columns;
+              const visibleDetails = detailColumns.slice(0, 8);
+
+              return (
+                <article key={`${currentReport.key}-mobile-${index}`} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                  <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{row[titleColumn] ?? "-"}</h3>
+                  <dl className="mt-3 grid gap-2 text-sm">
+                    {visibleDetails.map((column) => (
+                      <div key={column} className="grid grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)] gap-2 rounded-md bg-[#f8fafc] p-2">
+                        <dt className="text-xs uppercase text-black/45">{column}</dt>
+                        <dd className="break-words font-medium [overflow-wrap:anywhere]">{row[column] ?? "-"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {detailColumns.length > visibleDetails.length ? (
+                    <p className="mt-3 text-xs text-black/45">{detailColumns.length - visibleDetails.length} columnas adicionales disponibles en escritorio.</p>
+                  ) : null}
+                </article>
+              );
+            })
+          )}
+        </div>
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
