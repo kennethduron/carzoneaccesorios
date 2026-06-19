@@ -294,11 +294,57 @@ export function AccountsReceivableManager({
 
   return (
     <div className="space-y-5">
-      <section className="grid gap-3 md:grid-cols-4">
-        <Metric label="Total pendiente" value={formatCurrency(summary.totalPending)} />
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Cartera total pendiente" value={formatCurrency(summary.totalPending)} />
+        <Metric label="Cartera vencida" value={formatCurrency(summary.overdueBalance)} />
+        <Metric label="Cobrado hoy" value={formatCurrency(summary.collectedToday)} />
+        <Metric label="Cobrado este mes" value={formatCurrency(summary.collectedThisMonth)} />
         <Metric label="Clientes con deuda" value={summary.customersWithDebt.toLocaleString("es-HN")} />
+        <Metric label="Cuentas vencidas" value={summary.overdue.toLocaleString("es-HN")} />
         <Metric label="Vencen en 7 días" value={summary.dueInSevenDays.toLocaleString("es-HN")} />
-        <Metric label="Vencidos" value={summary.overdue.toLocaleString("es-HN")} />
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-lg border border-black/10 bg-white p-4">
+          <div>
+            <h2 className="font-semibold">Próximos vencimientos</h2>
+            <p className="mt-1 text-sm text-black/55">Cuentas pendientes ordenadas por fecha de vencimiento.</p>
+          </div>
+          <div className="mt-3 divide-y divide-black/10">
+            {summary.upcomingReceivables.length > 0 ? (
+              summary.upcomingReceivables.map((item) => (
+                <div key={item.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold [overflow-wrap:anywhere]">{item.customerName}</p>
+                    <p className="text-xs text-black/50">Pedido {item.orderNumber ?? "Sin pedido"} · {formatDate(item.dueDate)}</p>
+                  </div>
+                  <p className="font-semibold">{formatCurrency(item.balanceDue)}</p>
+                </div>
+              ))
+            ) : (
+              <p className="py-3 text-sm text-black/55">No hay próximos vencimientos pendientes.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-black/10 bg-white p-4">
+          <div>
+            <h2 className="font-semibold">Clientes con más deuda</h2>
+            <p className="mt-1 text-sm text-black/55">Top 5 por saldo pendiente en crédito comercial.</p>
+          </div>
+          <div className="mt-3 divide-y divide-black/10">
+            {summary.topDebtors.length > 0 ? (
+              summary.topDebtors.map((item) => (
+                <div key={item.customerId} className="flex items-center justify-between gap-3 py-3 text-sm">
+                  <p className="min-w-0 break-words font-semibold [overflow-wrap:anywhere]">{item.customerName}</p>
+                  <p className="shrink-0 font-semibold">{formatCurrency(item.balanceDue)}</p>
+                </div>
+              ))
+            ) : (
+              <p className="py-3 text-sm text-black/55">No hay clientes con deuda pendiente.</p>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">

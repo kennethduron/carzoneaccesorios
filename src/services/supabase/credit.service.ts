@@ -20,6 +20,15 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
+function tegucigalpaDate(value = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(value);
+}
+
 type CreditAccountQueryRow = Omit<CustomerCreditAccount, "credit_limit"> & {
   credit_limit: unknown;
 };
@@ -278,8 +287,8 @@ export async function getAdminAccountsReceivable(): Promise<{
       invoices(invoice_number)
     `,
     )
-    .order("due_date", { ascending: true })
     .order("created_at", { ascending: false })
+    .order("due_date", { ascending: true })
     .limit(500)
     .returns<AdminReceivableQueryRow[]>();
 
@@ -298,21 +307,51 @@ export async function getAdminAccountsReceivable(): Promise<{
       invoice_number: row.invoices?.invoice_number ?? null,
     };
   });
-  const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled");
+  const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0);
   const uniqueCustomers = new Set(pendingRows.map((row) => row.customer_id));
-  const now = new Date();
-  const inSevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const today = tegucigalpaDate();
+  const inSevenDays = tegucigalpaDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+  const currentMonth = today.slice(0, 7);
+  const overdueRows = pendingRows.filter((row) => row.status === "overdue" || row.due_date < today);
+  const activePayments = rows.flatMap((row) => row.payments.filter((payment) => !payment.voided_at));
+  const topDebtorsByCustomer = new Map<string, { customerId: string; customerName: string; balanceDue: number }>();
+
+  for (const row of pendingRows) {
+    const debtor = topDebtorsByCustomer.get(row.customer_id) ?? {
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      balanceDue: 0,
+    };
+    debtor.balanceDue += row.balance_due;
+    topDebtorsByCustomer.set(row.customer_id, debtor);
+  }
 
   return {
     rows,
     summary: {
       totalPending: pendingRows.reduce((sum, row) => sum + row.balance_due, 0),
+      overdueBalance: overdueRows.reduce((sum, row) => sum + row.balance_due, 0),
+      collectedToday: activePayments
+        .filter((payment) => tegucigalpaDate(new Date(payment.received_at)) === today)
+        .reduce((sum, payment) => sum + payment.amount, 0),
+      collectedThisMonth: activePayments
+        .filter((payment) => tegucigalpaDate(new Date(payment.received_at)).startsWith(currentMonth))
+        .reduce((sum, payment) => sum + payment.amount, 0),
       customersWithDebt: uniqueCustomers.size,
-      dueInSevenDays: pendingRows.filter((row) => {
-        const dueDate = new Date(`${row.due_date}T00:00:00-06:00`);
-        return dueDate >= now && dueDate <= inSevenDays;
-      }).length,
-      overdue: pendingRows.filter((row) => row.status === "overdue" || new Date(`${row.due_date}T00:00:00-06:00`) < now).length,
+      dueInSevenDays: pendingRows.filter((row) => row.due_date >= today && row.due_date <= inSevenDays).length,
+      overdue: overdueRows.length,
+      upcomingReceivables: [...pendingRows]
+        .filter((row) => row.due_date >= today)
+        .sort((left, right) => left.due_date.localeCompare(right.due_date))
+        .slice(0, 5)
+        .map((row) => ({
+          id: row.id,
+          customerName: row.customer_name,
+          orderNumber: row.order_number,
+          balanceDue: row.balance_due,
+          dueDate: row.due_date,
+        })),
+      topDebtors: [...topDebtorsByCustomer.values()].sort((left, right) => right.balanceDue - left.balanceDue).slice(0, 5),
     },
   };
 }

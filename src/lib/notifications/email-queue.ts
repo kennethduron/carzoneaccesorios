@@ -183,6 +183,75 @@ function claimExpiresAt() {
   return new Date(Date.now() + 15 * 60 * 1000).toISOString();
 }
 
+const commercialCreditReminderTemplates = new Set([
+  "commercial_credit.reminder_7_days",
+  "commercial_credit.reminder_3_days",
+  "commercial_credit.reminder_1_day",
+  "commercial_credit.due_today",
+  "commercial_credit.overdue",
+]);
+
+async function cancelStaleCommercialCreditReminder(admin: ReturnType<typeof getSupabaseAdminClient>, item: EmailQueueItem) {
+  if (item.related_module !== "pagos" || !item.related_id || !commercialCreditReminderTemplates.has(item.template_key)) {
+    return false;
+  }
+
+  const { data, error } = await admin
+    .from("accounts_receivable")
+    .select("status, balance_due")
+    .eq("id", item.related_id)
+    .maybeSingle<{ status: string | null; balance_due: unknown }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const shouldCancel = !data || data.status === "paid" || data.status === "cancelled" || Number(data.balance_due ?? 0) <= 0;
+  if (!shouldCancel) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  await admin
+    .from("email_queue")
+    .update({
+      status: "cancelled",
+      last_error: "Recordatorio de crédito omitido porque la cuenta ya no tiene saldo pendiente.",
+      updated_at: now,
+    })
+    .eq("id", item.id);
+
+  await admin.from("notification_logs").insert({
+    event_type: item.template_key,
+    order_id: null,
+    recipient_email: item.to_email,
+    status: "skipped",
+    provider: "email_queue",
+    provider_message_id: null,
+    error_message: null,
+    metadata: {
+      queue_id: item.id,
+      related_module: item.related_module,
+      related_id: item.related_id,
+      reason: "commercial_credit_without_pending_balance",
+    },
+  });
+
+  await admin.from("audit_logs").insert({
+    actor_role: "system",
+    table_name: "email_queue",
+    record_id: item.id,
+    action: "email.cancelled_stale_credit_reminder",
+    new_data: {
+      template_key: item.template_key,
+      related_module: item.related_module,
+      related_id: item.related_id,
+    },
+  });
+
+  return true;
+}
+
 export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) {
   const providerStatus = getEmailProviderStatus();
   const queueIds = [...new Set((options.queueIds ?? []).filter(Boolean))];
@@ -243,6 +312,11 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
       .maybeSingle<{ id: string }>();
 
     if (claimError || !claim?.id) {
+      continue;
+    }
+
+    const cancelled = await cancelStaleCommercialCreditReminder(admin, item);
+    if (cancelled) {
       continue;
     }
 

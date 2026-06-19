@@ -70,7 +70,22 @@ export type AdminAccountsReceivableRow = AccountsReceivableRow & {
 
 export type ReceivablesSummary = {
   totalPending: number;
+  overdueBalance: number;
+  collectedToday: number;
+  collectedThisMonth: number;
   customersWithDebt: number;
   dueInSevenDays: number;
   overdue: number;
+  upcomingReceivables: Array<{
+    id: string;
+    customerName: string;
+    orderNumber: string | null;
+    balanceDue: number;
+    dueDate: string;
+  }>;
+  topDebtors: Array<{
+    customerId: string;
+    customerName: string;
+    balanceDue: number;
+  }>;
 };

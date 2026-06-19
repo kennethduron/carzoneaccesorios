@@ -192,7 +192,7 @@ type CreditReminderRow = {
   balance_due: unknown;
   due_date: string;
   status: "open" | "partial" | "overdue";
-  customers: { contact_name: string | null; business_name: string | null } | null;
+  customers: { contact_name: string | null; business_name: string | null; email: string | null } | null;
   orders: { order_number: string | null } | null;
 };
 
@@ -213,11 +213,12 @@ export async function checkCommercialCreditRemindersJob() {
   const { data: overdueCount, error: overdueError } = await admin.rpc("mark_overdue_accounts_receivable", { max_rows: 500 });
   if (overdueError) throw new Error(overdueError.message);
 
-  const reminderDates = [tegucigalpaDateOffset(7), tegucigalpaDateOffset(3), tegucigalpaDateOffset(1)];
+  const reminderDates = [tegucigalpaDateOffset(7), tegucigalpaDateOffset(3), tegucigalpaDateOffset(1), tegucigalpaDateOffset(0)];
   const { data, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, balance_due, due_date, status, customers(contact_name, business_name), orders(order_number)")
+    .select("id, customer_id, order_id, balance_due, due_date, status, customers(contact_name, business_name, email), orders(order_number)")
     .in("status", ["open", "partial", "overdue"])
+    .gt("balance_due", 0)
     .or(`due_date.in.(${reminderDates.join(",")}),status.eq.overdue`)
     .limit(500)
     .returns<CreditReminderRow[]>();
@@ -225,6 +226,8 @@ export async function checkCommercialCreditRemindersJob() {
   if (error) throw new Error(error.message);
 
   let notifications = 0;
+  let customerEmailsQueued = 0;
+  let customerEmailsSkipped = 0;
   const today = tegucigalpaDateOffset(0);
 
   for (const receivable of data ?? []) {
@@ -233,10 +236,13 @@ export async function checkCommercialCreditRemindersJob() {
         (24 * 60 * 60 * 1000),
     );
     const customerName = receivable.customers?.business_name || receivable.customers?.contact_name || "Cliente";
+    const customerEmail = receivable.customers?.email ?? null;
     const orderNumber = receivable.orders?.order_number || "pedido";
     const type =
-      receivable.status === "overdue" || days < 0
+      days < 0 || (receivable.status === "overdue" && days !== 0)
         ? "credit.overdue"
+        : days === 0
+          ? "credit.due_today"
         : days === 7
           ? "credit.due_7_days"
           : days === 3
@@ -245,6 +251,8 @@ export async function checkCommercialCreditRemindersJob() {
     const title =
       type === "credit.overdue"
         ? "Crédito comercial vencido"
+        : type === "credit.due_today"
+          ? "Crédito vence hoy"
         : type === "credit.due_7_days"
           ? "Crédito vence en 7 días"
           : type === "credit.due_3_days"
@@ -265,15 +273,49 @@ export async function checkCommercialCreditRemindersJob() {
         days_remaining: days,
         action_path: "/admin/cuentas-por-cobrar",
       },
-      dedupeKey: `${type}:${receivable.id}`,
+      dedupeKey: type === "credit.due_today" ? `${type}:${receivable.id}:${receivable.due_date}` : `${type}:${receivable.id}`,
     });
     if (created.created) notifications += 1;
+
+    if (type === "credit.due_today") {
+      const result = customerEmail
+        ? await enqueueEmail({
+            toEmail: customerEmail,
+            toName: customerName,
+            subject: `Tu crédito comercial vence hoy - ${orderNumber}`,
+            templateKey: "commercial_credit.due_today",
+            payload: {
+              title: "Tu crédito comercial vence hoy",
+              message: `Hola ${customerName}, te recordamos que tu cuenta de crédito comercial del pedido ${orderNumber} vence hoy. Puedes comunicarte con Car Zone Accesorios para coordinar tu pago.`,
+              customer_name: customerName,
+              order_number: orderNumber,
+              balance_due: `L ${Number(receivable.balance_due ?? 0).toFixed(2)}`,
+              due_at: receivable.due_date,
+              action_path: "/cuenta",
+              action_label: "Ver mi cuenta",
+            },
+            relatedModule: "pagos",
+            relatedId: receivable.id,
+            priority: 2,
+            scheduledAt: `${receivable.due_date}T08:00:00-06:00`,
+            idempotencyKey: `commercial_credit_due_today:${receivable.id}:${receivable.due_date}`,
+          })
+        : { queued: false, reason: "missing_email" };
+
+      if (result.queued) {
+        customerEmailsQueued += 1;
+      } else {
+        customerEmailsSkipped += 1;
+      }
+    }
   }
 
   return {
     overdueMarked: Number(overdueCount ?? 0),
     scanned: data?.length ?? 0,
     notifications,
+    customerEmailsQueued,
+    customerEmailsSkipped,
   };
 }
 
