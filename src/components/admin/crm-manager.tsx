@@ -50,6 +50,7 @@ import {
 } from "@/app/admin/crm/actions";
 import { registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
+import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
@@ -71,7 +72,7 @@ import type {
   CrmNoteRow,
   CrmPriority,
 } from "@/types/crm";
-import type { AccountsReceivablePaymentRow, AccountsReceivableRow, CommercialCreditPaymentReceivedMethod } from "@/types/credit";
+import type { AccountsReceivableRow, CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
@@ -214,14 +215,6 @@ function todayInputValue() {
 function newCreditPaymentIdempotencyKey(receivableId: string) {
   const randomValue = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
   return `credit-payment:${receivableId}:${randomValue}`;
-}
-
-function formatReceivablePaymentDate(payment: Pick<AccountsReceivablePaymentRow, "received_at" | "created_at">) {
-  return formatHnDateTime(payment.received_at ?? payment.created_at);
-}
-
-function receivablePaymentRecorderLabel(payment: Pick<AccountsReceivablePaymentRow, "recorded_by_name" | "recorded_by_email">) {
-  return payment.recorded_by_name ?? payment.recorded_by_email ?? "Usuario interno";
 }
 
 function numberValue(value: string) {
@@ -2707,17 +2700,16 @@ function CustomerProfileCredit({
   const totalCreditPaid = profile.receivables.reduce((sum, item) => sum + item.total_paid, 0);
   const pendingBalance = pendingReceivables.reduce((sum, item) => sum + item.balance_due, 0);
   const availableCredit = Math.max(Number(creditLimit || 0) - pendingBalance, 0);
+  const receivablesWithOrders = profile.receivables.map((item) => ({
+    item,
+    order: profile.orders.find((candidate) => candidate.id === item.order_id) ?? null,
+  }));
   const creditStatusLabel: Record<string, string> = {
     open: "Abierto",
     partial: "Pago parcial",
     paid: "Pagado",
     overdue: "Vencido",
     cancelled: "Cancelado",
-  };
-  const creditPaymentMethodLabel: Record<string, string> = {
-    bank_transfer: "Transferencia bancaria",
-    card: "Tarjeta",
-    cash: "Efectivo",
   };
 
   function saveCredit() {
@@ -2896,7 +2888,45 @@ function CustomerProfileCredit({
           <Metric label="Crédito disponible" value={formatCurrency(availableCredit)} />
           <Metric label="Cuentas abiertas" value={pendingReceivables.length.toLocaleString("es-HN")} />
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 grid gap-3 md:hidden">
+          {receivablesWithOrders.length === 0 ? (
+            <p className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm text-black/55">Este cliente no tiene cuentas por cobrar.</p>
+          ) : null}
+          {receivablesWithOrders.map(({ item, order }) => {
+            const canRegisterPayment = item.status !== "paid" && item.status !== "cancelled" && item.balance_due > 0;
+            return (
+              <article key={item.id} className="rounded-lg border border-black/10 bg-white p-4 text-sm">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold [overflow-wrap:anywhere]">Pedido {order?.order_number ?? item.order_id.slice(0, 8)}</p>
+                    <p className="mt-1 text-xs text-black/50">Vencimiento: {formatHnDate(item.due_date)}</p>
+                  </div>
+                  <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">{creditStatusLabel[item.status] ?? "Abierto"}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <InfoLine label="Total" value={formatCurrency(item.original_amount)} />
+                  <InfoLine label="Abonado" value={formatCurrency(item.total_paid)} />
+                  <InfoLine label="Saldo" value={formatCurrency(item.balance_due)} />
+                </div>
+                <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
+                  <CreditPaymentHistory payments={item.payments} totalPaid={item.total_paid} showRecordedBy balanceDue={item.balance_due} status={item.status} />
+                </div>
+                <div className="mt-3">
+                  {canRegisterPayment ? (
+                    <Button type="button" onClick={() => openPaymentModal(item)} disabled={isPending || isSubmittingPayment} variant="ghost">
+                      <PlusCircle size={16} />
+                      Registrar abono
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-black/45">Sin saldo</span>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 hidden overflow-x-auto md:block">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-black/10 text-xs uppercase text-black/45">
               <tr>
@@ -2911,9 +2941,7 @@ function CustomerProfileCredit({
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
-              {profile.receivables.map((item) => {
-                const order = profile.orders.find((candidate) => candidate.id === item.order_id);
-                const activePayments = item.payments.filter((payment) => !payment.voided_at);
+              {receivablesWithOrders.map(({ item, order }) => {
                 return (
                   <tr key={item.id}>
                     <td className="px-2 py-2">{order?.order_number ?? item.order_id.slice(0, 8)}</td>
@@ -2923,22 +2951,7 @@ function CustomerProfileCredit({
                     <td className="px-2 py-2">{formatHnDate(item.due_date)}</td>
                     <td className="px-2 py-2">{creditStatusLabel[item.status] ?? "Abierto"}</td>
                     <td className="px-2 py-2">
-                      {activePayments.length > 0 ? (
-                        <div className="min-w-60 space-y-2 text-xs text-black/60">
-                          {activePayments.slice(0, 3).map((payment) => (
-                            <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2">
-                              <p className="font-semibold text-black">{formatReceivablePaymentDate(payment)}</p>
-                              <p>{formatCurrency(payment.amount)} · {creditPaymentMethodLabel[payment.payment_method] ?? "Abono"}</p>
-                              <p className="text-black/50">Registrado por: {receivablePaymentRecorderLabel(payment)}</p>
-                              {payment.reference ? <p className="text-black/50">Referencia: {payment.reference}</p> : null}
-                              {payment.note ? <p className="text-black/50">{payment.note}</p> : null}
-                            </div>
-                          ))}
-                          {activePayments.length > 3 ? <p>Y {activePayments.length - 3} más</p> : null}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-black/45">Sin abonos</span>
-                      )}
+                      <CreditPaymentHistory payments={item.payments} totalPaid={item.total_paid} showRecordedBy balanceDue={item.balance_due} status={item.status} />
                     </td>
                     <td className="px-2 py-2">
                       {item.status !== "paid" && item.status !== "cancelled" && item.balance_due > 0 ? (
@@ -3508,7 +3521,25 @@ function CustomerAccountsTable({
           </div>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="grid gap-3 p-4 lg:hidden">
+        {customers.length === 0 ? (
+          <p className="rounded-md bg-[#f4f4f5] p-4 text-sm text-black/55">No hay clientes para mostrar.</p>
+        ) : null}
+        {customers.map((customer) => (
+          <CustomerAccountCard
+            key={customer.id}
+            customer={customer}
+            pending={pending}
+            onSelect={onSelect}
+            onApproveWholesale={onApproveWholesale}
+            onSuspend={onSuspend}
+            onReactivate={onReactivate}
+            onDeleteTest={onDeleteTest}
+            onDeleteCustomer={onDeleteCustomer}
+          />
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto lg:block">
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>
@@ -3615,6 +3646,137 @@ function CustomerAccountsTable({
         </table>
       </div>
     </section>
+  );
+}
+
+function CustomerAccountCard({
+  customer,
+  pending,
+  onSelect,
+  onApproveWholesale,
+  onSuspend,
+  onReactivate,
+  onDeleteTest,
+  onDeleteCustomer,
+}: {
+  customer: CrmCustomerOption;
+  pending: boolean;
+  onSelect: (customerId: string) => void;
+  onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
+  onSuspend: (customer: CrmCustomerOption) => void;
+  onReactivate: (customer: CrmCustomerOption) => void;
+  onDeleteTest: (customer: CrmCustomerOption) => void;
+  onDeleteCustomer: (customer: CrmCustomerOption) => void;
+}) {
+  const email = customer.account_email ?? customer.email ?? "";
+  const phone = customer.account_phone ?? customer.phone ?? "";
+  const isWholesaleRequest = customer.has_wholesale_request && !customer.is_wholesale;
+  const isSuspended = customer.account_state === "Cuenta suspendida" || customer.status === "disabled" || customer.active === false;
+
+  return (
+    <article className="rounded-lg border border-black/10 bg-white p-4 text-sm">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+        <div className="min-w-0">
+          <p className="break-words font-semibold [overflow-wrap:anywhere]">{customerDisplayName(customer)}</p>
+          <p className="mt-1 break-words text-xs text-black/50 [overflow-wrap:anywhere]">{email || "Sin correo"}</p>
+          <p className="mt-1 text-xs text-black/50">{phone || "Sin teléfono"}</p>
+        </div>
+        <span className="w-fit rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold text-[#b91c25]">{customer.account_state}</span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1">
+        {customer.primary_badges.length === 0 ? <span className="rounded-md bg-[#f4f4f5] px-2 py-1 text-xs">Sin clasificación</span> : null}
+        {customer.primary_badges.slice(0, 4).map((badge) => (
+          <span key={badge} className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-medium text-[#b91c25]">
+            {badge}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <InfoLine label="Pedidos" value={customer.order_count.toLocaleString("es-HN")} />
+        <InfoLine label="Última actividad" value={formatDateTime(customer.last_activity_at)} />
+        <InfoLine label="Registro" value={formatDateTime(customer.account_created_at ?? customer.created_at)} />
+        <InfoLine label="Correo confirmado" value={customer.email_confirmed_at ? "Sí" : customer.user_id ? "No" : "Sin cuenta"} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => onSelect(customer.id)}
+          className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5]"
+        >
+          <Search size={15} />
+          Detalle completo
+        </button>
+        <Link href="/admin/pedidos" className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5]">
+          <PackageSearch size={16} />
+          Ver pedidos
+        </Link>
+        <Link href="/admin/crm" className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5]">
+          <ExternalLink size={16} />
+          Ver CRM
+        </Link>
+        {isWholesaleRequest ? (
+          <button
+            type="button"
+            onClick={() => onApproveWholesale(customer.id, "new")}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <CheckCircle2 size={16} />
+            Aprobar mayorista
+          </button>
+        ) : null}
+        {isSuspended ? (
+          <button
+            type="button"
+            onClick={() => onReactivate(customer)}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <CheckCircle2 size={16} />
+            Reactivar cuenta
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onSuspend(customer)}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <Ban size={16} />
+            Suspender cuenta
+          </button>
+        )}
+        {customer.is_test_account ? (
+          <button
+            type="button"
+            onClick={() => onDeleteTest(customer)}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            Eliminar TEST
+          </button>
+        ) : customer.can_delete_permanently ? (
+          <button
+            type="button"
+            onClick={() => onDeleteCustomer(customer)}
+            disabled={pending}
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold hover:bg-[#f4f4f5] disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            Eliminar
+          </button>
+        ) : (
+          <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-xs text-black/55">
+            {customer.delete_block_reason ?? "No se puede eliminar; usa suspensión."}
+          </p>
+        )}
+      </div>
+      {pending ? <p className="mt-2 text-xs text-black/45">Procesando...</p> : null}
+    </article>
   );
 }
 

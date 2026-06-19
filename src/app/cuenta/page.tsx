@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { FileText, PackageCheck, Route, ShoppingBag, UserRound } from "lucide-react";
+import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { LogoutButton } from "@/components/auth";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import { CustomerCreditNotificationToast } from "@/components/store/customer-credit-notification-toast";
@@ -52,12 +53,6 @@ const creditStatusLabels: Record<string, string> = {
   paid: "Pagado",
   overdue: "Vencido",
   cancelled: "Cancelado",
-};
-
-const creditPaymentMethodLabels: Record<string, string> = {
-  bank_transfer: "Transferencia bancaria",
-  card: "Tarjeta",
-  cash: "Efectivo",
 };
 
 const wholesaleStatusLabels: Record<string, string> = {
@@ -268,24 +263,16 @@ export default async function CuentaPage({
                       <MiniInfo label="Total abonado" value={formatCurrency(item.total_paid)} />
                       <MiniInfo label="Saldo pendiente" value={formatCurrency(item.balance_due)} />
                     </div>
-                    {item.payments.filter((payment) => !payment.voided_at).length > 0 ? (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-xs font-semibold uppercase text-black/45">Historial de abonos</p>
-                        {item.payments
-                          .filter((payment) => !payment.voided_at)
-                          .slice(0, 5)
-                          .map((payment) => (
-                            <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs">
-                              <p className="font-semibold">{formatCurrency(payment.amount)}</p>
-                              <p className="text-black/60">
-                                {creditPaymentMethodLabels[payment.payment_method]} · {formatDateTime(payment.received_at ?? payment.created_at)}
-                              </p>
-                              {payment.reference ? <p className="text-black/50">Referencia: {payment.reference}</p> : null}
-                              <p className="text-black/50">Saldo restante: {formatCurrency(item.balance_due)}</p>
-                            </div>
-                          ))}
-                      </div>
-                    ) : null}
+                    <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
+                      <CreditPaymentHistory
+                        payments={item.payments}
+                        totalPaid={item.total_paid}
+                        showRecordedBy={false}
+                        showNotes={false}
+                        balanceDue={item.balance_due}
+                        status={item.status}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

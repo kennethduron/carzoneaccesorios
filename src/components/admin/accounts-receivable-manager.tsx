@@ -2,12 +2,14 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Download, History, PlusCircle, ReceiptText, X } from "lucide-react";
+import { CheckCircle2, Download, PlusCircle, ReceiptText, Search, X } from "lucide-react";
 import { markCreditReceivablePaidAction, registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
+import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import type { AccountsReceivablePaymentRow, AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod, ReceivablesSummary } from "@/types/credit";
-import { formatHnDateTime } from "@/utils/format";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
+import type { AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod, ReceivablesSummary } from "@/types/credit";
 import { formatCurrency } from "@/utils/pricing";
 
 const statusLabels: Record<string, string> = {
@@ -44,18 +46,35 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("es-HN", { dateStyle: "medium" }).format(new Date(`${value.slice(0, 10)}T00:00:00-06:00`));
 }
 
-function formatPaymentDate(payment: Pick<AccountsReceivablePaymentRow, "received_at" | "created_at">) {
-  return formatHnDateTime(payment.received_at ?? payment.created_at);
-}
-
-function paymentRecorderLabel(payment: Pick<AccountsReceivablePaymentRow, "recorded_by_name" | "recorded_by_email">) {
-  return payment.recorded_by_name ?? payment.recorded_by_email ?? "Usuario interno";
-}
-
 function daysRemaining(value: string) {
   const today = new Date();
   const due = new Date(`${value}T00:00:00-06:00`);
   return Math.ceil((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function receivableSearchText(row: AdminAccountsReceivableRow) {
+  return normalizeSearchText(
+    [
+      row.customer_name,
+      row.customer_email,
+      row.customer_phone,
+      row.order_number,
+      row.invoice_number,
+      statusLabels[row.status],
+      row.payment_received_reference,
+      row.payment_received_method ? paymentReceivedLabels[row.payment_received_method] : null,
+      ...row.payments.flatMap((payment) => [payment.reference, paymentReceivedLabels[payment.payment_method]]),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function csvEscape(value: unknown) {
@@ -90,17 +109,28 @@ export function AccountsReceivableManager({
   const router = useRouter();
   const toast = useToast();
   const [filter, setFilter] = useState<"pending" | "all" | "overdue" | "paid" | "partial">("pending");
+  const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 250);
   const [paymentDrafts, setPaymentDrafts] = useState<Record<string, PaymentDraft>>({});
   const [selectedRow, setSelectedRow] = useState<AdminAccountsReceivableRow | null>(null);
   const [modalDraft, setModalDraft] = useState<PaymentModalDraft | null>(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
   const isSubmittingPaymentRef = useRef(false);
   const [isPending, startTransition] = useTransition();
-  const visibleRows = useMemo(() => {
+  const statusRows = useMemo(() => {
     if (filter === "all") return rows;
     if (filter === "pending") return rows.filter((row) => row.status !== "paid" && row.status !== "cancelled");
     return rows.filter((row) => row.status === filter);
   }, [filter, rows]);
+  const visibleRows = useMemo(() => {
+    const normalizedQuery = normalizeSearchText(debouncedQuery.trim());
+    if (!normalizedQuery) return statusRows;
+    return statusRows.filter((row) => receivableSearchText(row).includes(normalizedQuery));
+  }, [debouncedQuery, statusRows]);
+  const [scrollContainerRef, saveReceivablesScroll] = useScrollRestoration<HTMLDivElement>(
+    "admin:accounts-receivable:scroll",
+    `${filter}:${debouncedQuery}:${visibleRows.length}:${rows.length}`,
+  );
 
   function updatePaymentDraft(rowId: string, patch: Partial<PaymentDraft>) {
     setPaymentDrafts((current) => ({
@@ -179,6 +209,7 @@ export function AccountsReceivableManager({
         isSubmittingPaymentRef.current = false;
         setIsSubmittingPayment(false);
         setModalDraft((current) => (current ? { ...current, idempotencyKey: newIdempotencyKey(selectedRow.id) } : current));
+        saveReceivablesScroll();
         setSelectedRow(null);
         setModalDraft(null);
         router.refresh();
@@ -207,6 +238,7 @@ export function AccountsReceivableManager({
       });
       if (result.ok) {
         toast.success(result.message);
+        saveReceivablesScroll();
         router.refresh();
       } else {
         toast.error(result.message);
@@ -297,8 +329,78 @@ export function AccountsReceivableManager({
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[1260px] text-left text-sm">
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <label className="flex min-w-0 items-center gap-2 rounded-md border border-black/10 px-3 py-2 focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15">
+            <Search size={18} className="shrink-0 text-black/45" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Buscar por cliente, correo, teléfono, pedido, factura, referencia, método o estado"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+            />
+          </label>
+          {query ? (
+            <Button type="button" onClick={() => setQuery("")} variant="ghost">
+              <X size={16} />
+              Limpiar búsqueda
+            </Button>
+          ) : null}
+        </div>
+        <p className="mt-3 text-sm text-black/55">
+          Mostrando {visibleRows.length.toLocaleString("es-HN")} de {statusRows.length.toLocaleString("es-HN")} cuentas en este filtro.
+        </p>
+
+        <div className="mt-4 grid gap-3 lg:hidden">
+          {visibleRows.length === 0 ? (
+            <p className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm text-black/55">No hay cuentas por cobrar para este filtro.</p>
+          ) : null}
+          {visibleRows.map((row) => {
+            const days = daysRemaining(row.due_date);
+            const draft = paymentDrafts[row.id] ?? { method: "", reference: "" };
+            const canCollect = canMarkPaid && row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0;
+            return (
+              <article key={row.id} className={`rounded-lg border border-black/10 p-4 text-sm ${row.status === "overdue" ? "bg-[#fff7ed]" : "bg-white"}`}>
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                  <div className="min-w-0">
+                    <p className="break-words font-semibold [overflow-wrap:anywhere]">{row.customer_name}</p>
+                    <p className="mt-1 text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? "Sin contacto"}</p>
+                    <p className="mt-1 text-xs text-black/50">Pedido {row.order_number ?? "Sin pedido"}</p>
+                  </div>
+                  <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">{statusLabels[row.status]}</span>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <MiniInfo label="Total original" value={formatCurrency(row.original_amount)} />
+                  <MiniInfo label="Total abonado" value={formatCurrency(row.total_paid)} />
+                  <MiniInfo label="Saldo pendiente" value={formatCurrency(row.balance_due)} strong />
+                  <MiniInfo label="Vencimiento" value={formatDate(row.due_date)} />
+                  <MiniInfo label="Días" value={row.status === "paid" ? "-" : days < 0 ? `${Math.abs(days)} vencido` : `${days} restantes`} />
+                  <MiniInfo label="Factura" value={row.invoice_number ?? "Sin factura"} />
+                </div>
+
+                <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
+                  <CreditPaymentHistory payments={row.payments} totalPaid={row.total_paid} showRecordedBy balanceDue={row.balance_due} status={row.status} />
+                </div>
+
+                <div className="mt-3">
+                  <ReceivableActions
+                    row={row}
+                    draft={draft}
+                    canCollect={canCollect}
+                    isPending={isPending}
+                    isSubmittingPayment={isSubmittingPayment}
+                    onOpenPayment={openPaymentModal}
+                    onUpdateDraft={updatePaymentDraft}
+                    onMarkPaid={markPaid}
+                  />
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <div ref={scrollContainerRef} className="mt-4 hidden lg:block lg:max-h-[calc(100vh-280px)] lg:overflow-auto lg:overscroll-contain">
+          <table className="w-full min-w-[1180px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-3 py-2">Cliente</th>
@@ -332,49 +434,19 @@ export function AccountsReceivableManager({
                     <td className="px-3 py-3 align-top">{row.status === "paid" ? "-" : days < 0 ? `${Math.abs(days)} vencido` : `${days} restantes`}</td>
                     <td className="px-3 py-3 align-top">{statusLabels[row.status]}</td>
                     <td className="px-3 py-3 align-top">
-                      <PaymentHistory row={row} />
+                      <CreditPaymentHistory payments={row.payments} totalPaid={row.total_paid} showRecordedBy balanceDue={row.balance_due} status={row.status} />
                     </td>
                     <td className="px-3 py-3 align-top">
-                      {canCollect ? (
-                        <div className="grid min-w-60 gap-2">
-                          <Button onClick={() => openPaymentModal(row)} disabled={isPending || isSubmittingPayment} variant="ghost">
-                            <PlusCircle size={16} />
-                            Registrar abono
-                          </Button>
-                          <label className="text-xs font-semibold text-black/55">
-                            Método para marcar pagado
-                            <select
-                              value={draft.method}
-                              onChange={(event) =>
-                                updatePaymentDraft(row.id, {
-                                  method: event.target.value as CommercialCreditPaymentReceivedMethod | "",
-                                  reference: event.target.value === "cash" ? "" : draft.reference,
-                                })
-                              }
-                              className="mt-1 w-full rounded-md border border-black/10 bg-white px-2 py-2 text-sm font-normal text-black"
-                            >
-                              <option value="">Seleccionar</option>
-                              <option value="bank_transfer">Transferencia bancaria</option>
-                              <option value="card">Tarjeta</option>
-                              <option value="cash">Efectivo</option>
-                            </select>
-                          </label>
-                          {draft.method === "bank_transfer" || draft.method === "card" ? (
-                            <input
-                              value={draft.reference}
-                              onChange={(event) => updatePaymentDraft(row.id, { reference: event.target.value })}
-                              placeholder={draft.method === "bank_transfer" ? "Número de referencia" : "Referencia / comprobante"}
-                              className="rounded-md border border-black/10 px-2 py-2 text-sm"
-                            />
-                          ) : null}
-                          <Button onClick={() => markPaid(row)} disabled={isPending || !draft.method} variant="primary">
-                            <CheckCircle2 size={16} />
-                            Marcar como pagado
-                          </Button>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-black/45">Solo lectura</span>
-                      )}
+                      <ReceivableActions
+                        row={row}
+                        draft={draft}
+                        canCollect={canCollect}
+                        isPending={isPending}
+                        isSubmittingPayment={isSubmittingPayment}
+                        onOpenPayment={openPaymentModal}
+                        onUpdateDraft={updatePaymentDraft}
+                        onMarkPaid={markPaid}
+                      />
                     </td>
                   </tr>
                 );
@@ -503,33 +575,74 @@ export function AccountsReceivableManager({
   );
 }
 
-function PaymentHistory({ row }: { row: AdminAccountsReceivableRow }) {
-  const activePayments = row.payments.filter((payment) => !payment.voided_at);
-
-  if (activePayments.length === 0) {
-    return <span className="text-xs text-black/45">Sin abonos</span>;
+function ReceivableActions({
+  row,
+  draft,
+  canCollect,
+  isPending,
+  isSubmittingPayment,
+  onOpenPayment,
+  onUpdateDraft,
+  onMarkPaid,
+}: {
+  row: AdminAccountsReceivableRow;
+  draft: PaymentDraft;
+  canCollect: boolean;
+  isPending: boolean;
+  isSubmittingPayment: boolean;
+  onOpenPayment: (row: AdminAccountsReceivableRow) => void;
+  onUpdateDraft: (rowId: string, patch: Partial<PaymentDraft>) => void;
+  onMarkPaid: (row: AdminAccountsReceivableRow) => void;
+}) {
+  if (!canCollect) {
+    return <span className="text-xs text-black/45">Solo lectura</span>;
   }
 
   return (
-    <div className="min-w-64 space-y-2">
-      <p className="inline-flex items-center gap-1 text-xs font-semibold text-black/55">
-        <History size={14} />
-        {activePayments.length} abono{activePayments.length === 1 ? "" : "s"}
-      </p>
-      <div className="space-y-1">
-        {activePayments.slice(0, 3).map((payment) => (
-          <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs">
-            <p className="font-semibold">{formatPaymentDate(payment)}</p>
-            <p className="text-black/60">
-              {formatCurrency(payment.amount)} · {paymentReceivedLabels[payment.payment_method]}
-            </p>
-            <p className="text-black/50">Registrado por: {paymentRecorderLabel(payment)}</p>
-            {payment.reference ? <p className="text-black/50">Ref. {payment.reference}</p> : null}
-            {payment.note ? <p className="text-black/50">{payment.note}</p> : null}
-          </div>
-        ))}
-        {activePayments.length > 3 ? <p className="text-xs text-black/45">Y {activePayments.length - 3} más</p> : null}
-      </div>
+    <div className="grid min-w-0 gap-2 lg:min-w-60">
+      <Button onClick={() => onOpenPayment(row)} disabled={isPending || isSubmittingPayment} variant="ghost">
+        <PlusCircle size={16} />
+        Registrar abono
+      </Button>
+      <label className="text-xs font-semibold text-black/55">
+        Método para marcar pagado
+        <select
+          value={draft.method}
+          onChange={(event) =>
+            onUpdateDraft(row.id, {
+              method: event.target.value as CommercialCreditPaymentReceivedMethod | "",
+              reference: event.target.value === "cash" ? "" : draft.reference,
+            })
+          }
+          className="mt-1 w-full rounded-md border border-black/10 bg-white px-2 py-2 text-sm font-normal text-black"
+        >
+          <option value="">Seleccionar</option>
+          <option value="bank_transfer">Transferencia bancaria</option>
+          <option value="card">Tarjeta</option>
+          <option value="cash">Efectivo</option>
+        </select>
+      </label>
+      {draft.method === "bank_transfer" || draft.method === "card" ? (
+        <input
+          value={draft.reference}
+          onChange={(event) => onUpdateDraft(row.id, { reference: event.target.value })}
+          placeholder={draft.method === "bank_transfer" ? "Número de referencia" : "Referencia / comprobante"}
+          className="rounded-md border border-black/10 px-2 py-2 text-sm"
+        />
+      ) : null}
+      <Button onClick={() => onMarkPaid(row)} disabled={isPending || !draft.method} variant="primary">
+        <CheckCircle2 size={16} />
+        Marcar como pagado
+      </Button>
+    </div>
+  );
+}
+
+function MiniInfo({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="rounded-md bg-[#f4f4f5] px-3 py-2">
+      <p className="text-xs uppercase text-black/45">{label}</p>
+      <p className={`mt-1 break-words [overflow-wrap:anywhere] ${strong ? "font-semibold" : ""}`}>{value}</p>
     </div>
   );
 }
