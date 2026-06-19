@@ -249,6 +249,95 @@ async function logNotification(input: {
   }
 }
 
+async function logIncompleteImmediateOrderStatusEmail(input: {
+  queueId: string;
+  orderId: string;
+  orderNumber: string;
+  recipientEmail: string;
+  eventType: string;
+  status: string;
+  processingResult: Record<string, unknown>;
+}) {
+  const admin = getSupabaseAdminClient();
+  const { data: queueItem, error } = await admin
+    .from("email_queue")
+    .select("id, status, attempts, max_attempts, last_error, provider, provider_message_id, scheduled_at, sent_at, updated_at")
+    .eq("id", input.queueId)
+    .maybeSingle<{
+      id: string;
+      status: string | null;
+      attempts: number | null;
+      max_attempts: number | null;
+      last_error: string | null;
+      provider: string | null;
+      provider_message_id: string | null;
+      scheduled_at: string | null;
+      sent_at: string | null;
+      updated_at: string | null;
+    }>();
+
+  if (error) {
+    await writeErrorLog({
+      route: "/admin/pedidos",
+      action: "notifications.immediate_email_status_check_failed",
+      errorMessage: error.message,
+      metadata: {
+        queue_id: input.queueId,
+        order_id: input.orderId,
+        event_type: input.eventType,
+      },
+    });
+    return;
+  }
+
+  if (!queueItem || queueItem.status === "sent" || queueItem.status === "cancelled") {
+    return;
+  }
+
+  await logNotification({
+    eventType: "customer.order_status_update",
+    orderId: input.orderId,
+    recipientEmail: input.recipientEmail,
+    status: "failed",
+    errorMessage: "immediate_email_processing_incomplete",
+    metadata: {
+      provider: "email_queue",
+      reason: "immediate_email_processing_incomplete",
+      queue_id: input.queueId,
+      queue_status: queueItem.status,
+      attempts: queueItem.attempts,
+      max_attempts: queueItem.max_attempts,
+      last_error: queueItem.last_error,
+      provider_message_id: queueItem.provider_message_id,
+      scheduled_at: queueItem.scheduled_at,
+      sent_at: queueItem.sent_at,
+      updated_at: queueItem.updated_at,
+      order_number: input.orderNumber,
+      event_type: input.eventType,
+      status: input.status,
+      processing_result: input.processingResult,
+    },
+  });
+
+  await writeErrorLog({
+    route: "/admin/pedidos",
+    action: "notifications.immediate_email_processing_incomplete",
+    errorMessage: "El correo inmediato de actualizacion de pedido no quedo enviado.",
+    metadata: {
+      queue_id: input.queueId,
+      queue_status: queueItem.status,
+      order_id: input.orderId,
+      order_number: input.orderNumber,
+      event_type: input.eventType,
+      status: input.status,
+      attempts: queueItem.attempts,
+      max_attempts: queueItem.max_attempts,
+      last_error: queueItem.last_error,
+      processing_result: input.processingResult,
+    },
+  });
+}
+
 export async function notifyAdminsOfNewOrder(createdOrder: CheckoutOrderCreated) {
   const admin = getSupabaseAdminClient();
 
@@ -507,6 +596,8 @@ export async function notifyCustomerOfOrderChange(input: {
       message: `El pedido ${order.order_number} ahora está ${label}.`,
       order_number: order.order_number,
       status: label,
+      raw_status: input.status,
+      event_type: input.eventType,
       customer_name: order.customer_name,
       payment_method: paymentMethodLabel(order.payment_method),
       action_path: `/rastreo?codigo=${encodeURIComponent(order.tracking_code ?? "")}`,
@@ -519,7 +610,7 @@ export async function notifyCustomerOfOrderChange(input: {
   });
 
   if (result.queued && result.id) {
-    await processCriticalEmailQueue({
+    const processingResult = await processCriticalEmailQueue({
       queueIds: [result.id],
       limit: 1,
       route: "/admin/pedidos",
@@ -531,6 +622,18 @@ export async function notifyCustomerOfOrderChange(input: {
         status: input.status,
       },
     });
+
+    if (input.eventType === "order.status_update") {
+      await logIncompleteImmediateOrderStatusEmail({
+        queueId: result.id,
+        orderId: order.id,
+        orderNumber: order.order_number,
+        recipientEmail: order.email,
+        eventType: input.eventType,
+        status: input.status,
+        processingResult: processingResult as unknown as Record<string, unknown>,
+      });
+    }
   }
 
   return { queued: result.queued || result.reason === "duplicate", reason: result.reason };

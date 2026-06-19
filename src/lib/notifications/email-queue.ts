@@ -5,6 +5,7 @@ import { getEmailProviderStatus, sendTransactionalEmail } from "@/lib/email/emai
 import { createTechnicalNotification } from "@/lib/notifications/notification-center";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { EmailQueueItem, NotificationModule } from "@/types/notifications";
+import { canonicalOrderStatus } from "@/utils/order-workflow";
 
 type EnqueueEmailInput = {
   toEmail: string;
@@ -191,6 +192,207 @@ const commercialCreditReminderTemplates = new Set([
   "commercial_credit.overdue",
 ]);
 
+const customerOrderStatusUpdateTemplate = "customer.order_status_update";
+const customerOrderStatusUpdateMaxAgeMs = 2 * 60 * 60 * 1000;
+const orderStatusRank = new Map([
+  ["recibido", 0],
+  ["confirmado", 1],
+  ["preparacion", 2],
+  ["empacado", 3],
+  ["enviado", 4],
+  ["en_ruta", 5],
+  ["entregado", 6],
+  ["cancelado", 99],
+]);
+
+function parseOrderChangeIdempotencyKey(value: string | null | undefined) {
+  const parts = String(value ?? "").split(":");
+  if (parts.length < 5 || parts[0] !== "customer-order-change") return null;
+
+  return {
+    eventType: parts[1],
+    orderId: parts[2],
+    status: parts[3],
+  };
+}
+
+function normalizedQueuedStatus(item: EmailQueueItem) {
+  const rawStatus = typeof item.payload?.raw_status === "string" ? item.payload.raw_status : parseOrderChangeIdempotencyKey(item.idempotency_key)?.status;
+  return rawStatus ? canonicalOrderStatus(rawStatus) : null;
+}
+
+function isStaleOrderStatusUpdate(item: EmailQueueItem, currentOrderStatus: string | null | undefined) {
+  const parsedKey = parseOrderChangeIdempotencyKey(item.idempotency_key);
+  if (parsedKey?.eventType !== "order.status_update") return false;
+
+  const queued = normalizedQueuedStatus(item);
+  if (!queued) return false;
+
+  const current = canonicalOrderStatus(currentOrderStatus);
+  const queuedRank = orderStatusRank.get(queued);
+  const currentRank = orderStatusRank.get(current);
+
+  return queuedRank !== undefined && currentRank !== undefined && currentRank > queuedRank;
+}
+
+function isExpiredOrderStatusUpdate(item: EmailQueueItem) {
+  const parsedKey = parseOrderChangeIdempotencyKey(item.idempotency_key);
+  if (parsedKey?.eventType !== "order.status_update") return false;
+
+  const createdAt = new Date(item.created_at).getTime();
+  return Number.isFinite(createdAt) && Date.now() - createdAt > customerOrderStatusUpdateMaxAgeMs;
+}
+
+async function cancelEmailQueueItem(
+  admin: ReturnType<typeof getSupabaseAdminClient>,
+  item: EmailQueueItem,
+  input: {
+    action: string;
+    reason: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  const now = new Date().toISOString();
+  await admin
+    .from("email_queue")
+    .update({
+      status: "cancelled",
+      last_error: input.message,
+      updated_at: now,
+    })
+    .eq("id", item.id);
+
+  await admin.from("notification_logs").insert({
+    event_type: item.template_key,
+    order_id: item.related_module === "pedidos" || item.related_module === "reservas" ? item.related_id : null,
+    recipient_email: item.to_email,
+    status: "skipped",
+    provider: "email_queue",
+    provider_message_id: null,
+    error_message: null,
+    metadata: {
+      queue_id: item.id,
+      related_module: item.related_module,
+      related_id: item.related_id,
+      reason: input.reason,
+      ...input.metadata,
+    },
+  });
+
+  await admin.from("audit_logs").insert({
+    actor_role: "system",
+    table_name: "email_queue",
+    record_id: item.id,
+    action: input.action,
+    new_data: {
+      template_key: item.template_key,
+      related_module: item.related_module,
+      related_id: item.related_id,
+      reason: input.reason,
+      ...input.metadata,
+    },
+  });
+}
+
+async function cancelInvalidCustomerOrderStatusUpdate(admin: ReturnType<typeof getSupabaseAdminClient>, item: EmailQueueItem) {
+  if (item.template_key !== customerOrderStatusUpdateTemplate) {
+    return false;
+  }
+
+  const orderId = item.related_module === "pedidos" ? item.related_id : parseOrderChangeIdempotencyKey(item.idempotency_key)?.orderId;
+  if (!orderId) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "order_not_found",
+      message: "Actualizacion de pedido omitida porque no tiene un pedido relacionado valido.",
+    });
+    return true;
+  }
+
+  const { data: order, error } = await admin
+    .from("orders")
+    .select("id, order_number, status, email, email_updates_opt_in")
+    .eq("id", orderId)
+    .maybeSingle<{ id: string; order_number: string | null; status: string | null; email: string | null; email_updates_opt_in: boolean | null }>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  if (!order) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "order_not_found",
+      message: "Actualizacion de pedido omitida porque el pedido ya no existe.",
+      metadata: { order_id: orderId },
+    });
+    return true;
+  }
+
+  if (order.email_updates_opt_in !== true) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "customer_updates_disabled",
+      message: "Actualizacion de pedido omitida porque el cliente desactivo los correos de seguimiento.",
+      metadata: {
+        order_id: order.id,
+        order_number: order.order_number,
+        current_status: order.status,
+      },
+    });
+    return true;
+  }
+
+  const currentEmail = order.email?.trim().toLowerCase() ?? "";
+  if (!currentEmail || currentEmail !== item.to_email.trim().toLowerCase()) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "order_email_changed",
+      message: "Actualizacion de pedido omitida porque el correo actual del pedido ya no coincide.",
+      metadata: {
+        order_id: order.id,
+        order_number: order.order_number,
+        current_status: order.status,
+      },
+    });
+    return true;
+  }
+
+  if (isExpiredOrderStatusUpdate(item)) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "stale_order_status_update",
+      message: "Actualizacion de pedido omitida porque quedo pendiente fuera de la ventana de envio inmediato.",
+      metadata: {
+        order_id: order.id,
+        order_number: order.order_number,
+        current_status: order.status,
+        queued_status: normalizedQueuedStatus(item),
+        max_age_minutes: customerOrderStatusUpdateMaxAgeMs / 60000,
+      },
+    });
+    return true;
+  }
+
+  if (isStaleOrderStatusUpdate(item, order.status)) {
+    await cancelEmailQueueItem(admin, item, {
+      action: "email.cancelled_customer_order_status_update",
+      reason: "stale_order_status_update",
+      message: "Actualizacion de pedido omitida porque el pedido ya avanzo a un estado posterior.",
+      metadata: {
+        order_id: order.id,
+        order_number: order.order_number,
+        current_status: order.status,
+        queued_status: normalizedQueuedStatus(item),
+      },
+    });
+    return true;
+  }
+
+  return false;
+}
+
 async function cancelStaleCommercialCreditReminder(admin: ReturnType<typeof getSupabaseAdminClient>, item: EmailQueueItem) {
   if (item.related_module !== "pagos" || !item.related_id || !commercialCreditReminderTemplates.has(item.template_key)) {
     return false;
@@ -268,6 +470,7 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
       sent: 0,
       failed: 0,
       retrying: 0,
+      skipped: 0,
     };
   }
 
@@ -295,6 +498,7 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
   let sent = 0;
   let failed = 0;
   let retrying = 0;
+  let skipped = 0;
 
   for (const item of data ?? []) {
     const claimCutoff = new Date().toISOString();
@@ -315,8 +519,15 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
       continue;
     }
 
+    const invalidCustomerStatusUpdate = await cancelInvalidCustomerOrderStatusUpdate(admin, item);
+    if (invalidCustomerStatusUpdate) {
+      skipped += 1;
+      continue;
+    }
+
     const cancelled = await cancelStaleCommercialCreditReminder(admin, item);
     if (cancelled) {
+      skipped += 1;
       continue;
     }
 
@@ -407,6 +618,7 @@ export async function processEmailQueue(options: ProcessEmailQueueOptions = {}) 
     sent,
     failed,
     retrying,
+    skipped,
   };
 }
 
@@ -420,7 +632,7 @@ export async function processCriticalEmailQueue(input: {
   const queueIds = [...new Set(input.queueIds.filter((id): id is string => Boolean(id)))];
 
   if (queueIds.length === 0) {
-    return { ok: true, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: true };
+    return { ok: true, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: 0 };
   }
 
   try {
@@ -440,6 +652,6 @@ export async function processCriticalEmailQueue(input: {
       },
     });
 
-    return { ok: false, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: false };
+    return { ok: false, processed: 0, sent: 0, failed: 0, retrying: 0, skipped: 0 };
   }
 }
