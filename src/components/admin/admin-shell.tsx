@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { PushNotificationRuntime } from "@/components/admin/push-notification-runtime";
 
 type AdminShellProps = {
   title: string;
@@ -15,6 +16,7 @@ export function AdminShell({ title, children }: AdminShellProps) {
         </div>
         <div className="mt-6 min-w-0">{children}</div>
       </div>
+      <PushNotificationRuntime />
     </section>
   );
 }

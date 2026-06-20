@@ -148,6 +148,7 @@ export async function createInternalNotification(input: CreateInternalNotificati
           notification_id: data.id,
           type: input.type,
           module: String(payload.module),
+          url: typeof input.metadata?.action_path === "string" ? input.metadata.action_path : "/admin",
         },
       }).catch((error) => {
         console.warn("FCM notification skipped", { type: input.type, message: error instanceof Error ? error.message : "Unknown" });

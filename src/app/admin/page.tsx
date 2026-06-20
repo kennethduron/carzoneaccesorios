@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminNotificationStatusCard } from "@/components/admin/admin-notification-status-card";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
@@ -185,6 +186,7 @@ export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
   const isAccountant = profile.role === "contadora" && !isTechnicalOwner(profile.role, profile.email);
   const isWarehouse = profile.role === "bodega" && !isTechnicalOwner(profile.role, profile.email);
+  const canViewNotificationSummary = ["technical_owner", "business_owner", "admin"].includes(profile.role);
   const canViewTechnical = hasEffectivePermission(profile.role, profile.permissions, "technical:tools", profile.email);
   const canViewFiscalAlerts =
     hasEffectivePermission(profile.role, profile.permissions, "fiscal:read", profile.email) ||
@@ -504,6 +506,8 @@ export default async function AdminPage() {
           <FiscalAlertsPanel alerts={fiscalAlerts} />
         </div>
       ) : null}
+
+      {canViewNotificationSummary ? <AdminNotificationStatusCard /> : null}
 
       <section className="mb-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <div className="rounded-lg border border-black/10 bg-white p-4">

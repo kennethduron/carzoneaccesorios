@@ -25,6 +25,18 @@ function privateKey() {
   return process.env.FCM_PRIVATE_KEY?.replace(/\\n/g, "\n") ?? "";
 }
 
+function webConfigured() {
+  return Boolean(
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
+      process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN &&
+      process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET &&
+      process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_APP_ID &&
+      process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+  );
+}
+
 export function getFcmStatus() {
   const configured = Boolean(
     process.env.FCM_ENABLED === "true" &&
@@ -36,6 +48,7 @@ export function getFcmStatus() {
   return {
     enabled: process.env.FCM_ENABLED === "true",
     configured,
+    webConfigured: webConfigured(),
     projectId: process.env.FCM_PROJECT_ID ?? null,
   };
 }
@@ -116,6 +129,7 @@ export async function registerFcmDeviceToken(input: {
   }
 
   const admin = getSupabaseAdminClient();
+  const syncedAt = new Date().toISOString();
   const { error } = await admin.from("fcm_device_tokens").upsert(
     {
       user_id: input.userId,
@@ -124,8 +138,8 @@ export async function registerFcmDeviceToken(input: {
       user_agent: input.userAgent ?? null,
       enabled: true,
       invalidated_at: null,
-      last_seen_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      last_seen_at: syncedAt,
+      updated_at: syncedAt,
     },
     { onConflict: "token" },
   );
@@ -134,7 +148,7 @@ export async function registerFcmDeviceToken(input: {
     return { ok: false, message: error.message };
   }
 
-  return { ok: true, message: "Dispositivo registrado para notificaciones push." };
+  return { ok: true, message: "Dispositivo registrado para notificaciones push.", syncedAt };
 }
 
 export async function sendFcmNotification(input: FcmMessage) {
