@@ -2,6 +2,8 @@ import "server-only";
 
 import JSZip from "jszip";
 import { sendTransactionalEmail } from "@/lib/email/email-provider";
+import { createTechnicalNotification } from "@/lib/notifications/notification-center";
+import { maskEmail, sanitizeLogText, sanitizeMetadata } from "@/lib/operational-errors";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type { AuthProfile } from "@/types/auth";
 import type { BackupType } from "@/types/security";
@@ -11,8 +13,10 @@ type JsonRecord = Record<string, unknown>;
 
 type BackupTable = {
   name: string;
+  select?: string;
   limit?: number;
   orderBy?: string;
+  transformRows?: (rows: JsonRecord[]) => JsonRecord[];
 };
 
 type ExportedTable = {
@@ -47,7 +51,7 @@ export type EmailBackupResult = {
 
 const pageSize = 1000;
 const defaultMaxBytes = 15_000_000;
-const recipientEmail = "carzonetech0@gmail.com";
+const defaultRecipientEmail = "carzonetech0@gmail.com";
 const appName = "Car Zone Accesorios";
 
 const backupTables: BackupTable[] = [
@@ -64,12 +68,44 @@ const backupTables: BackupTable[] = [
   { name: "customers" },
   { name: "users" },
   { name: "wholesale_codes" },
+  { name: "customer_credit_accounts" },
+  { name: "accounts_receivable" },
+  { name: "accounts_receivable_payments" },
   { name: "crm_notes" },
   { name: "crm_followups" },
   { name: "holiday_banners" },
   { name: "fiscal_settings" },
   { name: "business_settings" },
   { name: "company_settings" },
+  { name: "technical_alert_settings" },
+  { name: "notification_preferences" },
+  { name: "notification_user_preferences" },
+  { name: "internal_notifications" },
+  {
+    name: "fcm_device_tokens",
+    select: "id,user_id,platform,enabled,last_seen_at,invalidated_at,created_at,updated_at",
+  },
+  {
+    name: "email_queue",
+    select: "id,to_email,template_key,status,created_at,sent_at,last_error,related_id,idempotency_key",
+    limit: 5000,
+    orderBy: "created_at",
+    transformRows: (rows) =>
+      rows.map((row) => ({
+        id: row.id,
+        recipient: row.to_email,
+        template: row.template_key,
+        status: row.status,
+        created_at: row.created_at,
+        sent_at: row.sent_at,
+        error: row.last_error,
+        related_id: row.related_id,
+        idempotency_key: row.idempotency_key,
+      })),
+  },
+  { name: "backup_runs", limit: 5000, orderBy: "started_at" },
+  { name: "backup_logs", limit: 5000, orderBy: "created_at" },
+  { name: "error_logs", limit: 5000, orderBy: "created_at" },
   { name: "audit_logs", limit: 5000, orderBy: "created_at" },
   { name: "notification_logs", limit: 1000, orderBy: "created_at" },
 ];
@@ -112,6 +148,10 @@ function getCommit() {
 function getMaxBytes() {
   const value = Number(process.env.EMAIL_BACKUP_MAX_BYTES ?? defaultMaxBytes);
   return Number.isFinite(value) && value > 0 ? value : defaultMaxBytes;
+}
+
+export function getTechnicalBackupEmail() {
+  return process.env.TECHNICAL_BACKUP_EMAIL?.trim() || defaultRecipientEmail;
 }
 
 function exportErrorMessage(tableName: string, error: { code?: string; message?: string; hint?: string }) {
@@ -169,11 +209,12 @@ function rowsToCsv(rows: JsonRecord[]) {
 
 async function exportTable(table: BackupTable, redacted: Set<string>): Promise<ExportedTable | null> {
   const admin = getSupabaseAdminClient();
+  const selectColumns = table.select ?? "*";
 
   if (table.limit && table.orderBy) {
     const { data, error } = await admin
       .from(table.name)
-      .select("*")
+      .select(selectColumns)
       .order(table.orderBy, { ascending: false })
       .limit(table.limit)
       .returns<JsonRecord[]>();
@@ -186,7 +227,8 @@ async function exportTable(table: BackupTable, redacted: Set<string>): Promise<E
       throw new Error(exportErrorMessage(table.name, error));
     }
 
-    const rows = (data ?? []).map((row) => sanitizeValue(row, redacted, table.name) as JsonRecord);
+    const sourceRows = table.transformRows ? table.transformRows(data ?? []) : data ?? [];
+    const rows = sourceRows.map((row) => sanitizeValue(row, redacted, table.name) as JsonRecord);
     return {
       rows,
       rowCount: rows.length,
@@ -198,7 +240,7 @@ async function exportTable(table: BackupTable, redacted: Set<string>): Promise<E
   for (let offset = 0; ; offset += pageSize) {
     const { data, error } = await admin
       .from(table.name)
-      .select("*")
+      .select(selectColumns)
       .range(offset, offset + pageSize - 1)
       .returns<JsonRecord[]>();
 
@@ -210,7 +252,7 @@ async function exportTable(table: BackupTable, redacted: Set<string>): Promise<E
       throw new Error(exportErrorMessage(table.name, error));
     }
 
-    const page = data ?? [];
+    const page = table.transformRows ? table.transformRows(data ?? []) : data ?? [];
     rows.push(...page.map((row) => sanitizeValue(row, redacted, table.name) as JsonRecord));
 
     if (page.length < pageSize) {
@@ -270,7 +312,8 @@ function buildMetadata(input: {
       notification_logs_limit: 1000,
     },
     security_note: "This backup contains operational business data only.",
-    warning: "This backup does not include passwords, API keys, private keys, environment variables, sessions, cookies, card CVV or secrets.",
+    warning:
+      "This backup does not include passwords, API keys, private keys, environment variables, sessions, cookies, card CVV, FCM device token values or secrets.",
     redacted_field_count: input.redactedFields.length,
     redacted_fields: input.redactedFields,
   };
@@ -410,6 +453,30 @@ function emailBody(input: {
   `;
 }
 
+function backupFailureEmailBody(input: {
+  timestamp: string;
+  environment: string;
+  message: string;
+  runType: "manual_email" | "scheduled_email";
+  triggeredBy: BackupTrigger;
+}) {
+  return `
+    <div style="font-family:Arial,sans-serif;color:#111;line-height:1.6;">
+      <p>Hola,</p>
+      <p>Fall&oacute; una copia de seguridad de Car Zone Accesorios.</p>
+      <p>
+        <strong>Fecha:</strong> ${htmlEscape(input.timestamp)}<br />
+        <strong>Entorno:</strong> ${htmlEscape(input.environment)}<br />
+        <strong>Tipo:</strong> ${htmlEscape(input.runType)}<br />
+        <strong>Origen:</strong> ${htmlEscape(input.triggeredBy)}<br />
+        <strong>Error:</strong> ${htmlEscape(input.message)}
+      </p>
+      <p>Revisa /admin/seguridad, /admin/uso, backup_runs, backup_logs y error_logs.</p>
+      <p>Atentamente,<br />Sistema Car Zone Accesorios</p>
+    </div>
+  `;
+}
+
 async function insertBackupRun(input: EmailBackupInput, startedAt: string, runType: "manual_email" | "scheduled_email") {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
@@ -420,7 +487,7 @@ async function insertBackupRun(input: EmailBackupInput, startedAt: string, runTy
       type: runType,
       triggered_by: input.triggeredBy,
       created_by_user_id: input.createdBy?.id ?? null,
-      recipient_email: recipientEmail,
+      recipient_email: getTechnicalBackupEmail(),
       delivery_provider: "email",
       metadata: {
         delivery: "email",
@@ -471,6 +538,95 @@ async function insertBackupLog(input: EmailBackupInput, result: EmailBackupResul
   });
 }
 
+async function writeBackupErrorLog(input: EmailBackupInput, runType: "manual_email" | "scheduled_email", errorMessage: string) {
+  const admin = getSupabaseAdminClient();
+  const metadata = sanitizeMetadata({
+    environment: process.env.NODE_ENV,
+    module: "backups",
+    category: "system",
+    severity: "critical",
+    status: "open",
+    customer_message: "No se pudo completar la copia de seguridad.",
+    admin_reason: "La generacion o envio del backup por correo fallo.",
+    recommendation: "Revisar backup_runs, backup_logs, proveedor de correo, tamano del ZIP y tablas faltantes.",
+    trigger: input.triggeredBy,
+    backup_type: runType,
+    actor_email: input.createdBy?.email ?? null,
+    actor_role: input.createdBy?.role ?? null,
+    recipient_email: getTechnicalBackupEmail(),
+  });
+
+  const { error } = await admin.from("error_logs").insert({
+    route: input.triggeredBy === "cron" ? "/api/cron/backups/email" : "/admin/seguridad",
+    user_id: input.createdBy?.id ?? null,
+    user_email: maskEmail(input.createdBy?.email),
+    action: "backup.email.failed",
+    error_message: sanitizeLogText(errorMessage, 700) || "Backup email failed.",
+    error_stack: null,
+    metadata,
+    module: "backups",
+    category: "system",
+    severity: "critical",
+    status: "open",
+    customer_message: "No se pudo completar la copia de seguridad.",
+    admin_reason: "La generacion o envio del backup por correo fallo.",
+    recommendation: "Revisar backup_runs, backup_logs, proveedor de correo, tamano del ZIP y tablas faltantes.",
+  });
+
+  if (error) {
+    console.error("Backup error log failed", { message: error.message });
+  }
+}
+
+async function notifyBackupFailure(input: EmailBackupInput, runType: "manual_email" | "scheduled_email", errorMessage: string) {
+  const safeMessage = sanitizeLogText(errorMessage, 700) || "No se pudo completar la copia de seguridad.";
+  const recipient = getTechnicalBackupEmail();
+
+  await writeBackupErrorLog(input, runType, safeMessage).catch((error) => {
+    console.error("Backup failure error log skipped", { message: error instanceof Error ? error.message : "Unknown" });
+  });
+
+  await createTechnicalNotification({
+    type: "system.backup_failed",
+    title: "Backup fallido",
+    message: "La copia de seguridad no pudo completarse. Revisa backup_runs, backup_logs y error_logs.",
+    severity: "critical",
+    metadata: {
+      action_path: "/admin/seguridad",
+      backup_type: runType,
+      triggered_by: input.triggeredBy,
+      recipient_email: recipient,
+      error: safeMessage,
+    },
+    dedupeKey: `system.backup_failed:email:${input.triggeredBy}:${new Date().toISOString().slice(0, 10)}`,
+  }).catch((error) => {
+    console.error("Backup failure notification skipped", { message: error instanceof Error ? error.message : "Unknown" });
+  });
+
+  await sendTransactionalEmail({
+    to: recipient,
+    subject: `Alerta backup fallido - ${emailTimestamp()}`,
+    html: backupFailureEmailBody({
+      timestamp: emailTimestamp(),
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown",
+      message: safeMessage,
+      runType,
+      triggeredBy: input.triggeredBy,
+    }),
+    idempotencyKey: `backup-failed:${runType}:${input.triggeredBy}:${new Date().toISOString().slice(0, 13)}`,
+    metadata: {
+      event_type: "system.backup_failed",
+      backup_type: runType,
+    },
+  }).catch((error) => ({
+    ok: false,
+    status: "failed",
+    provider: "none",
+    providerMessageId: null,
+    errorMessage: error instanceof Error ? error.message : "Unknown alert email error.",
+  }));
+}
+
 async function writeBackupAudit(input: EmailBackupInput, result: EmailBackupResult | null, errorMessage?: string) {
   const admin = getSupabaseAdminClient();
   await admin.from("audit_logs").insert({
@@ -513,6 +669,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
   const startedAt = new Date().toISOString();
   const runType = input.triggeredBy === "cron" ? "scheduled_email" : "manual_email";
   const runId = await insertBackupRun(input, startedAt, runType);
+  const recipientEmail = getTechnicalBackupEmail();
 
   try {
     const archive = await buildBackupArchive(input, runType);
@@ -603,6 +760,7 @@ export async function createEmailBackup(input: EmailBackupInput): Promise<EmailB
     });
     await insertBackupLog(input, null, message);
     await writeBackupAudit(input, null, message);
+    await notifyBackupFailure(input, runType, message);
     throw new Error(message);
   }
 }

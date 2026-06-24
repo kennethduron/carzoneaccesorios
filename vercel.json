@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/process-email-queue",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/backups/email",
+      "schedule": "0 8 * * 1"
     }
   ]
 }

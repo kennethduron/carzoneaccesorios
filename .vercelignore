@@ -1,6 +1,10 @@
-.next
+﻿.next
 .next-stale-*
 .visual-check
+tmp
+test-results
+*.tsbuildinfo
+supabase/.temp
 node_modules
 npm-debug.log*
 yarn-debug.log*

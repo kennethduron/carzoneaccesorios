@@ -82,17 +82,20 @@ Archivos y metadata:
 
 ## Backup automatico y manual por correo
 
-La estrategia activa no usa Google Cloud, Google Drive API ni Service Account. El respaldo se genera en servidor, se comprime como ZIP y se envia por el proveedor de correo transaccional existente a:
+La estrategia activa no usa Google Cloud, Google Drive API ni Service Account. El respaldo se genera en servidor, se comprime como ZIP y se envia por el proveedor de correo transaccional existente al correo tecnico configurado:
 
 ```text
-carzonetech0@gmail.com
+TECHNICAL_BACKUP_EMAIL=carzonetech0@gmail.com
 ```
+
+Si `TECHNICAL_BACKUP_EMAIL` no existe, el sistema usa `carzonetech0@gmail.com` como fallback.
 
 Google Drive queda desactivado por ahora para evitar depender de una cuenta de Google Cloud con tarjeta conectada. El endpoint historico `/api/cron/backups/google-drive` permanece protegido por `CRON_SECRET`, pero responde que esa via esta desactivada.
 
 Variables necesarias en Vercel Production:
 
 - `CRON_SECRET`
+- `TECHNICAL_BACKUP_EMAIL`
 - proveedor de correo ya existente, por ejemplo `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
 - `EMAIL_BACKUP_MAX_BYTES` opcional, por defecto `15000000`
 
@@ -109,11 +112,11 @@ Authorization: Bearer CRON_SECRET
 
 Tambien acepta `POST`. Sin `Authorization: Bearer CRON_SECRET`, responde `401` y no crea backup.
 
-`vercel.json` ya contiene crons operativos. Si el proyecto esta en Hobby, Vercel permite maximo 2 cron jobs; en ese caso mantener backup manual o usar Cron-Job.org con este endpoint. Si el proyecto esta en Pro, se puede agregar una tarea semanal, preferiblemente domingo de madrugada, sin romper los crons existentes.
+`vercel.json` programa este endpoint semanalmente con `0 8 * * 1`. Eso equivale a lunes 08:00 UTC, lunes 02:00 a. m. Honduras (UTC-6). Vercel Cron solo ejecuta crons en produccion.
 
 ### Backup manual
 
-En `/admin/seguridad`, el `technical_owner` puede usar `Enviar backup por correo`. El backup manual genera un ZIP completo, lo envia a `carzonetech0@gmail.com` y muestra:
+En `/admin/seguridad`, solo el `technical_owner` puede usar `Enviar backup por correo`. El backup manual genera un ZIP completo, lo envia a `TECHNICAL_BACKUP_EMAIL` o al fallback `carzonetech0@gmail.com` y muestra:
 
 - estado
 - fecha
@@ -141,11 +144,24 @@ Alcance completo:
 - `customers`
 - `users`
 - `wholesale_codes`
+- `customer_credit_accounts`
+- `accounts_receivable`
+- `accounts_receivable_payments`
 - `crm_notes`
 - `crm_followups`
 - `holiday_banners`
 - `fiscal_settings`
 - `business_settings`
+- `company_settings`
+- `technical_alert_settings`
+- `notification_preferences`
+- `notification_user_preferences`
+- `internal_notifications`
+- `fcm_device_tokens` sin valor de token, solo metadata operativa
+- `email_queue` solo metadata: id, destinatario, plantilla, estado, fechas, error, relacionado e idempotency key
+- `backup_runs`
+- `backup_logs`
+- `error_logs` recientes importantes
 - `notification_logs` recientes importantes
 - `audit_logs` recientes importantes
 
@@ -183,6 +199,8 @@ El sistema no respalda variables de entorno ni Supabase Auth. Tambien redacta re
 - cookies
 - sesiones
 - numeros de tarjeta/CVV
+- valor completo de FCM device tokens
+- body/payload completo de `email_queue`
 
 ### Tamano maximo
 
@@ -211,6 +229,14 @@ Las migraciones `202606070001_google_drive_backup_runs.sql` y `202606070002_emai
 
 Tambien se registra compatibilidad en `backup_logs` y auditoria tecnica en `audit_logs`.
 
+Si falla la generacion o envio:
+
+- se actualiza `backup_runs` como `failed`
+- se inserta `backup_logs` como `failed`
+- se registra `backup.email.failed` en `error_logs`
+- se crea una notificacion interna `system.backup_failed` para `technical_owner`
+- se intenta enviar un correo de alerta a `TECHNICAL_BACKUP_EMAIL`
+
 ## Procedimiento de backup manual en Free
 
 1. Verificar que el proyecto no este pausado.
@@ -232,13 +258,16 @@ supabase db dump --db-url "$SUPABASE_DB_URL" --file backups/car-zone-$(date +%F)
 ## Restauracion de base de datos
 
 1. No restaurar directo sobre produccion salvo emergencia confirmada.
-2. Crear proyecto Supabase temporal.
-3. Restaurar el dump o backup seleccionado.
-4. Ejecutar migraciones pendientes si aplica.
-5. Validar tablas criticas, correlativo fiscal, pedidos, pagos e inventario.
-6. Validar login admin, checkout, rastreo, facturacion y CRM.
-7. Si la restauracion es aceptada, programar ventana de mantenimiento.
-8. Actualizar variables en Vercel apuntando al proyecto restaurado solo cuando la validacion pase.
+2. Crear proyecto Supabase temporal o base staging aislada.
+3. Aplicar `supabase/migrations` o restaurar un dump SQL confiable como base.
+4. Abrir el ZIP y revisar `metadata.json`, `summary.csv` y los JSON por tabla.
+5. Importar manualmente preservando IDs y relaciones. Orden recomendado: roles/configuracion, usuarios/clientes, productos/imagenes, inventario, pedidos, pagos, facturas, credito comercial, CRM, notificaciones y logs.
+6. Para tablas con relaciones, usar scripts controlados o SQL transaccional en staging; no pegar datos directo en produccion.
+7. Validar tablas criticas: `users`, `customers`, `products`, `product_images`, `orders`, `order_items`, `payments`, `invoices`, `invoice_items`, `inventory_movements`, `inventory_reservations`, `customer_credit_accounts`, `accounts_receivable`, `accounts_receivable_payments`, `fiscal_settings`, `company_settings`, `crm_notes`, `crm_followups`, `backup_runs`, `backup_logs`.
+8. Validar login admin, checkout de prueba, rastreo, facturacion, CAI/correlativos, inventario, credito comercial, CRM, notificaciones y descarga de PDFs.
+9. Validar que no falten assets externos: imagenes de producto, banners, logos fiscales y comprobantes privados en Cloudinary.
+10. Si la restauracion es aceptada, programar ventana de mantenimiento.
+11. Actualizar variables en Vercel apuntando al proyecto restaurado solo cuando la validacion pase.
 
 ## Si se elimina informacion
 
@@ -280,6 +309,7 @@ Variables criticas que deben inventariarse por nombre:
 - `NEXT_PUBLIC_SITE_URL`
 - `RATE_LIMIT_SALT`
 - `CRON_SECRET`
+- `TECHNICAL_BACKUP_EMAIL`
 - `SUPABASE_PLAN_NAME`
 - `EMAIL_PROVIDER`
 - `RESEND_API_KEY`

@@ -231,6 +231,20 @@ function validateFiscalDates(input: FiscalSettings) {
   return null;
 }
 
+function hasFiscalAuthorizationData(input: FiscalSettings) {
+  return Boolean(
+    input.legal_name.trim() ||
+      input.rtn.trim() ||
+      input.cai.trim() ||
+      input.invoice_range_start.trim() ||
+      input.invoice_range_end.trim() ||
+      input.current_invoice_number.trim() ||
+      input.cai_authorization_date ||
+      input.emission_deadline ||
+      input.fiscal_address.trim(),
+  );
+}
+
 function getCloudinaryLogoPublicId(url: string | null | undefined) {
   if (!url) {
     return null;
@@ -408,11 +422,11 @@ export async function saveFiscalSettingsAction(formData: FormData) {
 
   const input = parseFiscalSettingsForm(formData, logoResult.logoUrl ?? null);
 
-  if (!input.legal_name.trim()) {
+  if (hasFiscalAuthorizationData(input) && !input.legal_name.trim()) {
     if (logoResult.uploadedPublicId) {
       await deleteFiscalLogoIfOwned(logoResult.logoUrl, { reason: "fiscal_settings_validation_failed" });
     }
-    return { ok: false, message: "El nombre legal de la empresa es obligatorio." };
+    return { ok: false, message: "La razon social es obligatoria cuando hay datos fiscales configurados." };
   }
 
   const dateError = validateFiscalDates(input);

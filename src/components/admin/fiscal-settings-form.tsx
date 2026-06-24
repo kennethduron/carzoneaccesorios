@@ -282,7 +282,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
             <div>
               <h3 className="text-base font-semibold">Logo de la empresa</h3>
               <p className="mt-1 text-sm text-black/55">Este logo aparecerá en las facturas fiscales.</p>
-              <p className="mt-1 text-xs text-black/45">JPG, PNG o WEBP. Máximo 2 MB y 2 megapíxeles.</p>
+              <p className="mt-1 text-xs text-black/45">PNG, JPG o WEBP. Maximo 5 MB y 5 megapixeles.</p>
             </div>
             {canEdit ? (
               <div className="flex flex-wrap gap-2">
