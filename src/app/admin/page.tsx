@@ -31,6 +31,7 @@ import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminBusinessSettings } from "@/services/supabase/admin-business-settings.service";
 import { getAdminDashboardOverview, getWarehouseDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
@@ -62,13 +63,13 @@ type AdminModuleGroup = {
 const moduleGroups = [
   {
     id: "operacion",
-    title: "Operacion",
-    navLabel: "Operacion",
-    description: "Pedidos, inventario y catalogo operativo.",
+    title: "Operación",
+    navLabel: "Operación",
+    description: "Pedidos, inventario y catálogo operativo.",
     defaultOpen: true,
     modules: [
-      { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, preparacion y estados.", permissions: ["orders:read", "orders:manage"] },
-      { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decision humana.", permissions: ["reservations:review"] },
+      { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, preparación y estados.", permissions: ["orders:read", "orders:manage"] },
+      { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decisión humana.", permissions: ["reservations:review"] },
       { title: "Inventario", href: "/admin/inventario", description: "Entradas, salidas, ajustes e inventario bajo.", permissions: ["inventory:manage"] },
       { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:manage"] },
     ],
@@ -89,12 +90,12 @@ const moduleGroups = [
     id: "clientes",
     title: "Clientes",
     navLabel: "Clientes",
-    description: "Relacion comercial, mayoristas y CRM.",
+    description: "Relación comercial, mayoristas y CRM.",
     defaultOpen: true,
     modules: [
       { title: "Clientes", href: "/admin/clientes", description: "Clientes, notas y seguimiento comercial.", permissions: ["crm:manage", "customers:manage"] },
       { title: "Clientes mayoristas", href: "/admin/clientes-mayoristas", description: "Aprobar, rechazar, suspender y reactivar mayoristas.", permissions: ["wholesale:manage"] },
-      { title: "CRM", href: "/admin/crm", description: "Seguimientos, oportunidades y atencion vencida.", permissions: ["crm:manage", "customers:manage"] },
+      { title: "CRM", href: "/admin/crm", description: "Seguimientos, oportunidades y atención vencida.", permissions: ["crm:manage", "customers:manage"] },
     ],
   },
   {
@@ -104,59 +105,60 @@ const moduleGroups = [
     description: "Accesos directos para control de stock.",
     defaultOpen: true,
     modules: [
-      { title: "Inventario bajo", href: "/admin/inventario?filter=low_stock", description: "Productos bajo minimo o sin stock.", permissions: ["inventory:manage"] },
+      { title: "Inventario bajo", href: "/admin/inventario?filter=low_stock", description: "Productos bajo mínimo o sin stock.", permissions: ["inventory:manage"] },
       { title: "Movimientos", href: "/admin/inventario", description: "Entradas, salidas, devoluciones y ajustes.", permissions: ["inventory:manage"] },
-      { title: "Catalogo", href: "/admin/productos", description: "Productos, precios y contenido del catalogo.", permissions: ["products:manage"] },
+      { title: "Catálogo", href: "/admin/productos", description: "Productos, precios y contenido del catálogo.", permissions: ["products:manage"] },
     ],
   },
   {
     id: "finanzas",
     title: "Finanzas",
     navLabel: "Finanzas",
-    description: "Facturas, reportes y configuracion fiscal.",
+    description: "Facturas, reportes y configuración fiscal.",
     defaultOpen: true,
     modules: [
-      { title: "Cuentas por cobrar", href: "/admin/cuentas-por-cobrar", description: "Creditos abiertos, proximos a vencer y vencidos.", permissions: ["receivables:read"] },
-      { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulacion.", permissions: ["invoices:read", "invoices:manage"] },
+      { title: "Cuentas por cobrar", href: "/admin/cuentas-por-cobrar", description: "Créditos abiertos, próximos a vencer y vencidos.", permissions: ["receivables:read"] },
+      { title: "Contabilidad", href: "/admin/contabilidad", description: "Catálogo de cuentas, libro diario y partidas manuales.", permissions: ["accounting:read"] },
+      { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", description: "Ventas facturadas, impuestos, facturas anuladas y correlativos.", permissions: ["reports:read", "reports:fiscal_read"] },
-      { title: "Configuracion fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha limite y datos legales.", permissions: ["settings:fiscal", "fiscal:read"] },
+      { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal", "fiscal:read"] },
     ],
   },
   {
     id: "configuracion",
-    title: "Administracion",
-    navLabel: "Configuracion",
+    title: "Administración",
+    navLabel: "Configuración",
     description: "Ajustes empresariales y gobierno interno.",
     defaultOpen: true,
     modules: [
-      { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoria.", permissions: ["security:read"] },
-      { title: "Configuracion empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
-      { title: "Banners festivos", href: "/admin/banners", description: "Flyers, promociones y mensajes por dias festivos de Honduras.", permissions: ["settings:manage", "commercial_settings:manage"] },
+      { title: "Seguridad", href: "/admin/seguridad", description: "Usuarios, roles, permisos y auditoría.", permissions: ["security:read"] },
+      { title: "Configuración empresarial", href: "/admin/configuracion", description: "Notificaciones, CRM, mayoristas, pedidos, inventario y contacto.", permissions: ["commercial_settings:manage", "settings:manage"] },
+      { title: "Banners festivos", href: "/admin/banners", description: "Flyers, promociones y mensajes por días festivos de Honduras.", permissions: ["settings:manage", "commercial_settings:manage"] },
       { title: "Tarjeta mediante enlace", href: "/admin/revision-bac", description: "Referencia operativa; el flujo activo usa un enlace externo enviado por WhatsApp.", permissions: ["commercial_settings:manage", "settings:manage"] },
     ],
   },
   {
     id: "soporte",
-    title: "Soporte / Guia",
-    navLabel: "Soporte / Guia",
-    description: "Material operativo para resolver dudas rapido.",
+    title: "Soporte / Guía",
+    navLabel: "Soporte / Guía",
+    description: "Material operativo para resolver dudas rápido.",
     defaultOpen: false,
     modules: [
-      { title: "Guia rapida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y pagos mediante enlace.", permissions: ["admin:access"] },
+      { title: "Guía rápida", href: "/admin/guia", description: "Pasos diarios para productos, pedidos, CRM, facturas y pagos mediante enlace.", permissions: ["admin:access"] },
       { title: "Ayuda interna", href: "/admin/ayuda", description: "Manual operativo por rol para productos, pedidos, facturas, CRM y pagos mediante enlace.", permissions: ["admin:access"] },
     ],
   },
   {
     id: "tecnico",
-    title: "Tecnico",
-    navLabel: "Tecnico",
-    description: "Monitoreo, tareas programadas, copias de seguridad y alertas tecnicas.",
+    title: "Técnico",
+    navLabel: "Técnico",
+    description: "Monitoreo, tareas programadas, copias de seguridad y alertas técnicas.",
     defaultOpen: true,
     technicalOnly: true,
     modules: [
       { title: "Uso y monitoreo", href: "/admin/uso", description: "Volumen de datos, logs antiguos, cron y referencias externas.", permissions: ["technical:tools"] },
       { title: "Copias de seguridad", href: "/admin/uso", description: "Estado operativo y controles de respaldo.", permissions: ["system:backups"] },
-      { title: "Alertas tecnicas", href: "/admin/uso", description: "Errores, notificaciones y monitoreo tecnico.", permissions: ["technical:tools"] },
+      { title: "Alertas técnicas", href: "/admin/uso", description: "Errores, notificaciones y monitoreo técnico.", permissions: ["technical:tools"] },
     ],
   },
 ] satisfies AdminModuleGroup[];
@@ -211,6 +213,26 @@ function statusTone(status: string | null) {
   return "bg-[#fff7ed] text-[#7c2d12]";
 }
 
+function dashboardFiscalNotificationKey(message: string, index: number) {
+  const normalized = message
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  if (normalized.includes("cai") && normalized.includes("no esta configurado")) return "fiscal:cai_missing";
+  if (normalized.includes("fecha de emision")) return "fiscal:authorization_date_missing";
+  if (normalized.includes("correlativo") || normalized.includes("rango autorizado")) return "fiscal:range_incomplete";
+  if (normalized.includes("rango inicial")) return "fiscal:range_invalid";
+  if (normalized.includes("fuera del rango")) return "fiscal:range_exceeded";
+  if (normalized.includes("rango fiscal esta por terminar")) return "fiscal:range_low";
+  if (normalized.includes("fecha de vencimiento") && normalized.includes("no esta configurada")) return "fiscal:expiration_missing";
+  if (normalized.includes("fecha de vencimiento")) return "fiscal:expiration_warning";
+  if (normalized.includes("facturas anuladas")) return "fiscal:cancelled_invoices";
+  if (normalized.includes("datos fiscales incompletos")) return "fiscal:invoice_data_incomplete";
+
+  return `fiscal:alert_${index}`;
+}
+
 function hnDateKey(value: string | Date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date(value));
 }
@@ -258,7 +280,7 @@ export default async function AdminPage() {
       <AdminShell title="Panel contable">
         <div className="mb-4 grid gap-3 rounded-lg border border-black/10 bg-white p-3 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-xs uppercase text-black/45">Sesion activa</p>
+            <p className="text-xs uppercase text-black/45">Sesión activa</p>
             <p className="font-semibold">{profile.full_name || profile.email}</p>
             <p className="text-sm capitalize text-black/55">Rol: {profile.role}</p>
           </div>
@@ -287,7 +309,7 @@ export default async function AdminPage() {
             <MetricCard label="CAI vigente" value={fiscalSettings?.cai || "Sin CAI"} />
             <MetricCard label="Rango fiscal" value={fiscalSettings ? `${fiscalSettings.invoice_range_start} a ${fiscalSettings.invoice_range_end}` : "Sin rango"} />
             <MetricCard label="Correlativo actual" value={fiscalSettings?.current_invoice_number || "Sin correlativo"} />
-            <MetricCard label="Fecha limite CAI" value={fiscalSettings?.emission_deadline ? formatDate(fiscalSettings.emission_deadline) : "Sin fecha"} />
+            <MetricCard label="Fecha límite CAI" value={fiscalSettings?.emission_deadline ? formatDate(fiscalSettings.emission_deadline) : "Sin fecha"} />
           </div>
         </section>
 
@@ -314,7 +336,7 @@ export default async function AdminPage() {
       <AdminShell title="Panel de bodega">
         <div className="mb-4 grid gap-3 rounded-lg border border-black/10 bg-white p-3 lg:grid-cols-[1fr_auto] lg:items-center">
           <div>
-            <p className="text-xs uppercase text-black/45">Sesion activa</p>
+            <p className="text-xs uppercase text-black/45">Sesión activa</p>
             <p className="font-semibold">{profile.full_name || profile.email}</p>
             <p className="text-sm capitalize text-black/55">Rol: {profile.role}</p>
           </div>
@@ -324,14 +346,14 @@ export default async function AdminPage() {
         <section className="mb-4 rounded-lg border border-black/10 bg-white p-4">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm text-black/50">Vista logistica</p>
-              <h2 className="text-2xl font-semibold">Inventario y preparacion</h2>
+              <p className="text-sm text-black/50">Vista logística</p>
+              <h2 className="text-2xl font-semibold">Inventario y preparación</h2>
             </div>
-            <p className="text-sm text-black/55">Sin pagos, facturacion, CRM ni seguridad</p>
+            <p className="text-sm text-black/55">Sin pagos, facturación, CRM ni seguridad</p>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <MetricCard label="Por preparar" value={warehouse.ordersToPrepare.toLocaleString("es-HN")} />
-            <MetricCard label="En preparacion" value={warehouse.preparingOrders.toLocaleString("es-HN")} />
+            <MetricCard label="En preparación" value={warehouse.preparingOrders.toLocaleString("es-HN")} />
             <MetricCard label="Empacados" value={warehouse.packedOrders.toLocaleString("es-HN")} />
             <MetricCard label="Enviados" value={warehouse.shippedOrders.toLocaleString("es-HN")} />
             <MetricCard label="En ruta" value={warehouse.routeOrders.toLocaleString("es-HN")} />
@@ -367,7 +389,7 @@ export default async function AdminPage() {
       label: "Revisar pedidos nuevos",
       value: overview.newOrders,
       href: "/admin/pedidos?task=new_orders",
-      empty: "Todavia no hay pedidos. Cuando un cliente compre, apareceran aqui.",
+      empty: "Todavía no hay pedidos. Cuando un cliente compre, aparecerán aquí.",
       permissions: ["orders:read", "orders:manage"],
       card: "pending_orders",
     },
@@ -375,7 +397,7 @@ export default async function AdminPage() {
       label: "Preparar pedidos confirmados",
       value: overview.ordersToPrepare,
       href: "/admin/pedidos?task=to_prepare",
-      empty: "No hay pedidos confirmados esperando preparacion.",
+      empty: "No hay pedidos confirmados esperando preparación.",
       permissions: ["orders:read", "orders:manage"],
       card: "pending_orders",
     },
@@ -383,7 +405,7 @@ export default async function AdminPage() {
       label: "Confirmar pagos pendientes",
       value: overview.pendingPayments,
       href: "/admin/pedidos?task=pending_payments",
-      empty: "No hay pagos esperando revision.",
+      empty: "No hay pagos esperando revisión.",
       permissions: ["payments:confirm", "payments:manage"],
       card: "pending_payments",
     },
@@ -399,7 +421,7 @@ export default async function AdminPage() {
       label: "Revisar inventario bajo",
       value: overview.lowStockProducts,
       href: "/admin/inventario?filter=low_stock",
-      empty: "Inventario sin alertas criticas.",
+      empty: "Inventario sin alertas críticas.",
       permissions: ["inventory:manage"],
       card: "low_inventory",
     },
@@ -479,7 +501,7 @@ export default async function AdminPage() {
       title: "Inventario",
       metrics: [
         { label: "Sin stock", value: overview.outOfStockProducts.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
-        { label: "Bajo minimo", value: overview.lowStockProducts.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
+        { label: "Bajo mínimo", value: overview.lowStockProducts.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
         { label: "Reservas vencidas", value: overview.expiredReservations.toLocaleString("es-HN"), visible: visibleCards.low_inventory },
       ],
     },
@@ -523,25 +545,25 @@ export default async function AdminPage() {
     {
       title: "MODULOS PRINCIPALES",
       items: [
-        { label: "Operacion", href: "#operacion", icon: "operation", visible: groupVisible("operacion") },
+        { label: "Operación", href: "#operacion", icon: "operation", visible: groupVisible("operacion") },
         { label: "Ventas", href: "#ventas", icon: "sales", visible: groupVisible("ventas") },
         { label: "Clientes", href: "#clientes", icon: "crm", visible: groupVisible("clientes") },
         { label: "Inventario", href: "#inventario", icon: "inventory", visible: groupVisible("inventario") },
         { label: "Finanzas", href: "#finanzas", icon: "finance", visible: groupVisible("finanzas") },
-        { label: "Administracion", href: "#configuracion", icon: "settings", visible: groupVisible("configuracion") },
+        { label: "Administración", href: "#configuracion", icon: "settings", visible: groupVisible("configuracion") },
       ],
     },
     {
       title: "HERRAMIENTAS",
       items: [
-        { label: "Soporte / Guia", href: "#soporte", icon: "support", visible: groupVisible("soporte") },
-        { label: "Tecnico", href: "#tecnico", icon: "technical", visible: groupVisible("tecnico") },
+        { label: "Soporte / Guía", href: "#soporte", icon: "support", visible: groupVisible("soporte") },
+        { label: "Técnico", href: "#tecnico", icon: "technical", visible: groupVisible("tecnico") },
       ],
     },
     {
       title: "SISTEMA",
       items: [
-        { label: "Configuracion", href: moduleHref("Configuracion empresarial") ?? "#configuracion", icon: "settings", visible: Boolean(moduleHref("Configuracion empresarial")) },
+        { label: "Configuración", href: moduleHref("Configuración empresarial") ?? "#configuracion", icon: "settings", visible: Boolean(moduleHref("Configuración empresarial")) },
         { label: "Seguridad", href: moduleHref("Seguridad") ?? "#configuracion", icon: "security", visible: Boolean(moduleHref("Seguridad")) },
         { label: "Reportes", href: moduleHref("Reportes") ?? moduleHref("Reportes fiscales") ?? "#ventas", icon: "reports", visible: Boolean(moduleHref("Reportes") ?? moduleHref("Reportes fiscales")) },
       ],
@@ -553,7 +575,7 @@ export default async function AdminPage() {
     { label: "Pedidos hoy", value: overview.ordersToday.toLocaleString("es-HN"), detail: "0% vs ayer", href: "/admin/pedidos", icon: ClipboardList, tone: "bg-[#eaf2ff] text-[#2563eb]", visible: visibleCards.pending_orders && canAccessModule(profile.role, profile.email, profile.permissions, ["orders:read", "orders:manage"]) },
     { label: "Clientes nuevos (mes)", value: overview.newCustomersMonth.toLocaleString("es-HN"), detail: `${overview.newCustomersToday.toLocaleString("es-HN")} hoy`, href: "/admin/clientes", icon: UserPlus, tone: "bg-[#edf7ed] text-[#2f6f3e]", visible: visibleCards.customers_attention && canAccessModule(profile.role, profile.email, profile.permissions, ["crm:manage", "customers:manage"]) },
     { label: "Productos activos", value: "Sin dato", detail: "Sin consulta nueva", href: "/admin/productos", icon: Package, tone: "bg-[#f3e8ff] text-[#7c3aed]", visible: canAccessModule(profile.role, profile.email, profile.permissions, ["products:manage"]) },
-    { label: "Stock bajo", value: overview.lowStockProducts.toLocaleString("es-HN"), detail: "Requieren atencion", href: "/admin/inventario?filter=low_stock", icon: AlertTriangle, tone: "bg-[#fff7ed] text-[#ea580c]", visible: visibleCards.low_inventory && canAccessModule(profile.role, profile.email, profile.permissions, ["inventory:manage"]) },
+    { label: "Stock bajo", value: overview.lowStockProducts.toLocaleString("es-HN"), detail: "Requieren atención", href: "/admin/inventario?filter=low_stock", icon: AlertTriangle, tone: "bg-[#fff7ed] text-[#ea580c]", visible: visibleCards.low_inventory && canAccessModule(profile.role, profile.email, profile.permissions, ["inventory:manage"]) },
   ].filter((card) => card.visible);
 
   const quickLinks = ["Pedidos", "Facturas", "Productos", "Clientes", "Reportes"]
@@ -576,7 +598,7 @@ export default async function AdminPage() {
   }));
 
   const notificationItems: AdminDashboardNotificationItem[] = [];
-  const fiscalHref = moduleHref("Configuracion fiscal") ?? "/admin/configuracion-fiscal";
+  const fiscalHref = moduleHref("Configuración fiscal") ?? "/admin/configuracion-fiscal";
   const technicalHref = moduleHref("Uso y monitoreo") ?? "/admin/uso";
   const addNotification = (condition: boolean, item: AdminDashboardNotificationItem) => {
     if (condition) notificationItems.push(item);
@@ -585,8 +607,8 @@ export default async function AdminPage() {
 
   fiscalAlerts.forEach((alert, index) => {
     notificationItems.push({
-      id: `fiscal-${index}`,
-      title: alert.type === "danger" ? "Alerta fiscal critica" : "Alerta fiscal",
+      id: dashboardFiscalNotificationKey(alert.message, index),
+      title: alert.type === "danger" ? "Alerta fiscal crítica" : "Alerta fiscal",
       detail: alert.message,
       href: fiscalHref,
       tone: alert.type === "danger" ? "danger" : "warning",
@@ -594,68 +616,85 @@ export default async function AdminPage() {
   });
 
   addNotification(overview.newOrders > 0, {
-    id: "new-orders",
+    id: "orders:new",
     title: "Pedidos nuevos",
-    detail: `${overview.newOrders.toLocaleString("es-HN")} pedidos requieren revision.`,
+    detail: `${overview.newOrders.toLocaleString("es-HN")} pedidos requieren revisión.`,
     href: "/admin/pedidos?task=new_orders",
     tone: "info",
   });
   addNotification(overview.pendingPayments > 0, {
-    id: "pending-payments",
+    id: "payments:pending",
     title: "Pagos pendientes",
-    detail: `${overview.pendingPayments.toLocaleString("es-HN")} pagos esperan confirmacion.`,
+    detail: `${overview.pendingPayments.toLocaleString("es-HN")} pagos esperan confirmación.`,
     href: moduleHref("Pedidos por cobrar") ?? "/admin/pedidos?task=pending_payments",
     tone: "warning",
   });
   addNotification(overview.lowStockProducts > 0, {
-    id: "low-stock",
+    id: "inventory:low_stock",
     title: "Inventario bajo",
-    detail: `${overview.lowStockProducts.toLocaleString("es-HN")} productos requieren atencion.`,
+    detail: `${overview.lowStockProducts.toLocaleString("es-HN")} productos requieren atención.`,
     href: "/admin/inventario?filter=low_stock",
     tone: "warning",
   });
   addNotification(overview.pendingFollowups > 0, {
-    id: "crm-overdue",
+    id: "crm:overdue",
     title: "CRM vencido",
     detail: `${overview.pendingFollowups.toLocaleString("es-HN")} seguimientos vencidos.`,
     href: "/admin/crm?task=overdue",
     tone: "warning",
   });
   addNotification(overview.pendingInvoices > 0, {
-    id: "pending-invoices",
+    id: "invoices:pending",
     title: "Facturas pendientes",
-    detail: `${overview.pendingInvoices.toLocaleString("es-HN")} facturas pendientes de revision.`,
+    detail: `${overview.pendingInvoices.toLocaleString("es-HN")} facturas pendientes de revisión.`,
     href: "/admin/facturas?task=pending_invoices",
     tone: "warning",
   });
   addNotification(overview.failedEmails > 0, {
-    id: "failed-emails",
+    id: "emails:failed",
     title: "Correos fallidos",
-    detail: `${overview.failedEmails.toLocaleString("es-HN")} correos en estado failed.`,
-    href: canViewTechnical ? technicalHref : moduleHref("Configuracion empresarial") ?? "/admin/configuracion",
+    detail: `${overview.failedEmails.toLocaleString("es-HN")} correos en estado de error.`,
+    href: canViewTechnical ? technicalHref : moduleHref("Configuración empresarial") ?? "/admin/configuracion",
     tone: "danger",
   });
   addNotification(canViewTechnical && visibleCards.backup_cron_status && isProblemStatus(overview.latestBackupStatus), {
-    id: "backup-status",
-    title: "Backups requieren revision",
-    detail: `Ultimo estado: ${overview.latestBackupStatus ?? "sin registro"}.`,
+    id: "backup:failed",
+    title: "Backups requieren revisión",
+    detail: `Último estado: ${overview.latestBackupStatus ?? "sin registro"}.`,
     href: technicalHref,
     tone: "danger",
   });
   addNotification(canViewTechnical && visibleCards.backup_cron_status && isProblemStatus(overview.latestCronStatus), {
-    id: "cron-status",
-    title: "Tarea tecnica con alerta",
+    id: "cron:failed",
+    title: "Tarea técnica con alerta",
     detail: overview.latestCronJob ? `${overview.latestCronJob}: ${overview.latestCronStatus}` : `Estado: ${overview.latestCronStatus}`,
     href: technicalHref,
     tone: "danger",
   });
+
+  const notificationKeys = notificationItems.map((item) => item.id);
+  const readNotificationKeys = new Set<string>();
+  if (notificationKeys.length > 0) {
+    const supabase = await getSupabaseServerClient();
+    const { data } = await supabase
+      .from("admin_dashboard_notification_reads")
+      .select("notification_key")
+      .eq("user_id", profile.id)
+      .in("notification_key", notificationKeys)
+      .returns<Array<{ notification_key: string }>>();
+
+    for (const row of data ?? []) {
+      readNotificationKeys.add(row.notification_key);
+    }
+  }
+  const unreadNotificationItems = notificationItems.filter((item) => !readNotificationKeys.has(item.id));
 
   return (
     <AdminShell title="Panel administrativo" variant="dashboard">
       <AdminDashboardFrame
         navSections={navSections}
         searchModules={searchModules}
-        notifications={notificationItems}
+        notifications={unreadNotificationItems}
         profileLabel={profile.email ?? profile.full_name ?? "Usuario"}
         roleText={roleText}
         avatarLetter={(profile.full_name || profile.email || "K").slice(0, 1).toUpperCase()}
@@ -668,72 +707,84 @@ export default async function AdminPage() {
               <h1 className="text-xl font-semibold tracking-normal sm:text-2xl">Bienvenido de vuelta, {firstName}!</h1>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Link href="/admin/guia" className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold shadow-sm transition-colors hover:border-[#e4252c] hover:text-[#e4252c]">Accesos rapidos <ChevronDown size={15} /></Link>
-              {moduleHref("Configuracion empresarial") ? <Link href={moduleHref("Configuracion empresarial") ?? "/admin/configuracion"} className="inline-flex size-10 items-center justify-center rounded-md border border-black/10 bg-white shadow-sm transition-colors hover:border-[#e4252c] hover:text-[#e4252c]" aria-label="Configuracion"><Settings size={17} /></Link> : null}
+              <Link href="/admin/guia" className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold shadow-sm transition-colors hover:border-[#e4252c] hover:text-[#e4252c]">Accesos rápidos <ChevronDown size={15} /></Link>
+              {moduleHref("Configuración empresarial") ? <Link href={moduleHref("Configuración empresarial") ?? "/admin/configuracion"} className="inline-flex size-10 items-center justify-center rounded-md border border-black/10 bg-white shadow-sm transition-colors hover:border-[#e4252c] hover:text-[#e4252c]" aria-label="Configuración"><Settings size={17} /></Link> : null}
             </div>
           </div>
 
           {fiscalAlerts.length > 0 ? <div className="mb-4"><FiscalAlertsPanel alerts={fiscalAlerts} /></div> : null}
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
-            <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:col-span-2 2xl:grid-cols-5" aria-label="Indicadores principales">
-              {kpiCards.map((card) => <KpiCard key={card.label} {...card} />)}
-            </section>
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="min-w-0 space-y-4">
+              <section className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3" aria-label="Indicadores principales">
+                {kpiCards.map((card) => <KpiCard key={card.label} {...card} />)}
+              </section>
 
-            <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div><h2 className="text-base font-semibold">Operacion diaria</h2><p className="text-xs text-black/50">{todayTasks.length.toLocaleString("es-HN")} accesos para tu rol</p></div>
-                <a href="#modulos" className="text-xs font-semibold text-[#e4252c] hover:text-[#b91c25]">Ver todos</a>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 min-[1500px]:grid-cols-3 2xl:grid-cols-4">
-                {todayTasks.map((task) => <TaskCard key={task.label} task={task} />)}
-                {todayTasks.length === 0 ? <div className="rounded-md border border-dashed border-black/15 bg-[#fafafa] p-3 text-sm text-black/55 sm:col-span-2">No hay tarjetas operativas habilitadas para tu rol.</div> : null}
-              </div>
-            </section>
+              <div className="grid items-start gap-4 min-[1400px]:grid-cols-[minmax(0,1.08fr)_minmax(330px,0.92fr)]">
+                <section className="self-start rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div><h2 className="text-base font-semibold">Operación diaria</h2><p className="text-xs text-black/50">{todayTasks.length.toLocaleString("es-HN")} accesos para tu rol</p></div>
+                    <a href="#modulos" className="text-xs font-semibold text-[#e4252c] hover:text-[#b91c25]">Ver todos los accesos</a>
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(145px,1fr))] gap-2">
+                    {todayTasks.map((task) => <TaskCard key={task.label} task={task} />)}
+                    {todayTasks.length === 0 ? <div className="rounded-md border border-dashed border-black/15 bg-[#fafafa] p-3 text-sm text-black/55 sm:col-span-2">No hay tarjetas operativas habilitadas para tu rol.</div> : null}
+                  </div>
+                </section>
 
-            <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div><h2 className="text-base font-semibold">Resumen operativo</h2><p className="text-xs text-black/50">Indicadores actuales</p></div>
-                {visibleCards.bac_alerts ? <BacStatus status={businessSettings.bac_card_status} /> : null}
+                <section className="self-start rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div><h2 className="text-base font-semibold">Resumen operativo</h2><p className="text-xs text-black/50">Indicadores actuales</p></div>
+                    {visibleCards.bac_alerts ? <BacStatus status={businessSettings.bac_card_status} /> : null}
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(118px,1fr))] gap-2">
+                    {metricGroups.map((group) => <MetricGroup key={group.title} title={group.title} metrics={group.metrics} />)}
+                  </div>
+                </section>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                {metricGroups.map((group) => <MetricGroup key={group.title} title={group.title} metrics={group.metrics} />)}
-              </div>
-            </section>
 
-            <aside className="space-y-4 xl:row-span-3">
-              <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div><h2 className="text-base font-semibold">Estado del sistema</h2><p className="text-xs text-black/50">Ultima verificacion: hace 2 min</p></div>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${statusTone(fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "risk" : "success")}`}><CheckCircle2 size={14} />{fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "Revisar" : "Todo bien"}</span>
+              <section id="modulos" className="scroll-mt-24 rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
+                <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div><h2 className="text-base font-semibold">Módulos del sistema</h2><p className="text-xs text-black/50">Todos los accesos visibles respetan tu rol.</p></div>
+                  <span className="text-xs font-semibold text-[#e4252c]">{allVisibleModules.length.toLocaleString("es-HN")} accesos</span>
                 </div>
-                <div className="space-y-2">
-                  <StatusRow label="Fiscal" value={`${fiscalAlerts.length.toLocaleString("es-HN")} alertas`} status={fiscalAlerts.length > 0 ? "risk" : "success"} />
-                  <StatusRow label="Correos" value={`${overview.failedEmails.toLocaleString("es-HN")} failed`} status={overview.failedEmails > 0 ? "failed" : "success"} />
-                  {canViewTechnical && visibleCards.backup_cron_status ? <><StatusRow label="Cron" value={overview.latestCronJob ? `${overview.latestCronJob}` : "Sin registro"} status={overview.latestCronStatus} /><StatusRow label="Backups" value={formatDate(overview.latestBackupAt)} status={overview.latestBackupStatus} /></> : null}
+                <div className="grid gap-3 sm:grid-cols-2 min-[1200px]:grid-cols-3 2xl:grid-cols-4">
+                  {visibleModuleGroups.map((group) => <ModuleCategoryCard key={group.id} group={group} />)}
                 </div>
               </section>
-              {canViewNotificationSummary ? <AdminNotificationStatusCard /> : null}
-              <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
-                <h2 className="text-base font-semibold">Accesos frecuentes</h2>
-                <div className="mt-3 space-y-2">
-                  {quickLinks.map((module) => <Link key={`${module.groupId}-${module.title}`} href={module.href} className="flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-[#fff1f2]"><span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-[#fff1f2] text-[#e4252c]"><ModuleIcon groupId={module.groupId} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{module.title}</span><span className="block truncate text-xs text-black/50">{module.description}</span></span></Link>)}
-                </div>
-              </section>
+            </div>
+
+            <aside className="min-w-0 space-y-4">
               <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
                 <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold">Actividad reciente</h2><Link href="/admin/reportes" className="text-xs font-semibold text-[#e4252c]">Ver todos</Link></div>
                 <div className="mt-3 space-y-2">{activityItems.map((item) => <ActivityItem key={item.label} {...item} />)}</div>
               </section>
-            </aside>
 
-            <section id="modulos" className="scroll-mt-24 rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Modulos del sistema</h2><p className="text-xs text-black/50">Todos los accesos visibles respetan tu rol.</p></div><span className="text-xs font-semibold text-[#e4252c]">{allVisibleModules.length.toLocaleString("es-HN")} accesos</span></div>
-              <div className="grid gap-2 sm:grid-cols-2 min-[1500px]:grid-cols-3 2xl:grid-cols-4">{visibleModuleGroups.map((group) => <ModuleCategoryCard key={group.id} group={group} />)}</div>
-            </section>
+              <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div><h2 className="text-base font-semibold">Estado del sistema</h2><p className="text-xs text-black/50">Última verificación: hace 2 min</p></div>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${statusTone(fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "risk" : "success")}`}><CheckCircle2 size={14} />{fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "Revisar" : "Todo bien"}</span>
+                </div>
+                <div className="space-y-2">
+                  <StatusRow label="Fiscal" value={`${fiscalAlerts.length.toLocaleString("es-HN")} alertas`} status={fiscalAlerts.length > 0 ? "risk" : "success"} />
+                  <StatusRow label="Correos" value={`${overview.failedEmails.toLocaleString("es-HN")} fallidos`} status={overview.failedEmails > 0 ? "failed" : "success"} />
+                  {canViewTechnical && visibleCards.backup_cron_status ? <><StatusRow label="Cron" value={overview.latestCronJob ? `${overview.latestCronJob}` : "Sin registro"} status={overview.latestCronStatus} /><StatusRow label="Backups" value={formatDate(overview.latestBackupAt)} status={overview.latestBackupStatus} /></> : null}
+                </div>
+              </section>
+
+              {canViewNotificationSummary ? <AdminNotificationStatusCard /> : null}
+
+              <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
+                <h2 className="text-base font-semibold">Accesos frecuentes</h2>
+                <div className="mt-3 space-y-2">
+                  {quickLinks.map((module) => <Link key={`${module.groupId}-${module.title}`} href={module.href} className="flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-[#fff1f2]"><span className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-[#fff1f2] text-[#e4252c]"><ModuleIcon groupId={module.groupId} /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{module.title}</span><span className="block text-xs leading-5 text-black/50">{module.description}</span></span></Link>)}
+                </div>
+              </section>
+            </aside>
           </div>
         </main>
 
-        <footer className="mx-auto flex w-full max-w-[1680px] flex-col gap-2 px-3 pb-5 pt-2 text-xs text-black/45 sm:px-5 lg:px-6 md:flex-row md:items-center md:justify-between"><span>© 2026 CarZone Accesorios. Todos los derechos reservados.</span><span>Version 2.0.0</span></footer>
+        <footer className="mx-auto flex w-full max-w-[1680px] flex-col gap-2 px-3 pb-5 pt-2 text-xs text-black/45 sm:px-5 lg:px-6 md:flex-row md:items-center md:justify-between"><span>© 2026 CarZone Accesorios. Todos los derechos reservados.</span><span>Versión 2.0.0</span></footer>
       </AdminDashboardFrame>
     </AdminShell>
   );
@@ -792,16 +843,29 @@ function ActivityItem({ label, value, href, icon: Icon }: { label: string; value
 function ModuleCategoryCard({ group }: { group: AdminModuleGroup }) {
   const Icon = dashboardGroupIcons[group.id] ?? ClipboardList;
   return (
-    <details id={group.id} open={group.defaultOpen} className="scroll-mt-24 rounded-md border border-black/10 bg-[#fafafa] p-3 open:bg-white">
+    <details id={group.id} open={group.defaultOpen} className="scroll-mt-24 rounded-md border border-black/10 bg-[#fafafa] p-4 open:bg-white">
       <summary className="cursor-pointer list-none">
         <div className="flex items-start gap-3">
-          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-white text-[#e4252c] shadow-sm"><Icon size={17} /></span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{group.title}</span><span className="mt-1 line-clamp-2 text-xs leading-5 text-black/55">{group.description}</span><span className="mt-2 block text-xs font-semibold text-black/45">{group.modules.length.toLocaleString("es-HN")} modulos</span></span>
+          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md bg-white text-[#e4252c] shadow-sm"><Icon size={18} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold leading-5">{group.title}</span>
+            <span className="mt-1 block text-xs leading-5 text-black/55">{group.description}</span>
+            <span className="mt-2 block text-xs font-semibold text-black/45">{group.modules.length.toLocaleString("es-HN")} módulos</span>
+          </span>
           <ChevronDown size={15} className="mt-1 shrink-0 text-black/35" />
         </div>
       </summary>
       <div className="mt-3 space-y-1 border-t border-black/10 pt-2">
-        {group.modules.map((module) => <Link key={`${group.id}-${module.title}`} href={module.href} className="flex items-center justify-between gap-2 rounded-md px-2 py-2 text-xs font-semibold text-black/70 transition-colors hover:bg-[#fff1f2] hover:text-[#e4252c]"><span className="min-w-0 truncate">{module.title}</span><ChevronRight size={13} className="shrink-0" /></Link>)}
+        {group.modules.map((module) => (
+          <Link
+            key={`${group.id}-${module.title}`}
+            href={module.href}
+            className="flex items-start justify-between gap-2 rounded-md px-2 py-2 text-sm font-semibold leading-5 text-black/70 transition-colors hover:bg-[#fff1f2] hover:text-[#e4252c]"
+          >
+            <span className="min-w-0">{module.title}</span>
+            <ChevronRight size={14} className="mt-0.5 shrink-0" />
+          </Link>
+        ))}
       </div>
     </details>
   );
@@ -852,14 +916,14 @@ function WarehouseTask({ href, label, value }: { href: string; label: string; va
         </span>
       </div>
       <p className="mt-1 text-xs leading-5 text-black/55">
-        {value > 0 ? "Requiere revision logistica." : "Sin pendientes para este bloque."}
+        {value > 0 ? "Requiere revisión logística." : "Sin pendientes para este bloque."}
       </p>
     </Link>
   );
 }
 
 function BacStatus({ status }: { status: string }) {
-  const label = status === "active" ? "Link activo" : status === "pending" ? "Link manual" : "Link oculto";
+  const label = status === "active" ? "Enlace activo" : status === "pending" ? "Enlace manual" : "Enlace oculto";
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone(status)}`}>{label}</span>;
 }
 
@@ -876,7 +940,7 @@ function ModuleGroup({ group }: { group: AdminModuleGroup }) {
             <h2 className="text-lg font-semibold">{group.title}</h2>
             <p className="text-sm text-black/55">{group.description}</p>
           </div>
-          <span className="text-sm font-medium text-[#e4252c]">{group.modules.length.toLocaleString("es-HN")} modulos</span>
+          <span className="text-sm font-medium text-[#e4252c]">{group.modules.length.toLocaleString("es-HN")} módulos</span>
         </div>
       </summary>
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">

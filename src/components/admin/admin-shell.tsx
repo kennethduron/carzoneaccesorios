@@ -10,7 +10,7 @@ type AdminShellProps = {
 export function AdminShell({ title, children, variant = "default" }: AdminShellProps) {
   if (variant === "dashboard") {
     return (
-      <section className="min-h-screen overflow-x-hidden bg-[#f4f4f5] text-[#080808]">
+      <section className="min-h-screen overflow-x-clip bg-[#f4f4f5] text-[#080808]">
         {children}
         <PushNotificationRuntime />
       </section>
@@ -18,7 +18,7 @@ export function AdminShell({ title, children, variant = "default" }: AdminShellP
   }
 
   return (
-    <section className="min-h-screen overflow-x-hidden bg-[#f4f4f5] px-3 py-4 text-[#080808] sm:px-5 sm:py-6">
+    <section className="min-h-screen overflow-x-clip bg-[#f4f4f5] px-3 py-4 text-[#080808] sm:px-5 sm:py-6">
       <div className="mx-auto w-full max-w-7xl min-w-0">
         <div className="mb-4 rounded-lg bg-[#080808] px-4 py-4 text-white shadow-lg shadow-black/10 sm:mb-6 sm:px-5">
           <p className="text-xs font-semibold uppercase text-[#e4252c]">Panel administrativo</p>

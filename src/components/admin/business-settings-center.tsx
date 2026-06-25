@@ -273,8 +273,8 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
                 className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
               >
                 <option value="hidden">No mostrar en configuraciones antiguas</option>
-                <option value="pending">Link manual pendiente</option>
-                <option value="active">Link manual activo</option>
+                <option value="pending">Enlace manual pendiente</option>
+                <option value="active">Enlace manual activo</option>
               </select>
               <p className="mt-1 text-xs text-black/50">El checkout usa un enlace externo enviado por WhatsApp; no procesa tarjetas dentro del sitio.</p>
             </Field>

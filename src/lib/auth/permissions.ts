@@ -1,4 +1,4 @@
-import type { AppRole, Permission } from "@/types/auth";
+﻿import type { AppRole, Permission } from "@/types/auth";
 
 export const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 
@@ -39,6 +39,15 @@ export const allPermissions: Permission[] = [
   "credit:mark_paid",
   "receivables:read",
   "receivables:export",
+  "accounting:read",
+  "accounting:create",
+  "accounting:post",
+  "accounting:manage",
+  "accounting:reverse",
+  "accounting:export",
+  "accounting:settings",
+  "accounting:close_period",
+  "accounting:view_reports",
   "shipments:manage",
   "crm:manage",
   "reports:read",
@@ -63,6 +72,18 @@ export const allPermissions: Permission[] = [
   "store:buy",
   "orders:read_own",
   "invoices:read_own",
+];
+
+const accountingFullPermissions: Permission[] = [
+  "accounting:read",
+  "accounting:create",
+  "accounting:post",
+  "accounting:manage",
+  "accounting:reverse",
+  "accounting:export",
+  "accounting:settings",
+  "accounting:close_period",
+  "accounting:view_reports",
 ];
 
 export const rolePermissions: Record<AppRole, Permission[]> = {
@@ -104,6 +125,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:mark_paid",
     "receivables:read",
     "receivables:export",
+    ...accountingFullPermissions,
     "commercial_settings:manage",
     "security:read",
     "security:manage",
@@ -152,6 +174,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:mark_paid",
     "receivables:read",
     "receivables:export",
+    ...accountingFullPermissions,
     "shipments:manage",
     "users:read",
     "users:manage_operational",
@@ -189,6 +212,9 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:read",
     "receivables:read",
     "receivables:export",
+    "accounting:read",
+    "accounting:view_reports",
+    "accounting:export",
   ],
   soporte: ["admin:access", "customers:read", "crm:manage", "orders:read", "invoices:read"],
   cliente: ["store:buy", "orders:read_own", "invoices:read_own"],

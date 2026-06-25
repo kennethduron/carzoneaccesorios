@@ -62,12 +62,12 @@ export function PushNotificationsDeviceCard() {
 
   async function requestPush() {
     if (!status?.configured || !status.webConfigured) {
-      toast.warning("Firebase Cloud Messaging todavia no esta configurado.");
+      toast.warning("Firebase Cloud Messaging todavía no está configurado.");
       return;
     }
 
     if (getPermissionStatus() === "unsupported") {
-      toast.error("Este navegador no soporta notificaciones.");
+      toast.error("Este navegador no admite notificaciones.");
       return;
     }
 
@@ -113,9 +113,9 @@ export function PushNotificationsDeviceCard() {
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <StatusPill label="Estado" value={display.label} tone={display.tone} icon={display.icon} />
-            <StatusItem label="Permiso" value={permission} />
-            <StatusItem label="Token registrado" value={device?.registered ? "Si" : "No"} />
-            <StatusItem label="Ultima sincronizacion" value={formatDate(device?.lastSyncAt ?? getLastTokenSyncAt())} />
+            <StatusItem label="Permiso" value={browserPermissionLabel(permission)} />
+            <StatusItem label="Token registrado" value={device?.registered ? "Sí" : "No"} />
+            <StatusItem label="Última sincronización" value={formatDate(device?.lastSyncAt ?? getLastTokenSyncAt())} />
           </div>
           <div className="mt-3">
             <Button onClick={requestPush} disabled={loading} variant="dark">
@@ -145,8 +145,15 @@ function statusDisplay(status: FcmStatus | null, permission: NotificationPermiss
   return { label: "Desactivadas", tone: "bg-[#f4f4f5] text-black/55", icon: BellRing };
 }
 
+function browserPermissionLabel(permission: NotificationPermission | "unsupported") {
+  if (permission === "granted") return "Concedido";
+  if (permission === "denied") return "Bloqueado";
+  if (permission === "default") return "No solicitado";
+  return "No compatible";
+}
+
 function formatDate(value: string | null) {
-  if (!value) return "Sin sincronizacion";
+  if (!value) return "Sin sincronización";
 
   return new Intl.DateTimeFormat("es-HN", {
     dateStyle: "medium",

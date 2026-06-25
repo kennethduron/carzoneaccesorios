@@ -7,10 +7,24 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+  markAdminDashboardNotificationReadAction,
+  markAllAdminDashboardNotificationsReadAction,
+} from "@/app/admin/actions";
+import { useToast } from "@/contexts/toast-context";
+import {
+  addTokenSyncedListener,
+  getPermissionStatus,
+  registerDeviceToken,
+  requestNotificationPermission,
+  type PushPermissionStatus,
+} from "@/lib/firebase/push-client";
+import {
   AlertTriangle,
   Banknote,
   BarChart3,
   Bell,
+  BellRing,
+  CheckCircle2,
   ChevronRight,
   ClipboardList,
   FileText,
@@ -23,6 +37,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   User,
+  XCircle,
   Users,
   Wrench,
 } from "lucide-react";
@@ -64,6 +79,20 @@ export type AdminDashboardNotificationItem = {
   detail: string;
   href: string;
   tone: "danger" | "warning" | "info";
+};
+
+type PushHeaderStatus = {
+  ok?: boolean;
+  canUsePush?: boolean;
+  fcm?: {
+    configured: boolean;
+    webConfigured: boolean;
+  };
+  device?: {
+    registered: boolean;
+    tokenCount: number;
+    lastSyncAt: string | null;
+  };
 };
 
 type Props = {
@@ -117,6 +146,7 @@ export function AdminDashboardFrame({
   children,
 }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -126,6 +156,13 @@ export function AdminDashboardFrame({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeResult, setActiveResult] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
+  const [pendingNotificationIds, setPendingNotificationIds] = useState<string[]>([]);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [pushStatus, setPushStatus] = useState<PushHeaderStatus | null>(null);
+  const [pushPermission, setPushPermission] = useState<PushPermissionStatus>("unsupported");
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -138,6 +175,30 @@ export function AdminDashboardFrame({
   useEffect(() => {
     window.localStorage.setItem("carzone:admin-sidebar-collapsed", String(collapsed));
   }, [collapsed]);
+
+  useEffect(() => {
+    let active = true;
+
+    function refreshPushStatus() {
+      setPushPermission(getPermissionStatus());
+      fetch("/api/admin/push/status", { credentials: "same-origin", cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((payload: PushHeaderStatus | null) => {
+          if (active) setPushStatus(payload);
+        })
+        .catch(() => {
+          if (active) setPushStatus(null);
+        });
+    }
+
+    refreshPushStatus();
+    const removeTokenListener = addTokenSyncedListener(refreshPushStatus);
+
+    return () => {
+      active = false;
+      removeTokenListener();
+    };
+  }, []);
 
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
@@ -184,6 +245,130 @@ export function AdminDashboardFrame({
     return matches.slice(0, 8);
   }, [query, searchModules]);
 
+  const visibleNotifications = useMemo(() => {
+    const readIds = new Set(readNotificationIds);
+    return notifications.filter((item) => !readIds.has(item.id));
+  }, [notifications, readNotificationIds]);
+
+  const pushConfigured = Boolean(pushStatus?.canUsePush && pushStatus.fcm?.configured && pushStatus.fcm.webConfigured);
+  const pushRegistered = pushPermission === "granted" && Boolean(pushStatus?.device?.registered);
+  const pushBlocked = pushPermission === "denied";
+  const pushUnsupported = pushPermission === "unsupported";
+
+  async function activatePushNotifications() {
+    setPushMessage(null);
+
+    if (!pushStatus?.canUsePush) {
+      setPushMessage("Tu rol no tiene notificaciones administrativas disponibles.");
+      return;
+    }
+
+    if (!pushStatus.fcm?.configured || !pushStatus.fcm.webConfigured) {
+      setPushMessage("Las notificaciones todavía no están configuradas.");
+      return;
+    }
+
+    if (getPermissionStatus() === "unsupported") {
+      setPushPermission("unsupported");
+      setPushMessage("Este navegador no admite notificaciones.");
+      return;
+    }
+
+    setPushLoading(true);
+    try {
+      const nextPermission = await requestNotificationPermission();
+      setPushPermission(nextPermission);
+
+      if (nextPermission === "denied") {
+        const message = "Permiso bloqueado. Actívalo desde la configuración del navegador.";
+        setPushMessage(message);
+        toast.warning(message);
+        return;
+      }
+
+      if (nextPermission !== "granted") {
+        const message = "Permiso de notificaciones no concedido.";
+        setPushMessage(message);
+        toast.warning(message);
+        return;
+      }
+
+      const result = await registerDeviceToken();
+      if (!result.ok) {
+        setPushMessage(result.message);
+        toast.error(result.message);
+        return;
+      }
+
+      setPushStatus((current) => ({
+        ...(current ?? {}),
+        canUsePush: true,
+        fcm: current?.fcm ?? { configured: true, webConfigured: true },
+        device: {
+          registered: true,
+          tokenCount: Math.max(current?.device?.tokenCount ?? 0, 1),
+          lastSyncAt: result.syncedAt ?? new Date().toISOString(),
+        },
+      }));
+      setPushMessage(null);
+      toast.success("Notificaciones activadas en este dispositivo.");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  function setNotificationPending(ids: string[], pending: boolean) {
+    setPendingNotificationIds((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => {
+        if (pending) next.add(id);
+        else next.delete(id);
+      });
+      return Array.from(next);
+    });
+  }
+
+  async function markNotificationRead(id: string) {
+    const previousReadIds = readNotificationIds;
+    setNotificationError(null);
+    setReadNotificationIds((current) => Array.from(new Set([...current, id])));
+    setNotificationPending([id], true);
+
+    const result = await markAdminDashboardNotificationReadAction(id);
+    if (!result.ok) {
+      setReadNotificationIds(previousReadIds);
+      setNotificationError("No se pudo marcar la notificación como leída.");
+    }
+
+    setNotificationPending([id], false);
+    return result.ok;
+  }
+
+  async function markAllNotificationsRead() {
+    const ids = visibleNotifications.map((item) => item.id);
+    if (ids.length === 0) return;
+
+    const previousReadIds = readNotificationIds;
+    setNotificationError(null);
+    setReadNotificationIds((current) => Array.from(new Set([...current, ...ids])));
+    setNotificationPending(ids, true);
+
+    const result = await markAllAdminDashboardNotificationsReadAction(ids);
+    if (!result.ok) {
+      setReadNotificationIds(previousReadIds);
+      setNotificationError("No se pudieron marcar las notificaciones como leídas.");
+    }
+
+    setNotificationPending(ids, false);
+  }
+
+  async function openNotification(item: AdminDashboardNotificationItem) {
+    const marked = await markNotificationRead(item.id);
+    if (!marked) return;
+
+    setNotificationsOpen(false);
+    router.push(item.href);
+  }
 
   function openResult(href: string) {
     setQuery("");
@@ -214,7 +399,7 @@ export function AdminDashboardFrame({
         <button
           type="button"
           className="fixed inset-0 z-40 bg-black/35 backdrop-blur-[1px] xl:hidden"
-          aria-label="Cerrar menu"
+          aria-label="Cerrar menú"
           onClick={() => setDrawerOpen(false)}
         />
       ) : null}
@@ -222,12 +407,12 @@ export function AdminDashboardFrame({
       <DashboardSidebar sections={navSections} collapsed={collapsed} drawerOpen={drawerOpen} onNavigate={() => setDrawerOpen(false)} />
 
       <div className={`min-h-screen transition-[padding] duration-200 ${collapsed ? "xl:pl-20" : "xl:pl-60"}`}>
-        <header className="sticky top-0 z-30 border-b border-black/10 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex min-h-16 w-full max-w-[1680px] items-center gap-2 px-3 py-2 sm:px-5 lg:px-6">
+        <header className="sticky top-0 z-40 border-b border-black/10 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex min-h-16 w-full max-w-[1680px] flex-wrap items-center gap-2 px-3 py-2 sm:px-5 md:flex-nowrap lg:px-6">
             <button
               type="button"
               className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-black/10 text-black/70 xl:hidden"
-              aria-label="Abrir menu"
+              aria-label="Abrir menú"
               onClick={() => setDrawerOpen(true)}
             >
               <Menu size={19} />
@@ -235,29 +420,30 @@ export function AdminDashboardFrame({
             <button
               type="button"
               className="hidden size-10 shrink-0 items-center justify-center rounded-md border border-black/10 text-black/55 transition-colors hover:border-[#e4252c] hover:text-[#e4252c] xl:inline-flex"
-              aria-label={collapsed ? "Expandir menu" : "Colapsar menu"}
+              aria-label={collapsed ? "Expandir menú" : "Colapsar menú"}
               onClick={() => setCollapsed((current) => !current)}
             >
               <Menu size={18} />
             </button>
 
-            <div ref={searchWrapRef} className="relative order-3 w-full min-w-0 flex-[1_0_100%] md:order-none md:flex-1 xl:max-w-xl">
+            <div ref={searchWrapRef} className="relative order-3 w-full min-w-0 basis-full md:order-none md:basis-auto md:flex-1 xl:max-w-xl">
               <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/45" />
               <input
                 ref={searchRef}
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
+                  setActiveResult(0);
                   setSearchOpen(true);
                 }}
                 onFocus={() => setSearchOpen(true)}
                 onKeyDown={onSearchKeyDown}
                 type="search"
                 placeholder="Buscar en todo el sistema..."
-                className="h-10 w-full rounded-md border border-black/10 bg-[#fafafa] pl-9 pr-16 text-sm text-[#080808] outline-none transition-colors placeholder:text-black/40 focus:border-[#e4252c] focus:bg-white"
-                aria-label="Buscar modulos del sistema"
+                className="h-10 w-full rounded-md border border-black/10 bg-[#fafafa] pl-9 pr-4 text-sm text-[#080808] outline-none transition-colors placeholder:text-black/40 focus:border-[#e4252c] focus:bg-white md:pr-16"
+                aria-label="Buscar módulos del sistema"
               />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border border-black/10 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-black/35">
+              <span className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-black/10 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-black/35 md:inline-flex">
                 Ctrl K
               </span>
               {searchOpen ? (
@@ -297,38 +483,98 @@ export function AdminDashboardFrame({
                   onClick={() => setNotificationsOpen((current) => !current)}
                 >
                   <Bell size={18} />
-                  {notifications.length > 0 ? (
+                  {visibleNotifications.length > 0 ? (
                     <span className="absolute right-1.5 top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-[#e4252c] px-1 text-[10px] font-semibold leading-4 text-white">
-                      {Math.min(notifications.length, 9)}
+                      {Math.min(visibleNotifications.length, 9)}
                     </span>
                   ) : null}
                 </button>
                 {notificationsOpen ? (
-                  <div className="absolute right-0 top-12 z-50 w-[min(92vw,360px)] overflow-hidden rounded-md border border-black/10 bg-white shadow-xl shadow-black/10">
-                    <div className="flex items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
-                      <h2 className="text-sm font-semibold">Notificaciones</h2>
-                      <span className="rounded-full bg-[#f4f4f5] px-2 py-1 text-xs font-semibold text-black/55">
-                        {notifications.length.toLocaleString("es-HN")}
-                      </span>
+                  <div className="fixed left-3 right-3 top-[4.5rem] z-50 w-auto overflow-hidden rounded-md border border-black/10 bg-white shadow-xl shadow-black/10 sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-[min(92vw,410px)]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-semibold">Notificaciones</h2>
+                        <span className="rounded-full bg-[#f4f4f5] px-2 py-1 text-xs font-semibold text-black/55">
+                          {visibleNotifications.length.toLocaleString("es-HN")}
+                        </span>
+                      </div>
+                      {visibleNotifications.length > 0 ? (
+                        <button
+                          type="button"
+                          className="rounded-md px-2 py-1 text-xs font-semibold text-[#e4252c] transition-colors hover:bg-[#fff1f2] disabled:cursor-wait disabled:opacity-60"
+                          disabled={pendingNotificationIds.length > 0}
+                          onClick={() => void markAllNotificationsRead()}
+                        >
+                          Marcar todas como leídas
+                        </button>
+                      ) : null}
                     </div>
-                    <div className="max-h-96 overflow-y-auto p-2">
-                      {notifications.length > 0 ? (
-                        notifications.map((item) => (
-                          <Link
-                            key={item.id}
-                            href={item.href}
-                            onClick={() => setNotificationsOpen(false)}
-                            className="flex gap-3 rounded-md p-2 transition-colors hover:bg-[#fafafa]"
+                    {pushConfigured ? (
+                      <div className="border-b border-black/10 px-4 py-3">
+                        {pushRegistered ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf7ed] px-2.5 py-1 text-xs font-semibold text-[#2f6f3e]">
+                            <CheckCircle2 size={14} />
+                            Notificaciones activas
+                          </span>
+                        ) : pushBlocked ? (
+                          <div className="flex items-start gap-2 rounded-md bg-[#fdecec] px-3 py-2 text-xs font-semibold leading-5 text-[#a33a2d]">
+                            <XCircle size={15} className="mt-0.5 shrink-0" />
+                            <span>Permiso bloqueado. Actívalo desde la configuración del navegador.</span>
+                          </div>
+                        ) : pushUnsupported ? (
+                          <div className="flex items-start gap-2 rounded-md bg-[#f4f4f5] px-3 py-2 text-xs font-semibold leading-5 text-black/55">
+                            <BellRing size={15} className="mt-0.5 shrink-0" />
+                            <span>Este navegador no admite notificaciones.</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={pushLoading}
+                            onClick={() => void activatePushNotifications()}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2a2a2a] disabled:cursor-wait disabled:opacity-60 sm:w-auto"
                           >
-                            <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md ${toneClass(item.tone)}`}>
-                              {item.tone === "info" ? <FileText size={15} /> : <AlertTriangle size={15} />}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-sm font-semibold">{item.title}</span>
-                              <span className="mt-1 line-clamp-2 text-xs leading-5 text-black/55">{item.detail}</span>
-                            </span>
-                          </Link>
-                        ))
+                            <BellRing size={16} />
+                            {pushLoading ? "Activando..." : "Activar notificaciones"}
+                          </button>
+                        )}
+                        {pushMessage ? <p className="mt-2 text-xs leading-5 text-black/55">{pushMessage}</p> : null}
+                      </div>
+                    ) : null}
+                    {notificationError ? <p className="border-b border-black/10 px-4 py-2 text-xs font-semibold text-[#a33a2d]">{notificationError}</p> : null}
+                    <div className="max-h-[calc(100dvh-13rem)] overflow-y-auto p-2 sm:max-h-96">
+                      {visibleNotifications.length > 0 ? (
+                        visibleNotifications.map((item) => {
+                          const isPending = pendingNotificationIds.includes(item.id);
+
+                          return (
+                            <div key={item.id} className="rounded-md p-2 transition-colors hover:bg-[#fafafa]">
+                              <Link
+                                href={item.href}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  void openNotification(item);
+                                }}
+                                className="flex gap-3"
+                              >
+                                <span className={`mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-md ${toneClass(item.tone)}`}>
+                                  {item.tone === "info" ? <FileText size={15} /> : <AlertTriangle size={15} />}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-semibold">{item.title}</span>
+                                  <span className="mt-1 block text-xs leading-5 text-black/55">{item.detail}</span>
+                                </span>
+                              </Link>
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                className="ml-11 mt-1 rounded-md px-2 py-1 text-xs font-semibold text-black/50 transition-colors hover:bg-[#fff1f2] hover:text-[#e4252c] disabled:cursor-wait disabled:opacity-60"
+                                onClick={() => void markNotificationRead(item.id)}
+                              >
+                                {isPending ? "Guardando..." : "Marcar como leída"}
+                              </button>
+                            </div>
+                          );
+                        })
                       ) : (
                         <p className="px-3 py-6 text-sm text-black/55">No hay alertas pendientes</p>
                       )}
@@ -380,13 +626,13 @@ function DashboardSidebar({
         className={`fixed inset-y-0 left-0 z-50 flex w-[min(88vw,300px)] -translate-x-full flex-col border-r border-black/10 bg-white transition-transform duration-200 xl:hidden ${
           drawerOpen ? "translate-x-0" : ""
         }`}
-        aria-label="Menu movil"
+        aria-label="Menú móvil"
       >
         <SidebarContent sections={sections} collapsed={false} onNavigate={onNavigate} />
       </aside>
       <aside
         className={`fixed inset-y-0 left-0 z-30 hidden flex-col border-r border-black/10 bg-white transition-[width,padding] duration-200 xl:flex ${desktopClass}`}
-        aria-label="Menu principal"
+        aria-label="Menú principal"
       >
         <SidebarContent sections={sections} collapsed={collapsed} onNavigate={onNavigate} />
       </aside>
@@ -446,7 +692,7 @@ function SidebarContent({
             <span className="inline-flex size-10 items-center justify-center rounded-full bg-white text-[#e4252c] shadow-sm">
               <Headphones size={20} />
             </span>
-            <span className="mt-2 text-sm font-semibold">Soporte tecnico</span>
+            <span className="mt-2 text-sm font-semibold">Soporte técnico</span>
             <span className="mt-1 text-xs text-black/55">Necesitas ayuda?</span>
             <span className="mt-3 rounded-md border border-[#e4252c]/30 bg-white px-3 py-2 text-xs font-semibold text-[#e4252c]">
               Contactar soporte
