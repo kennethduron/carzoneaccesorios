@@ -4,9 +4,19 @@ import { PushNotificationRuntime } from "@/components/admin/push-notification-ru
 type AdminShellProps = {
   title: string;
   children: ReactNode;
+  variant?: "default" | "dashboard";
 };
 
-export function AdminShell({ title, children }: AdminShellProps) {
+export function AdminShell({ title, children, variant = "default" }: AdminShellProps) {
+  if (variant === "dashboard") {
+    return (
+      <section className="min-h-screen overflow-x-hidden bg-[#f4f4f5] text-[#080808]">
+        {children}
+        <PushNotificationRuntime />
+      </section>
+    );
+  }
+
   return (
     <section className="min-h-screen overflow-x-hidden bg-[#f4f4f5] px-3 py-4 text-[#080808] sm:px-5 sm:py-6">
       <div className="mx-auto w-full max-w-7xl min-w-0">
@@ -20,4 +30,3 @@ export function AdminShell({ title, children }: AdminShellProps) {
     </section>
   );
 }
-

@@ -89,7 +89,7 @@ export function AdminNotificationStatusCard() {
           {status.label}
         </span>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
         <Metric label="Push" value={payload?.device.registered && permission === "granted" ? "Activado" : "Desactivado"} />
         <Metric label="Tokens registrados" value={(payload?.summary?.registeredTokens ?? 0).toLocaleString("es-HN")} />
         <Metric label="Ultima sincronizacion" value={formatDate(payload?.device.lastSyncAt ?? null)} />
@@ -105,9 +105,9 @@ export function AdminNotificationStatusCard() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-black/10 bg-[#fafafa] p-3">
-      <p className="text-xs uppercase text-black/45">{label}</p>
-      <p className="mt-1 break-words font-semibold">{value}</p>
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-black/10 bg-[#fafafa] p-3">
+      <p className="min-w-0 text-xs uppercase text-black/45">{label}</p>
+      <p className="shrink-0 text-right font-semibold leading-5">{value}</p>
     </div>
   );
 }

@@ -52,10 +52,13 @@ export const metadata: Metadata = {
   manifest: "/site.webmanifest",
   icons: {
     icon: [
+      { url: "/icon.png", type: "image/png", sizes: "256x256" },
       { url: "/favicon.png", type: "image/png", sizes: "256x256" },
-      { url: "/brand/car-zone-logo.jpeg", type: "image/jpeg" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
     shortcut: ["/favicon.png"],
   },
   openGraph: {
