@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { BookOpen, CheckCircle2, FileText, Landmark, Plus, RotateCcw, Save, ToggleLeft, ToggleRight } from "lucide-react";
+import { Fragment, useMemo, useState, useTransition } from "react";
+import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Plus, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   postJournalEntryAction,
   reverseJournalEntryAction,
@@ -92,10 +92,15 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
   const journalTotals = useMemo(() => {
     const debit = journalForm.lines.reduce((sum, line) => sum + Number(line.debit ?? 0), 0);
     const credit = journalForm.lines.reduce((sum, line) => sum + Number(line.credit ?? 0), 0);
+    const debitTotal = Math.round(debit * 100) / 100;
+    const creditTotal = Math.round(credit * 100) / 100;
+    const difference = Math.round(Math.abs(debitTotal - creditTotal) * 100) / 100;
+
     return {
-      debit: Math.round(debit * 100) / 100,
-      credit: Math.round(credit * 100) / 100,
-      balanced: Math.round(debit * 100) === Math.round(credit * 100) && debit > 0,
+      debit: debitTotal,
+      credit: creditTotal,
+      difference,
+      balanced: difference === 0 && debitTotal > 0,
     };
   }, [journalForm.lines]);
 
@@ -189,8 +194,8 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
   }
 
   return (
-    <div className="space-y-5">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-6">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Cuentas contables" value={data.summary.totalAccounts.toLocaleString("es-HN")} helper={`${data.summary.activeAccounts.toLocaleString("es-HN")} activas`} />
         <MetricCard label="Partidas del mes" value={data.summary.journalEntriesThisMonth.toLocaleString("es-HN")} helper="Libro diario" />
         <MetricCard label="Partidas en borrador" value={data.summary.draftEntries.toLocaleString("es-HN")} helper="Pendientes de publicar" />
@@ -201,8 +206,8 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
         />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="rounded-lg border border-black/10 bg-white p-4 shadow-sm">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+        <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -215,7 +220,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           </div>
 
           {canWriteAccounts ? (
-            <div className="mb-4 rounded-md border border-black/10 bg-[#fafafa] p-3">
+            <div className="mb-4 rounded-xl border border-black/10 bg-[#fafafa] p-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium uppercase text-black/50">Código</span>
@@ -278,7 +283,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
               </div>
             </div>
           ) : (
-            <p className="mb-4 rounded-md border border-black/10 bg-[#fafafa] p-3 text-sm text-black/60">
+            <p className="mb-4 rounded-xl border border-black/10 bg-[#fafafa] p-3 text-sm text-black/60">
               Tienes acceso de lectura. No puedes crear ni editar cuentas contables.
             </p>
           )}
@@ -297,7 +302,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           </div>
         </div>
 
-        <div id="libro-diario" className="scroll-mt-24 rounded-lg border border-black/10 bg-white p-4 shadow-sm">
+        <div id="libro-diario" className="scroll-mt-24 rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -312,7 +317,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           </div>
 
           {canWriteJournal ? (
-            <div className="mb-4 rounded-md border border-black/10 bg-[#fafafa] p-3">
+            <div className="mb-4 rounded-xl border border-black/10 bg-[#fafafa] p-3">
               <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
                 <label className="block">
                   <span className="mb-1 block text-xs font-medium uppercase text-black/50">Fecha</span>
@@ -334,86 +339,118 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
                 </label>
               </div>
 
-              <div className="mt-4 space-y-2">
-                {journalForm.lines.map((line, index) => (
-                  <div key={index} className="grid gap-2 rounded-md border border-black/10 bg-white p-2 lg:grid-cols-[minmax(170px,1fr)_120px_120px_minmax(150px,1fr)_auto]">
-                    <select
-                      value={line.account_id}
-                      onChange={(event) =>
-                        setJournalForm((current) => ({
-                          ...current,
-                          lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, account_id: event.target.value } : item),
-                        }))
-                      }
-                      className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
-                    >
-                      <option value="">Cuenta contable</option>
-                      {data.activeAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
-                      ))}
-                    </select>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.debit}
-                      onChange={(event) =>
-                        setJournalForm((current) => ({
-                          ...current,
-                          lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, debit: Number(event.target.value), credit: Number(event.target.value) > 0 ? 0 : item.credit } : item),
-                        }))
-                      }
-                      placeholder="Débito"
-                    />
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.credit}
-                      onChange={(event) =>
-                        setJournalForm((current) => ({
-                          ...current,
-                          lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, credit: Number(event.target.value), debit: Number(event.target.value) > 0 ? 0 : item.debit } : item),
-                        }))
-                      }
-                      placeholder="Crédito"
-                    />
-                    <Input
-                      value={line.description ?? ""}
-                      onChange={(event) =>
-                        setJournalForm((current) => ({
-                          ...current,
-                          lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item),
-                        }))
-                      }
-                      placeholder="Detalle"
-                    />
-                    <Button
-                      variant="ghost"
-                      disabled={journalForm.lines.length <= 2}
-                      onClick={() =>
-                        setJournalForm((current) => ({
-                          ...current,
-                          lines: current.lines.filter((_, itemIndex) => itemIndex !== index),
-                        }))
-                      }
-                    >
-                      Quitar
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="grid gap-1 text-sm text-black/60 sm:grid-cols-2 sm:gap-4">
-                  <span>Total débito: <strong className="text-black">{formatCurrency(journalTotals.debit)}</strong></span>
-                  <span>Total crédito: <strong className="text-black">{formatCurrency(journalTotals.credit)}</strong></span>
+              <div className="mt-4 overflow-hidden rounded-xl border border-black/10 bg-white">
+                <div className="hidden grid-cols-[minmax(190px,1.2fr)_minmax(150px,1fr)_112px_112px_56px] gap-2 border-b border-black/10 bg-[#f3f4f6] px-3 py-2 text-xs font-semibold uppercase text-black/50 lg:grid">
+                  <span>Cuenta</span>
+                  <span>Descripción</span>
+                  <span>Débito</span>
+                  <span>Crédito</span>
+                  <span className="text-center">Acción</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="ghost" onClick={() => setJournalForm((current) => ({ ...current, lines: [...current.lines, emptyLine()] }))}>
+                <div className="divide-y divide-black/10">
+                  {journalForm.lines.map((line, index) => (
+                    <div key={index} className="grid gap-3 p-3 lg:grid-cols-[minmax(190px,1.2fr)_minmax(150px,1fr)_112px_112px_56px] lg:items-center">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Cuenta</span>
+                        <select
+                          value={line.account_id}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, account_id: event.target.value } : item),
+                            }))
+                          }
+                          className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
+                        >
+                          <option value="">Seleccionar cuenta</option>
+                          {data.activeAccounts.map((account) => (
+                            <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Descripción</span>
+                        <Input
+                          value={line.description ?? ""}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item),
+                            }))
+                          }
+                          placeholder="Descripción"
+                          className="h-10 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Débito</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.debit}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, debit: Number(event.target.value), credit: Number(event.target.value) > 0 ? 0 : item.credit } : item),
+                            }))
+                          }
+                          placeholder="0.00"
+                          className="h-10 text-sm"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Crédito</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.credit}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, credit: Number(event.target.value), debit: Number(event.target.value) > 0 ? 0 : item.debit } : item),
+                            }))
+                          }
+                          placeholder="0.00"
+                          className="h-10 text-sm"
+                        />
+                      </label>
+                      <div className="flex justify-end lg:justify-center">
+                        <button
+                          type="button"
+                          aria-label="Quitar línea"
+                          title="Quitar línea"
+                          disabled={journalForm.lines.length <= 2}
+                          onClick={() =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              lines: current.lines.filter((_, itemIndex) => itemIndex !== index),
+                            }))
+                          }
+                          className="grid size-10 place-items-center rounded-md border border-black/10 bg-white text-black/60 transition-colors hover:border-[#e4252c]/35 hover:bg-[#fff1f2] hover:text-[#b91c25] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="grid gap-2 text-sm text-black/65 sm:grid-cols-3">
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-2">Total débito: <strong className="text-black">{formatCurrency(journalTotals.debit)}</strong></span>
+                  <span className="rounded-full border border-black/10 bg-white px-3 py-2">Total crédito: <strong className="text-black">{formatCurrency(journalTotals.credit)}</strong></span>
+                  <span className={`rounded-full border px-3 py-2 ${journalTotals.balanced ? "border-[#2f6f3e]/20 bg-[#edf7ed] text-[#2f6f3e]" : "border-[#e4252c]/20 bg-[#fff1f2] text-[#b91c25]"}`}>
+                    Diferencia: <strong>{formatCurrency(journalTotals.difference)}</strong>
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <Button className="w-full sm:w-auto" variant="ghost" onClick={() => setJournalForm((current) => ({ ...current, lines: [...current.lines, emptyLine()] }))}>
                     <Plus size={16} />
                     Agregar línea
                   </Button>
-                  <Button onClick={saveDraft} disabled={isPending} variant="dark">
+                  <Button className="w-full sm:w-auto" onClick={saveDraft} disabled={isPending} variant="dark">
                     <Save size={16} />
                     Guardar borrador
                   </Button>
@@ -421,27 +458,39 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
               </div>
             </div>
           ) : (
-            <p className="mb-4 rounded-md border border-black/10 bg-[#fafafa] p-3 text-sm text-black/60">
+            <p className="mb-4 rounded-xl border border-black/10 bg-[#fafafa] p-3 text-sm text-black/60">
               Tienes acceso de lectura. No puedes crear, publicar ni reversar partidas.
             </p>
           )}
 
-          <JournalEntries entries={data.journalEntries} canPost={canPost} canReverse={canReverse} onPost={postEntry} onReverse={reverseEntry} isPending={isPending} />
-          <div className="mt-3">
-            <PaginationControls
-              basePath="/admin/contabilidad"
-              page={data.journalPage}
-              pageSize={data.journalPageSize}
-              total={data.journalTotal}
-              label="partidas"
-              pageParam="journal_page"
-              params={{ account_page: data.accountPage }}
-            />
-          </div>
         </div>
       </section>
 
-      {message ? <p className="rounded-md border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
+      <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <FileText size={19} />
+              <h2 className="text-lg font-semibold">Últimas partidas</h2>
+            </div>
+            <p className="mt-1 text-sm text-black/55">Movimientos recientes del libro diario.</p>
+          </div>
+        </div>
+        <JournalEntries entries={data.journalEntries} canPost={canPost} canReverse={canReverse} onPost={postEntry} onReverse={reverseEntry} isPending={isPending} />
+        <div className="mt-4">
+          <PaginationControls
+            basePath="/admin/contabilidad"
+            page={data.journalPage}
+            pageSize={data.journalPageSize}
+            total={data.journalTotal}
+            label="partidas"
+            pageParam="journal_page"
+            params={{ account_page: data.accountPage }}
+          />
+        </div>
+      </section>
+
+      {message ? <p className="rounded-xl border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
     </div>
   );
 }
@@ -552,80 +601,174 @@ function JournalEntries({
   onReverse: (entryId: string) => void;
   isPending: boolean;
 }) {
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
+
+  if (entries.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-black/15 bg-[#fafafa] p-5 text-sm text-black/60">
+        <p className="font-semibold text-black">No hay partidas contables registradas.</p>
+        <p className="mt-1">Crea la primera partida para comenzar.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-      {entries.map((entry) => (
-        <article key={entry.id} className="rounded-md border border-black/10 bg-white p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <FileText size={16} />
-                <h3 className="font-semibold">{entry.entry_number}</h3>
-                <EntryStatus status={entry.status} />
+    <div>
+      <div className="grid gap-3 md:hidden">
+        {entries.map((entry) => (
+          <article key={entry.id} id={`partida-${entry.id}`} className="rounded-xl border border-black/10 bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase text-black/45">{entry.entry_date}</p>
+                <h3 className="mt-1 break-words font-semibold">{entry.description}</h3>
+                <p className="mt-1 text-xs text-black/45">{entry.entry_number} · {entry.source_type ?? "Manual"}</p>
               </div>
-              <p className="mt-1 text-sm text-black/60">{entry.description}</p>
-              <p className="mt-1 text-xs text-black/45">
-                Fecha: {entry.entry_date} · Creada: {formatHnDateTime(entry.created_at)}
-              </p>
+              <EntryStatus status={entry.status} />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {canPost && entry.status === "borrador" ? (
-                <Button disabled={isPending} variant="dark" onClick={() => onPost(entry.id)}>
-                  <CheckCircle2 size={16} />
-                  Publicar
-                </Button>
-              ) : null}
-              {canReverse && entry.status === "publicada" ? (
-                <Button disabled={isPending} variant="ghost" onClick={() => onReverse(entry.id)}>
-                  <RotateCcw size={16} />
-                  Reversar
-                </Button>
-              ) : null}
+            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+              <span className="rounded-md bg-[#f7f7f8] px-3 py-2">Débito: <strong>{formatCurrency(entry.total_debit)}</strong></span>
+              <span className="rounded-md bg-[#f7f7f8] px-3 py-2">Crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
             </div>
-          </div>
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="text-xs uppercase text-black/45">
-                <tr>
-                  <th className="py-2 pr-3">Cuenta</th>
-                  <th className="py-2 pr-3 text-right">Débito</th>
-                  <th className="py-2 pr-3 text-right">Crédito</th>
-                  <th className="py-2 pr-3">Descripción</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {entry.lines.map((line) => (
-                  <tr key={line.id}>
-                    <td className="py-2 pr-3">
-                      {line.account ? `${line.account.code} - ${line.account.name}` : "Cuenta"}
-                    </td>
-                    <td className="py-2 pr-3 text-right font-semibold">{line.debit > 0 ? formatCurrency(line.debit) : "-"}</td>
-                    <td className="py-2 pr-3 text-right font-semibold">{line.credit > 0 ? formatCurrency(line.credit) : "-"}</td>
-                    <td className="py-2 pr-3 text-black/55">{line.description ?? "-"}</td>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead className="text-xs uppercase text-black/45">
+                  <tr>
+                    <th className="py-2 pr-3">Cuenta</th>
+                    <th className="py-2 pr-3 text-right">Débito</th>
+                    <th className="py-2 pr-3 text-right">Crédito</th>
+                    <th className="py-2 pr-3">Descripción</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t border-black/10 font-semibold">
-                <tr>
-                  <td className="py-2 pr-3">Totales</td>
-                  <td className="py-2 pr-3 text-right">{formatCurrency(entry.total_debit)}</td>
-                  <td className="py-2 pr-3 text-right">{formatCurrency(entry.total_credit)}</td>
-                  <td className="py-2 pr-3">{entry.total_debit === entry.total_credit ? "Cuadrada" : "Descuadrada"}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </article>
-      ))}
-      {entries.length === 0 ? (
-        <p className="rounded-md border border-dashed border-black/15 bg-[#fafafa] p-4 text-sm text-black/55">
-          No hay partidas contables registradas.
-        </p>
-      ) : null}
+                </thead>
+                <tbody className="divide-y divide-black/10">
+                  {entry.lines.map((line) => (
+                    <tr key={line.id}>
+                      <td className="py-2 pr-3">{line.account ? `${line.account.code} - ${line.account.name}` : "Cuenta"}</td>
+                      <td className="py-2 pr-3 text-right font-semibold">{line.debit > 0 ? formatCurrency(line.debit) : "-"}</td>
+                      <td className="py-2 pr-3 text-right font-semibold">{line.credit > 0 ? formatCurrency(line.credit) : "-"}</td>
+                      <td className="py-2 pr-3 text-black/55">{line.description ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <EntryActions entry={entry} canPost={canPost} canReverse={canReverse} onPost={onPost} onReverse={onReverse} isPending={isPending} />
+          </article>
+        ))}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-black/10 md:block">
+        <table className="w-full min-w-[980px] text-left text-sm">
+          <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
+            <tr>
+              <th className="px-3 py-3">Fecha</th>
+              <th className="px-3 py-3">Descripción</th>
+              <th className="px-3 py-3">Tipo</th>
+              <th className="px-3 py-3">Origen</th>
+              <th className="px-3 py-3 text-right">Débito</th>
+              <th className="px-3 py-3 text-right">Crédito</th>
+              <th className="px-3 py-3">Estado</th>
+              <th className="px-3 py-3 text-right">Acción</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/10">
+            {entries.map((entry) => {
+              const expanded = expandedEntryId === entry.id;
+
+              return (
+                <Fragment key={entry.id}>
+                  <tr id={`partida-${entry.id}`} className="align-top">
+                    <td className="px-3 py-3 font-medium">{entry.entry_date}</td>
+                    <td className="px-3 py-3">
+                      <p className="font-medium">{entry.description}</p>
+                      <p className="mt-1 text-xs text-black/45">{entry.entry_number} · Creada: {formatHnDateTime(entry.created_at)}</p>
+                    </td>
+                    <td className="px-3 py-3">{entry.source_type ?? "Manual"}</td>
+                    <td className="px-3 py-3 text-black/55">{entry.source_id ?? "-"}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{formatCurrency(entry.total_debit)}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{formatCurrency(entry.total_credit)}</td>
+                    <td className="px-3 py-3"><EntryStatus status={entry.status} /></td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Button className="px-3 py-1.5" variant="ghost" onClick={() => setExpandedEntryId(expanded ? null : entry.id)} aria-expanded={expanded}>
+                          <Eye size={15} />
+                          Ver
+                        </Button>
+                        <EntryActions entry={entry} canPost={canPost} canReverse={canReverse} onPost={onPost} onReverse={onReverse} isPending={isPending} compact />
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded ? (
+                    <tr>
+                      <td className="bg-[#fafafa] px-3 py-3" colSpan={8}>
+                        <div className="overflow-x-auto rounded-lg border border-black/10 bg-white">
+                          <table className="w-full min-w-[620px] text-left text-sm">
+                            <thead className="text-xs uppercase text-black/45">
+                              <tr>
+                                <th className="px-3 py-2">Cuenta</th>
+                                <th className="px-3 py-2 text-right">Débito</th>
+                                <th className="px-3 py-2 text-right">Crédito</th>
+                                <th className="px-3 py-2">Descripción</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/10">
+                              {entry.lines.map((line) => (
+                                <tr key={line.id}>
+                                  <td className="px-3 py-2">{line.account ? `${line.account.code} - ${line.account.name}` : "Cuenta"}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{line.debit > 0 ? formatCurrency(line.debit) : "-"}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{line.credit > 0 ? formatCurrency(line.credit) : "-"}</td>
+                                  <td className="px-3 py-2 text-black/55">{line.description ?? "-"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
+function EntryActions({
+  entry,
+  canPost,
+  canReverse,
+  onPost,
+  onReverse,
+  isPending,
+  compact = false,
+}: {
+  entry: JournalEntry;
+  canPost: boolean;
+  canReverse: boolean;
+  onPost: (entryId: string) => void;
+  onReverse: (entryId: string) => void;
+  isPending: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${compact ? "justify-end" : "mt-3"}`}>
+      {canPost && entry.status === "borrador" ? (
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="dark" onClick={() => onPost(entry.id)}>
+          <CheckCircle2 size={16} />
+          Publicar
+        </Button>
+      ) : null}
+      {canReverse && entry.status === "publicada" ? (
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onReverse(entry.id)}>
+          <RotateCcw size={16} />
+          Reversar
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 function StatusBadge({ active }: { active: boolean }) {
   return (
     <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${active ? "bg-[#edf7ed] text-[#2f6f3e]" : "bg-[#f4f4f5] text-black/55"}`}>
