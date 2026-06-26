@@ -31,6 +31,11 @@ type AccountingManagerProps = {
   canReverse: boolean;
 };
 
+type JournalEntryLineFormInput = Omit<JournalEntryLineInput, "debit" | "credit"> & {
+  debit: number | string;
+  credit: number | string;
+};
+
 const accountTypeLabels: Record<AccountingAccountType, string> = {
   asset: "Activo",
   liability: "Pasivo",
@@ -55,7 +60,7 @@ const emptyAccount: AccountingAccountInput = {
   description: "",
 };
 
-const emptyLine = (): JournalEntryLineInput => ({
+const emptyLine = (): JournalEntryLineFormInput => ({
   account_id: "",
   debit: 0,
   credit: 0,
@@ -71,6 +76,24 @@ function formatCurrency(value: number) {
     style: "currency",
     currency: "HNL",
   }).format(value);
+}
+
+function parseAccountingAmount(value: string | number | null | undefined): number {
+  if (value === "" || value === null || value === undefined) return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function amountInputValue(value: string | number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntryLineInput[] {
+  return lines.map((line) => ({
+    ...line,
+    debit: parseAccountingAmount(line.debit),
+    credit: parseAccountingAmount(line.credit),
+  }));
 }
 
 export function AccountingManager({ data, canManage, canCreate, canPost, canReverse }: AccountingManagerProps) {
@@ -90,8 +113,8 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
   const canWriteJournal = canCreate || canManage;
 
   const journalTotals = useMemo(() => {
-    const debit = journalForm.lines.reduce((sum, line) => sum + Number(line.debit ?? 0), 0);
-    const credit = journalForm.lines.reduce((sum, line) => sum + Number(line.credit ?? 0), 0);
+    const debit = journalForm.lines.reduce((sum, line) => sum + parseAccountingAmount(line.debit), 0);
+    const credit = journalForm.lines.reduce((sum, line) => sum + parseAccountingAmount(line.credit), 0);
     const debitTotal = Math.round(debit * 100) / 100;
     const creditTotal = Math.round(credit * 100) / 100;
     const difference = Math.round(Math.abs(debitTotal - creditTotal) * 100) / 100;
@@ -143,6 +166,8 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
   }
 
   function saveDraft() {
+    const lines = normalizeJournalLines(journalForm.lines);
+
     startTransition(async () => {
       const result = await saveJournalDraftAction({
         id: journalForm.id || undefined,
@@ -150,7 +175,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
         description: journalForm.description,
         source_type: journalForm.source_type || null,
         source_id: journalForm.source_id || null,
-        lines: journalForm.lines,
+        lines,
       });
       setMessage(result.message);
       if (result.ok) {
@@ -388,11 +413,19 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
                           type="number"
                           min="0"
                           step="0.01"
-                          value={line.debit}
+                          value={amountInputValue(line.debit)}
                           onChange={(event) =>
                             setJournalForm((current) => ({
                               ...current,
-                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, debit: Number(event.target.value), credit: Number(event.target.value) > 0 ? 0 : item.credit } : item),
+                              lines: current.lines.map((item, itemIndex) => {
+                                if (itemIndex !== index) return item;
+                                const debit = event.target.value;
+                                return {
+                                  ...item,
+                                  debit,
+                                  credit: parseAccountingAmount(debit) > 0 ? "" : item.credit,
+                                };
+                              }),
                             }))
                           }
                           placeholder="0.00"
@@ -405,11 +438,19 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
                           type="number"
                           min="0"
                           step="0.01"
-                          value={line.credit}
+                          value={amountInputValue(line.credit)}
                           onChange={(event) =>
                             setJournalForm((current) => ({
                               ...current,
-                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, credit: Number(event.target.value), debit: Number(event.target.value) > 0 ? 0 : item.debit } : item),
+                              lines: current.lines.map((item, itemIndex) => {
+                                if (itemIndex !== index) return item;
+                                const credit = event.target.value;
+                                return {
+                                  ...item,
+                                  credit,
+                                  debit: parseAccountingAmount(credit) > 0 ? "" : item.debit,
+                                };
+                              }),
                             }))
                           }
                           placeholder="0.00"
