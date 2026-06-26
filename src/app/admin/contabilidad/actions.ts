@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
   JournalEntryInput,
   JournalEntryLineInput,
   JournalEntryStatus,
 } from "@/types/accounting";
+import type { AccountingMappingInput, AutomationMode } from "@/types/financial-center";
 
 type AccountingMutationResult = {
   ok: boolean;
@@ -44,6 +46,15 @@ const normalBalances = new Set(["debit", "credit"]);
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function cleanDate(value: unknown) {
+  const text = cleanText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function cleanMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function toAmount(value: unknown) {
@@ -221,6 +232,233 @@ function lineTotals(lines: Array<{ debit: unknown; credit: unknown }>) {
   };
 }
 
+function validateMappingInput(input: AccountingMappingInput) {
+  const mappingType = cleanText(input.mapping_type);
+  const sourceKey = cleanText(input.source_key).toLowerCase();
+  const accountId = cleanText(input.account_id);
+  const effectiveFrom = cleanDate(input.effective_from);
+  const effectiveTo = cleanDate(input.effective_to);
+  const priority = Number.isFinite(Number(input.priority ?? 100)) ? Math.floor(Number(input.priority ?? 100)) : 100;
+
+  if (!isAccountingMappingType(mappingType)) {
+    return { ok: false as const, message: "Selecciona un tipo de mapeo válido." };
+  }
+
+  if (sourceKey.length < 1 || sourceKey.length > 120) {
+    return { ok: false as const, message: "La clave de origen debe tener entre 1 y 120 caracteres." };
+  }
+
+  if (!accountId) {
+    return { ok: false as const, message: "Selecciona una cuenta contable." };
+  }
+
+  if (priority < 1 || priority > 10000) {
+    return { ok: false as const, message: "La prioridad debe estar entre 1 y 10000." };
+  }
+
+  if (input.effective_from && !effectiveFrom) {
+    return { ok: false as const, message: "La fecha inicial no es válida." };
+  }
+
+  if (input.effective_to && !effectiveTo) {
+    return { ok: false as const, message: "La fecha final no es válida." };
+  }
+
+  if (effectiveFrom && effectiveTo && effectiveTo < effectiveFrom) {
+    return { ok: false as const, message: "La fecha final no puede ser menor que la fecha inicial." };
+  }
+
+  return {
+    ok: true as const,
+    mapping: {
+      mapping_type: mappingType,
+      source_key: sourceKey,
+      account_id: accountId,
+      priority,
+      is_active: input.is_active ?? true,
+      effective_from: effectiveFrom,
+      effective_to: effectiveTo,
+      metadata: cleanMetadata(input.metadata),
+    },
+  };
+}
+
+async function validateMappingAccount(accountId: string) {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounting_accounts")
+    .select("id, is_active")
+    .eq("id", accountId)
+    .maybeSingle<{ id: string; is_active: boolean }>();
+
+  if (error) {
+    return { ok: false as const, message: error.message };
+  }
+
+  if (!data) {
+    return { ok: false as const, message: "La cuenta contable seleccionada no existe." };
+  }
+
+  if (!data.is_active) {
+    return { ok: false as const, message: "La cuenta contable seleccionada está inactiva." };
+  }
+
+  return { ok: true as const };
+}
+
+export async function saveAccountingMappingAction(input: AccountingMappingInput): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:settings");
+  const validation = validateMappingInput(input);
+  if (!validation.ok) {
+    return { ok: false, message: validation.message };
+  }
+
+  const accountValidation = await validateMappingAccount(validation.mapping.account_id);
+  if (!accountValidation.ok) {
+    return { ok: false, message: accountValidation.message };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  if (input.id) {
+    const { data: previous } = await supabase
+      .from("accounting_mappings")
+      .select("id, mapping_type, source_key, account_id, priority, is_active, effective_from, effective_to, metadata")
+      .eq("id", input.id)
+      .maybeSingle();
+    const { error } = await supabase.from("accounting_mappings").update(validation.mapping).eq("id", input.id);
+
+    if (error) {
+      return { ok: false, message: error.message };
+    }
+
+    await writeAuditLog({
+      tableName: "accounting_mappings",
+      recordId: input.id,
+      action: "accounting.mapping.updated",
+      oldData: previous ?? null,
+      newData: validation.mapping,
+    });
+    await logAccountingEvent({
+      eventType: "mapping.updated",
+      entityType: "accounting_mappings",
+      entityId: input.id,
+      metadata: validation.mapping,
+      createdBy: profile.id,
+    });
+  } else {
+    const { data, error } = await supabase
+      .from("accounting_mappings")
+      .insert({ ...validation.mapping, created_by: profile.id })
+      .select("id")
+      .single<{ id: string }>();
+
+    if (error) {
+      return { ok: false, message: error.message };
+    }
+
+    await writeAuditLog({
+      tableName: "accounting_mappings",
+      recordId: data.id,
+      action: "accounting.mapping.created",
+      newData: validation.mapping,
+    });
+    await logAccountingEvent({
+      eventType: "mapping.created",
+      entityType: "accounting_mappings",
+      entityId: data.id,
+      metadata: validation.mapping,
+      createdBy: profile.id,
+    });
+  }
+
+  revalidatePath("/admin/contabilidad");
+  return { ok: true, message: input.id ? "Mapeo contable actualizado." : "Mapeo contable creado." };
+}
+
+export async function toggleAccountingMappingAction(mappingId: string, isActive: boolean): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:settings");
+  const supabase = await getSupabaseServerClient();
+  const { data: previous } = await supabase
+    .from("accounting_mappings")
+    .select("id, mapping_type, source_key, account_id, is_active")
+    .eq("id", mappingId)
+    .maybeSingle();
+  const { error } = await supabase.from("accounting_mappings").update({ is_active: isActive }).eq("id", mappingId);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  await writeAuditLog({
+    tableName: "accounting_mappings",
+    recordId: mappingId,
+    action: isActive ? "accounting.mapping.activated" : "accounting.mapping.deactivated",
+    oldData: previous ?? null,
+    newData: { is_active: isActive },
+  });
+  await logAccountingEvent({
+    eventType: isActive ? "mapping.activated" : "mapping.deactivated",
+    entityType: "accounting_mappings",
+    entityId: mappingId,
+    metadata: { is_active: isActive },
+    createdBy: profile.id,
+  });
+
+  revalidatePath("/admin/contabilidad");
+  return { ok: true, message: isActive ? "Mapeo activado." : "Mapeo desactivado." };
+}
+
+export async function updateAutomationModeAction(mode: AutomationMode): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:settings");
+  if (mode === "auto_post") {
+    return { ok: false, message: "El modo de publicación automática aún no está disponible." };
+  }
+
+  if (!isAccountingAutomationMode(mode)) {
+    return { ok: false, message: "Selecciona un modo de automatización válido." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const payload = {
+    key: "automation_mode",
+    value: { mode },
+    description: "Controla el modo de automatización contable futura.",
+    updated_by: profile.id,
+  };
+
+  const { data: previous } = await supabase
+    .from("accounting_automation_settings")
+    .select("id, key, value, description")
+    .eq("key", "automation_mode")
+    .maybeSingle<{ id: string; key: string; value: Record<string, unknown>; description: string | null }>();
+  const { data, error } = await supabase
+    .from("accounting_automation_settings")
+    .upsert(payload, { onConflict: "key" })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  await writeAuditLog({
+    tableName: "accounting_automation_settings",
+    recordId: data.id,
+    action: "accounting.automation_mode.updated",
+    oldData: previous ?? null,
+    newData: payload,
+  });
+  await logAccountingEvent({
+    eventType: "automation_mode.updated",
+    entityType: "accounting_automation_settings",
+    entityId: data.id,
+    metadata: { mode },
+    createdBy: profile.id,
+  });
+
+  revalidatePath("/admin/contabilidad");
+  return { ok: true, message: "Modo de automatización actualizado." };
+}
 export async function saveAccountingAccountAction(input: AccountingAccountInput): Promise<AccountingMutationResult> {
   const profile = input.id ? await requirePermission("accounting:manage") : await requirePermission("accounting:create");
   const validation = validateAccountInput(input);

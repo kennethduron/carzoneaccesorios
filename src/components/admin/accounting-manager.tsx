@@ -23,12 +23,15 @@ import type {
 } from "@/types/accounting";
 import { formatHnDateTime } from "@/utils/format";
 
+type AccountingManagerSection = "summary" | "accounts" | "journal" | "entries";
+
 type AccountingManagerProps = {
   data: AccountingPageData;
   canManage: boolean;
   canCreate: boolean;
   canPost: boolean;
   canReverse: boolean;
+  visibleSections?: AccountingManagerSection[];
 };
 
 type JournalEntryLineFormInput = Omit<JournalEntryLineInput, "debit" | "credit"> & {
@@ -96,7 +99,7 @@ function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntry
   }));
 }
 
-export function AccountingManager({ data, canManage, canCreate, canPost, canReverse }: AccountingManagerProps) {
+export function AccountingManager({ data, canManage, canCreate, canPost, canReverse, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
   const [accountForm, setAccountForm] = useState<AccountingAccountInput>(emptyAccount);
   const [journalForm, setJournalForm] = useState({
     id: "",
@@ -111,6 +114,10 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
   const toast = useToast();
   const canWriteAccounts = canManage || canCreate;
   const canWriteJournal = canCreate || canManage;
+  const showSummary = visibleSections.includes("summary");
+  const showAccounts = visibleSections.includes("accounts");
+  const showJournal = visibleSections.includes("journal");
+  const showEntries = visibleSections.includes("entries");
 
   const journalTotals = useMemo(() => {
     const debit = journalForm.lines.reduce((sum, line) => sum + parseAccountingAmount(line.debit), 0);
@@ -220,6 +227,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
 
   return (
     <div className="space-y-6">
+      {showSummary ? (
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Cuentas contables" value={data.summary.totalAccounts.toLocaleString("es-HN")} helper={`${data.summary.activeAccounts.toLocaleString("es-HN")} activas`} />
         <MetricCard label="Partidas del mes" value={data.summary.journalEntriesThisMonth.toLocaleString("es-HN")} helper="Libro diario" />
@@ -230,8 +238,11 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           helper={data.summary.latestEntry ? data.summary.latestEntry.description : "Crea la primera partida manual"}
         />
       </section>
+      ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+      {showAccounts || showJournal ? (
+      <section className={showAccounts && showJournal ? "grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]" : "grid gap-6"}>
+        {showAccounts ? (
         <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -327,6 +338,9 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           </div>
         </div>
 
+        ) : null}
+
+        {showJournal ? (
         <div id="libro-diario" className="scroll-mt-24 rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
@@ -505,8 +519,11 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           )}
 
         </div>
+        ) : null}
       </section>
+      ) : null}
 
+      {showEntries ? (
       <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -530,6 +547,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
           />
         </div>
       </section>
+      ) : null}
 
       {message ? <p className="rounded-xl border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
     </div>
