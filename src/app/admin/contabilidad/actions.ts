@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
@@ -16,6 +17,10 @@ import type { AccountingMappingInput, AutomationMode } from "@/types/financial-c
 type AccountingMutationResult = {
   ok: boolean;
   message: string;
+};
+
+type FinancialEventScanActionResult = AccountingMutationResult & {
+  summary?: Awaited<ReturnType<typeof scanFinancialEventsDryRun>>;
 };
 
 type EntryForMutation = {
@@ -459,6 +464,19 @@ export async function updateAutomationModeAction(mode: AutomationMode): Promise<
   revalidatePath("/admin/contabilidad");
   return { ok: true, message: "Modo de automatización actualizado." };
 }
+export async function scanFinancialEventsAction(): Promise<FinancialEventScanActionResult> {
+  const profile = await requirePermission("accounting:manage");
+  const summary = await scanFinancialEventsDryRun(profile.id);
+
+  revalidatePath("/admin/contabilidad");
+
+  return {
+    ok: true,
+    message: `${summary.message} Insertados: ${summary.inserted}. Duplicados: ${summary.skippedDuplicate}. Pendientes: ${summary.pending}. Listos: ${summary.ready}.`,
+    summary,
+  };
+}
+
 export async function saveAccountingAccountAction(input: AccountingAccountInput): Promise<AccountingMutationResult> {
   const profile = input.id ? await requirePermission("accounting:manage") : await requirePermission("accounting:create");
   const validation = validateAccountInput(input);

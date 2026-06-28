@@ -111,9 +111,32 @@ type ProductImportPreview = {
   criticalErrors: string[];
 };
 
+type EditableProductNumericField =
+  | "stock"
+  | "min_stock"
+  | "wholesale_min_quantity"
+  | "cost_price"
+  | "retail_price"
+  | "wholesale_price"
+  | "vehicle_year_start"
+  | "vehicle_year_end";
+
+type EditableProductInput = Omit<ProductFormInput, EditableProductNumericField> & {
+  stock: number | string;
+  min_stock: number | string;
+  wholesale_min_quantity: number | string;
+  cost_price: number | string;
+  retail_price: number | string;
+  wholesale_price: number | string;
+  vehicle_year_start: number | string | null;
+  vehicle_year_end: number | string | null;
+};
+
 const productDraftStorageKey = "car-zone-product-editor-draft";
 const maxProductImages = 5;
 const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detalle", "otro"];
+const integerInputPattern = /^\d*$/;
+const decimalInputPattern = /^$|^\d+(?:\.\d{0,2})?$/;
 
 const productImportModeCopy: Record<ProductImportMode, { label: string; description: string; confirmation: string }> = {
   create_and_update: {
@@ -150,7 +173,7 @@ const emptyImage: ProductImageInput = {
   is_primary: true,
 };
 
-const emptyProduct: ProductFormInput = {
+const emptyProduct: EditableProductInput = {
   category_id: null,
   sku: "",
   internal_code: "",
@@ -178,7 +201,7 @@ const emptyProduct: ProductFormInput = {
   images: [emptyImage],
 };
 
-function toFormProduct(product: ProductAdminRow): ProductFormInput {
+function toFormProduct(product: ProductAdminRow): EditableProductInput {
   return {
     id: product.id,
     category_id: product.category_id,
@@ -255,6 +278,28 @@ async function optimizeImageInBrowser(file: File, dimensions: { width: number; h
 function numberValue(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function editableInputValue(value: number | string | null) {
+  return value === null ? "" : String(value);
+}
+
+function integerValueForSave(value: number | string | null, fallback: number) {
+  if (value === "" || value === null) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
+}
+
+function decimalValueForSave(value: number | string, fallback: number) {
+  if (value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function slugifyProductUrl(value: string) {
@@ -460,7 +505,7 @@ function displayStatus(status: ProductStatus) {
   return statusLabels[status] ?? status;
 }
 
-function persistProductDraft(product: ProductFormInput | null) {
+function persistProductDraft(product: EditableProductInput | null) {
   if (typeof window === "undefined") {
     return;
   }
@@ -490,7 +535,7 @@ export function ProductManager({
   const [query, setQuery] = useState(filters.query);
   const [status, setStatus] = useState<ProductStatus | "all">(filters.status as ProductStatus | "all");
   const [categoryId, setCategoryId] = useState(filters.categoryId);
-  const [editing, setEditing] = useState<ProductFormInput | null>(null);
+  const [editing, setEditing] = useState<EditableProductInput | null>(null);
   const [message, setMessage] = useState<MessageState | null>(null);
   const [imageUploads, setImageUploads] = useState<Record<number, ImageUploadState>>({});
   const [excelFile, setExcelFile] = useState<File | null>(null);
@@ -559,12 +604,12 @@ export function ProductManager({
   }
 
   function openNewProduct() {
-    let draft: ProductFormInput | null = null;
+    let draft: EditableProductInput | null = null;
 
     if (typeof window !== "undefined") {
       try {
         const storedDraft = window.sessionStorage.getItem(productDraftStorageKey);
-        draft = storedDraft ? (JSON.parse(storedDraft) as ProductFormInput) : null;
+        draft = storedDraft ? (JSON.parse(storedDraft) as EditableProductInput) : null;
       } catch {
         draft = null;
       }
@@ -599,7 +644,7 @@ export function ProductManager({
     });
   }
 
-  function updateField<K extends keyof ProductFormInput>(field: K, value: ProductFormInput[K]) {
+  function updateField<K extends keyof EditableProductInput>(field: K, value: EditableProductInput[K]) {
     setEditing((current) => {
       if (!current) {
         return current;
@@ -621,11 +666,27 @@ export function ProductManager({
     });
   }
 
-  function normalizeVehicleFields(product: ProductFormInput): ProductFormInput {
+  function normalizeVehicleFields(product: EditableProductInput): EditableProductInput {
     return {
       ...product,
       vehicle_brand: normalizeVehicleBrand(product.vehicle_brand),
       vehicle_model: normalizeVehicleModel(product.vehicle_model),
+    };
+  }
+
+  function normalizeProductForSave(product: EditableProductInput): ProductFormInput {
+    const normalized = normalizeVehicleFields(product);
+
+    return {
+      ...normalized,
+      stock: integerValueForSave(normalized.stock, 0),
+      min_stock: integerValueForSave(normalized.min_stock, 0),
+      wholesale_min_quantity: integerValueForSave(normalized.wholesale_min_quantity, 1),
+      cost_price: decimalValueForSave(normalized.cost_price, 0),
+      retail_price: decimalValueForSave(normalized.retail_price, 0),
+      wholesale_price: decimalValueForSave(normalized.wholesale_price, 0),
+      vehicle_year_start: integerValueForSave(normalized.vehicle_year_start, 0) || null,
+      vehicle_year_end: integerValueForSave(normalized.vehicle_year_end, 0) || null,
     };
   }
 
@@ -936,14 +997,14 @@ export function ProductManager({
       return;
     }
 
-    const validationError = validateProductBeforeSave(editing);
+    const normalizedProduct = normalizeProductForSave(editing);
+    const validationError = validateProductBeforeSave(normalizedProduct);
     if (validationError) {
       showMessage(validationError, "error");
       return;
     }
 
     startTransition(async () => {
-      const normalizedProduct = normalizeVehicleFields(editing);
       setEditing(normalizedProduct);
       const result = await saveProductAction(normalizedProduct);
       showMessage(result.message, result.ok ? "success" : "error");
@@ -2024,6 +2085,47 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
+function IntegerProductInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: number | string | null;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={editableInputValue(value)}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        if (integerInputPattern.test(nextValue)) {
+          onChange(nextValue);
+        }
+      }}
+      placeholder={placeholder}
+    />
+  );
+}
+
+function DecimalProductInput({ value, onChange }: { value: number | string; onChange: (value: string) => void }) {
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={editableInputValue(value)}
+      onChange={(event) => {
+        const nextValue = event.target.value;
+        if (decimalInputPattern.test(nextValue)) {
+          onChange(nextValue);
+        }
+      }}
+    />
+  );
+}
+
 function ProductEditor({
   categories,
   vehicleBrands,
@@ -2044,12 +2146,12 @@ function ProductEditor({
   categories: CategoryOption[];
   vehicleBrands: string[];
   vehicleModels: string[];
-  product: ProductFormInput;
+  product: EditableProductInput;
   pending: boolean;
   imageUploads: Record<number, ImageUploadState>;
   onClose: () => void;
   onSubmit: () => void;
-  onField: <K extends keyof ProductFormInput>(field: K, value: ProductFormInput[K]) => void;
+  onField: <K extends keyof EditableProductInput>(field: K, value: EditableProductInput[K]) => void;
   onImage: (index: number, patch: Partial<ProductImageInput>) => void;
   onUploadImage: (index: number, file: File | null) => void;
   onRetryImage: (index: number) => void;
@@ -2252,33 +2354,28 @@ function ProductEditor({
             <FormSection title="Precios e inventario" description="Controla stock, costo y precios para venta al detalle y mayorista.">
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Stock" help="No puede ser negativo.">
-                  <Input type="number" min={0} value={product.stock} onChange={(event) => onField("stock", numberValue(event.target.value))} />
+                  <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
                 </Field>
                 <Field label="Stock mínimo" help="Activa alertas cuando el producto llega a este nivel.">
-                  <Input type="number" min={0} value={product.min_stock} onChange={(event) => onField("min_stock", numberValue(event.target.value))} />
+                  <IntegerProductInput value={product.min_stock} onChange={(value) => onField("min_stock", value)} />
                 </Field>
                 <Field label="Cantidad mínima mayorista" help="Cantidad mínima requerida para aplicar precio mayorista.">
-                  <Input
-                    type="number"
-                    min={1}
-                    value={product.wholesale_min_quantity}
-                    onChange={(event) => onField("wholesale_min_quantity", numberValue(event.target.value))}
-                  />
+                  <IntegerProductInput value={product.wholesale_min_quantity} onChange={(value) => onField("wholesale_min_quantity", value)} />
                 </Field>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <Field label="Precio de costo" help="Costo interno. No puede ser negativo.">
-                  <Input type="number" min={0} step="0.01" value={product.cost_price} onChange={(event) => onField("cost_price", numberValue(event.target.value))} />
+                  <DecimalProductInput value={product.cost_price} onChange={(value) => onField("cost_price", value)} />
                 </Field>
                 <Field label="Precio al detalle" help="Precio normal para clientes sin cuenta mayorista.">
-                  <Input type="number" min={0.01} step="0.01" value={product.retail_price} onChange={(event) => onField("retail_price", numberValue(event.target.value))} />
+                  <DecimalProductInput value={product.retail_price} onChange={(value) => onField("retail_price", value)} />
                 </Field>
                 <Field label="Precio mayorista" help="Precio especial para clientes mayoristas autorizados.">
-                  <Input type="number" min={0} step="0.01" value={product.wholesale_price} onChange={(event) => onField("wholesale_price", numberValue(event.target.value))} />
+                  <DecimalProductInput value={product.wholesale_price} onChange={(value) => onField("wholesale_price", value)} />
                 </Field>
               </div>
-              {product.wholesale_price > product.retail_price ? (
+              {decimalValueForSave(product.wholesale_price, 0) > decimalValueForSave(product.retail_price, 0) ? (
                 <p className="rounded-md bg-[#fff0ea] px-3 py-2 text-sm font-medium text-[#9b341b]">
                   El precio mayorista no puede ser mayor que el precio al detalle.
                 </p>
@@ -2342,22 +2439,10 @@ function ProductEditor({
                       </datalist>
                     </Field>
                     <Field label="Año inicial">
-                      <Input
-                        type="number"
-                        min={1900}
-                        value={product.vehicle_year_start ?? ""}
-                        onChange={(event) => onField("vehicle_year_start", event.target.value ? numberValue(event.target.value) : null)}
-                        placeholder="2010"
-                      />
+                      <IntegerProductInput value={product.vehicle_year_start} onChange={(value) => onField("vehicle_year_start", value)} placeholder="2010" />
                     </Field>
                     <Field label="Año final">
-                      <Input
-                        type="number"
-                        min={1900}
-                        value={product.vehicle_year_end ?? ""}
-                        onChange={(event) => onField("vehicle_year_end", event.target.value ? numberValue(event.target.value) : null)}
-                        placeholder="2014"
-                      />
+                      <IntegerProductInput value={product.vehicle_year_end} onChange={(value) => onField("vehicle_year_end", value)} placeholder="2014" />
                     </Field>
                   </div>
                 </>
@@ -2482,20 +2567,10 @@ function ProductEditor({
                 <Input value={product.vehicle_model ?? ""} onChange={(event) => onField("vehicle_model", event.target.value || null)} />
               </Field>
               <Field label="Año inicial">
-                <Input
-                  type="number"
-                  min={1900}
-                  value={product.vehicle_year_start ?? ""}
-                  onChange={(event) => onField("vehicle_year_start", event.target.value ? numberValue(event.target.value) : null)}
-                />
+                <IntegerProductInput value={product.vehicle_year_start} onChange={(value) => onField("vehicle_year_start", value)} />
               </Field>
               <Field label="Año final">
-                <Input
-                  type="number"
-                  min={1900}
-                  value={product.vehicle_year_end ?? ""}
-                  onChange={(event) => onField("vehicle_year_end", event.target.value ? numberValue(event.target.value) : null)}
-                />
+                <IntegerProductInput value={product.vehicle_year_end} onChange={(value) => onField("vehicle_year_end", value)} />
               </Field>
             </div>
 
@@ -2548,30 +2623,25 @@ function ProductEditor({
 
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Stock">
-                <Input type="number" min={0} value={product.stock} onChange={(event) => onField("stock", numberValue(event.target.value))} />
+                <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
               </Field>
               <Field label="Stock mínimo">
-                <Input type="number" min={0} value={product.min_stock} onChange={(event) => onField("min_stock", numberValue(event.target.value))} />
+                <IntegerProductInput value={product.min_stock} onChange={(value) => onField("min_stock", value)} />
               </Field>
               <Field label="Cantidad mínima mayorista">
-                <Input
-                  type="number"
-                  min={1}
-                  value={product.wholesale_min_quantity}
-                  onChange={(event) => onField("wholesale_min_quantity", numberValue(event.target.value))}
-                />
+                <IntegerProductInput value={product.wholesale_min_quantity} onChange={(value) => onField("wholesale_min_quantity", value)} />
               </Field>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Precio de costo">
-                <Input type="number" min={0} step="0.01" value={product.cost_price} onChange={(event) => onField("cost_price", numberValue(event.target.value))} />
+                <DecimalProductInput value={product.cost_price} onChange={(value) => onField("cost_price", value)} />
               </Field>
               <Field label="Precio al detalle">
-                <Input type="number" min={0} step="0.01" value={product.retail_price} onChange={(event) => onField("retail_price", numberValue(event.target.value))} />
+                <DecimalProductInput value={product.retail_price} onChange={(value) => onField("retail_price", value)} />
               </Field>
               <Field label="Precio mayorista">
-                <Input type="number" min={0} step="0.01" value={product.wholesale_price} onChange={(event) => onField("wholesale_price", numberValue(event.target.value))} />
+                <DecimalProductInput value={product.wholesale_price} onChange={(value) => onField("wholesale_price", value)} />
               </Field>
             </div>
             </div>

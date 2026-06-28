@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, Landmark, LayoutDashboard, Save, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
+import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   saveAccountingMappingAction,
+  scanFinancialEventsAction,
   toggleAccountingMappingAction,
   updateAutomationModeAction,
 } from "@/app/admin/contabilidad/actions";
@@ -34,6 +35,7 @@ type FinancialCenterManagerProps = {
   canPost: boolean;
   canReverse: boolean;
   canConfigureAccounting: boolean;
+  canScanEvents: boolean;
 };
 
 type TabKey = "summary" | "settings" | "events" | "journal" | "accounts";
@@ -65,17 +67,51 @@ const mappingStatusLabels: Record<MappingReadinessStatus, string> = {
 };
 
 const eventStatusLabels: Record<FinancialEventStatus, string> = {
-  pending: "Pendiente",
-  ready: "Listo",
+  pending: "Evento pendiente",
+  ready: "Evento listo",
   draft_created: "Borrador creado",
   posted: "Publicado",
-  failed: "Fallido",
-  skipped: "Omitido",
+  failed: "Error de validación",
+  skipped: "Evento omitido",
   reversed: "Reversado",
+};
+
+const eventPurposeLabels: Record<string, string> = {
+  sale_revenue: "Venta confirmada",
+  payment_received: "Pago recibido",
+  invoice_issued: "Factura emitida",
+  commercial_credit: "Crédito comercial",
+  receivable_payment: "Abono a cuenta por cobrar",
+  order_cancellation: "Cancelación de pedido",
 };
 
 function formatNumber(value: number) {
   return value.toLocaleString("es-HN");
+}
+
+function formatCurrency(value: unknown) {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return "-";
+
+  return new Intl.NumberFormat("es-HN", {
+    style: "currency",
+    currency: "HNL",
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function snapshotText(snapshot: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = snapshot[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+
+  return null;
+}
+
+function validationMessages(value: unknown[]) {
+  return value.map((item) => String(item)).filter(Boolean);
 }
 
 export function FinancialCenterManager({
@@ -86,8 +122,10 @@ export function FinancialCenterManager({
   canPost,
   canReverse,
   canConfigureAccounting,
+  canScanEvents,
 }: FinancialCenterManagerProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
+  const [eventFilter, setEventFilter] = useState<"all" | "pending">("all");
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account?.id ?? ""])),
   );
@@ -98,7 +136,10 @@ export function FinancialCenterManager({
 
   const activeAccounts = accountingData.activeAccounts;
   const configuredLabel = `${formatNumber(financialData.summary.configuredMappings)} de ${formatNumber(financialData.readinessItems.length)}`;
-  const hasEvents = financialData.events.length > 0;
+  const visibleEvents = eventFilter === "pending"
+    ? financialData.events.filter((event) => event.status === "pending")
+    : financialData.events;
+  const hasEvents = visibleEvents.length > 0;
 
   const mappingsByRequiredKey = useMemo(() => {
     return new Map(financialData.readinessItems.map((item) => [item.key, item]));
@@ -152,6 +193,23 @@ export function FinancialCenterManager({
         toast.error(result.message);
       }
     });
+  }
+
+  function scanFinancialEvents() {
+    startTransition(async () => {
+      const result = await scanFinancialEventsAction();
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function reviewPendingEvents() {
+    setActiveTab("events");
+    setEventFilter("pending");
   }
 
   return (
@@ -310,44 +368,106 @@ export function FinancialCenterManager({
 
       {activeTab === "events" ? (
         <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Activity size={19} />
-            <h2 className="text-lg font-semibold">Eventos financieros</h2>
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Activity size={19} />
+                <h2 className="text-lg font-semibold">Eventos financieros</h2>
+              </div>
+              <p className="mt-1 text-sm text-black/55">Registro de eventos detectados desde datos operativos. No se crean partidas automáticas.</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant={eventFilter === "pending" ? "dark" : "ghost"}
+                onClick={reviewPendingEvents}
+                disabled={isPending}
+              >
+                <SearchCheck size={16} />
+                Revisar eventos pendientes
+              </Button>
+              {canScanEvents ? (
+                <Button onClick={scanFinancialEvents} disabled={isPending} variant="dark">
+                  <RefreshCw size={16} />
+                  Escanear eventos
+                </Button>
+              ) : null}
+            </div>
           </div>
+
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setEventFilter("all")}
+              className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "all" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setEventFilter("pending")}
+              className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "pending" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}
+            >
+              Pendientes
+            </button>
+          </div>
+
           {hasEvents ? (
             <div className="overflow-x-auto rounded-md border border-black/10">
-              <table className="w-full min-w-[920px] text-left text-sm">
+              <table className="w-full min-w-[1180px] text-left text-sm">
                 <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
                   <tr>
-                    <th className="px-3 py-3">Fecha</th>
+                    <th className="px-3 py-3">Evento</th>
                     <th className="px-3 py-3">Origen</th>
-                    <th className="px-3 py-3">Propósito</th>
-                    <th className="px-3 py-3">Versión</th>
+                    <th className="px-3 py-3">Monto</th>
+                    <th className="px-3 py-3">Cliente</th>
+                    <th className="px-3 py-3">Fecha</th>
                     <th className="px-3 py-3">Estado</th>
-                    <th className="px-3 py-3">Partida</th>
+                    <th className="px-3 py-3">Validaciones</th>
+                    <th className="px-3 py-3">Creado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
-                  {financialData.events.map((event) => (
-                    <tr key={event.id}>
-                      <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
-                      <td className="px-3 py-3">
-                        <p className="font-medium">{event.source_type}</p>
-                        <p className="text-xs text-black/45">{event.source_id}</p>
-                      </td>
-                      <td className="px-3 py-3">{event.event_purpose}</td>
-                      <td className="px-3 py-3">{event.posting_version}</td>
-                      <td className="px-3 py-3"><EventStatusBadge status={event.status} /></td>
-                      <td className="px-3 py-3">{event.journal_entry_id ?? "-"}</td>
-                    </tr>
-                  ))}
+                  {visibleEvents.map((event) => {
+                    const amount = event.source_snapshot.amount ?? event.source_snapshot.total ?? event.source_snapshot.original_amount;
+                    const customer = snapshotText(event.source_snapshot, ["customer_name", "customer", "client_name"]);
+                    const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "invoice_number"]);
+                    const issues = validationMessages(event.validation_errors);
+
+                    return (
+                      <tr key={event.id}>
+                        <td className="px-3 py-3">
+                          <p className="font-medium">{eventPurposeLabels[event.event_purpose] ?? event.event_purpose}</p>
+                          <p className="text-xs text-black/45">{event.posting_version}</p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="font-medium">{event.source_type}</p>
+                          <p className="text-xs text-black/45">{sourceNumber ?? event.source_id}</p>
+                          <p className="text-xs text-black/35">{event.source_id}</p>
+                        </td>
+                        <td className="px-3 py-3 font-medium">{amount === undefined || amount === null ? "-" : formatCurrency(amount)}</td>
+                        <td className="px-3 py-3">{customer ?? "-"}</td>
+                        <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
+                        <td className="px-3 py-3"><EventStatusBadge status={event.status} /></td>
+                        <td className="px-3 py-3">
+                          {issues.length > 0 ? (
+                            <div className="max-w-[300px] space-y-1 text-xs text-[#7c2d12]">
+                              {issues.map((issue, index) => <p key={`${event.id}-${index}`}>{issue}</p>)}
+                            </div>
+                          ) : (
+                            <span className="text-black/45">Sin observaciones</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">{formatHnDateTime(event.created_at)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
             <div className="rounded-md border border-dashed border-black/15 bg-[#fafafa] p-5 text-sm text-black/60">
-              <p className="font-semibold text-black">Aún no hay eventos financieros registrados.</p>
-              <p className="mt-1">La automatización todavía no crea eventos en esta fase.</p>
+              <p className="font-semibold text-black">Sin eventos financieros registrados</p>
+              <p className="mt-1">El escaneo no encontró eventos para mostrar en este filtro.</p>
             </div>
           )}
         </section>
