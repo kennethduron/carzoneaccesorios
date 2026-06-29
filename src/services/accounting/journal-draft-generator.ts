@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { writeAuditLog } from "@/lib/audit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
@@ -182,8 +183,8 @@ async function logAccountingEvent(input: {
   sourceId?: string | null;
   metadata?: Record<string, unknown>;
   createdBy?: string | null;
-}) {
-  const supabase = await getSupabaseServerClient();
+}, client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
   await supabase.from("accounting_event_log").insert({
     event_type: input.eventType,
     entity_type: input.entityType,
@@ -200,8 +201,9 @@ async function updateFinancialEventStatus(
   status: FinancialEventStatus,
   validationErrors: string[],
   journalEntryId?: string | null,
+  client?: SupabaseClient,
 ) {
-  const supabase = await getSupabaseServerClient();
+  const supabase = client ?? (await getSupabaseServerClient());
   const payload: Record<string, unknown> = {
     status,
     validation_errors: validationErrors,
@@ -217,8 +219,8 @@ async function updateFinancialEventStatus(
   }
 }
 
-async function findExistingDraft(event: FinancialEventForDraft) {
-  const supabase = await getSupabaseServerClient();
+async function findExistingDraft(event: FinancialEventForDraft, client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
 
   if (event.journal_entry_id) {
     const { data, error } = await supabase
@@ -248,7 +250,7 @@ async function findExistingDraft(event: FinancialEventForDraft) {
   return data ?? null;
 }
 
-async function buildDraft(event: FinancialEventForDraft): Promise<DraftBuildResult> {
+async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient): Promise<DraftBuildResult> {
   const snapshot = asRecord(event.source_snapshot);
   const purpose = event.event_purpose as FinancialEventPurpose;
   const amount = snapshotAmount(snapshot);
@@ -307,7 +309,7 @@ async function buildDraft(event: FinancialEventForDraft): Promise<DraftBuildResu
     requirements.push(requirement("receivable", "accounts_receivable", "Cuenta por cobrar"));
   }
 
-  const resolved = await resolveAccountingMappings(requirements);
+  const resolved = await resolveAccountingMappings(requirements, client);
   if (resolved.missing.length > 0) {
     return {
       ok: false,
@@ -394,9 +396,10 @@ async function buildDraft(event: FinancialEventForDraft): Promise<DraftBuildResu
 
 export async function generateJournalDraftFromFinancialEvent(
   eventId: string,
-  createdBy: string,
+  createdBy: string | null,
+  client?: SupabaseClient,
 ): Promise<JournalDraftGenerationResult> {
-  const supabase = await getSupabaseServerClient();
+  const supabase = client ?? (await getSupabaseServerClient());
   const { data: event, error } = await supabase
     .from("financial_events")
     .select("id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id")
@@ -415,10 +418,10 @@ export async function generateJournalDraftFromFinancialEvent(
     return { ok: false, message: "Este tipo de evento financiero no esta soportado para generar borradores." };
   }
 
-  const existingDraft = await findExistingDraft(event);
+  const existingDraft = await findExistingDraft(event, supabase);
   if (existingDraft) {
     if (!event.journal_entry_id) {
-      await updateFinancialEventStatus(event.id, existingDraft.status === "borrador" ? "draft_created" : event.status, [], existingDraft.id);
+      await updateFinancialEventStatus(event.id, existingDraft.status === "borrador" ? "draft_created" : event.status, [], existingDraft.id, supabase);
     }
 
     return {
@@ -429,9 +432,9 @@ export async function generateJournalDraftFromFinancialEvent(
     };
   }
 
-  const draft = await buildDraft(event);
+  const draft = await buildDraft(event, supabase);
   if (!draft.ok) {
-    await updateFinancialEventStatus(event.id, draft.status, draft.validationErrors);
+    await updateFinancialEventStatus(event.id, draft.status, draft.validationErrors, undefined, supabase);
     await logAccountingEvent({
       eventType: "financial_event.draft_validation",
       entityType: "financial_events",
@@ -444,7 +447,7 @@ export async function generateJournalDraftFromFinancialEvent(
         validation_errors: draft.validationErrors,
       },
       createdBy,
-    });
+    }, supabase);
 
     return {
       ok: false,
@@ -485,11 +488,11 @@ export async function generateJournalDraftFromFinancialEvent(
 
   if (linesError) {
     await supabase.from("journal_entries").delete().eq("id", entry.id).eq("status", "borrador");
-    await updateFinancialEventStatus(event.id, "failed", [linesError.message]);
+    await updateFinancialEventStatus(event.id, "failed", [linesError.message], undefined, supabase);
     return { ok: false, message: linesError.message, status: "failed", validationErrors: [linesError.message] };
   }
 
-  await updateFinancialEventStatus(event.id, "draft_created", [], entry.id);
+  await updateFinancialEventStatus(event.id, "draft_created", [], entry.id, supabase);
 
   await writeAuditLog({
     tableName: "journal_entries",
@@ -517,7 +520,7 @@ export async function generateJournalDraftFromFinancialEvent(
       status: "borrador",
     },
     createdBy,
-  });
+  }, supabase);
 
   return {
     ok: true,

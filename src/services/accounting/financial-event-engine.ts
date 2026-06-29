@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getInvoiceFinancialEventCandidates } from "@/services/accounting/adapters/invoice-financial-events";
 import { getOrderFinancialEventCandidates } from "@/services/accounting/adapters/order-financial-events";
@@ -166,8 +167,8 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
   };
 }
 
-async function getAutomationMode(): Promise<AutomationMode> {
-  const supabase = await getSupabaseServerClient();
+export async function getAccountingAutomationMode(client?: SupabaseClient): Promise<AutomationMode> {
+  const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
     .from("accounting_automation_settings")
     .select("value")
@@ -181,8 +182,8 @@ async function getAutomationMode(): Promise<AutomationMode> {
   return normalizeAutomationMode(data?.value);
 }
 
-async function getActiveMappingLookup() {
-  const supabase = await getSupabaseServerClient();
+export async function getActiveAccountingMappingLookup(client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
     .from("accounting_mappings")
     .select("mapping_type, source_key, accounting_accounts!inner(is_active)")
@@ -207,8 +208,8 @@ async function collectCandidates() {
   return [...orders, ...payments, ...invoices, ...receivables];
 }
 
-async function registerCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string) {
-  const supabase = await getSupabaseServerClient();
+export async function registerFinancialEventCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string | null, client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
   const postingVersion = candidate.posting_version ?? "v1";
   const statusResult = resolveCandidateStatus(candidate, mappings, automationMode);
   const snapshot = {
@@ -261,28 +262,28 @@ async function registerCandidate(candidate: FinancialEventCandidate, mappings: M
         throw new Error(updateError.message);
       }
 
-      return { result: "skipped_duplicate" as const, status: payload.status, updated: true };
+      return { result: "skipped_duplicate" as const, status: payload.status, updated: true, eventId: existing.id };
     }
 
-    return { result: "skipped_duplicate" as const, status: existing.status, updated: false };
+    return { result: "skipped_duplicate" as const, status: existing.status, updated: false, eventId: existing.id };
   }
 
-  const { error: insertError } = await supabase.from("financial_events").insert(payload);
+  const { data: inserted, error: insertError } = await supabase.from("financial_events").insert(payload).select("id").single<{ id: string }>();
   if (insertError) {
     if (insertError.code === "23505") {
-      return { result: "skipped_duplicate" as const, status: payload.status, updated: false };
+      return { result: "skipped_duplicate" as const, status: payload.status, updated: false, eventId: null };
     }
 
     throw new Error(insertError.message);
   }
 
-  return { result: "inserted" as const, status: payload.status, updated: false };
+  return { result: "inserted" as const, status: payload.status, updated: false, eventId: inserted?.id ?? null };
 }
 
 export async function scanFinancialEventsDryRun(createdBy: string): Promise<FinancialEventScanSummary> {
   const [automationMode, mappings, candidates] = await Promise.all([
-    getAutomationMode(),
-    getActiveMappingLookup(),
+    getAccountingAutomationMode(),
+    getActiveAccountingMappingLookup(),
     collectCandidates(),
   ]);
 
@@ -301,7 +302,7 @@ export async function scanFinancialEventsDryRun(createdBy: string): Promise<Fina
   };
 
   for (const candidate of candidates) {
-    const registered = await registerCandidate(candidate, mappings, automationMode, createdBy);
+    const registered = await registerFinancialEventCandidate(candidate, mappings, automationMode, createdBy);
     if (registered.result === "inserted") {
       summary.inserted += 1;
     } else {

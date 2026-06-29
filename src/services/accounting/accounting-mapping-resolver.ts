@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AccountingMappingType } from "@/types/financial-center";
 
@@ -53,7 +54,7 @@ function isEffective(row: MappingRow, today: string) {
   return true;
 }
 
-export async function resolveAccountingMappings(requirements: MappingRequirement[]): Promise<MappingResolution> {
+export async function resolveAccountingMappings(requirements: MappingRequirement[], client?: SupabaseClient): Promise<MappingResolution> {
   const uniqueRequirements = [...new Map(requirements.map((requirement) => [mappingKey(requirement.mappingType, requirement.sourceKey), requirement])).values()];
   const accounts = new Map<string, ResolvedAccountingAccount>();
   const missing: string[] = [];
@@ -66,7 +67,7 @@ export async function resolveAccountingMappings(requirements: MappingRequirement
     };
   }
 
-  const supabase = await getSupabaseServerClient();
+  const supabase = client ?? (await getSupabaseServerClient());
   const mappingTypes = [...new Set(uniqueRequirements.map((requirement) => requirement.mappingType))];
   const sourceKeys = [...new Set(uniqueRequirements.map((requirement) => requirement.sourceKey.trim().toLowerCase()))];
   const { data, error } = await supabase

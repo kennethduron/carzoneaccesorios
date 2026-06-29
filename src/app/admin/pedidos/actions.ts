@@ -7,6 +7,11 @@ import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
+import {
+  dispatchAccountingEvent,
+  dispatchLatestReceivablePaymentAccountingEvent,
+  dispatchPaymentReceivedAccountingEventForOrder,
+} from "@/services/accounting/accounting-event-dispatcher";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
@@ -155,7 +160,7 @@ async function processCreditPaymentEmails(receivableId: string, queueIds: Array<
 }
 
 export async function updateOrderPaymentStatusAction(orderId: string, status: PaymentStatus, reason = "") {
-  await requirePermission(status === "approved" ? "payments:confirm" : "payments:reject");
+  const profile = await requirePermission(status === "approved" ? "payments:confirm" : "payments:reject");
   const rejectionReason = reason.trim();
 
   if (status === "rejected" && rejectionReason.length < 4) {
@@ -182,11 +187,24 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     force: status === "rejected",
   });
 
-  revalidateOperationalPaths();
+  const accountingResult =
+    status === "approved"
+      ? await dispatchPaymentReceivedAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" })
+      : await dispatchAccountingEvent({
+          sourceType: "order",
+          sourceId: orderId,
+          eventPurpose: "order_cancellation",
+          triggeredBy: profile.id,
+          route: "/admin/pedidos",
+        });
 
+  revalidateOperationalPaths();
+  revalidatePath("/admin/contabilidad");
+
+  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return {
     ok: true,
-    message: status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.",
+    message: (status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.") + accountingWarning,
   };
 }
 
@@ -233,8 +251,11 @@ export async function markCreditReceivablePaidAction(input: {
   }
 
   await processCreditPaymentEmails(receivableId);
+  const accountingResult = await dispatchLatestReceivablePaymentAccountingEvent({ receivableId, triggeredBy: profile.id, route: "/admin/cuentas-por-cobrar" });
   revalidateOperationalPaths();
-  return { ok: true, message: "Crédito marcado como pagado correctamente." };
+  revalidatePath("/admin/contabilidad");
+  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  return { ok: true, message: "Crédito marcado como pagado correctamente." + accountingWarning };
 }
 
 export async function registerCreditReceivablePaymentAction(input: {
@@ -318,11 +339,20 @@ export async function registerCreditReceivablePaymentAction(input: {
 
   const result = data[0];
   await processCreditPaymentEmails(receivableId, [result.queued_email_id]);
+  const accountingResult = await dispatchAccountingEvent({
+    sourceType: "receivable_payment",
+    sourceId: result.payment_id,
+    eventPurpose: "receivable_payment",
+    triggeredBy: profile.id,
+    route: "/admin/cuentas-por-cobrar",
+  });
   revalidateOperationalPaths();
+  revalidatePath("/admin/contabilidad");
 
+  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return {
     ok: true,
-    message: Number(result.balance_due ?? 0) <= 0 ? "Abono registrado. El crédito quedó pagado completamente." : "Abono registrado correctamente.",
+    message: (Number(result.balance_due ?? 0) <= 0 ? "Abono registrado. El crédito quedó pagado completamente." : "Abono registrado correctamente.") + accountingWarning,
   };
 }
 
@@ -395,8 +425,17 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       status: "cancelado",
       force: true,
     });
+    const accountingResult = await dispatchAccountingEvent({
+      sourceType: "order",
+      sourceId: orderId,
+      eventPurpose: "order_cancellation",
+      triggeredBy: profile.id,
+      route: "/admin/pedidos",
+    });
     revalidateOperationalPaths();
-    return { ok: true, message: "Pedido cancelado y reserva liberada." };
+    revalidatePath("/admin/contabilidad");
+    const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+    return { ok: true, message: "Pedido cancelado y reserva liberada." + accountingWarning };
   }
 
   const { data: previousOrder, error: previousError } = await supabase
@@ -497,7 +536,19 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     },
   });
 
+  const accountingResult =
+    canonicalOrderStatus(transition.status) === "confirmado"
+      ? await dispatchAccountingEvent({
+          sourceType: "order",
+          sourceId: orderId,
+          eventPurpose: "sale_revenue",
+          triggeredBy: profile.id,
+          route: "/admin/pedidos",
+        })
+      : null;
+
   revalidateOperationalPaths();
+  if (accountingResult) revalidatePath("/admin/contabilidad");
 
   await notifyCustomerOfOrderChange({
     orderId,
@@ -505,7 +556,8 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     status: transition.status,
   });
 
-  return { ok: true, message: "Estado del pedido actualizado." };
+  const accountingWarning = accountingResult?.ok === false ? " Advertencia: no se pudo registrar el evento contable." : "";
+  return { ok: true, message: "Estado del pedido actualizado." + accountingWarning };
 }
 
 export async function generateInvoiceFromOrderAction(orderId: string) {
@@ -869,4 +921,3 @@ export async function correctOrderFiscalCustomerDataAction(input: {
     message: "Datos fiscales corregidos. La auditoría quedó registrada automáticamente.",
   };
 }
-
