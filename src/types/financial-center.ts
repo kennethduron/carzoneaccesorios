@@ -64,6 +64,11 @@ export type FinancialEvent = {
   source_snapshot: Record<string, unknown>;
   validation_errors: unknown[];
   journal_entry_id: string | null;
+  journal_entry?: {
+    id: string;
+    entry_number: string;
+    status: string;
+  } | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

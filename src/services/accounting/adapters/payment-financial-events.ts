@@ -33,7 +33,7 @@ export async function getPaymentFinancialEventCandidates(): Promise<FinancialEve
   const { data, error } = await supabase
     .from("payments")
     .select("id, order_id, customer_id, payment_method, payment_status, amount, reference, bank_reference_number, provider, paid_at, created_at, orders(order_number, customer_name)")
-    .in("payment_status", ["approved", "confirmed", "paid"])
+    .eq("payment_status", "approved")
     .order("created_at", { ascending: false })
     .limit(500)
     .returns<PaymentEventRow[]>();

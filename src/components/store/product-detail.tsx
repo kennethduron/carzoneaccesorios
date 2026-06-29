@@ -14,6 +14,7 @@ import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
 import { ProductImageGallery } from "@/components/store/product-image-gallery";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { buildWhatsAppMessageUrl } from "@/utils/contact-settings";
+import { ProductShareButton } from "@/components/store/product-share-button";
 
 export function ProductDetail({
   product,
@@ -123,7 +124,7 @@ export function ProductDetail({
             </div>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             <button
               onClick={() => addToCart(product.id)}
               disabled={product.stock <= 0}
@@ -153,6 +154,7 @@ export function ProductDetail({
                 Consultar por WhatsApp
               </button>
             )}
+            <ProductShareButton productName={product.name} description={summary || product.description} url={productUrl} />
           </div>
           {cartMessage ? <p className="text-sm font-medium text-[#9b341b]">{cartMessage}</p> : null}
 

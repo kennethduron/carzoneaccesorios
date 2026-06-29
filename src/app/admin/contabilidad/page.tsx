@@ -64,7 +64,8 @@ export default async function AdminAccountingPage({
           canPost={canPost}
           canReverse={canReverse}
           canConfigureAccounting={canConfigureAccounting}
-        canScanEvents={canManage}
+          canScanEvents={canManage}
+          canGenerateDrafts={canManage}
         />
       </div>
     </main>

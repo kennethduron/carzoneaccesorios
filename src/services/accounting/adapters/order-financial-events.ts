@@ -8,7 +8,6 @@ type OrderEventRow = {
   order_number: string;
   customer_id: string | null;
   customer_name: string;
-  email: string | null;
   payment_method: string;
   subtotal: unknown;
   tax: unknown;
@@ -32,7 +31,6 @@ function snapshot(row: OrderEventRow) {
     order_number: row.order_number,
     customer_id: row.customer_id,
     customer_name: row.customer_name,
-    email: row.email,
     payment_method: row.payment_method,
     subtotal: toNumber(row.subtotal),
     tax: toNumber(row.tax),
@@ -46,7 +44,7 @@ export async function getOrderFinancialEventCandidates(): Promise<FinancialEvent
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("orders")
-    .select("id, order_number, customer_id, customer_name, email, payment_method, subtotal, tax, shipping_total, total, status, created_at, updated_at")
+    .select("id, order_number, customer_id, customer_name, payment_method, subtotal, tax, shipping_total, total, status, created_at, updated_at")
     .or("status.in.(confirmado,confirmed,paid,preparacion,preparing,empacado,enviado,en_ruta,entregado,shipped,delivered),status.in.(cancelado,cancelled)")
     .order("created_at", { ascending: false })
     .limit(500)

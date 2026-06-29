@@ -17,7 +17,6 @@ type ReceivableEventRow = {
   customers: {
     contact_name: string | null;
     business_name: string | null;
-    email: string | null;
   } | null;
   orders: {
     order_number: string | null;
@@ -41,7 +40,6 @@ type ReceivablePaymentEventRow = {
   customers: {
     contact_name: string | null;
     business_name: string | null;
-    email: string | null;
   } | null;
   orders: {
     order_number: string | null;
@@ -61,7 +59,7 @@ async function getCommercialCreditCandidates(): Promise<FinancialEventCandidate[
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, created_at, updated_at, customers(contact_name, business_name, email), orders(order_number, payment_method, tax)")
+    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax)")
     .not("status", "eq", "cancelled")
     .order("created_at", { ascending: false })
     .limit(500)
@@ -91,7 +89,6 @@ async function getCommercialCreditCandidates(): Promise<FinancialEventCandidate[
         receivable_id: row.id,
         customer_id: row.customer_id,
         customer_name: name,
-        customer_email: row.customers?.email ?? null,
         order_id: row.order_id,
         order_number: row.orders?.order_number ?? null,
         invoice_id: row.invoice_id,
@@ -108,7 +105,7 @@ async function getReceivablePaymentCandidates(): Promise<FinancialEventCandidate
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("accounts_receivable_payments")
-    .select("id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, voided_at, void_reason, created_at, customers(contact_name, business_name, email), orders(order_number)")
+    .select("id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, voided_at, void_reason, created_at, customers(contact_name, business_name), orders(order_number)")
     .order("created_at", { ascending: false })
     .limit(500)
     .returns<ReceivablePaymentEventRow[]>();
@@ -138,7 +135,6 @@ async function getReceivablePaymentCandidates(): Promise<FinancialEventCandidate
         receivable_id: row.receivable_id,
         customer_id: row.customer_id,
         customer_name: name,
-        customer_email: row.customers?.email ?? null,
         order_id: row.order_id,
         order_number: row.orders?.order_number ?? null,
         payment_method: row.payment_method,

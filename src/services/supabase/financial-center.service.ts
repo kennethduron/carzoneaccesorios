@@ -19,9 +19,10 @@ type AccountingMappingRow = Omit<AccountingMapping, "account" | "metadata"> & {
   accounting_accounts: AccountingMappingAccount | null;
 };
 
-type FinancialEventRow = Omit<FinancialEvent, "source_snapshot" | "validation_errors"> & {
+type FinancialEventRow = Omit<FinancialEvent, "source_snapshot" | "validation_errors" | "journal_entry"> & {
   source_snapshot: unknown;
   validation_errors: unknown;
+  journal_entries: { id: string; entry_number: string; status: string } | null;
 };
 
 const automationModes = new Set<AutomationMode>(["disabled", "dry_run", "draft_only", "auto_post"]);
@@ -59,6 +60,7 @@ function normalizeFinancialEvent(row: FinancialEventRow): FinancialEvent {
     ...row,
     source_snapshot: asRecord(row.source_snapshot),
     validation_errors: errors,
+    journal_entry: row.journal_entries,
   };
 }
 
@@ -180,7 +182,9 @@ export async function getFinancialCenterData(): Promise<FinancialCenterData> {
       .returns<AccountingMappingRow[]>(),
     supabase
       .from("financial_events")
-      .select("id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at")
+      .select(
+        "id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at, journal_entries(id, entry_number, status)",
+      )
       .order("occurred_at", { ascending: false })
       .limit(50)
       .returns<FinancialEventRow[]>(),

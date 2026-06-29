@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
+import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
@@ -21,6 +22,10 @@ type AccountingMutationResult = {
 
 type FinancialEventScanActionResult = AccountingMutationResult & {
   summary?: Awaited<ReturnType<typeof scanFinancialEventsDryRun>>;
+};
+
+type JournalDraftGenerationActionResult = AccountingMutationResult & {
+  journalEntryId?: string;
 };
 
 type EntryForMutation = {
@@ -474,6 +479,19 @@ export async function scanFinancialEventsAction(): Promise<FinancialEventScanAct
     ok: true,
     message: `${summary.message} Insertados: ${summary.inserted}. Duplicados: ${summary.skippedDuplicate}. Pendientes: ${summary.pending}. Listos: ${summary.ready}.`,
     summary,
+  };
+}
+
+export async function generateJournalDraftFromFinancialEventAction(eventId: string): Promise<JournalDraftGenerationActionResult> {
+  const profile = await requirePermission("accounting:manage");
+  const result = await generateJournalDraftFromFinancialEvent(eventId, profile.id);
+
+  revalidatePath("/admin/contabilidad");
+
+  return {
+    ok: result.ok,
+    message: result.message,
+    journalEntryId: result.journalEntryId,
   };
 }
 

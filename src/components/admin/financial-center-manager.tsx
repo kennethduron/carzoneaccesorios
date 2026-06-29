@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
+import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, FilePlus2, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
 import {
+  generateJournalDraftFromFinancialEventAction,
   saveAccountingMappingAction,
   scanFinancialEventsAction,
   toggleAccountingMappingAction,
@@ -21,6 +22,7 @@ import type {
   AccountingMapping,
   AutomationMode,
   FinancialCenterData,
+  FinancialEvent,
   FinancialEventStatus,
   FinancialReadinessStatus,
   MappingReadinessStatus,
@@ -36,6 +38,7 @@ type FinancialCenterManagerProps = {
   canReverse: boolean;
   canConfigureAccounting: boolean;
   canScanEvents: boolean;
+  canGenerateDrafts: boolean;
 };
 
 type TabKey = "summary" | "settings" | "events" | "journal" | "accounts";
@@ -67,14 +70,18 @@ const mappingStatusLabels: Record<MappingReadinessStatus, string> = {
 };
 
 const eventStatusLabels: Record<FinancialEventStatus, string> = {
-  pending: "Evento pendiente",
-  ready: "Evento listo",
+  pending: "Pendiente",
+  ready: "Listo",
   draft_created: "Borrador creado",
   posted: "Publicado",
-  failed: "Error de validación",
-  skipped: "Evento omitido",
+  failed: "Error",
+  skipped: "Omitido",
   reversed: "Reversado",
 };
+
+const draftEligiblePurposes = new Set(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment"]);
+
+const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
 
 const eventPurposeLabels: Record<string, string> = {
   sale_revenue: "Venta confirmada",
@@ -114,6 +121,10 @@ function validationMessages(value: unknown[]) {
   return value.map((item) => String(item)).filter(Boolean);
 }
 
+function canGenerateDraftForEvent(event: FinancialEvent) {
+  return !event.journal_entry_id && draftEligiblePurposes.has(event.event_purpose) && draftEligibleStatuses.has(event.status);
+}
+
 export function FinancialCenterManager({
   accountingData,
   financialData,
@@ -123,6 +134,7 @@ export function FinancialCenterManager({
   canReverse,
   canConfigureAccounting,
   canScanEvents,
+  canGenerateDrafts,
 }: FinancialCenterManagerProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [eventFilter, setEventFilter] = useState<"all" | "pending">("all");
@@ -212,6 +224,18 @@ export function FinancialCenterManager({
     setEventFilter("pending");
   }
 
+  function generateDraft(eventId: string) {
+    startTransition(async () => {
+      const result = await generateJournalDraftFromFinancialEventAction(eventId);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
   return (
     <div className="space-y-5">
       <nav className="flex gap-2 overflow-x-auto rounded-lg border border-black/10 bg-white p-2 shadow-sm" aria-label="Secciones de contabilidad">
@@ -284,7 +308,7 @@ export function FinancialCenterManager({
               <div className="mt-4 space-y-3 text-sm text-black/60">
                 <p className="rounded-md border border-black/10 bg-[#fafafa] p-3">{financialData.periodReadiness.message}</p>
                 <p className="rounded-md border border-[#e4252c]/15 bg-[#fff1f2] p-3 text-[#7f1d1d]">
-                  Phase 2A no genera partidas automáticas ni modifica ventas, pagos, facturas o inventario.
+                  El motor de eventos financieros no genera partidas automáticas ni modifica ventas, pagos, facturas o inventario.
                 </p>
               </div>
             </aside>
@@ -413,7 +437,7 @@ export function FinancialCenterManager({
 
           {hasEvents ? (
             <div className="overflow-x-auto rounded-md border border-black/10">
-              <table className="w-full min-w-[1180px] text-left text-sm">
+              <table className="w-full min-w-[1260px] text-left text-sm">
                 <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
                   <tr>
                     <th className="px-3 py-3">Evento</th>
@@ -424,6 +448,7 @@ export function FinancialCenterManager({
                     <th className="px-3 py-3">Estado</th>
                     <th className="px-3 py-3">Validaciones</th>
                     <th className="px-3 py-3">Creado</th>
+                    {canGenerateDrafts ? <th className="px-3 py-3">Accion</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">
@@ -432,6 +457,8 @@ export function FinancialCenterManager({
                     const customer = snapshotText(event.source_snapshot, ["customer_name", "customer", "client_name"]);
                     const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "invoice_number"]);
                     const issues = validationMessages(event.validation_errors);
+                    const linkedDraft = event.journal_entry;
+                    const canGenerateDraft = canGenerateDrafts && canGenerateDraftForEvent(event);
 
                     return (
                       <tr key={event.id}>
@@ -447,7 +474,14 @@ export function FinancialCenterManager({
                         <td className="px-3 py-3 font-medium">{amount === undefined || amount === null ? "-" : formatCurrency(amount)}</td>
                         <td className="px-3 py-3">{customer ?? "-"}</td>
                         <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
-                        <td className="px-3 py-3"><EventStatusBadge status={event.status} /></td>
+                                                <td className="px-3 py-3">
+                          <EventStatusBadge status={event.status} />
+                          {linkedDraft ? (
+                            <p className="mt-2 text-xs text-black/45">Partida {linkedDraft.entry_number}</p>
+                          ) : event.journal_entry_id ? (
+                            <p className="mt-2 text-xs text-black/45">Partida vinculada</p>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-3">
                           {issues.length > 0 ? (
                             <div className="max-w-[300px] space-y-1 text-xs text-[#7c2d12]">
@@ -457,7 +491,19 @@ export function FinancialCenterManager({
                             <span className="text-black/45">Sin observaciones</span>
                           )}
                         </td>
-                        <td className="px-3 py-3">{formatHnDateTime(event.created_at)}</td>
+                                                <td className="px-3 py-3">{formatHnDateTime(event.created_at)}</td>
+                        {canGenerateDrafts ? (
+                          <td className="px-3 py-3">
+                            {canGenerateDraft ? (
+                              <Button variant="ghost" disabled={isPending} onClick={() => generateDraft(event.id)}>
+                                <FilePlus2 size={16} />
+                                Generar borrador
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-black/45">{event.journal_entry_id ? "Vinculado" : "No aplica"}</span>
+                            )}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}

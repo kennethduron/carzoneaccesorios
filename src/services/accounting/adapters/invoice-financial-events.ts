@@ -9,7 +9,6 @@ type InvoiceEventRow = {
   order_id: string;
   customer_id: string | null;
   customer_name: string | null;
-  customer_email: string | null;
   status: string;
   subtotal: unknown;
   tax: unknown;
@@ -35,7 +34,7 @@ export async function getInvoiceFinancialEventCandidates(): Promise<FinancialEve
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("invoices")
-    .select("id, invoice_number, order_id, customer_id, customer_name, customer_email, status, subtotal, tax, total, issued_at, cancelled_at, created_at, orders(order_number, customer_name, payment_method)")
+    .select("id, invoice_number, order_id, customer_id, customer_name, status, subtotal, tax, total, issued_at, cancelled_at, created_at, orders(order_number, customer_name, payment_method)")
     .in("status", ["emitida", "issued", "paid"])
     .order("created_at", { ascending: false })
     .limit(500)
@@ -67,7 +66,6 @@ export async function getInvoiceFinancialEventCandidates(): Promise<FinancialEve
         order_number: row.orders?.order_number ?? null,
         customer_id: row.customer_id,
         customer_name: customerName,
-        customer_email: row.customer_email,
         payment_method: row.orders?.payment_method ?? null,
         status: row.status,
         subtotal: toNumber(row.subtotal),
