@@ -93,6 +93,7 @@ const eventPurposeLabels: Record<string, string> = {
   receivable_payment: "Abono recibido",
   receivable_paid: "Cuenta por cobrar pagada",
   order_cancellation: "Cancelación de pedido",
+  inventory_cogs: "Costo de ventas",
 };
 
 const sourceTypeLabels: Record<string, string> = {
@@ -102,6 +103,7 @@ const sourceTypeLabels: Record<string, string> = {
   commercial_credit: "Crédito comercial",
   accounts_receivable: "Cuenta por cobrar",
   receivable_payment: "Abono",
+  inventory_movement: "Movimiento de inventario",
 };
 function formatNumber(value: number) {
   return value.toLocaleString("es-HN");
@@ -130,6 +132,42 @@ function snapshotText(snapshot: Record<string, unknown>, keys: string[]) {
 
 function validationMessages(value: unknown[]) {
   return value.map((item) => String(item)).filter(Boolean);
+}
+
+function eventAmount(event: FinancialEvent) {
+  return event.source_snapshot.total_cost_snapshot ?? event.source_snapshot.amount ?? event.source_snapshot.total ?? event.source_snapshot.original_amount;
+}
+
+function eventDetail(event: FinancialEvent) {
+  if (event.event_purpose === "inventory_cogs") {
+    const product = snapshotText(event.source_snapshot, ["product_name", "sku"]) ?? "Producto no identificado";
+    const sku = snapshotText(event.source_snapshot, ["sku"]);
+    const quantity = event.source_snapshot.quantity;
+    return {
+      title: product,
+      helper: [sku ? `SKU ${sku}` : null, quantity != null ? `Cantidad ${quantity}` : null].filter(Boolean).join(" · "),
+    };
+  }
+
+  return {
+    title: snapshotText(event.source_snapshot, ["customer_name", "customer", "client_name"]) ?? "-",
+    helper: "",
+  };
+}
+
+function eventStatusText(event: FinancialEvent) {
+  if (event.event_purpose === "inventory_cogs") {
+    if (event.status === "pending") return "Costo de venta pendiente";
+    if (event.status === "ready") return "Costo de venta listo";
+  }
+
+  return eventStatusLabels[event.status];
+}
+
+function validationIssueLabel(issue: string) {
+  if (issue.includes("costo histórico")) return "Costo histórico faltante";
+  if (issue.includes("mapeos contables para inventario")) return "Mapeo de inventario incompleto";
+  return null;
 }
 
 function canGenerateDraftForEvent(event: FinancialEvent) {
@@ -454,7 +492,7 @@ export function FinancialCenterManager({
                     <th className="px-3 py-3">Tipo de evento</th>
                     <th className="px-3 py-3">Origen</th>
                     <th className="px-3 py-3">Monto</th>
-                    <th className="px-3 py-3">Cliente</th>
+                    <th className="px-3 py-3">Detalle</th>
                     <th className="px-3 py-3">Fecha</th>
                     <th className="px-3 py-3">Partida asociada</th>
                     <th className="px-3 py-3">Estado</th>
@@ -465,9 +503,9 @@ export function FinancialCenterManager({
                 </thead>
                 <tbody className="divide-y divide-black/10">
                   {visibleEvents.map((event) => {
-                    const amount = event.source_snapshot.amount ?? event.source_snapshot.total ?? event.source_snapshot.original_amount;
-                    const customer = snapshotText(event.source_snapshot, ["customer_name", "customer", "client_name"]);
-                    const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "invoice_number"]);
+                    const amount = eventAmount(event);
+                    const detail = eventDetail(event);
+                    const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "invoice_number", "inventory_movement_id"]);
                     const issues = validationMessages(event.validation_errors);
                     const linkedDraft = event.journal_entry;
                     const canGenerateDraft = canGenerateDrafts && canGenerateDraftForEvent(event);
@@ -484,7 +522,10 @@ export function FinancialCenterManager({
                           <p className="text-xs text-black/35">{event.source_id}</p>
                         </td>
                         <td className="px-3 py-3 font-medium">{amount === undefined || amount === null ? "-" : formatCurrency(amount)}</td>
-                        <td className="px-3 py-3">{customer ?? "-"}</td>
+                        <td className="px-3 py-3">
+                          <p className="font-medium">{detail.title}</p>
+                          {detail.helper ? <p className="text-xs text-black/45">{detail.helper}</p> : null}
+                        </td>
                         <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
                         <td className="px-3 py-3">
                           {linkedDraft ? (
@@ -496,12 +537,15 @@ export function FinancialCenterManager({
                           )}
                         </td>
                         <td className="px-3 py-3">
-                          <EventStatusBadge status={event.status} />
+                          <EventStatusBadge status={event.status} label={eventStatusText(event)} />
                         </td>
                         <td className="px-3 py-3">
                           {issues.length > 0 ? (
                             <div className="max-w-[300px] space-y-1 text-xs text-[#7c2d12]">
-                              {issues.map((issue, index) => <p key={`${event.id}-${index}`}>{issue}</p>)}
+                              {issues.map((issue, index) => {
+                                const label = validationIssueLabel(issue);
+                                return <p key={`${event.id}-${index}`}>{label ? <span className="font-semibold">{label}: </span> : null}{issue}</p>;
+                              })}
                             </div>
                           ) : (
                             <span className="text-black/45">Sin observaciones</span>
@@ -590,7 +634,7 @@ function MappingStatusBadge({ status }: { status: MappingReadinessStatus }) {
   return <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${className}`}>{mappingStatusLabels[status]}</span>;
 }
 
-function EventStatusBadge({ status }: { status: FinancialEventStatus }) {
+function EventStatusBadge({ status, label }: { status: FinancialEventStatus; label?: string }) {
   const className = {
     pending: "bg-[#fff7ed] text-[#7c2d12]",
     ready: "bg-[#edf7ed] text-[#2f6f3e]",
@@ -601,7 +645,7 @@ function EventStatusBadge({ status }: { status: FinancialEventStatus }) {
     reversed: "bg-[#eef2ff] text-[#3730a3]",
   }[status];
 
-  return <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${className}`}>{eventStatusLabels[status]}</span>;
+  return <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${className}`}>{label ?? eventStatusLabels[status]}</span>;
 }
 
 function MappingsTable({

@@ -34,6 +34,8 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "accounts_receivable", label: "Cuenta por cobrar", mappingType: "receivable", sourceKey: "accounts_receivable" },
   { key: "sales_revenue", label: "Ingresos por ventas", mappingType: "revenue", sourceKey: "sales_revenue" },
   { key: "tax_payable", label: "Impuestos por pagar", mappingType: "tax", sourceKey: "tax_payable" },
+  { key: "inventory_asset", label: "Inventario", mappingType: "inventory", sourceKey: "inventory_asset" },
+  { key: "cost_of_goods_sold", label: "Costo de ventas", mappingType: "inventory", sourceKey: "cost_of_goods_sold" },
   { key: "suspense", label: "Cuenta transitoria", mappingType: "suspense", sourceKey: "suspense" },
 ];
 

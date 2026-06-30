@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getInvoiceFinancialEventCandidates } from "@/services/accounting/adapters/invoice-financial-events";
+import { getInventoryFinancialEventCandidates } from "@/services/accounting/adapters/inventory-financial-events";
 import { getOrderFinancialEventCandidates } from "@/services/accounting/adapters/order-financial-events";
 import { getPaymentFinancialEventCandidates } from "@/services/accounting/adapters/payment-financial-events";
 import { getReceivableFinancialEventCandidates } from "@/services/accounting/adapters/receivable-financial-events";
@@ -17,7 +18,8 @@ export type FinancialEventPurpose =
   | "commercial_credit_cancelled"
   | "receivable_payment"
   | "receivable_paid"
-  | "order_cancellation";
+  | "order_cancellation"
+  | "inventory_cogs";
 
 export type FinancialEventSourceType =
   | "order"
@@ -25,7 +27,8 @@ export type FinancialEventSourceType =
   | "invoice"
   | "commercial_credit"
   | "accounts_receivable"
-  | "receivable_payment";
+  | "receivable_payment"
+  | "inventory_movement";
 
 export type FinancialEventCandidate = {
   eventType:
@@ -37,7 +40,8 @@ export type FinancialEventCandidate = {
     | "commercial_credit_cancelled"
     | "receivable_payment_received"
     | "receivable_paid"
-    | "order_cancelled";
+    | "order_cancelled"
+    | "inventory_sale_movement";
   source_type: FinancialEventSourceType;
   source_id: string;
   event_purpose: FinancialEventPurpose;
@@ -129,23 +133,46 @@ function requiredMappingsForCandidate(candidate: FinancialEventCandidate) {
     requirements.push({ mappingType: "payment_method", sourceKey: paymentMethod, label: `Método de pago: ${paymentMethod}` });
   }
 
+  if (candidate.event_purpose === "inventory_cogs") {
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_asset", label: "Inventario" });
+    requirements.push({ mappingType: "inventory", sourceKey: "cost_of_goods_sold", label: "Costo de ventas" });
+  }
+
   return requirements;
 }
 
 function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode) {
   const validationErrors = [...(candidate.validation_errors ?? [])];
   const amount = Number(candidate.amount ?? 0);
+  const isInventoryCogs = candidate.event_purpose === "inventory_cogs";
 
   if (!candidate.source_id.trim()) {
     validationErrors.push("El origen no tiene identificador válido.");
   }
 
-  if (candidate.amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
+  if (isInventoryCogs && candidate.eligible && (!Number.isFinite(amount) || amount <= 0)) {
+    validationErrors.push("No se puede calcular el costo de venta porque falta el costo histórico del producto.");
+  } else if (candidate.amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
     validationErrors.push("El monto del origen no es válido.");
   }
 
   if (!candidate.eligible) {
     return { status: "skipped" as const, validationErrors };
+  }
+
+  if (isInventoryCogs) {
+    const missingInventoryMappings = requiredMappingsForCandidate(candidate).some(
+      (requirement) => !hasMapping(mappings, requirement.mappingType, requirement.sourceKey),
+    );
+
+    if (missingInventoryMappings) {
+      validationErrors.push("Faltan mapeos contables para inventario o costo de ventas.");
+    }
+
+    return {
+      status: validationErrors.length > 0 ? ("pending" as const) : ("ready" as const),
+      validationErrors: [...new Set(validationErrors)],
+    };
   }
 
   if (candidate.event_purpose === "invoice_issued" || candidate.event_purpose === "receivable_paid") {
@@ -182,6 +209,20 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
   };
 }
 
+function buildRegisteredSnapshot(candidate: FinancialEventCandidate) {
+  if (candidate.event_purpose === "inventory_cogs") {
+    return candidate.source_snapshot;
+  }
+
+  return {
+    ...candidate.source_snapshot,
+    event_type: candidate.eventType,
+    amount: candidate.amount,
+    customer_name: candidate.customerName ?? null,
+    source_number: candidate.sourceNumber ?? null,
+  };
+}
+
 export async function getAccountingAutomationMode(client?: SupabaseClient): Promise<AutomationMode> {
   const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
@@ -213,27 +254,22 @@ export async function getActiveAccountingMappingLookup(client?: SupabaseClient) 
 }
 
 async function collectCandidates() {
-  const [orders, payments, invoices, receivables] = await Promise.all([
+  const [orders, payments, invoices, receivables, inventory] = await Promise.all([
     getOrderFinancialEventCandidates(),
     getPaymentFinancialEventCandidates(),
     getInvoiceFinancialEventCandidates(),
     getReceivableFinancialEventCandidates(),
+    getInventoryFinancialEventCandidates(),
   ]);
 
-  return [...orders, ...payments, ...invoices, ...receivables];
+  return [...orders, ...payments, ...invoices, ...receivables, ...inventory];
 }
 
 export async function registerFinancialEventCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string | null, client?: SupabaseClient) {
   const supabase = client ?? (await getSupabaseServerClient());
   const postingVersion = candidate.posting_version ?? "v1";
   const statusResult = resolveCandidateStatus(candidate, mappings, automationMode);
-  const snapshot = {
-    ...candidate.source_snapshot,
-    event_type: candidate.eventType,
-    amount: candidate.amount,
-    customer_name: candidate.customerName ?? null,
-    source_number: candidate.sourceNumber ?? null,
-  };
+  const snapshot = buildRegisteredSnapshot(candidate);
 
   const { data: existing, error: existingError } = await supabase
     .from("financial_events")
