@@ -77,6 +77,10 @@ export type AdminOrderItem = {
   line_total: number;
   retail_price_snapshot: number;
   wholesale_price_snapshot: number;
+  unit_cost_snapshot?: number | null;
+  total_cost_snapshot?: number | null;
+  cost_source?: string | null;
+  cost_captured_at?: string | null;
 };
 
 export type AdminOrderRow = {

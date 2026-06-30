@@ -50,6 +50,11 @@ function normalizeMovement(row: MovementQueryRow): InventoryMovementRow {
     stock_after: toNumber(row.stock_after),
     reference_type: row.reference_type,
     reference_id: row.reference_id,
+    order_item_id: row.order_item_id ?? null,
+    unit_cost_snapshot: row.unit_cost_snapshot == null ? null : toNumber(row.unit_cost_snapshot),
+    total_cost_snapshot: row.total_cost_snapshot == null ? null : toNumber(row.total_cost_snapshot),
+    cost_source: row.cost_source ?? null,
+    cost_captured_at: row.cost_captured_at ?? null,
     notes: row.notes,
     created_at: row.created_at,
   };
@@ -147,6 +152,11 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
           stock_after,
           reference_type,
           reference_id,
+          order_item_id,
+          unit_cost_snapshot,
+          total_cost_snapshot,
+          cost_source,
+          cost_captured_at,
           notes,
           created_at,
           products(name, sku)

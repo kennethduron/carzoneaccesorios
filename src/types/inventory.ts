@@ -25,6 +25,11 @@ export type InventoryMovementRow = {
   stock_after: number;
   reference_type: string | null;
   reference_id: string | null;
+  order_item_id?: string | null;
+  unit_cost_snapshot?: number | null;
+  total_cost_snapshot?: number | null;
+  cost_source?: string | null;
+  cost_captured_at?: string | null;
   notes: string | null;
   created_at: string;
 };
