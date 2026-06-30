@@ -10,8 +10,6 @@ type PaymentEventRow = {
   payment_method: string;
   payment_status: string;
   amount: unknown;
-  reference: string | null;
-  bank_reference_number: string | null;
   provider: string | null;
   paid_at: string | null;
   created_at: string;
@@ -32,7 +30,7 @@ export async function getPaymentFinancialEventCandidates(): Promise<FinancialEve
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("payments")
-    .select("id, order_id, customer_id, payment_method, payment_status, amount, reference, bank_reference_number, provider, paid_at, created_at, orders(order_number, customer_name)")
+    .select("id, order_id, customer_id, payment_method, payment_status, amount, provider, paid_at, created_at, orders(order_number, customer_name)")
     .eq("payment_status", "approved")
     .order("created_at", { ascending: false })
     .limit(500)
@@ -57,15 +55,17 @@ export async function getPaymentFinancialEventCandidates(): Promise<FinancialEve
       sourceNumber: row.orders?.order_number ?? row.id,
       eligible: receivedStatuses.has(row.payment_status),
       source_snapshot: {
+        source_id: row.id,
         order_id: row.order_id,
         order_number: row.orders?.order_number ?? null,
         customer_id: row.customer_id,
         customer_name: row.orders?.customer_name ?? null,
         payment_method: row.payment_method,
-        payment_status: row.payment_status,
-        amount,
-        reference: row.bank_reference_number ?? row.reference,
+        status: row.payment_status,
+        total: amount,
         provider: row.provider,
+        occurred_at: row.paid_at ?? row.created_at,
+        currency: "HNL",
       },
     };
   });

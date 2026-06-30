@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 
 function normalizeOptionalRtn(value: string) {
@@ -43,7 +44,7 @@ export async function getInvoiceDetailAction(invoiceId: string) {
 }
 
 export async function cancelInvoiceAction(invoiceId: string, cancellationReason: string) {
-  await requirePermission("invoices:manage");
+  const profile = await requirePermission("invoices:manage");
   const reason = cancellationReason.trim();
 
   if (reason.length < 8) {
@@ -60,15 +61,25 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
     return { ok: false, message: error.message };
   }
 
+  const accountingResult = await dispatchAccountingEvent({
+    sourceType: "invoice",
+    sourceId: invoiceId,
+    eventPurpose: "invoice_cancelled",
+    triggeredBy: profile.id,
+    route: "/admin/facturas",
+  });
+
   revalidatePath("/admin/facturas");
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin/reportes");
   revalidatePath("/admin/crm");
+  revalidatePath("/admin/contabilidad");
   revalidatePath("/facturas");
   revalidatePath("/mis-pedidos");
   revalidatePath("/cuenta");
   revalidatePath("/rastreo");
-  return { ok: true, message: "Factura anulada correctamente." };
+  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  return { ok: true, message: "Factura anulada correctamente." + accountingWarning };
 }
 
 export async function updateInvoiceCustomerDataAction(input: {
@@ -122,6 +133,7 @@ export async function updateInvoiceCustomerDataAction(input: {
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin/reportes");
   revalidatePath("/admin/crm");
+  revalidatePath("/admin/contabilidad");
   revalidatePath("/facturas");
   revalidatePath("/cuenta");
   revalidatePath("/mis-pedidos");

@@ -49,6 +49,23 @@ type OrderEventRow = {
   invoices?: Array<{ invoice_number: string | null; status: string | null }> | null;
 };
 
+
+type InvoiceEventRow = {
+  id: string;
+  invoice_number: string | null;
+  order_id: string | null;
+  customer_id: string | null;
+  customer_name: string | null;
+  status: string | null;
+  subtotal: unknown;
+  tax: unknown;
+  total: unknown;
+  issued_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+  orders: { order_number: string | null; customer_name: string | null; payment_method: string | null } | null;
+};
 type PaymentEventRow = {
   id: string;
   order_id: string;
@@ -72,6 +89,8 @@ type ReceivableEventRow = {
   status: string | null;
   created_at: string;
   updated_at: string | null;
+  paid_at?: string | null;
+  payment_received_method?: string | null;
   customers: { contact_name: string | null; business_name: string | null } | null;
   orders: { order_number: string | null; payment_method: string | null; tax: unknown } | null;
   invoices: { invoice_number: string | null } | null;
@@ -86,7 +105,6 @@ type ReceivablePaymentEventRow = {
   payment_method: string | null;
   received_at: string | null;
   voided_at: string | null;
-  void_reason: string | null;
   created_at: string;
   customers: { contact_name: string | null; business_name: string | null } | null;
   orders: { order_number: string | null } | null;
@@ -95,6 +113,8 @@ type ReceivablePaymentEventRow = {
 const confirmedOrderStatuses = new Set(["confirmado", "confirmed", "paid", "preparacion", "preparing", "empacado", "enviado", "en_ruta", "entregado", "shipped", "delivered"]);
 const cancelledOrderStatuses = new Set(["cancelado", "cancelled"]);
 const receivedPaymentStatuses = new Set(["approved", "confirmed", "paid"]);
+const issuedInvoiceStatuses = new Set(["emitida", "issued", "paid"]);
+const cancelledInvoiceStatuses = new Set(["anulada", "cancelled"]);
 const draftEligiblePurposes = new Set<FinancialEventPurpose>(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment"]);
 
 function toNumber(value: unknown) {
@@ -203,6 +223,57 @@ async function buildOrderCandidate(input: DispatchAccountingEventInput): Promise
   };
 }
 
+async function buildInvoiceCandidate(input: DispatchAccountingEventInput): Promise<FinancialEventCandidate | null> {
+  const admin = getSupabaseAdminClient();
+  const { data: row, error } = await admin
+    .from("invoices")
+    .select("id, invoice_number, order_id, customer_id, customer_name, status, subtotal, tax, total, issued_at, cancelled_at, created_at, updated_at, orders(order_number, customer_name, payment_method)")
+    .eq("id", input.sourceId)
+    .maybeSingle<InvoiceEventRow>();
+
+  if (error) throw new Error(error.message);
+  if (!row) return null;
+
+  const status = String(row.status ?? "");
+  const amount = toNumber(row.total);
+  const isCancelled = input.eventPurpose === "invoice_cancelled";
+  const name = row.customer_name ?? row.orders?.customer_name ?? null;
+  const occurredAt = isCancelled ? toIso(input.occurredAt, row.cancelled_at ?? row.updated_at ?? row.created_at) : toIso(input.occurredAt, row.issued_at ?? row.created_at);
+
+  return {
+    eventType: isCancelled ? "invoice_cancelled" : "invoice_issued",
+    source_type: "invoice",
+    source_id: row.id,
+    event_purpose: isCancelled ? "invoice_cancelled" : "invoice_issued",
+    posting_version: "v1",
+    occurred_at: occurredAt,
+    amount,
+    taxAmount: toNumber(row.tax),
+    paymentMethod: row.orders?.payment_method ?? null,
+    customerName: name,
+    sourceNumber: row.invoice_number ?? row.id,
+    eligible: isCancelled ? cancelledInvoiceStatuses.has(status) : issuedInvoiceStatuses.has(status),
+    validation_errors: isCancelled
+      ? ["La anulacion fiscal requiere revision contable antes de generar reversos."]
+      : ["La factura fiscal fue registrada como evento, pero no requiere partida adicional en esta fase para evitar duplicar ingresos."],
+    source_snapshot: {
+      source_id: row.id,
+      invoice_id: row.id,
+      invoice_number: row.invoice_number,
+      order_id: row.order_id,
+      order_number: row.orders?.order_number ?? null,
+      payment_method: row.orders?.payment_method ?? null,
+      customer_id: row.customer_id,
+      customer_name: name,
+      subtotal: toNumber(row.subtotal),
+      tax_amount: toNumber(row.tax),
+      total: amount,
+      status,
+      occurred_at: occurredAt,
+      currency: "HNL",
+    },
+  };
+}
 async function buildPaymentCandidate(input: DispatchAccountingEventInput): Promise<FinancialEventCandidate | null> {
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
@@ -249,7 +320,7 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
+    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
     .eq("id", input.sourceId)
     .maybeSingle<ReceivableEventRow>();
 
@@ -259,26 +330,33 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
   const name = customerName(row.customers);
   const amount = toNumber(row.original_amount);
   const status = String(row.status ?? "");
+  const isCancelled = input.eventPurpose === "commercial_credit_cancelled";
+  const occurredAt = toIso(input.occurredAt, isCancelled ? row.updated_at ?? row.created_at : row.created_at);
 
   return {
-    eventType: "commercial_credit_created",
+    eventType: isCancelled ? "commercial_credit_cancelled" : "commercial_credit_created",
     source_type: "commercial_credit",
     source_id: row.id,
-    event_purpose: "commercial_credit",
+    event_purpose: isCancelled ? "commercial_credit_cancelled" : "commercial_credit",
     posting_version: "v1",
-    occurred_at: toIso(input.occurredAt, row.created_at),
+    occurred_at: occurredAt,
     amount,
     taxAmount: toNumber(row.orders?.tax),
     paymentMethod: row.orders?.payment_method ?? "commercial_credit",
     customerName: name,
     sourceNumber: row.orders?.order_number ?? row.id,
-    eligible: status !== "cancelled",
-    validation_errors: status === "cancelled" ? ["El credito comercial esta cancelado."] : [],
+    eligible: isCancelled ? status === "cancelled" : status !== "cancelled",
+    validation_errors: isCancelled
+      ? ["La cancelacion del credito comercial requiere revision contable antes de generar reversos."]
+      : status === "cancelled"
+        ? ["El credito comercial esta cancelado."]
+        : [],
     source_snapshot: {
       source_id: row.id,
       receivable_id: row.id,
       order_id: row.order_id,
       order_number: row.orders?.order_number ?? null,
+      invoice_id: row.invoice_id,
       invoice_number: row.invoices?.invoice_number ?? null,
       payment_method: row.orders?.payment_method ?? "commercial_credit",
       customer_id: row.customer_id,
@@ -289,17 +367,66 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
       tax_amount: toNumber(row.orders?.tax),
       due_date: row.due_date,
       status,
-      occurred_at: toIso(input.occurredAt, row.created_at),
+      occurred_at: occurredAt,
       currency: "HNL",
     },
   };
 }
+async function buildReceivablePaidCandidate(input: DispatchAccountingEventInput): Promise<FinancialEventCandidate | null> {
+  const admin = getSupabaseAdminClient();
+  const { data: row, error } = await admin
+    .from("accounts_receivable")
+    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
+    .eq("id", input.sourceId)
+    .maybeSingle<ReceivableEventRow>();
 
+  if (error) throw new Error(error.message);
+  if (!row) return null;
+
+  const name = customerName(row.customers);
+  const amount = toNumber(row.original_amount);
+  const status = String(row.status ?? "");
+  const occurredAt = toIso(input.occurredAt, row.paid_at ?? row.updated_at ?? row.created_at);
+
+  return {
+    eventType: "receivable_paid",
+    source_type: "accounts_receivable",
+    source_id: row.id,
+    event_purpose: "receivable_paid",
+    posting_version: "v1",
+    occurred_at: occurredAt,
+    amount,
+    taxAmount: toNumber(row.orders?.tax),
+    paymentMethod: row.payment_received_method ?? row.orders?.payment_method ?? "commercial_credit",
+    customerName: name,
+    sourceNumber: row.orders?.order_number ?? row.id,
+    eligible: status === "paid",
+    validation_errors: ["La cuenta por cobrar pagada se registra como control; el cobro se contabiliza por eventos de abono para evitar duplicados."],
+    source_snapshot: {
+      source_id: row.id,
+      receivable_id: row.id,
+      order_id: row.order_id,
+      order_number: row.orders?.order_number ?? null,
+      invoice_id: row.invoice_id,
+      invoice_number: row.invoices?.invoice_number ?? null,
+      payment_method: row.payment_received_method ?? row.orders?.payment_method ?? "commercial_credit",
+      customer_id: row.customer_id,
+      customer_name: name,
+      original_amount: amount,
+      total: amount,
+      balance_due: toNumber(row.balance_due),
+      tax_amount: toNumber(row.orders?.tax),
+      status,
+      occurred_at: occurredAt,
+      currency: "HNL",
+    },
+  };
+}
 async function buildReceivablePaymentCandidate(input: DispatchAccountingEventInput): Promise<FinancialEventCandidate | null> {
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("accounts_receivable_payments")
-    .select("id, receivable_id, customer_id, order_id, amount, payment_method, received_at, voided_at, void_reason, created_at, customers(contact_name, business_name), orders(order_number)")
+    .select("id, receivable_id, customer_id, order_id, amount, payment_method, received_at, voided_at, created_at, customers(contact_name, business_name), orders(order_number)")
     .eq("id", input.sourceId)
     .maybeSingle<ReceivablePaymentEventRow>();
 
@@ -345,12 +472,20 @@ async function buildCandidate(input: DispatchAccountingEventInput) {
     return buildOrderCandidate(input);
   }
 
+  if (input.sourceType === "invoice" && (input.eventPurpose === "invoice_issued" || input.eventPurpose === "invoice_cancelled")) {
+    return buildInvoiceCandidate(input);
+  }
+
   if (input.sourceType === "payment" && input.eventPurpose === "payment_received") {
     return buildPaymentCandidate(input);
   }
 
-  if (input.sourceType === "commercial_credit" && input.eventPurpose === "commercial_credit") {
+  if (input.sourceType === "commercial_credit" && (input.eventPurpose === "commercial_credit" || input.eventPurpose === "commercial_credit_cancelled")) {
     return buildCommercialCreditCandidate(input);
+  }
+
+  if (input.sourceType === "accounts_receivable" && input.eventPurpose === "receivable_paid") {
+    return buildReceivablePaidCandidate(input);
   }
 
   if (input.sourceType === "receivable_payment" && input.eventPurpose === "receivable_payment") {
@@ -495,6 +630,41 @@ export async function dispatchCommercialCreditAccountingEventForOrder(input: {
   }
 }
 
+
+export async function dispatchCommercialCreditCancellationAccountingEventForOrder(input: {
+  orderId: string;
+  triggeredBy?: string | null;
+  route?: string | null;
+}) {
+  try {
+    const admin = getSupabaseAdminClient();
+    const { data: receivable, error } = await admin
+      .from("accounts_receivable")
+      .select("id")
+      .eq("order_id", input.orderId)
+      .eq("status", "cancelled")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ id: string }>();
+
+    if (error) throw new Error(error.message);
+    if (!receivable) return { ok: true, skipped: true, message: "No hay credito comercial cancelado para el pedido." };
+
+    return dispatchAccountingEvent({
+      sourceType: "commercial_credit",
+      sourceId: receivable.id,
+      eventPurpose: "commercial_credit_cancelled",
+      triggeredBy: input.triggeredBy ?? null,
+      route: input.route ?? null,
+    });
+  } catch (error) {
+    await logAccountingDispatchFailure(
+      { sourceType: "commercial_credit", sourceId: input.orderId, eventPurpose: "commercial_credit_cancelled", triggeredBy: input.triggeredBy ?? null, route: input.route ?? null },
+      error,
+    ).catch((logError) => console.error("Accounting credit cancellation dispatch log failed", logError));
+    return { ok: false, skipped: true, message: "La operacion continuo, pero no se pudo registrar el evento contable." };
+  }
+}
 export async function dispatchLatestReceivablePaymentAccountingEvent(input: {
   receivableId: string;
   triggeredBy?: string | null;

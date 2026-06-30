@@ -9,6 +9,7 @@ import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
 import {
   dispatchAccountingEvent,
+  dispatchCommercialCreditCancellationAccountingEventForOrder,
   dispatchLatestReceivablePaymentAccountingEvent,
   dispatchPaymentReceivedAccountingEventForOrder,
 } from "@/services/accounting/accounting-event-dispatcher";
@@ -197,11 +198,15 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
           triggeredBy: profile.id,
           route: "/admin/pedidos",
         });
+  const creditCancellationResult =
+    status === "rejected"
+      ? await dispatchCommercialCreditCancellationAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" })
+      : null;
 
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
 
-  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingWarning = accountingResult.ok && creditCancellationResult?.ok !== false ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return {
     ok: true,
     message: (status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.") + accountingWarning,
@@ -252,9 +257,16 @@ export async function markCreditReceivablePaidAction(input: {
 
   await processCreditPaymentEmails(receivableId);
   const accountingResult = await dispatchLatestReceivablePaymentAccountingEvent({ receivableId, triggeredBy: profile.id, route: "/admin/cuentas-por-cobrar" });
+  const receivablePaidResult = await dispatchAccountingEvent({
+    sourceType: "accounts_receivable",
+    sourceId: receivableId,
+    eventPurpose: "receivable_paid",
+    triggeredBy: profile.id,
+    route: "/admin/cuentas-por-cobrar",
+  });
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
-  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingWarning = accountingResult.ok && receivablePaidResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return { ok: true, message: "Crédito marcado como pagado correctamente." + accountingWarning };
 }
 
@@ -346,10 +358,20 @@ export async function registerCreditReceivablePaymentAction(input: {
     triggeredBy: profile.id,
     route: "/admin/cuentas-por-cobrar",
   });
+  const receivablePaidResult =
+    Number(result.balance_due ?? 0) <= 0
+      ? await dispatchAccountingEvent({
+          sourceType: "accounts_receivable",
+          sourceId: receivableId,
+          eventPurpose: "receivable_paid",
+          triggeredBy: profile.id,
+          route: "/admin/cuentas-por-cobrar",
+        })
+      : null;
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
 
-  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingWarning = accountingResult.ok && receivablePaidResult?.ok !== false ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return {
     ok: true,
     message: (Number(result.balance_due ?? 0) <= 0 ? "Abono registrado. El crédito quedó pagado completamente." : "Abono registrado correctamente.") + accountingWarning,
@@ -432,9 +454,10 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
       triggeredBy: profile.id,
       route: "/admin/pedidos",
     });
+    const creditCancellationResult = await dispatchCommercialCreditCancellationAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" });
     revalidateOperationalPaths();
     revalidatePath("/admin/contabilidad");
-    const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+    const accountingWarning = accountingResult.ok && creditCancellationResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
     return { ok: true, message: "Pedido cancelado y reserva liberada." + accountingWarning };
   }
 
@@ -561,7 +584,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
 }
 
 export async function generateInvoiceFromOrderAction(orderId: string) {
-  await requirePermission("invoices:create");
+  const profile = await requirePermission("invoices:create");
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -642,12 +665,21 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     return { ok: false, message: "La factura fue generada, pero no se pudo cargar la vista previa." };
   }
 
+  const accountingResult = await dispatchAccountingEvent({
+    sourceType: "invoice",
+    sourceId: invoice.invoice_id,
+    eventPurpose: "invoice_issued",
+    triggeredBy: profile.id,
+    route: "/admin/pedidos",
+  });
+
   revalidateOperationalPaths();
   revalidatePath("/admin/configuracion-fiscal");
+  revalidatePath("/admin/contabilidad");
 
   return {
     ok: true,
-    message: `Factura ${invoice.invoice_number} generada correctamente.`,
+    message: `Factura ${invoice.invoice_number} generada correctamente.${accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable."}`,
     invoiceId: invoice.invoice_id,
     invoiceNumber: invoice.invoice_number,
     invoice: invoiceDetail,

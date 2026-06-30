@@ -12,8 +12,11 @@ export type FinancialEventPurpose =
   | "sale_revenue"
   | "payment_received"
   | "invoice_issued"
+  | "invoice_cancelled"
   | "commercial_credit"
+  | "commercial_credit_cancelled"
   | "receivable_payment"
+  | "receivable_paid"
   | "order_cancellation";
 
 export type FinancialEventSourceType =
@@ -21,6 +24,7 @@ export type FinancialEventSourceType =
   | "payment"
   | "invoice"
   | "commercial_credit"
+  | "accounts_receivable"
   | "receivable_payment";
 
 export type FinancialEventCandidate = {
@@ -28,8 +32,11 @@ export type FinancialEventCandidate = {
     | "order_confirmed"
     | "payment_received"
     | "invoice_issued"
+    | "invoice_cancelled"
     | "commercial_credit_created"
+    | "commercial_credit_cancelled"
     | "receivable_payment_received"
+    | "receivable_paid"
     | "order_cancelled";
   source_type: FinancialEventSourceType;
   source_id: string;
@@ -102,11 +109,11 @@ function requiredMappingsForCandidate(candidate: FinancialEventCandidate) {
   const paymentMethod = String(candidate.paymentMethod ?? "").trim().toLowerCase();
   const usesReceivable = candidate.event_purpose === "commercial_credit" || paymentMethod === "commercial_credit";
 
-  if (["sale_revenue", "invoice_issued", "commercial_credit", "order_cancellation"].includes(candidate.event_purpose)) {
+  if (["sale_revenue", "commercial_credit", "order_cancellation"].includes(candidate.event_purpose)) {
     requirements.push({ mappingType: "revenue", sourceKey: "sales_revenue", label: "Ingresos por ventas" });
   }
 
-  if (["sale_revenue", "invoice_issued", "commercial_credit", "order_cancellation"].includes(candidate.event_purpose) && taxAmount > 0) {
+  if (["sale_revenue", "commercial_credit", "order_cancellation"].includes(candidate.event_purpose) && taxAmount > 0) {
     requirements.push({ mappingType: "tax", sourceKey: "tax_payable", label: "Impuestos por pagar" });
   }
 
@@ -139,6 +146,14 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
 
   if (!candidate.eligible) {
     return { status: "skipped" as const, validationErrors };
+  }
+
+  if (candidate.event_purpose === "invoice_issued" || candidate.event_purpose === "receivable_paid") {
+    return { status: "skipped" as const, validationErrors };
+  }
+
+  if (candidate.event_purpose === "invoice_cancelled" || candidate.event_purpose === "commercial_credit_cancelled") {
+    return { status: "pending" as const, validationErrors };
   }
 
   if (validationErrors.length > 0) {

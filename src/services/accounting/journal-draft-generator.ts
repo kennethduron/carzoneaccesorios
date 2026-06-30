@@ -22,8 +22,11 @@ type FinancialEventPurpose =
   | "sale_revenue"
   | "payment_received"
   | "commercial_credit"
+  | "commercial_credit_cancelled"
   | "receivable_payment"
   | "invoice_issued"
+  | "invoice_cancelled"
+  | "receivable_paid"
   | "order_cancellation";
 
 type FinancialEventForDraft = {
@@ -70,12 +73,18 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "sale_revenue",
   "payment_received",
   "commercial_credit",
+  "commercial_credit_cancelled",
   "receivable_payment",
   "invoice_issued",
+  "invoice_cancelled",
+  "receivable_paid",
   "order_cancellation",
 ]);
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
+const receivablePaidSkippedMessage = "La cuenta por cobrar pagada se registra como control; el cobro se contabiliza por eventos de abono para evitar duplicados.";
+const invoiceCancellationPendingMessage = "La anulacion fiscal requiere revision contable antes de generar reversos.";
+const creditCancellationPendingMessage = "La cancelacion del credito comercial requiere revision contable antes de generar reversos.";
 const cancellationPendingMessage = "La cancelacion requiere reglas de reverso en una fase posterior.";
 const missingMappingsMessage = "No se puede generar la partida porque faltan mapeos contables.";
 const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asociada.";
@@ -266,6 +275,33 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
       status: "skipped",
       message: invoiceSkippedMessage,
       validationErrors: [invoiceSkippedMessage],
+    };
+  }
+
+  if (purpose === "receivable_paid") {
+    return {
+      ok: false,
+      status: "skipped",
+      message: receivablePaidSkippedMessage,
+      validationErrors: [receivablePaidSkippedMessage],
+    };
+  }
+
+  if (purpose === "invoice_cancelled") {
+    return {
+      ok: false,
+      status: "pending",
+      message: invoiceCancellationPendingMessage,
+      validationErrors: [invoiceCancellationPendingMessage],
+    };
+  }
+
+  if (purpose === "commercial_credit_cancelled") {
+    return {
+      ok: false,
+      status: "pending",
+      message: creditCancellationPendingMessage,
+      validationErrors: [creditCancellationPendingMessage],
     };
   }
 

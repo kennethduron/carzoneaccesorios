@@ -86,12 +86,23 @@ const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready",
 const eventPurposeLabels: Record<string, string> = {
   sale_revenue: "Venta confirmada",
   payment_received: "Pago recibido",
-  invoice_issued: "Factura emitida",
-  commercial_credit: "Crédito comercial",
-  receivable_payment: "Abono a cuenta por cobrar",
-  order_cancellation: "Cancelación de pedido",
+  invoice_issued: "Factura fiscal emitida",
+  invoice_cancelled: "Factura fiscal anulada",
+  commercial_credit: "Credito comercial creado",
+  commercial_credit_cancelled: "Credito comercial cancelado",
+  receivable_payment: "Abono recibido",
+  receivable_paid: "Cuenta por cobrar pagada",
+  order_cancellation: "Cancelacion de pedido",
 };
 
+const sourceTypeLabels: Record<string, string> = {
+  order: "Pedido",
+  payment: "Pago",
+  invoice: "Factura fiscal",
+  commercial_credit: "Credito comercial",
+  accounts_receivable: "Cuenta por cobrar",
+  receivable_payment: "Abono",
+};
 function formatNumber(value: number) {
   return value.toLocaleString("es-HN");
 }
@@ -437,16 +448,17 @@ export function FinancialCenterManager({
 
           {hasEvents ? (
             <div className="overflow-x-auto rounded-md border border-black/10">
-              <table className="w-full min-w-[1260px] text-left text-sm">
+              <table className="w-full min-w-[1340px] text-left text-sm">
                 <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
                   <tr>
-                    <th className="px-3 py-3">Evento</th>
+                    <th className="px-3 py-3">Tipo de evento</th>
                     <th className="px-3 py-3">Origen</th>
                     <th className="px-3 py-3">Monto</th>
                     <th className="px-3 py-3">Cliente</th>
                     <th className="px-3 py-3">Fecha</th>
+                    <th className="px-3 py-3">Partida asociada</th>
                     <th className="px-3 py-3">Estado</th>
-                    <th className="px-3 py-3">Validaciones</th>
+                    <th className="px-3 py-3">Motivo / validacion</th>
                     <th className="px-3 py-3">Creado</th>
                     {canGenerateDrafts ? <th className="px-3 py-3">Accion</th> : null}
                   </tr>
@@ -467,20 +479,24 @@ export function FinancialCenterManager({
                           <p className="text-xs text-black/45">{event.posting_version}</p>
                         </td>
                         <td className="px-3 py-3">
-                          <p className="font-medium">{event.source_type}</p>
+                          <p className="font-medium">{sourceTypeLabels[event.source_type] ?? event.source_type}</p>
                           <p className="text-xs text-black/45">{sourceNumber ?? event.source_id}</p>
                           <p className="text-xs text-black/35">{event.source_id}</p>
                         </td>
                         <td className="px-3 py-3 font-medium">{amount === undefined || amount === null ? "-" : formatCurrency(amount)}</td>
                         <td className="px-3 py-3">{customer ?? "-"}</td>
                         <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
-                                                <td className="px-3 py-3">
-                          <EventStatusBadge status={event.status} />
+                        <td className="px-3 py-3">
                           {linkedDraft ? (
-                            <p className="mt-2 text-xs text-black/45">Partida {linkedDraft.entry_number}</p>
+                            <p className="font-medium">{linkedDraft.entry_number}</p>
                           ) : event.journal_entry_id ? (
-                            <p className="mt-2 text-xs text-black/45">Partida vinculada</p>
-                          ) : null}
+                            <p className="font-medium">Partida vinculada</p>
+                          ) : (
+                            <span className="text-black/45">Sin partida</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          <EventStatusBadge status={event.status} />
                         </td>
                         <td className="px-3 py-3">
                           {issues.length > 0 ? (
