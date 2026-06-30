@@ -36,6 +36,10 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "tax_payable", label: "Impuestos por pagar", mappingType: "tax", sourceKey: "tax_payable" },
   { key: "inventory_asset", label: "Inventario", mappingType: "inventory", sourceKey: "inventory_asset" },
   { key: "cost_of_goods_sold", label: "Costo de ventas", mappingType: "inventory", sourceKey: "cost_of_goods_sold" },
+  { key: "inventory_return", label: "Devolución de inventario", mappingType: "inventory", sourceKey: "inventory_return" },
+  { key: "inventory_adjustment_gain", label: "Ajuste positivo de inventario", mappingType: "inventory", sourceKey: "inventory_adjustment_gain" },
+  { key: "inventory_adjustment_loss", label: "Ajuste negativo de inventario", mappingType: "inventory", sourceKey: "inventory_adjustment_loss" },
+  { key: "inventory_writeoff", label: "Inventario dado de baja", mappingType: "inventory", sourceKey: "inventory_writeoff" },
   { key: "suspense", label: "Cuenta transitoria", mappingType: "suspense", sourceKey: "suspense" },
 ];
 

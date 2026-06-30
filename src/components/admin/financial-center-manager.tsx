@@ -79,7 +79,19 @@ const eventStatusLabels: Record<FinancialEventStatus, string> = {
   reversed: "Reversado",
 };
 
-const draftEligiblePurposes = new Set(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment", "inventory_cogs"]);
+const inventoryEventPurposes = new Set(["inventory_cogs", "inventory_return", "inventory_adjustment_gain", "inventory_adjustment_loss", "inventory_writeoff"]);
+
+const draftEligiblePurposes = new Set([
+  "sale_revenue",
+  "payment_received",
+  "commercial_credit",
+  "receivable_payment",
+  "inventory_cogs",
+  "inventory_return",
+  "inventory_adjustment_gain",
+  "inventory_adjustment_loss",
+  "inventory_writeoff",
+]);
 
 const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
 
@@ -94,6 +106,10 @@ const eventPurposeLabels: Record<string, string> = {
   receivable_paid: "Cuenta por cobrar pagada",
   order_cancellation: "Cancelación de pedido",
   inventory_cogs: "Costo de ventas",
+  inventory_return: "Devolución de inventario",
+  inventory_adjustment_gain: "Ajuste positivo de inventario",
+  inventory_adjustment_loss: "Ajuste negativo de inventario",
+  inventory_writeoff: "Inventario dado de baja",
 };
 
 const sourceTypeLabels: Record<string, string> = {
@@ -104,6 +120,13 @@ const sourceTypeLabels: Record<string, string> = {
   accounts_receivable: "Cuenta por cobrar",
   receivable_payment: "Abono",
   inventory_movement: "Movimiento de inventario",
+};
+
+const inventoryMovementTypeLabels: Record<string, string> = {
+  sale: "Venta",
+  return: "Devolución",
+  adjustment: "Ajuste",
+  writeoff: "Merma de inventario",
 };
 function formatNumber(value: number) {
   return value.toLocaleString("es-HN");
@@ -139,13 +162,23 @@ function eventAmount(event: FinancialEvent) {
 }
 
 function eventDetail(event: FinancialEvent) {
-  if (event.event_purpose === "inventory_cogs") {
+  if (inventoryEventPurposes.has(event.event_purpose)) {
     const product = snapshotText(event.source_snapshot, ["product_name", "sku"]) ?? "Producto no identificado";
     const sku = snapshotText(event.source_snapshot, ["sku"]);
     const quantity = event.source_snapshot.quantity;
+    const movementType = snapshotText(event.source_snapshot, ["movement_type"]);
+    const movementLabel = movementType ? inventoryMovementTypeLabels[movementType] ?? movementType : null;
+    const unitCost = event.source_snapshot.unit_cost_snapshot;
+    const totalCost = event.source_snapshot.total_cost_snapshot;
     return {
       title: product,
-      helper: [sku ? `SKU ${sku}` : null, quantity != null ? `Cantidad ${quantity}` : null].filter(Boolean).join(" · "),
+      helper: [
+        sku ? `SKU ${sku}` : null,
+        quantity != null ? `Cantidad ${quantity}` : null,
+        unitCost != null ? `Costo unitario ${formatCurrency(unitCost)}` : null,
+        totalCost != null ? `Costo ${formatCurrency(totalCost)}` : null,
+        movementLabel ? `Movimiento ${movementLabel}` : null,
+      ].filter(Boolean).join(" · "),
     };
   }
 
@@ -156,17 +189,20 @@ function eventDetail(event: FinancialEvent) {
 }
 
 function eventStatusText(event: FinancialEvent) {
-  if (event.event_purpose === "inventory_cogs") {
-    if (event.status === "pending") return "Costo de venta pendiente";
-    if (event.status === "ready") return "Costo de venta listo";
+  if (inventoryEventPurposes.has(event.event_purpose)) {
+    if (event.status === "pending") return "Movimiento pendiente";
+    if (event.status === "ready") return "Movimiento listo";
   }
 
   return eventStatusLabels[event.status];
 }
 
 function validationIssueLabel(issue: string) {
-  if (issue.includes("costo histórico")) return "Costo histórico faltante";
+  if (issue.includes("costo histórico") || issue.includes("costo histórico")) return "Costo histórico faltante";
+  if (issue.includes("ajustes de inventario")) return "Mapeo de ajuste incompleto";
   if (issue.includes("mapeos contables para inventario")) return "Mapeo de inventario incompleto";
+  if (issue.includes("costo del producto")) return "Costo del producto faltante";
+  if (issue.includes("Merma") || issue.includes("merma")) return "Merma de inventario";
   return null;
 }
 

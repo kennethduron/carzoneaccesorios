@@ -19,7 +19,11 @@ export type FinancialEventPurpose =
   | "receivable_payment"
   | "receivable_paid"
   | "order_cancellation"
-  | "inventory_cogs";
+  | "inventory_cogs"
+  | "inventory_return"
+  | "inventory_adjustment_gain"
+  | "inventory_adjustment_loss"
+  | "inventory_writeoff";
 
 export type FinancialEventSourceType =
   | "order"
@@ -41,7 +45,11 @@ export type FinancialEventCandidate = {
     | "receivable_payment_received"
     | "receivable_paid"
     | "order_cancelled"
-    | "inventory_sale_movement";
+    | "inventory_sale_movement"
+    | "inventory_return_movement"
+    | "inventory_adjustment_gain"
+    | "inventory_adjustment_loss"
+    | "inventory_writeoff";
   source_type: FinancialEventSourceType;
   source_id: string;
   event_purpose: FinancialEventPurpose;
@@ -81,6 +89,13 @@ type FinancialEventRow = {
 
 const automationModes = new Set<AutomationMode>(["disabled", "dry_run", "draft_only", "auto_post"]);
 const dryRunStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed", "skipped"]);
+const inventoryPurposes = new Set<FinancialEventPurpose>([
+  "inventory_cogs",
+  "inventory_return",
+  "inventory_adjustment_gain",
+  "inventory_adjustment_loss",
+  "inventory_writeoff",
+]);
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -138,35 +153,61 @@ function requiredMappingsForCandidate(candidate: FinancialEventCandidate) {
     requirements.push({ mappingType: "inventory", sourceKey: "cost_of_goods_sold", label: "Costo de ventas" });
   }
 
+  if (candidate.event_purpose === "inventory_return") {
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_asset", label: "Inventario" });
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_return", label: "Devoluciones de inventario" });
+  }
+
+  if (candidate.event_purpose === "inventory_adjustment_gain") {
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_asset", label: "Inventario" });
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_adjustment_gain", label: "Ganancia por ajuste de inventario" });
+  }
+
+  if (candidate.event_purpose === "inventory_adjustment_loss") {
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_asset", label: "Inventario" });
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_adjustment_loss", label: "Pérdida por ajuste de inventario" });
+  }
+
+  if (candidate.event_purpose === "inventory_writeoff") {
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_asset", label: "Inventario" });
+    requirements.push({ mappingType: "inventory", sourceKey: "inventory_writeoff", label: "Inventario dado de baja" });
+  }
+
   return requirements;
+}
+
+function missingCostMessage(candidate: FinancialEventCandidate) {
+  if (candidate.event_purpose === "inventory_cogs") return "No se puede generar la partida porque falta el costo histórico del producto.";
+  if (candidate.event_purpose === "inventory_return") return "No se puede generar la partida de devolución porque falta el costo histórico original.";
+  return "No se puede calcular el valor contable del movimiento porque falta el costo del producto.";
 }
 
 function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode) {
   const validationErrors = [...(candidate.validation_errors ?? [])];
   const amount = Number(candidate.amount ?? 0);
-  const isInventoryCogs = candidate.event_purpose === "inventory_cogs";
+  const isInventoryPurpose = inventoryPurposes.has(candidate.event_purpose);
 
   if (!candidate.source_id.trim()) {
     validationErrors.push("El origen no tiene identificador válido.");
   }
 
-  if (isInventoryCogs && candidate.eligible && (!Number.isFinite(amount) || amount <= 0)) {
-    validationErrors.push("No se puede generar la partida porque falta el costo histórico del producto.");
+  if (isInventoryPurpose && candidate.eligible && (!Number.isFinite(amount) || amount <= 0)) {
+    validationErrors.push(missingCostMessage(candidate));
   } else if (candidate.amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
     validationErrors.push("El monto del origen no es válido.");
   }
 
   if (!candidate.eligible) {
-    return { status: "skipped" as const, validationErrors };
+    return { status: "skipped" as const, validationErrors: [...new Set(validationErrors)] };
   }
 
-  if (isInventoryCogs) {
+  if (isInventoryPurpose) {
     const missingInventoryMappings = requiredMappingsForCandidate(candidate).some(
       (requirement) => !hasMapping(mappings, requirement.mappingType, requirement.sourceKey),
     );
 
     if (missingInventoryMappings) {
-      validationErrors.push("Faltan mapeos contables para inventario o costo de ventas.");
+      validationErrors.push(candidate.event_purpose === "inventory_cogs" ? "Faltan mapeos contables para inventario o costo de ventas." : "Faltan mapeos contables para inventario o ajustes de inventario.");
     }
 
     return {
@@ -210,7 +251,7 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
 }
 
 function buildRegisteredSnapshot(candidate: FinancialEventCandidate) {
-  if (candidate.event_purpose === "inventory_cogs") {
+  if (inventoryPurposes.has(candidate.event_purpose)) {
     return candidate.source_snapshot;
   }
 

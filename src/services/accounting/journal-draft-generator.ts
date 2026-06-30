@@ -28,7 +28,11 @@ type FinancialEventPurpose =
   | "invoice_cancelled"
   | "receivable_paid"
   | "order_cancellation"
-  | "inventory_cogs";
+  | "inventory_cogs"
+  | "inventory_return"
+  | "inventory_adjustment_gain"
+  | "inventory_adjustment_loss"
+  | "inventory_writeoff";
 
 type FinancialEventForDraft = {
   id: string;
@@ -66,6 +70,27 @@ type InventoryMappingRow = {
   accounting_accounts: ResolvedAccountingAccount | null;
 };
 
+type InventoryDraftDefinition = {
+  amount: number;
+  debitKey: string;
+  creditKey: string;
+  debitLabel: string;
+  creditLabel: string;
+  description: string;
+  missingCostMessage: string;
+  missingMappingMessage: string;
+};
+
+type ResolvedInventoryAccounts = {
+  ok: true;
+  requirements: MappingRequirement[];
+  accounts: Map<string, ResolvedAccountingAccount>;
+} | {
+  ok: false;
+  message: string;
+  validationErrors: string[];
+};
+
 type DraftBuildResult =
   | {
       ok: true;
@@ -92,6 +117,10 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "receivable_paid",
   "order_cancellation",
   "inventory_cogs",
+  "inventory_return",
+  "inventory_adjustment_gain",
+  "inventory_adjustment_loss",
+  "inventory_writeoff",
 ]);
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
@@ -101,8 +130,12 @@ const creditCancellationPendingMessage = "La cancelación del crédito comercial
 const cancellationPendingMessage = "La cancelación requiere reglas de reverso en una fase posterior.";
 const missingMappingsMessage = "No se puede generar la partida porque faltan mapeos contables.";
 const cogsMissingMappingsMessage = "Faltan mapeos contables para inventario o costo de ventas.";
+const inventoryAdjustmentMissingMappingsMessage = "Faltan mapeos contables para inventario o ajustes de inventario.";
 const cogsInactiveAccountMessage = "La cuenta contable configurada para inventario o costo de ventas está inactiva.";
+const inventoryInactiveAccountMessage = "La cuenta contable configurada para inventario o ajustes de inventario está inactiva.";
 const cogsMissingHistoricalCostMessage = "No se puede generar la partida porque falta el costo histórico del producto.";
+const returnMissingHistoricalCostMessage = "No se puede generar la partida de devolución porque falta el costo histórico original.";
+const movementMissingCostMessage = "No se puede calcular el valor contable del movimiento porque falta el costo del producto.";
 const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asociada.";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -166,6 +199,7 @@ function sourceNumber(snapshot: Record<string, unknown>, event: FinancialEventFo
     cleanText(snapshot.source_number) ||
     cleanText(snapshot.order_number) ||
     cleanText(snapshot.invoice_number) ||
+    cleanText(snapshot.inventory_movement_id) ||
     event.source_id
   );
 }
@@ -176,6 +210,19 @@ function requirement(mappingType: AccountingMappingType, sourceKey: string, labe
 
 function mappingKey(mappingType: AccountingMappingType, sourceKey: string) {
   return `${mappingType}:${sourceKey.trim().toLowerCase()}`;
+}
+
+function inventoryAccountLabel(sourceKey: string) {
+  const labels: Record<string, string> = {
+    inventory_asset: "Inventario",
+    cost_of_goods_sold: "Costo de ventas",
+    inventory_return: "Devoluciones de inventario",
+    inventory_adjustment_gain: "Ganancia por ajuste de inventario",
+    inventory_adjustment_loss: "Pérdida por ajuste de inventario",
+    inventory_writeoff: "Inventario dado de baja",
+  };
+
+  return labels[sourceKey] ?? sourceKey;
 }
 
 function isEffectiveMapping(row: InventoryMappingRow, today: string) {
@@ -289,11 +336,9 @@ async function findExistingDraft(event: FinancialEventForDraft, client?: Supabas
   return data ?? null;
 }
 
-async function resolveInventoryCogsAccounts(client?: SupabaseClient) {
-  const requirements = [
-    requirement("inventory", "inventory_asset", "Inventario"),
-    requirement("inventory", "cost_of_goods_sold", "Costo de ventas"),
-  ];
+async function resolveInventoryAccounts(sourceKeys: string[], missingMessage: string, inactiveMessage: string, client?: SupabaseClient): Promise<ResolvedInventoryAccounts> {
+  const uniqueSourceKeys = [...new Set(sourceKeys)];
+  const requirements = uniqueSourceKeys.map((sourceKey) => requirement("inventory", sourceKey, inventoryAccountLabel(sourceKey)));
   const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
     .from("accounting_mappings")
@@ -310,7 +355,7 @@ async function resolveInventoryCogsAccounts(client?: SupabaseClient) {
     `,
     )
     .eq("mapping_type", "inventory")
-    .in("source_key", ["inventory_asset", "cost_of_goods_sold"])
+    .in("source_key", uniqueSourceKeys)
     .eq("is_active", true)
     .order("priority", { ascending: true })
     .returns<InventoryMappingRow[]>();
@@ -336,30 +381,161 @@ async function resolveInventoryCogsAccounts(client?: SupabaseClient) {
     );
 
     if (!row?.accounting_accounts) {
-      return { ok: false as const, message: cogsMissingMappingsMessage, validationErrors: [cogsMissingMappingsMessage] };
+      return { ok: false, message: missingMessage, validationErrors: [missingMessage] };
     }
 
     if (!row.accounting_accounts.is_active) {
-      return { ok: false as const, message: cogsInactiveAccountMessage, validationErrors: [cogsInactiveAccountMessage] };
+      return { ok: false, message: inactiveMessage, validationErrors: [inactiveMessage] };
     }
 
     accounts.set(mappingKey(required.mappingType, required.sourceKey), row.accounting_accounts);
   }
 
-  const inventoryAsset = accounts.get(mappingKey("inventory", "inventory_asset"));
-  const costOfGoodsSold = accounts.get(mappingKey("inventory", "cost_of_goods_sold"));
+  return {
+    ok: true,
+    requirements,
+    accounts,
+  };
+}
 
-  if (!inventoryAsset || !costOfGoodsSold) {
-    return { ok: false as const, message: cogsMissingMappingsMessage, validationErrors: [cogsMissingMappingsMessage] };
+function inventoryDraftDefinition(purpose: FinancialEventPurpose, totalCost: number, number: string): InventoryDraftDefinition | null {
+  if (purpose === "inventory_cogs") {
+    return {
+      amount: totalCost,
+      debitKey: "cost_of_goods_sold",
+      creditKey: "inventory_asset",
+      debitLabel: "Costo de ventas por salida de inventario",
+      creditLabel: "Salida contable de inventario",
+      description: `Costo de ventas por movimiento de inventario ${number}`,
+      missingCostMessage: cogsMissingHistoricalCostMessage,
+      missingMappingMessage: cogsMissingMappingsMessage,
+    };
+  }
+
+  if (purpose === "inventory_return") {
+    return {
+      amount: totalCost,
+      debitKey: "inventory_asset",
+      creditKey: "inventory_return",
+      debitLabel: "Devolución de inventario",
+      creditLabel: "Reverso de costo de ventas por devolución",
+      description: `Devolución de inventario ${number}`,
+      missingCostMessage: returnMissingHistoricalCostMessage,
+      missingMappingMessage: inventoryAdjustmentMissingMappingsMessage,
+    };
+  }
+
+  if (purpose === "inventory_adjustment_gain") {
+    return {
+      amount: totalCost,
+      debitKey: "inventory_asset",
+      creditKey: "inventory_adjustment_gain",
+      debitLabel: "Ajuste positivo de inventario",
+      creditLabel: "Ganancia por ajuste de inventario",
+      description: `Ajuste positivo de inventario ${number}`,
+      missingCostMessage: movementMissingCostMessage,
+      missingMappingMessage: inventoryAdjustmentMissingMappingsMessage,
+    };
+  }
+
+  if (purpose === "inventory_adjustment_loss") {
+    return {
+      amount: totalCost,
+      debitKey: "inventory_adjustment_loss",
+      creditKey: "inventory_asset",
+      debitLabel: "Ajuste negativo de inventario",
+      creditLabel: "Salida por ajuste negativo de inventario",
+      description: `Ajuste negativo de inventario ${number}`,
+      missingCostMessage: movementMissingCostMessage,
+      missingMappingMessage: inventoryAdjustmentMissingMappingsMessage,
+    };
+  }
+
+  if (purpose === "inventory_writeoff") {
+    return {
+      amount: totalCost,
+      debitKey: "inventory_writeoff",
+      creditKey: "inventory_asset",
+      debitLabel: "Inventario dado de baja",
+      creditLabel: "Merma de inventario",
+      description: `Inventario dado de baja ${number}`,
+      missingCostMessage: movementMissingCostMessage,
+      missingMappingMessage: inventoryAdjustmentMissingMappingsMessage,
+    };
+  }
+
+  return null;
+}
+
+async function buildInventoryMovementDraft(event: FinancialEventForDraft, purpose: FinancialEventPurpose, snapshot: Record<string, unknown>, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const definition = inventoryDraftDefinition(purpose, snapshotTotalCostAmount(snapshot), number);
+  if (!definition) {
+    return {
+      ok: false,
+      status: "failed",
+      message: "Este tipo de evento financiero no está soportado para generar borradores.",
+      validationErrors: ["Este tipo de evento financiero no está soportado para generar borradores."],
+    };
+  }
+
+  if (!Number.isFinite(definition.amount) || definition.amount <= 0) {
+    return {
+      ok: false,
+      status: purpose === "inventory_cogs" ? "failed" : "pending",
+      message: definition.missingCostMessage,
+      validationErrors: [definition.missingCostMessage],
+    };
+  }
+
+  const resolved = await resolveInventoryAccounts(
+    [definition.debitKey, definition.creditKey],
+    definition.missingMappingMessage,
+    purpose === "inventory_cogs" ? cogsInactiveAccountMessage : inventoryInactiveAccountMessage,
+    client,
+  );
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      status: "pending",
+      message: resolved.message,
+      validationErrors: resolved.validationErrors,
+    };
+  }
+
+  const debitAccount = resolved.accounts.get(mappingKey("inventory", definition.debitKey));
+  const creditAccount = resolved.accounts.get(mappingKey("inventory", definition.creditKey));
+  if (!debitAccount || !creditAccount) {
+    return {
+      ok: false,
+      status: "pending",
+      message: definition.missingMappingMessage,
+      validationErrors: [definition.missingMappingMessage],
+    };
+  }
+
+  const lines = [
+    accountLine(debitAccount, definition.amount, 0, definition.debitLabel),
+    accountLine(creditAccount, 0, definition.amount, definition.creditLabel),
+  ];
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return {
+      ok: false,
+      status: "failed",
+      message: lineErrors[0],
+      validationErrors: lineErrors,
+    };
   }
 
   return {
-    ok: true as const,
-    requirements,
-    inventoryAsset,
-    costOfGoodsSold,
+    ok: true,
+    description: definition.description,
+    entryDate,
+    lines,
+    requirements: resolved.requirements,
   };
 }
+
 async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient): Promise<DraftBuildResult> {
   const snapshot = asRecord(event.source_snapshot);
   const purpose = event.event_purpose as FinancialEventPurpose;
@@ -370,49 +546,16 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
   const number = sourceNumber(snapshot, event);
   const entryDate = eventDate(event.occurred_at);
 
-  if (purpose === "inventory_cogs") {
-    const totalCost = snapshotTotalCostAmount(snapshot);
-    if (!Number.isFinite(totalCost) || totalCost <= 0) {
-      return {
-        ok: false,
-        status: "failed",
-        message: cogsMissingHistoricalCostMessage,
-        validationErrors: [cogsMissingHistoricalCostMessage],
-      };
-    }
-
-    const resolvedCogs = await resolveInventoryCogsAccounts(client);
-    if (!resolvedCogs.ok) {
-      return {
-        ok: false,
-        status: "pending",
-        message: resolvedCogs.message,
-        validationErrors: resolvedCogs.validationErrors,
-      };
-    }
-
-    const lines = [
-      accountLine(resolvedCogs.costOfGoodsSold, totalCost, 0, "Costo de ventas por salida de inventario"),
-      accountLine(resolvedCogs.inventoryAsset, 0, totalCost, "Salida contable de inventario"),
-    ];
-    const lineErrors = validateLines(lines);
-    if (lineErrors.length > 0) {
-      return {
-        ok: false,
-        status: "failed",
-        message: lineErrors[0],
-        validationErrors: lineErrors,
-      };
-    }
-
-    return {
-      ok: true,
-      description: `Costo de ventas por movimiento de inventario ${number}`,
-      entryDate,
-      lines,
-      requirements: resolvedCogs.requirements,
-    };
+  if (
+    purpose === "inventory_cogs" ||
+    purpose === "inventory_return" ||
+    purpose === "inventory_adjustment_gain" ||
+    purpose === "inventory_adjustment_loss" ||
+    purpose === "inventory_writeoff"
+  ) {
+    return buildInventoryMovementDraft(event, purpose, snapshot, number, entryDate, client);
   }
+
   if (purpose === "invoice_issued") {
     return {
       ok: false,
@@ -462,8 +605,8 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
     return {
       ok: false,
       status: "failed",
-      message: "No se puede generar la partida porque el monto del evento no es valido.",
-      validationErrors: ["El monto del evento financiero no es valido."],
+      message: "No se puede generar la partida porque el monto del evento no es válido.",
+      validationErrors: ["El monto del evento financiero no es válido."],
     };
   }
 
@@ -552,7 +695,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
 
     const paymentLabel = purpose === "receivable_payment" ? "Abono a cuenta por cobrar" : "Pago recibido";
     lines.push(accountLine(paymentAccount, amount, 0, `${paymentLabel} ${number}`));
-    lines.push(accountLine(receivableAccount, 0, amount, `Aplicacion a cuenta por cobrar ${number}`));
+    lines.push(accountLine(receivableAccount, 0, amount, `Aplicación a cuenta por cobrar ${number}`));
   }
 
   const lineErrors = validateLines(lines);
@@ -595,7 +738,7 @@ export async function generateJournalDraftFromFinancialEvent(
   }
 
   if (!supportedPurposes.has(event.event_purpose as FinancialEventPurpose)) {
-    return { ok: false, message: "Este tipo de evento financiero no esta soportado para generar borradores." };
+    return { ok: false, message: "Este tipo de evento financiero no está soportado para generar borradores." };
   }
 
   const existingDraft = await findExistingDraft(event, supabase);
