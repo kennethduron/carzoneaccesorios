@@ -115,7 +115,7 @@ const cancelledOrderStatuses = new Set(["cancelado", "cancelled"]);
 const receivedPaymentStatuses = new Set(["approved", "confirmed", "paid"]);
 const issuedInvoiceStatuses = new Set(["emitida", "issued", "paid"]);
 const cancelledInvoiceStatuses = new Set(["anulada", "cancelled"]);
-const draftEligiblePurposes = new Set<FinancialEventPurpose>(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment"]);
+const draftEligiblePurposes = new Set<FinancialEventPurpose>(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment", "inventory_cogs"]);
 
 function toNumber(value: unknown) {
   const numberValue = Number(value ?? 0);

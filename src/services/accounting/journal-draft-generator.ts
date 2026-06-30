@@ -27,7 +27,8 @@ type FinancialEventPurpose =
   | "invoice_issued"
   | "invoice_cancelled"
   | "receivable_paid"
-  | "order_cancellation";
+  | "order_cancellation"
+  | "inventory_cogs";
 
 type FinancialEventForDraft = {
   id: string;
@@ -52,6 +53,17 @@ type DraftLine = {
   debit: number;
   credit: number;
   description: string;
+};
+
+type InventoryMappingRow = {
+  id: string;
+  mapping_type: AccountingMappingType;
+  source_key: string;
+  priority: number;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  accounting_accounts: ResolvedAccountingAccount | null;
 };
 
 type DraftBuildResult =
@@ -79,6 +91,7 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "invoice_cancelled",
   "receivable_paid",
   "order_cancellation",
+  "inventory_cogs",
 ]);
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
@@ -87,6 +100,9 @@ const invoiceCancellationPendingMessage = "La anulación fiscal requiere revisi�
 const creditCancellationPendingMessage = "La cancelación del crédito comercial requiere revisión contable antes de generar reversos.";
 const cancellationPendingMessage = "La cancelación requiere reglas de reverso en una fase posterior.";
 const missingMappingsMessage = "No se puede generar la partida porque faltan mapeos contables.";
+const cogsMissingMappingsMessage = "Faltan mapeos contables para inventario o costo de ventas.";
+const cogsInactiveAccountMessage = "La cuenta contable configurada para inventario o costo de ventas está inactiva.";
+const cogsMissingHistoricalCostMessage = "No se puede generar la partida porque falta el costo histórico del producto.";
 const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asociada.";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -137,6 +153,10 @@ function snapshotAmount(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.amount ?? snapshot.total ?? snapshot.original_amount);
 }
 
+function snapshotTotalCostAmount(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.total_cost_snapshot);
+}
+
 function snapshotTax(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.tax ?? snapshot.tax_amount);
 }
@@ -152,6 +172,16 @@ function sourceNumber(snapshot: Record<string, unknown>, event: FinancialEventFo
 
 function requirement(mappingType: AccountingMappingType, sourceKey: string, label: string): MappingRequirement {
   return { mappingType, sourceKey, label };
+}
+
+function mappingKey(mappingType: AccountingMappingType, sourceKey: string) {
+  return `${mappingType}:${sourceKey.trim().toLowerCase()}`;
+}
+
+function isEffectiveMapping(row: InventoryMappingRow, today: string) {
+  if (row.effective_from && row.effective_from > today) return false;
+  if (row.effective_to && row.effective_to < today) return false;
+  return true;
 }
 
 function accountLine(account: ResolvedAccountingAccount, debit: number, credit: number, description: string): DraftLine {
@@ -259,6 +289,77 @@ async function findExistingDraft(event: FinancialEventForDraft, client?: Supabas
   return data ?? null;
 }
 
+async function resolveInventoryCogsAccounts(client?: SupabaseClient) {
+  const requirements = [
+    requirement("inventory", "inventory_asset", "Inventario"),
+    requirement("inventory", "cost_of_goods_sold", "Costo de ventas"),
+  ];
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data, error } = await supabase
+    .from("accounting_mappings")
+    .select(
+      `
+      id,
+      mapping_type,
+      source_key,
+      priority,
+      is_active,
+      effective_from,
+      effective_to,
+      accounting_accounts(id, code, name, type, is_active)
+    `,
+    )
+    .eq("mapping_type", "inventory")
+    .in("source_key", ["inventory_asset", "cost_of_goods_sold"])
+    .eq("is_active", true)
+    .order("priority", { ascending: true })
+    .returns<InventoryMappingRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const rows = data ?? [];
+  const accounts = new Map<string, ResolvedAccountingAccount>();
+
+  for (const required of requirements) {
+    const row = rows.find(
+      (candidate) =>
+        mappingKey(candidate.mapping_type, candidate.source_key) === mappingKey(required.mappingType, required.sourceKey) &&
+        isEffectiveMapping(candidate, today),
+    );
+
+    if (!row?.accounting_accounts) {
+      return { ok: false as const, message: cogsMissingMappingsMessage, validationErrors: [cogsMissingMappingsMessage] };
+    }
+
+    if (!row.accounting_accounts.is_active) {
+      return { ok: false as const, message: cogsInactiveAccountMessage, validationErrors: [cogsInactiveAccountMessage] };
+    }
+
+    accounts.set(mappingKey(required.mappingType, required.sourceKey), row.accounting_accounts);
+  }
+
+  const inventoryAsset = accounts.get(mappingKey("inventory", "inventory_asset"));
+  const costOfGoodsSold = accounts.get(mappingKey("inventory", "cost_of_goods_sold"));
+
+  if (!inventoryAsset || !costOfGoodsSold) {
+    return { ok: false as const, message: cogsMissingMappingsMessage, validationErrors: [cogsMissingMappingsMessage] };
+  }
+
+  return {
+    ok: true as const,
+    requirements,
+    inventoryAsset,
+    costOfGoodsSold,
+  };
+}
 async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient): Promise<DraftBuildResult> {
   const snapshot = asRecord(event.source_snapshot);
   const purpose = event.event_purpose as FinancialEventPurpose;
@@ -269,6 +370,49 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
   const number = sourceNumber(snapshot, event);
   const entryDate = eventDate(event.occurred_at);
 
+  if (purpose === "inventory_cogs") {
+    const totalCost = snapshotTotalCostAmount(snapshot);
+    if (!Number.isFinite(totalCost) || totalCost <= 0) {
+      return {
+        ok: false,
+        status: "failed",
+        message: cogsMissingHistoricalCostMessage,
+        validationErrors: [cogsMissingHistoricalCostMessage],
+      };
+    }
+
+    const resolvedCogs = await resolveInventoryCogsAccounts(client);
+    if (!resolvedCogs.ok) {
+      return {
+        ok: false,
+        status: "pending",
+        message: resolvedCogs.message,
+        validationErrors: resolvedCogs.validationErrors,
+      };
+    }
+
+    const lines = [
+      accountLine(resolvedCogs.costOfGoodsSold, totalCost, 0, "Costo de ventas por salida de inventario"),
+      accountLine(resolvedCogs.inventoryAsset, 0, totalCost, "Salida contable de inventario"),
+    ];
+    const lineErrors = validateLines(lines);
+    if (lineErrors.length > 0) {
+      return {
+        ok: false,
+        status: "failed",
+        message: lineErrors[0],
+        validationErrors: lineErrors,
+      };
+    }
+
+    return {
+      ok: true,
+      description: `Costo de ventas por movimiento de inventario ${number}`,
+      entryDate,
+      lines,
+      requirements: resolvedCogs.requirements,
+    };
+  }
   if (purpose === "invoice_issued") {
     return {
       ok: false,
@@ -542,7 +686,7 @@ export async function generateJournalDraftFromFinancialEvent(
       lines: draft.lines.length,
       status: "borrador",
     },
-  });
+  }, supabase);
   await logAccountingEvent({
     eventType: "journal_draft.generated_from_financial_event",
     entityType: "journal_entries",

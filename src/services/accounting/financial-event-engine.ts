@@ -151,7 +151,7 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
   }
 
   if (isInventoryCogs && candidate.eligible && (!Number.isFinite(amount) || amount <= 0)) {
-    validationErrors.push("No se puede calcular el costo de venta porque falta el costo histórico del producto.");
+    validationErrors.push("No se puede generar la partida porque falta el costo histórico del producto.");
   } else if (candidate.amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
     validationErrors.push("El monto del origen no es válido.");
   }

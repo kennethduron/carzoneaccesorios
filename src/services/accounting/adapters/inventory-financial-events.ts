@@ -55,7 +55,7 @@ function orderIdForMovement(row: InventoryMovementEventRow) {
 function buildValidationErrors(unitCost: number, totalCost: number, orderStatus: string | null) {
   const errors: string[] = [];
   if (unitCost <= 0 || totalCost <= 0) {
-    errors.push("No se puede calcular el costo de venta porque falta el costo histórico del producto.");
+    errors.push("No se puede generar la partida porque falta el costo histórico del producto.");
   }
 
   if (!orderStatus || !finalizedOrderStatuses.has(orderStatus)) {

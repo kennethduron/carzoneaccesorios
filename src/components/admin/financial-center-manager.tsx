@@ -79,7 +79,7 @@ const eventStatusLabels: Record<FinancialEventStatus, string> = {
   reversed: "Reversado",
 };
 
-const draftEligiblePurposes = new Set(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment"]);
+const draftEligiblePurposes = new Set(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment", "inventory_cogs"]);
 
 const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
 

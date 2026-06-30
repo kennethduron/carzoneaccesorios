@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type AuditInput = {
@@ -10,8 +11,8 @@ type AuditInput = {
   userAgent?: string | null;
 };
 
-export async function writeAuditLog(input: AuditInput) {
-  const supabase = await getSupabaseServerClient();
+export async function writeAuditLog(input: AuditInput, client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
   const { error } = await supabase.rpc("write_audit_log", {
     target_table: input.tableName,
     target_record_id: input.recordId ?? null,
