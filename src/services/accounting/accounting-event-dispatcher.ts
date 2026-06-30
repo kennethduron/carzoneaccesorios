@@ -254,7 +254,7 @@ async function buildInvoiceCandidate(input: DispatchAccountingEventInput): Promi
     sourceNumber: row.invoice_number ?? row.id,
     eligible: isCancelled ? cancelledInvoiceStatuses.has(status) : issuedInvoiceStatuses.has(status),
     validation_errors: isCancelled
-      ? ["La anulacion fiscal requiere revision contable antes de generar reversos."]
+      ? ["La anulación fiscal requiere revisión contable antes de generar reversos."]
       : ["La factura fiscal fue registrada como evento, pero no requiere partida adicional en esta fase para evitar duplicar ingresos."],
     source_snapshot: {
       source_id: row.id,
@@ -347,9 +347,9 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
     sourceNumber: row.orders?.order_number ?? row.id,
     eligible: isCancelled ? status === "cancelled" : status !== "cancelled",
     validation_errors: isCancelled
-      ? ["La cancelacion del credito comercial requiere revision contable antes de generar reversos."]
+      ? ["La cancelación del crédito comercial requiere revisión contable antes de generar reversos."]
       : status === "cancelled"
-        ? ["El credito comercial esta cancelado."]
+        ? ["El crédito comercial está cancelado."]
         : [],
     source_snapshot: {
       source_id: row.id,
@@ -449,7 +449,7 @@ async function buildReceivablePaymentCandidate(input: DispatchAccountingEventInp
     customerName: name,
     sourceNumber: row.orders?.order_number ?? row.id,
     eligible: !row.voided_at,
-    validation_errors: row.voided_at ? ["El abono a cuenta por cobrar esta anulado."] : [],
+    validation_errors: row.voided_at ? ["El abono a cuenta por cobrar está anulado."] : [],
     source_snapshot: {
       source_id: row.id,
       payment_id: row.id,
@@ -518,7 +518,7 @@ export async function dispatchAccountingEvent(input: DispatchAccountingEventInpu
     const admin = getSupabaseAdminClient();
     const automationMode = await getAccountingAutomationMode(admin);
     if (automationMode === "disabled") {
-      return { ok: true, skipped: true, message: "Automatizacion contable desactivada." };
+      return { ok: true, skipped: true, message: "Automatización contable desactivada." };
     }
 
     const [candidate, mappings] = await Promise.all([buildCandidate(input), getActiveAccountingMappingLookup(admin)]);
@@ -534,7 +534,7 @@ export async function dispatchAccountingEvent(input: DispatchAccountingEventInpu
       return {
         ok: true,
         skipped: false,
-        message: draft.ok ? "Evento financiero y borrador registrados." : "Evento financiero registrado; borrador pendiente de validacion.",
+        message: draft.ok ? "Evento financiero y borrador registrados." : "Evento financiero registrado; borrador pendiente de validación.",
         eventId,
         draftCreated: draft.ok,
       };
@@ -612,7 +612,7 @@ export async function dispatchCommercialCreditAccountingEventForOrder(input: {
       .maybeSingle<{ id: string }>();
 
     if (error) throw new Error(error.message);
-    if (!receivable) return { ok: true, skipped: true, message: "No hay credito comercial para el pedido." };
+    if (!receivable) return { ok: true, skipped: true, message: "No hay crédito comercial para el pedido." };
 
     return dispatchAccountingEvent({
       sourceType: "commercial_credit",
@@ -648,7 +648,7 @@ export async function dispatchCommercialCreditCancellationAccountingEventForOrde
       .maybeSingle<{ id: string }>();
 
     if (error) throw new Error(error.message);
-    if (!receivable) return { ok: true, skipped: true, message: "No hay credito comercial cancelado para el pedido." };
+    if (!receivable) return { ok: true, skipped: true, message: "No hay crédito comercial cancelado para el pedido." };
 
     return dispatchAccountingEvent({
       sourceType: "commercial_credit",

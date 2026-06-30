@@ -83,9 +83,9 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
 const receivablePaidSkippedMessage = "La cuenta por cobrar pagada se registra como control; el cobro se contabiliza por eventos de abono para evitar duplicados.";
-const invoiceCancellationPendingMessage = "La anulacion fiscal requiere revision contable antes de generar reversos.";
-const creditCancellationPendingMessage = "La cancelacion del credito comercial requiere revision contable antes de generar reversos.";
-const cancellationPendingMessage = "La cancelacion requiere reglas de reverso en una fase posterior.";
+const invoiceCancellationPendingMessage = "La anulación fiscal requiere revisión contable antes de generar reversos.";
+const creditCancellationPendingMessage = "La cancelación del crédito comercial requiere revisión contable antes de generar reversos.";
+const cancellationPendingMessage = "La cancelación requiere reglas de reverso en una fase posterior.";
 const missingMappingsMessage = "No se puede generar la partida porque faltan mapeos contables.";
 const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asociada.";
 
@@ -166,19 +166,19 @@ function accountLine(account: ResolvedAccountingAccount, debit: number, credit: 
 function validateLines(lines: DraftLine[]) {
   const errors: string[] = [];
   if (lines.length < 2) {
-    errors.push("La partida debe tener al menos dos lineas contables.");
+    errors.push("La partida debe tener al menos dos líneas contables.");
   }
 
   for (const line of lines) {
-    if (!line.account_id) errors.push("Cada linea debe tener una cuenta contable activa.");
-    if (line.debit > 0 && line.credit > 0) errors.push("Una linea no puede tener debito y credito al mismo tiempo.");
-    if (line.debit <= 0 && line.credit <= 0) errors.push("Cada linea debe tener debito o credito mayor que cero.");
+    if (!line.account_id) errors.push("Cada línea debe tener una cuenta contable activa.");
+    if (line.debit > 0 && line.credit > 0) errors.push("Una línea no puede tener débito y crédito al mismo tiempo.");
+    if (line.debit <= 0 && line.credit <= 0) errors.push("Cada línea debe tener débito o crédito mayor que cero.");
   }
 
   const totalDebit = toAmount(lines.reduce((sum, line) => sum + line.debit, 0));
   const totalCredit = toAmount(lines.reduce((sum, line) => sum + line.credit, 0));
   if (totalDebit <= 0 || totalCredit <= 0 || totalDebit !== totalCredit) {
-    errors.push("La partida debe estar cuadrada: total debito igual a total credito.");
+    errors.push("La partida debe estar cuadrada: total débito igual a total crédito.");
   }
 
   return errors;
@@ -328,7 +328,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
     requirements.push(requirement("revenue", "sales_revenue", "Ingresos por ventas"));
     requirements.push(
       paymentMethod && paymentMethod !== "commercial_credit"
-        ? requirement("payment_method", paymentMethod, `Metodo de pago: ${paymentMethod}`)
+        ? requirement("payment_method", paymentMethod, `Método de pago: ${paymentMethod}`)
         : requirement("receivable", "accounts_receivable", "Cuenta por cobrar"),
     );
     if (tax > 0) requirements.push(requirement("tax", "tax_payable", "Impuestos por pagar"));
@@ -341,7 +341,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
   }
 
   if (purpose === "payment_received" || purpose === "receivable_payment") {
-    requirements.push(requirement("payment_method", paymentMethod, `Metodo de pago: ${paymentMethod || "no definido"}`));
+    requirements.push(requirement("payment_method", paymentMethod, `Método de pago: ${paymentMethod || "no definido"}`));
     requirements.push(requirement("receivable", "accounts_receivable", "Cuenta por cobrar"));
   }
 
@@ -389,10 +389,10 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
       };
     }
 
-    lines.push(accountLine(receivableAccount, amount, 0, `Credito comercial ${number}`));
-    lines.push(accountLine(revenueAccount, 0, revenue, `Ingreso por credito comercial ${number}`));
+    lines.push(accountLine(receivableAccount, amount, 0, `Crédito comercial ${number}`));
+    lines.push(accountLine(revenueAccount, 0, revenue, `Ingreso por crédito comercial ${number}`));
     if (tax > 0 && taxAccount) {
-      lines.push(accountLine(taxAccount, 0, tax, `Impuesto por credito comercial ${number}`));
+      lines.push(accountLine(taxAccount, 0, tax, `Impuesto por crédito comercial ${number}`));
     }
   }
 

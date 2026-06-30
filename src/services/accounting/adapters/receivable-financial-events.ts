@@ -147,7 +147,7 @@ async function getCommercialCreditCancellationCandidates(): Promise<FinancialEve
       customerName: name,
       sourceNumber: row.orders?.order_number ?? row.id,
       eligible: row.status === "cancelled",
-      validation_errors: ["La cancelacion del credito comercial requiere revision contable antes de generar reversos."],
+      validation_errors: ["La cancelación del crédito comercial requiere revisión contable antes de generar reversos."],
       source_snapshot: receivableSnapshot(row, amount, name, occurredAt),
     };
   });
@@ -219,7 +219,7 @@ async function getReceivablePaymentCandidates(): Promise<FinancialEventCandidate
       customerName: name,
       sourceNumber: row.orders?.order_number ?? row.id,
       eligible: !row.voided_at,
-      validation_errors: row.voided_at ? ["El abono a cuenta por cobrar esta anulado."] : [],
+      validation_errors: row.voided_at ? ["El abono a cuenta por cobrar está anulado."] : [],
       source_snapshot: {
         source_id: row.id,
         payment_id: row.id,

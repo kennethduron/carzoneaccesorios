@@ -88,18 +88,18 @@ const eventPurposeLabels: Record<string, string> = {
   payment_received: "Pago recibido",
   invoice_issued: "Factura fiscal emitida",
   invoice_cancelled: "Factura fiscal anulada",
-  commercial_credit: "Credito comercial creado",
-  commercial_credit_cancelled: "Credito comercial cancelado",
+  commercial_credit: "Crédito comercial creado",
+  commercial_credit_cancelled: "Crédito comercial cancelado",
   receivable_payment: "Abono recibido",
   receivable_paid: "Cuenta por cobrar pagada",
-  order_cancellation: "Cancelacion de pedido",
+  order_cancellation: "Cancelación de pedido",
 };
 
 const sourceTypeLabels: Record<string, string> = {
   order: "Pedido",
   payment: "Pago",
   invoice: "Factura fiscal",
-  commercial_credit: "Credito comercial",
+  commercial_credit: "Crédito comercial",
   accounts_receivable: "Cuenta por cobrar",
   receivable_payment: "Abono",
 };
@@ -458,9 +458,9 @@ export function FinancialCenterManager({
                     <th className="px-3 py-3">Fecha</th>
                     <th className="px-3 py-3">Partida asociada</th>
                     <th className="px-3 py-3">Estado</th>
-                    <th className="px-3 py-3">Motivo / validacion</th>
+                    <th className="px-3 py-3">Motivo / validación</th>
                     <th className="px-3 py-3">Creado</th>
-                    {canGenerateDrafts ? <th className="px-3 py-3">Accion</th> : null}
+                    {canGenerateDrafts ? <th className="px-3 py-3">Acción</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-black/10">

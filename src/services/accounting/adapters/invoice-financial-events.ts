@@ -52,7 +52,7 @@ export async function getInvoiceFinancialEventCandidates(): Promise<FinancialEve
     const isCancelled = cancelledStatuses.has(row.status);
     const occurredAt = isCancelled ? row.cancelled_at ?? row.updated_at ?? row.created_at : row.issued_at ?? row.created_at;
     const reason = isCancelled
-      ? "La anulacion fiscal requiere revision contable antes de generar reversos."
+      ? "La anulación fiscal requiere revisión contable antes de generar reversos."
       : "La factura fiscal fue registrada como evento, pero no requiere partida adicional en esta fase para evitar duplicar ingresos.";
 
     return {
