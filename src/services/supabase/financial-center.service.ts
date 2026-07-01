@@ -40,6 +40,15 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "inventory_adjustment_gain", label: "Ajuste positivo de inventario", mappingType: "inventory", sourceKey: "inventory_adjustment_gain" },
   { key: "inventory_adjustment_loss", label: "Ajuste negativo de inventario", mappingType: "inventory", sourceKey: "inventory_adjustment_loss" },
   { key: "inventory_writeoff", label: "Inventario dado de baja", mappingType: "inventory", sourceKey: "inventory_writeoff" },
+  { key: "accounts_payable", label: "Proveedores por pagar", mappingType: "default_account", sourceKey: "accounts_payable" },
+  { key: "purchase_inventory", label: "Inventario para compras", mappingType: "inventory", sourceKey: "purchase_inventory" },
+  { key: "purchase_expense", label: "Gasto de compras", mappingType: "default_account", sourceKey: "purchase_expense" },
+  { key: "supplier_payment_cash", label: "Pago a proveedores - caja", mappingType: "payment_method", sourceKey: "supplier_payment_cash" },
+  { key: "supplier_payment_bank", label: "Pago a proveedores - banco", mappingType: "payment_method", sourceKey: "supplier_payment_bank" },
+  { key: "supplier_payment_card", label: "Pago a proveedores - tarjeta", mappingType: "payment_method", sourceKey: "supplier_payment_card" },
+  { key: "purchase_tax", label: "Impuesto de compras", mappingType: "tax", sourceKey: "purchase_tax" },
+  { key: "purchase_return", label: "Devoluciones de compras", mappingType: "default_account", sourceKey: "purchase_return" },
+  { key: "supplier_credit", label: "Credito de proveedor", mappingType: "default_account", sourceKey: "supplier_credit" },
   { key: "suspense", label: "Cuenta transitoria", mappingType: "suspense", sourceKey: "suspense" },
 ];
 

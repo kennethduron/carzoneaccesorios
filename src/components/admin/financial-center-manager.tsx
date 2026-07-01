@@ -80,6 +80,7 @@ const eventStatusLabels: Record<FinancialEventStatus, string> = {
 };
 
 const inventoryEventPurposes = new Set(["inventory_cogs", "inventory_return", "inventory_adjustment_gain", "inventory_adjustment_loss", "inventory_writeoff"]);
+const purchaseApEventPurposes = new Set(["purchase_confirmed", "supplier_invoice_received", "accounts_payable_created", "supplier_payment", "supplier_payment_cancelled", "purchase_cancelled"]);
 
 const draftEligiblePurposes = new Set([
   "sale_revenue",
@@ -110,6 +111,12 @@ const eventPurposeLabels: Record<string, string> = {
   inventory_adjustment_gain: "Ajuste positivo de inventario",
   inventory_adjustment_loss: "Ajuste negativo de inventario",
   inventory_writeoff: "Inventario dado de baja",
+  purchase_confirmed: "Compra confirmada",
+  supplier_invoice_received: "Factura de proveedor recibida",
+  accounts_payable_created: "Cuenta por pagar creada",
+  supplier_payment: "Pago a proveedor",
+  supplier_payment_cancelled: "Pago a proveedor anulado",
+  purchase_cancelled: "Compra anulada",
 };
 
 const sourceTypeLabels: Record<string, string> = {
@@ -120,6 +127,10 @@ const sourceTypeLabels: Record<string, string> = {
   accounts_receivable: "Cuenta por cobrar",
   receivable_payment: "Abono",
   inventory_movement: "Movimiento de inventario",
+  purchase: "Compra",
+  supplier_invoice: "Factura de proveedor",
+  accounts_payable: "Cuenta por pagar",
+  supplier_payment: "Pago a proveedor",
 };
 
 const inventoryMovementTypeLabels: Record<string, string> = {
@@ -158,7 +169,7 @@ function validationMessages(value: unknown[]) {
 }
 
 function eventAmount(event: FinancialEvent) {
-  return event.source_snapshot.total_cost_snapshot ?? event.source_snapshot.amount ?? event.source_snapshot.total ?? event.source_snapshot.original_amount;
+  return event.source_snapshot.total_cost_snapshot ?? event.source_snapshot.amount ?? event.source_snapshot.total ?? event.source_snapshot.total_amount ?? event.source_snapshot.original_amount;
 }
 
 function eventDetail(event: FinancialEvent) {
@@ -178,6 +189,25 @@ function eventDetail(event: FinancialEvent) {
         unitCost != null ? `Costo unitario ${formatCurrency(unitCost)}` : null,
         totalCost != null ? `Costo ${formatCurrency(totalCost)}` : null,
         movementLabel ? `Movimiento ${movementLabel}` : null,
+      ].filter(Boolean).join(" · "),
+    };
+  }
+
+  if (purchaseApEventPurposes.has(event.event_purpose)) {
+    const supplier = snapshotText(event.source_snapshot, ["supplier_name"]) ?? "Proveedor no identificado";
+    const documentNumber = snapshotText(event.source_snapshot, ["purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id"]);
+    const status = snapshotText(event.source_snapshot, ["status"]);
+    const date = snapshotText(event.source_snapshot, ["purchase_date", "invoice_date", "due_date", "paid_at"]);
+    const total = event.source_snapshot.total ?? event.source_snapshot.total_amount ?? event.source_snapshot.amount;
+    const balance = event.source_snapshot.balance;
+    return {
+      title: supplier,
+      helper: [
+        documentNumber ? `Documento ${documentNumber}` : null,
+        total != null ? `Total ${formatCurrency(total)}` : null,
+        balance != null ? `Saldo ${formatCurrency(balance)}` : null,
+        status ? `Estado ${status}` : null,
+        date ? `Fecha ${String(date).slice(0, 10)}` : null,
       ].filter(Boolean).join(" · "),
     };
   }
@@ -541,7 +571,7 @@ export function FinancialCenterManager({
                   {visibleEvents.map((event) => {
                     const amount = eventAmount(event);
                     const detail = eventDetail(event);
-                    const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "invoice_number", "inventory_movement_id"]);
+                    const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id", "inventory_movement_id"]);
                     const issues = validationMessages(event.validation_errors);
                     const linkedDraft = event.journal_entry;
                     const canGenerateDraft = canGenerateDrafts && canGenerateDraftForEvent(event);

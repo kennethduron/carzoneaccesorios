@@ -157,7 +157,7 @@ export function PurchasesManager({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Borradores" value={summary.totalDraft.toLocaleString("es-HN")} />
         <Metric label="Confirmadas" value={summary.totalConfirmed.toLocaleString("es-HN")} />
@@ -165,7 +165,7 @@ export function PurchasesManager({
         <Metric label="Total operativo" value={formatCurrency(summary.totalAmount)} />
       </section>
 
-      <section className="rounded-lg border border-black/10 bg-white p-4">
+      <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div><h2 className="text-lg font-semibold">Compras</h2><p className="text-sm text-black/55">Borradores, confirmacion y detalle operativo.</p></div>
           <div className="flex flex-wrap gap-2">
@@ -180,15 +180,15 @@ export function PurchasesManager({
           {query ? <Button type="button" variant="ghost" onClick={() => setQuery("")}><X size={16} />Limpiar</Button> : null}
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
           <div className="min-w-0 space-y-3">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-left text-sm">
+            <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10">
+              <table className="w-full min-w-[900px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]">
                 <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Compra</th><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Lineas</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Acciones</th></tr></thead>
                 <tbody className="divide-y divide-black/10">
                   {visiblePurchases.map((purchase) => (
                     <tr key={purchase.id} className={purchase.id === selectedPurchase?.id ? "bg-[#fff7ed]" : undefined}>
-                      <td className="px-3 py-3 align-top"><button type="button" onClick={() => setSelectedId(purchase.id)} className="font-semibold text-[#b91c25]">{purchase.purchase_number}</button></td>
+                      <td className="px-3 py-3 align-top"><button type="button" onClick={() => setSelectedId(purchase.id)} className="break-words text-left font-semibold text-[#b91c25] [overflow-wrap:anywhere]">{purchase.purchase_number}</button></td>
                       <td className="px-3 py-3 align-top">{purchase.supplier_name}</td>
                       <td className="px-3 py-3 align-top">{formatDate(purchase.purchase_date)}</td>
                       <td className="px-3 py-3 align-top">{statusLabels[purchase.status]}</td>
@@ -205,8 +205,8 @@ export function PurchasesManager({
             {selectedPurchase ? <PurchaseDetails purchase={selectedPurchase} /> : null}
           </div>
 
-          <div className="rounded-lg border border-black/10 bg-[#fafafa] p-4">
-            <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{editingId ? "Editar compra" : "Registrar compra"}</h3><p className="text-sm text-black/55">Las lineas no crean movimientos de inventario.</p></div>{editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancelar</Button> : null}</div>
+          <div className="min-w-0 rounded-lg border border-black/10 bg-[#fafafa] p-4 [&_select]:min-w-0 [&_select]:w-full [&_textarea]:min-w-0 [&_textarea]:w-full">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{editingId ? "Editar compra" : "Registrar compra"}</h3><p className="text-sm text-black/55">Las lineas no crean movimientos de inventario.</p></div>{editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancelar</Button> : null}</div>
             <div className="mt-4 grid gap-3">
               <Field label="Proveedor"><select value={draft.supplier_id} onChange={(event) => setDraft({ ...draft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.is_active ? "" : " (inactivo)"}</option>)}</select></Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Numero de compra"><Input value={draft.purchase_number} onChange={(event) => setDraft({ ...draft, purchase_number: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de compra"><Input type="date" value={draft.purchase_date} onChange={(event) => setDraft({ ...draft, purchase_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
@@ -240,12 +240,12 @@ export function PurchasesManager({
 }
 
 function PurchaseDetails({ purchase }: { purchase: AdminPurchase }) {
-  return <section className="rounded-lg border border-black/10 bg-white p-4"><div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-black/50">Detalle de compra</p><h3 className="text-lg font-semibold">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripcion</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin lineas registradas.</td></tr> : null}</tbody></table></div></section>;
+  return <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="text-sm text-black/50">Detalle de compra</p><h3 className="break-words text-lg font-semibold [overflow-wrap:anywhere]">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div><div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[700px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripcion</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin lineas registradas.</td></tr> : null}</tbody></table></div></section>;
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-black/10 bg-white p-4"><p className="text-sm text-black/50">{label}</p><p className="mt-1 text-2xl font-semibold">{value}</p></div>; }
-function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-1 text-sm font-semibold">{label}{children}</label>; }
-function Mini({ label, value }: { label: string; value: string }) { return <div className="rounded-md bg-[#f4f4f5] p-3"><p className="text-xs uppercase text-black/45">{label}</p><p className="mt-1 font-semibold">{value}</p></div>; }
+function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><p className="text-sm text-black/50">{label}</p><p className="mt-1 break-words text-2xl font-semibold [overflow-wrap:anywhere]">{value}</p></div>; }
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid min-w-0 gap-1 text-sm font-semibold [overflow-wrap:anywhere]">{label}{children}</label>; }
+function Mini({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-md bg-[#f4f4f5] p-3"><p className="text-xs uppercase text-black/45">{label}</p><p className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{value}</p></div>; }
 function TotalRow({ label, value, strong = false }: { label: string; value: number; strong?: boolean }) { return <div className="flex items-center justify-between gap-3"><span className="text-black/55">{label}</span><span className={strong ? "font-semibold" : ""}>{formatCurrency(value)}</span></div>; }
 
 

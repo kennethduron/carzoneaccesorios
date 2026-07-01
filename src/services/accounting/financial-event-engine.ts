@@ -6,6 +6,7 @@ import { getInvoiceFinancialEventCandidates } from "@/services/accounting/adapte
 import { getInventoryFinancialEventCandidates } from "@/services/accounting/adapters/inventory-financial-events";
 import { getOrderFinancialEventCandidates } from "@/services/accounting/adapters/order-financial-events";
 import { getPaymentFinancialEventCandidates } from "@/services/accounting/adapters/payment-financial-events";
+import { getPurchaseFinancialEventCandidates } from "@/services/accounting/adapters/purchase-financial-events";
 import { getReceivableFinancialEventCandidates } from "@/services/accounting/adapters/receivable-financial-events";
 import type { AccountingMappingType, AutomationMode, FinancialEventStatus } from "@/types/financial-center";
 
@@ -23,7 +24,13 @@ export type FinancialEventPurpose =
   | "inventory_return"
   | "inventory_adjustment_gain"
   | "inventory_adjustment_loss"
-  | "inventory_writeoff";
+  | "inventory_writeoff"
+  | "purchase_confirmed"
+  | "supplier_invoice_received"
+  | "accounts_payable_created"
+  | "supplier_payment"
+  | "supplier_payment_cancelled"
+  | "purchase_cancelled";
 
 export type FinancialEventSourceType =
   | "order"
@@ -32,7 +39,11 @@ export type FinancialEventSourceType =
   | "commercial_credit"
   | "accounts_receivable"
   | "receivable_payment"
-  | "inventory_movement";
+  | "inventory_movement"
+  | "purchase"
+  | "supplier_invoice"
+  | "accounts_payable"
+  | "supplier_payment";
 
 export type FinancialEventCandidate = {
   eventType:
@@ -49,7 +60,13 @@ export type FinancialEventCandidate = {
     | "inventory_return_movement"
     | "inventory_adjustment_gain"
     | "inventory_adjustment_loss"
-    | "inventory_writeoff";
+    | "inventory_writeoff"
+    | "purchase_confirmed"
+    | "supplier_invoice_received"
+    | "accounts_payable_created"
+    | "supplier_payment"
+    | "supplier_payment_cancelled"
+    | "purchase_cancelled";
   source_type: FinancialEventSourceType;
   source_id: string;
   event_purpose: FinancialEventPurpose;
@@ -95,6 +112,15 @@ const inventoryPurposes = new Set<FinancialEventPurpose>([
   "inventory_adjustment_gain",
   "inventory_adjustment_loss",
   "inventory_writeoff",
+]);
+
+const purchaseApPurposes = new Set<FinancialEventPurpose>([
+  "purchase_confirmed",
+  "supplier_invoice_received",
+  "accounts_payable_created",
+  "supplier_payment",
+  "supplier_payment_cancelled",
+  "purchase_cancelled",
 ]);
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -182,6 +208,40 @@ function missingCostMessage(candidate: FinancialEventCandidate) {
   return "No se puede calcular el valor contable del movimiento porque falta el costo del producto.";
 }
 
+function hasAnyPurchaseCostMapping(mappings: MappingLookup) {
+  return hasMapping(mappings, "inventory", "purchase_inventory") || hasMapping(mappings, "default_account", "purchase_expense");
+}
+
+function purchaseApMappingValidationErrors(candidate: FinancialEventCandidate, mappings: MappingLookup) {
+  const errors: string[] = [];
+  const needsPayable = ["purchase_confirmed", "supplier_invoice_received", "accounts_payable_created", "supplier_payment", "supplier_payment_cancelled"].includes(candidate.event_purpose);
+  const needsPurchaseCost = candidate.event_purpose === "purchase_confirmed" || candidate.event_purpose === "supplier_invoice_received";
+  const taxAmount = Number(candidate.taxAmount ?? 0);
+  const paymentMethod = String(candidate.paymentMethod ?? "").trim().toLowerCase();
+
+  if (needsPayable && !hasMapping(mappings, "default_account", "accounts_payable")) {
+    errors.push("Falta la cuenta de proveedores por pagar.");
+  }
+
+  if (needsPurchaseCost && !hasAnyPurchaseCostMapping(mappings)) {
+    errors.push("Faltan mapeos de compras.");
+  }
+
+  if (needsPurchaseCost && taxAmount > 0 && !hasMapping(mappings, "tax", "purchase_tax")) {
+    errors.push("Falta la cuenta de impuesto para compras.");
+  }
+
+  if (["supplier_payment", "supplier_payment_cancelled"].includes(candidate.event_purpose) && (!paymentMethod || !hasMapping(mappings, "payment_method", paymentMethod))) {
+    errors.push("Falta la cuenta para pagos a proveedores.");
+  }
+
+  if (candidate.event_purpose === "purchase_cancelled" && !hasMapping(mappings, "default_account", "purchase_return") && !hasMapping(mappings, "default_account", "supplier_credit")) {
+    errors.push("Faltan mapeos de compras.");
+  }
+
+  return errors;
+}
+
 function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode) {
   const validationErrors = [...(candidate.validation_errors ?? [])];
   const amount = Number(candidate.amount ?? 0);
@@ -234,8 +294,16 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
   }
 
   if (automationMode === "auto_post") {
-    validationErrors.push("El modo auto_post no está permitido en Fase 2B.");
+    validationErrors.push("El modo auto_post no está permitido en esta fase.");
     return { status: "pending" as const, validationErrors };
+  }
+
+  if (purchaseApPurposes.has(candidate.event_purpose)) {
+    validationErrors.push(...purchaseApMappingValidationErrors(candidate, mappings));
+    return {
+      status: validationErrors.length > 0 ? ("pending" as const) : ("ready" as const),
+      validationErrors: [...new Set(validationErrors)],
+    };
   }
 
   for (const requirement of requiredMappingsForCandidate(candidate)) {
@@ -251,7 +319,7 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
 }
 
 function buildRegisteredSnapshot(candidate: FinancialEventCandidate) {
-  if (inventoryPurposes.has(candidate.event_purpose)) {
+  if (inventoryPurposes.has(candidate.event_purpose) || purchaseApPurposes.has(candidate.event_purpose)) {
     return candidate.source_snapshot;
   }
 
@@ -295,15 +363,16 @@ export async function getActiveAccountingMappingLookup(client?: SupabaseClient) 
 }
 
 async function collectCandidates() {
-  const [orders, payments, invoices, receivables, inventory] = await Promise.all([
+  const [orders, payments, invoices, receivables, inventory, purchases] = await Promise.all([
     getOrderFinancialEventCandidates(),
     getPaymentFinancialEventCandidates(),
     getInvoiceFinancialEventCandidates(),
     getReceivableFinancialEventCandidates(),
     getInventoryFinancialEventCandidates(),
+    getPurchaseFinancialEventCandidates(),
   ]);
 
-  return [...orders, ...payments, ...invoices, ...receivables, ...inventory];
+  return [...orders, ...payments, ...invoices, ...receivables, ...inventory, ...purchases];
 }
 
 export async function registerFinancialEventCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string | null, client?: SupabaseClient) {

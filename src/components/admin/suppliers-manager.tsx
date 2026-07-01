@@ -100,14 +100,14 @@ export function SuppliersManager({ suppliers, summary, canManage }: { suppliers:
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <section className="grid gap-3 sm:grid-cols-3">
         <Metric label="Proveedores" value={summary.total.toLocaleString("es-HN")} />
         <Metric label="Activos" value={summary.active.toLocaleString("es-HN")} />
         <Metric label="Inactivos" value={summary.inactive.toLocaleString("es-HN")} />
       </section>
 
-      <section className="rounded-lg border border-black/10 bg-white p-4">
+      <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Proveedores</h2>
@@ -136,8 +136,8 @@ export function SuppliersManager({ suppliers, summary, canManage }: { suppliers:
         </div>
 
         <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="min-w-0 overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
+          <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10">
+            <table className="w-full min-w-[760px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]">
               <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
                 <tr>
                   <th className="px-3 py-2">Proveedor</th>
@@ -151,7 +151,7 @@ export function SuppliersManager({ suppliers, summary, canManage }: { suppliers:
               <tbody className="divide-y divide-black/10">
                 {visibleSuppliers.map((supplier) => (
                   <tr key={supplier.id}>
-                    <td className="px-3 py-3 align-top"><p className="font-semibold">{supplier.name}</p><p className="text-xs text-black/50">{supplier.email ?? supplier.phone ?? "Sin contacto"}</p></td>
+                    <td className="px-3 py-3 align-top"><p className="font-semibold [overflow-wrap:anywhere]">{supplier.name}</p><p className="text-xs text-black/50">{supplier.email ?? supplier.phone ?? "Sin contacto"}</p></td>
                     <td className="px-3 py-3 align-top">{supplier.contact_name ?? "Sin contacto"}</td>
                     <td className="px-3 py-3 align-top">{supplier.tax_id ?? "Sin RTN"}</td>
                     <td className="px-3 py-3 align-top"><span className={`rounded-md px-2 py-1 text-xs font-semibold ${supplier.is_active ? "bg-[#edf7ed] text-[#2f6f3e]" : "bg-[#f4f4f5] text-black/55"}`}>{supplier.is_active ? "Activo" : "Inactivo"}</span></td>
@@ -169,8 +169,8 @@ export function SuppliersManager({ suppliers, summary, canManage }: { suppliers:
             </table>
           </div>
 
-          <div className="rounded-lg border border-black/10 bg-[#fafafa] p-4">
-            <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 rounded-lg border border-black/10 bg-[#fafafa] p-4 [&_select]:min-w-0 [&_select]:w-full [&_textarea]:min-w-0 [&_textarea]:w-full">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="font-semibold">{editingId ? "Editar proveedor" : "Registrar proveedor"}</h3>
                 <p className="text-sm text-black/55">Los datos quedan en el modulo operativo.</p>
