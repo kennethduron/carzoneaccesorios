@@ -99,6 +99,17 @@ const moduleGroups = [
     ],
   },
   {
+    id: "compras",
+    title: "Compras",
+    navLabel: "Compras",
+    description: "Proveedores y compras operativas.",
+    defaultOpen: true,
+    modules: [
+      { title: "Proveedores", href: "/admin/proveedores", description: "Registro, contacto y estado operativo de proveedores.", permissions: ["suppliers:read", "suppliers:manage"] },
+      { title: "Compras", href: "/admin/compras", description: "Borradores, lineas y confirmacion operativa de compras.", permissions: ["purchases:read", "purchases:manage"] },
+    ],
+  },
+  {
     id: "inventario",
     title: "Inventario",
     navLabel: "Inventario",
@@ -118,6 +129,7 @@ const moduleGroups = [
     defaultOpen: true,
     modules: [
       { title: "Cuentas por cobrar", href: "/admin/cuentas-por-cobrar", description: "Créditos abiertos, próximos a vencer y vencidos.", permissions: ["receivables:read"] },
+      { title: "Cuentas por pagar", href: "/admin/cuentas-por-pagar", description: "Saldos, facturas y pagos a proveedores.", permissions: ["payables:read", "payables:manage"] },
       { title: "Contabilidad", href: "/admin/contabilidad", description: "Catálogo de cuentas, libro diario y partidas manuales.", permissions: ["accounting:read"] },
       { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", description: "Ventas facturadas, impuestos, facturas anuladas y correlativos.", permissions: ["reports:read", "reports:fiscal_read"] },
@@ -168,6 +180,7 @@ const dashboardGroupIcons: Record<string, LucideIcon> = {
   ventas: ShoppingCart,
   clientes: Users,
   inventario: Package,
+  compras: Receipt,
   finanzas: CircleDollarSign,
   configuracion: ShieldCheck,
   soporte: Headphones,
@@ -269,7 +282,7 @@ export default async function AdminPage() {
     const currentNumber = invoiceNumberValue(fiscalSettings?.current_invoice_number ?? "");
     const availableInvoices = rangeEnd !== null && currentNumber !== null ? Math.max(rangeEnd - currentNumber + 1, 0) : null;
     const visibleModuleGroups = moduleGroups
-      .filter((group) => group.id === "finanzas")
+      .filter((group) => ["compras", "finanzas"].includes(group.id))
       .map((group) => ({
         ...group,
         modules: group.modules.filter((module) => canAccessModule(profile.role, profile.email, profile.permissions, module.permissions)),

@@ -114,3 +114,64 @@ export type SupplierPayment = {
   created_at: string;
   updated_at: string;
 };
+
+export type SupplierSummary = {
+  total: number;
+  active: number;
+  inactive: number;
+};
+
+export type SupplierOption = Pick<Supplier, "id" | "name" | "is_active" | "tax_id">;
+
+export type ProductPurchaseOption = {
+  id: string;
+  sku: string | null;
+  name: string;
+  cost_price: number;
+  active: boolean;
+};
+
+export type PurchaseItemWithProduct = PurchaseItem & {
+  product_name: string | null;
+  product_sku: string | null;
+};
+
+export type AdminPurchase = Purchase & {
+  supplier_name: string;
+  supplier_tax_id: string | null;
+  items: PurchaseItemWithProduct[];
+};
+
+export type PurchasesSummary = {
+  totalDraft: number;
+  totalConfirmed: number;
+  totalCancelled: number;
+  totalAmount: number;
+};
+
+export type SupplierPaymentWithActor = SupplierPayment & {
+  created_by_name: string | null;
+  created_by_email: string | null;
+};
+
+export type AdminSupplierInvoice = SupplierInvoice & {
+  supplier_name: string;
+  purchase_number: string | null;
+};
+
+export type AdminAccountsPayable = AccountsPayable & {
+  supplier_name: string;
+  supplier_tax_id: string | null;
+  purchase_number: string | null;
+  invoice_number: string | null;
+  payments: SupplierPaymentWithActor[];
+};
+
+export type PayablesSummary = {
+  totalPending: number;
+  totalOverdue: number;
+  paidThisMonth: number;
+  pendingCount: number;
+  overdueCount: number;
+  paidCount: number;
+};

@@ -1,0 +1,161 @@
+import "server-only";
+
+import { getSupabaseAdminClient } from "@/lib/supabase";
+import type {
+  AdminPurchase,
+  ProductPurchaseOption,
+  PurchaseItemWithProduct,
+  PurchasesSummary,
+} from "@/types/purchases";
+
+type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" | "items"> & {
+  suppliers: { name: string; tax_id: string | null } | null;
+  purchase_items: Array<
+    Omit<PurchaseItemWithProduct, "product_name" | "product_sku"> & {
+      products: { name: string; sku: string | null } | null;
+    }
+  > | null;
+};
+
+type ProductOptionRow = Omit<ProductPurchaseOption, "cost_price"> & {
+  cost_price: unknown;
+};
+
+function toNumber(value: unknown) {
+  return Number(value ?? 0);
+}
+
+function normalizePurchase(row: PurchaseQueryRow): AdminPurchase {
+  return {
+    ...row,
+    subtotal: toNumber(row.subtotal),
+    tax_amount: toNumber(row.tax_amount),
+    discount_amount: toNumber(row.discount_amount),
+    shipping_amount: toNumber(row.shipping_amount),
+    total: toNumber(row.total),
+    supplier_name: row.suppliers?.name ?? "Proveedor",
+    supplier_tax_id: row.suppliers?.tax_id ?? null,
+    items: (row.purchase_items ?? []).map((item) => ({
+      ...item,
+      quantity: toNumber(item.quantity),
+      unit_cost: toNumber(item.unit_cost),
+      tax_amount: toNumber(item.tax_amount),
+      discount_amount: toNumber(item.discount_amount),
+      total_cost: toNumber(item.total_cost),
+      product_name: item.products?.name ?? null,
+      product_sku: item.products?.sku ?? null,
+    })),
+  };
+}
+
+export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[]; summary: PurchasesSummary }> {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("purchases")
+    .select(
+      `
+      id,
+      supplier_id,
+      purchase_number,
+      purchase_date,
+      status,
+      subtotal,
+      tax_amount,
+      discount_amount,
+      shipping_amount,
+      total,
+      currency,
+      notes,
+      created_by,
+      confirmed_by,
+      confirmed_at,
+      cancelled_by,
+      cancelled_at,
+      created_at,
+      updated_at,
+      suppliers(name, tax_id),
+      purchase_items(
+        id,
+        purchase_id,
+        product_id,
+        description,
+        quantity,
+        unit_cost,
+        tax_amount,
+        discount_amount,
+        total_cost,
+        inventory_movement_id,
+        created_at,
+        products(name, sku)
+      )
+    `,
+    )
+    .order("purchase_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(500)
+    .returns<PurchaseQueryRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const purchases = (data ?? []).map(normalizePurchase);
+  return {
+    purchases,
+    summary: {
+      totalDraft: purchases.filter((purchase) => purchase.status === "draft").length,
+      totalConfirmed: purchases.filter((purchase) => purchase.status === "confirmed").length,
+      totalCancelled: purchases.filter((purchase) => purchase.status === "cancelled").length,
+      totalAmount: purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.total, 0),
+    },
+  };
+}
+
+export async function getPurchaseById(purchaseId: string) {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("purchases")
+    .select("id, supplier_id, purchase_number, purchase_date, status, subtotal, tax_amount, discount_amount, shipping_amount, total, currency, notes, created_by, confirmed_by, confirmed_at, cancelled_by, cancelled_at, created_at, updated_at")
+    .eq("id", purchaseId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function getPurchaseOptions() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("purchases")
+    .select("id, supplier_id, purchase_number, status, total")
+    .neq("status", "cancelled")
+    .order("purchase_date", { ascending: false })
+    .limit(300)
+    .returns<Array<{ id: string; supplier_id: string; purchase_number: string; status: string; total: unknown }>>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => ({ ...row, total: toNumber(row.total) }));
+}
+
+export async function getPurchaseProductOptions(): Promise<ProductPurchaseOption[]> {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("products")
+    .select("id, sku, name, cost_price, active")
+    .eq("active", true)
+    .order("name", { ascending: true })
+    .limit(500)
+    .returns<ProductOptionRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((row) => ({ ...row, cost_price: toNumber(row.cost_price) }));
+}
