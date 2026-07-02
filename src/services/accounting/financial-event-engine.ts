@@ -123,6 +123,14 @@ const purchaseApPurposes = new Set<FinancialEventPurpose>([
   "purchase_cancelled",
 ]);
 
+const purchaseApDraftEligiblePurposes = new Set<FinancialEventPurpose>(["accounts_payable_created", "supplier_payment"]);
+const purchaseApControlMessages = new Map<FinancialEventPurpose, string>([
+  ["purchase_confirmed", "La compra fue confirmada, pero la partida contable se generar\u00e1 desde la cuenta por pagar o factura de proveedor para evitar duplicidad."],
+  ["supplier_invoice_received", "La factura de proveedor fue registrada, pero la partida contable se generar\u00e1 desde la cuenta por pagar para evitar duplicidad."],
+  ["purchase_cancelled", "La anulaci\u00f3n de compra requiere revisi\u00f3n contable antes de generar reversos."],
+  ["supplier_payment_cancelled", "La anulaci\u00f3n de pago a proveedor requiere revisi\u00f3n contable antes de generar reversos."],
+]);
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -214,29 +222,31 @@ function hasAnyPurchaseCostMapping(mappings: MappingLookup) {
 
 function purchaseApMappingValidationErrors(candidate: FinancialEventCandidate, mappings: MappingLookup) {
   const errors: string[] = [];
-  const needsPayable = ["purchase_confirmed", "supplier_invoice_received", "accounts_payable_created", "supplier_payment", "supplier_payment_cancelled"].includes(candidate.event_purpose);
-  const needsPurchaseCost = candidate.event_purpose === "purchase_confirmed" || candidate.event_purpose === "supplier_invoice_received";
   const taxAmount = Number(candidate.taxAmount ?? 0);
   const paymentMethod = String(candidate.paymentMethod ?? "").trim().toLowerCase();
 
-  if (needsPayable && !hasMapping(mappings, "default_account", "accounts_payable")) {
-    errors.push("Falta la cuenta de proveedores por pagar.");
+  if (candidate.event_purpose === "accounts_payable_created") {
+    if (!hasMapping(mappings, "default_account", "accounts_payable")) {
+      errors.push("Falta la cuenta de proveedores por pagar.");
+    }
+
+    if (!hasAnyPurchaseCostMapping(mappings)) {
+      errors.push("Faltan mapeos de compras.");
+    }
+
+    if (taxAmount > 0 && !hasMapping(mappings, "tax", "purchase_tax")) {
+      errors.push("Falta la cuenta de impuesto para compras.");
+    }
   }
 
-  if (needsPurchaseCost && !hasAnyPurchaseCostMapping(mappings)) {
-    errors.push("Faltan mapeos de compras.");
-  }
+  if (candidate.event_purpose === "supplier_payment") {
+    if (!hasMapping(mappings, "default_account", "accounts_payable")) {
+      errors.push("Falta la cuenta de proveedores por pagar.");
+    }
 
-  if (needsPurchaseCost && taxAmount > 0 && !hasMapping(mappings, "tax", "purchase_tax")) {
-    errors.push("Falta la cuenta de impuesto para compras.");
-  }
-
-  if (["supplier_payment", "supplier_payment_cancelled"].includes(candidate.event_purpose) && (!paymentMethod || !hasMapping(mappings, "payment_method", paymentMethod))) {
-    errors.push("Falta la cuenta para pagos a proveedores.");
-  }
-
-  if (candidate.event_purpose === "purchase_cancelled" && !hasMapping(mappings, "default_account", "purchase_return") && !hasMapping(mappings, "default_account", "supplier_credit")) {
-    errors.push("Faltan mapeos de compras.");
+    if (!paymentMethod || !hasMapping(mappings, "payment_method", paymentMethod)) {
+      errors.push("Falta la cuenta para pagos a proveedores.");
+    }
   }
 
   return errors;
@@ -284,6 +294,32 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
     return { status: "pending" as const, validationErrors };
   }
 
+  if (purchaseApPurposes.has(candidate.event_purpose)) {
+    const controlMessage = purchaseApControlMessages.get(candidate.event_purpose);
+    if (controlMessage) {
+      validationErrors.push(controlMessage);
+      return { status: "pending" as const, validationErrors: [...new Set(validationErrors)] };
+    }
+
+    if (purchaseApDraftEligiblePurposes.has(candidate.event_purpose)) {
+      validationErrors.push(...purchaseApMappingValidationErrors(candidate, mappings));
+      if (automationMode === "disabled") {
+        validationErrors.push("Modo de automatizaci\u00f3n desactivado; evento registrado solo por escaneo manual.");
+        return { status: "pending" as const, validationErrors: [...new Set(validationErrors)] };
+      }
+
+      if (automationMode === "auto_post") {
+        validationErrors.push("El modo auto_post no est\u00e1 permitido en esta fase.");
+        return { status: "pending" as const, validationErrors: [...new Set(validationErrors)] };
+      }
+
+      return {
+        status: validationErrors.length > 0 ? ("pending" as const) : ("ready" as const),
+        validationErrors: [...new Set(validationErrors)],
+      };
+    }
+  }
+
   if (validationErrors.length > 0) {
     return { status: "failed" as const, validationErrors };
   }
@@ -298,13 +334,6 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
     return { status: "pending" as const, validationErrors };
   }
 
-  if (purchaseApPurposes.has(candidate.event_purpose)) {
-    validationErrors.push(...purchaseApMappingValidationErrors(candidate, mappings));
-    return {
-      status: validationErrors.length > 0 ? ("pending" as const) : ("ready" as const),
-      validationErrors: [...new Set(validationErrors)],
-    };
-  }
 
   for (const requirement of requiredMappingsForCandidate(candidate)) {
     if (!hasMapping(mappings, requirement.mappingType, requirement.sourceKey)) {

@@ -32,7 +32,13 @@ type FinancialEventPurpose =
   | "inventory_return"
   | "inventory_adjustment_gain"
   | "inventory_adjustment_loss"
-  | "inventory_writeoff";
+  | "inventory_writeoff"
+  | "purchase_confirmed"
+  | "supplier_invoice_received"
+  | "accounts_payable_created"
+  | "supplier_payment"
+  | "supplier_payment_cancelled"
+  | "purchase_cancelled";
 
 type FinancialEventForDraft = {
   id: string;
@@ -121,6 +127,12 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "inventory_adjustment_gain",
   "inventory_adjustment_loss",
   "inventory_writeoff",
+  "purchase_confirmed",
+  "supplier_invoice_received",
+  "accounts_payable_created",
+  "supplier_payment",
+  "supplier_payment_cancelled",
+  "purchase_cancelled",
 ]);
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
@@ -137,6 +149,15 @@ const cogsMissingHistoricalCostMessage = "No se puede generar la partida porque 
 const returnMissingHistoricalCostMessage = "No se puede generar la partida de devolución porque falta el costo histórico original.";
 const movementMissingCostMessage = "No se puede calcular el valor contable del movimiento porque falta el costo del producto.";
 const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asociada.";
+const invalidEventAmountMessage = "No se puede generar la partida porque el monto del evento no es v\u00e1lido.";
+const missingPayableAccountMessage = "Falta la cuenta de proveedores por pagar.";
+const missingPurchaseMappingsMessage = "Faltan mapeos de compras.";
+const missingSupplierPaymentAccountMessage = "Falta la cuenta para pagos a proveedores.";
+const inactiveConfiguredAccountMessage = "La cuenta contable configurada est\u00e1 inactiva.";
+const purchaseConfirmedControlMessage = "La compra fue confirmada, pero la partida contable se generar\u00e1 desde la cuenta por pagar o factura de proveedor para evitar duplicidad.";
+const supplierInvoiceControlMessage = "La factura de proveedor fue registrada, pero la partida contable se generar\u00e1 desde la cuenta por pagar para evitar duplicidad.";
+const purchaseCancelledControlMessage = "La anulaci\u00f3n de compra requiere revisi\u00f3n contable antes de generar reversos.";
+const supplierPaymentCancelledControlMessage = "La anulaci\u00f3n de pago a proveedor requiere revisi\u00f3n contable antes de generar reversos.";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -186,6 +207,14 @@ function snapshotAmount(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.amount ?? snapshot.total ?? snapshot.original_amount);
 }
 
+function snapshotPayableAmount(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.total_amount ?? snapshot.total);
+}
+
+function snapshotSupplierPaymentAmount(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.amount);
+}
+
 function snapshotTotalCostAmount(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.total_cost_snapshot);
 }
@@ -194,14 +223,42 @@ function snapshotTax(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.tax ?? snapshot.tax_amount);
 }
 
+function snapshotDiscount(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.discount_amount ?? snapshot.discount);
+}
+
+function snapshotShipping(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.shipping_amount ?? snapshot.shipping);
+}
+
 function sourceNumber(snapshot: Record<string, unknown>, event: FinancialEventForDraft) {
   return (
     cleanText(snapshot.source_number) ||
     cleanText(snapshot.order_number) ||
+    cleanText(snapshot.purchase_number) ||
     cleanText(snapshot.invoice_number) ||
+    cleanText(snapshot.accounts_payable_id) ||
+    cleanText(snapshot.supplier_payment_id) ||
     cleanText(snapshot.inventory_movement_id) ||
     event.source_id
   );
+}
+
+function supplierPaymentMappingKey(value: unknown) {
+  const normalized = cleanText(value).toLowerCase();
+  if (!normalized) return "";
+  if (normalized.startsWith("supplier_payment_")) return normalized;
+  if (["cash", "efectivo", "caja"].includes(normalized)) return "supplier_payment_cash";
+  if (["card", "tarjeta", "tarjeta de credito", "tarjeta de debito", "card_link"].includes(normalized)) return "supplier_payment_card";
+  if (["bank", "bank_transfer", "transferencia", "transferencia_bancaria", "transferencia bancaria", "deposito", "cheque"].includes(normalized)) return "supplier_payment_bank";
+
+  const slug = normalized
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return slug ? `supplier_payment_${slug}` : "";
 }
 
 function requirement(mappingType: AccountingMappingType, sourceKey: string, label: string): MappingRequirement {
@@ -240,6 +297,107 @@ function accountLine(account: ResolvedAccountingAccount, debit: number, credit: 
   };
 }
 
+type PurchaseApMappingRow = {
+  id: string;
+  mapping_type: AccountingMappingType;
+  source_key: string;
+  priority: number;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  accounting_accounts: ResolvedAccountingAccount | null;
+};
+
+type PurchaseApResolvedAccount = {
+  account: ResolvedAccountingAccount | null;
+  inactive: boolean;
+};
+
+async function resolvePurchaseApAccount(requirement: MappingRequirement, client?: SupabaseClient): Promise<PurchaseApResolvedAccount> {
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data, error } = await supabase
+    .from("accounting_mappings")
+    .select(
+      `
+      id,
+      mapping_type,
+      source_key,
+      priority,
+      is_active,
+      effective_from,
+      effective_to,
+      accounting_accounts(id, code, name, type, is_active)
+    `,
+    )
+    .eq("mapping_type", requirement.mappingType)
+    .eq("source_key", requirement.sourceKey.trim().toLowerCase())
+    .order("priority", { ascending: true })
+    .returns<PurchaseApMappingRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Tegucigalpa",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const row = (data ?? []).find((candidate) => isEffectiveMapping(candidate, today));
+
+  if (!row) return { account: null, inactive: false };
+  if (!row.is_active || !row.accounting_accounts) return { account: null, inactive: false };
+  if (!row.accounting_accounts.is_active) return { account: null, inactive: true };
+
+  return { account: row.accounting_accounts, inactive: false };
+}
+
+async function requirePurchaseApAccount(requirement: MappingRequirement, missingMessage: string, client?: SupabaseClient) {
+  const resolved = await resolvePurchaseApAccount(requirement, client);
+  if (resolved.inactive) {
+    return { ok: false as const, message: inactiveConfiguredAccountMessage, validationErrors: [inactiveConfiguredAccountMessage] };
+  }
+
+  if (!resolved.account) {
+    return { ok: false as const, message: missingMessage, validationErrors: [missingMessage] };
+  }
+
+  return { ok: true as const, account: resolved.account, requirement };
+}
+
+async function optionalPurchaseApAccount(requirement: MappingRequirement, client?: SupabaseClient) {
+  const resolved = await resolvePurchaseApAccount(requirement, client);
+  if (resolved.inactive) {
+    return { ok: false as const, message: inactiveConfiguredAccountMessage, validationErrors: [inactiveConfiguredAccountMessage] };
+  }
+
+  return { ok: true as const, account: resolved.account, requirement };
+}
+
+async function resolvePurchaseCostAccount(client?: SupabaseClient) {
+  const inventoryRequirement = requirement("inventory", "purchase_inventory", "Inventario para compras");
+  const expenseRequirement = requirement("default_account", "purchase_expense", "Gasto de compras");
+  const inventory = await resolvePurchaseApAccount(inventoryRequirement, client);
+  if (inventory.inactive) {
+    return { ok: false as const, message: inactiveConfiguredAccountMessage, validationErrors: [inactiveConfiguredAccountMessage] };
+  }
+
+  if (inventory.account) {
+    return { ok: true as const, account: inventory.account, requirement: inventoryRequirement };
+  }
+
+  const expense = await resolvePurchaseApAccount(expenseRequirement, client);
+  if (expense.inactive) {
+    return { ok: false as const, message: inactiveConfiguredAccountMessage, validationErrors: [inactiveConfiguredAccountMessage] };
+  }
+
+  if (expense.account) {
+    return { ok: true as const, account: expense.account, requirement: expenseRequirement };
+  }
+
+  return { ok: false as const, message: missingPurchaseMappingsMessage, validationErrors: [missingPurchaseMappingsMessage] };
+}
 function validateLines(lines: DraftLine[]) {
   const errors: string[] = [];
   if (lines.length < 2) {
@@ -536,6 +694,97 @@ async function buildInventoryMovementDraft(event: FinancialEventForDraft, purpos
   };
 }
 
+async function buildAccountsPayableCreatedDraft(snapshot: Record<string, unknown>, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const total = snapshotPayableAmount(snapshot);
+  if (!Number.isFinite(total) || total <= 0) {
+    return { ok: false, status: "failed", message: invalidEventAmountMessage, validationErrors: [invalidEventAmountMessage] };
+  }
+
+  const [payable, purchaseCost, purchaseTax, purchaseDiscount, purchaseShipping] = await Promise.all([
+    requirePurchaseApAccount(requirement("default_account", "accounts_payable", "Proveedores por pagar"), missingPayableAccountMessage, client),
+    resolvePurchaseCostAccount(client),
+    optionalPurchaseApAccount(requirement("tax", "purchase_tax", "Impuesto de compras"), client),
+    optionalPurchaseApAccount(requirement("discount", "purchase_discount", "Descuento de compras"), client),
+    optionalPurchaseApAccount(requirement("shipping", "purchase_shipping", "Flete de compras"), client),
+  ]);
+  const failed = [payable, purchaseCost, purchaseTax, purchaseDiscount, purchaseShipping].find((result) => !result.ok);
+  if (failed && !failed.ok) {
+    return { ok: false, status: "pending", message: failed.message, validationErrors: failed.validationErrors };
+  }
+  if (!payable.ok || !purchaseCost.ok || !purchaseTax.ok || !purchaseDiscount.ok || !purchaseShipping.ok) {
+    return { ok: false, status: "pending", message: missingPurchaseMappingsMessage, validationErrors: [missingPurchaseMappingsMessage] };
+  }
+
+  const tax = snapshotTax(snapshot);
+  const discount = snapshotDiscount(snapshot);
+  const shipping = snapshotShipping(snapshot);
+  const taxAccount = tax > 0 ? purchaseTax.account : null;
+  const discountAccount = discount > 0 ? purchaseDiscount.account : null;
+  const shippingAccount = shipping > 0 ? purchaseShipping.account : null;
+  const purchaseBase = toAmount(total - (taxAccount ? tax : 0) - (shippingAccount ? shipping : 0) + (discountAccount ? discount : 0));
+  const lines: DraftLine[] = [];
+
+  if (purchaseBase > 0) {
+    lines.push(accountLine(purchaseCost.account, purchaseBase, 0, "Compra o gasto registrado"));
+  }
+  if (taxAccount) lines.push(accountLine(taxAccount, tax, 0, "Impuesto de compras"));
+  if (shippingAccount) lines.push(accountLine(shippingAccount, shipping, 0, "Flete de compras"));
+  if (discountAccount) lines.push(accountLine(discountAccount, 0, discount, "Descuento de compras"));
+  lines.push(accountLine(payable.account, 0, total, "Cuenta por pagar a proveedor"));
+
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return { ok: false, status: "failed", message: lineErrors[0], validationErrors: lineErrors };
+  }
+
+  return {
+    ok: true,
+    description: `Registro de cuenta por pagar a proveedor ${number}`,
+    entryDate,
+    lines,
+    requirements: [payable.requirement, purchaseCost.requirement, taxAccount ? purchaseTax.requirement : null, discountAccount ? purchaseDiscount.requirement : null, shippingAccount ? purchaseShipping.requirement : null].filter((item): item is MappingRequirement => Boolean(item)),
+  };
+}
+
+async function buildSupplierPaymentDraft(snapshot: Record<string, unknown>, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const amount = snapshotSupplierPaymentAmount(snapshot);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: "failed", message: invalidEventAmountMessage, validationErrors: [invalidEventAmountMessage] };
+  }
+
+  const paymentSourceKey = supplierPaymentMappingKey(snapshot.payment_method);
+  if (!paymentSourceKey) {
+    return { ok: false, status: "pending", message: missingSupplierPaymentAccountMessage, validationErrors: [missingSupplierPaymentAccountMessage] };
+  }
+
+  const [payable, payment] = await Promise.all([
+    requirePurchaseApAccount(requirement("default_account", "accounts_payable", "Proveedores por pagar"), missingPayableAccountMessage, client),
+    requirePurchaseApAccount(requirement("payment_method", paymentSourceKey, `Pago a proveedores: ${paymentSourceKey}`), missingSupplierPaymentAccountMessage, client),
+  ]);
+  if (!payable.ok) {
+    return { ok: false, status: "pending", message: payable.message, validationErrors: payable.validationErrors };
+  }
+  if (!payment.ok) {
+    return { ok: false, status: "pending", message: payment.message, validationErrors: payment.validationErrors };
+  }
+
+  const lines = [
+    accountLine(payable.account, amount, 0, "Disminuci\u00f3n de cuenta por pagar"),
+    accountLine(payment.account, 0, amount, "Salida de efectivo o banco por pago a proveedor"),
+  ];
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return { ok: false, status: "failed", message: lineErrors[0], validationErrors: lineErrors };
+  }
+
+  return {
+    ok: true,
+    description: `Pago a proveedor ${number}`,
+    entryDate,
+    lines,
+    requirements: [payable.requirement, payment.requirement],
+  };
+}
 async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient): Promise<DraftBuildResult> {
   const snapshot = asRecord(event.source_snapshot);
   const purpose = event.event_purpose as FinancialEventPurpose;
@@ -601,12 +850,36 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
     };
   }
 
+  if (purpose === "purchase_confirmed") {
+    return { ok: false, status: "pending", message: purchaseConfirmedControlMessage, validationErrors: [purchaseConfirmedControlMessage] };
+  }
+
+  if (purpose === "supplier_invoice_received") {
+    return { ok: false, status: "pending", message: supplierInvoiceControlMessage, validationErrors: [supplierInvoiceControlMessage] };
+  }
+
+  if (purpose === "purchase_cancelled") {
+    return { ok: false, status: "pending", message: purchaseCancelledControlMessage, validationErrors: [purchaseCancelledControlMessage] };
+  }
+
+  if (purpose === "supplier_payment_cancelled") {
+    return { ok: false, status: "pending", message: supplierPaymentCancelledControlMessage, validationErrors: [supplierPaymentCancelledControlMessage] };
+  }
+
+  if (purpose === "accounts_payable_created") {
+    return buildAccountsPayableCreatedDraft(snapshot, number, entryDate, client);
+  }
+
+  if (purpose === "supplier_payment") {
+    return buildSupplierPaymentDraft(snapshot, number, entryDate, client);
+  }
+
   if (!Number.isFinite(amount) || amount <= 0) {
     return {
       ok: false,
       status: "failed",
-      message: "No se puede generar la partida porque el monto del evento no es válido.",
-      validationErrors: ["El monto del evento financiero no es válido."],
+      message: invalidEventAmountMessage,
+      validationErrors: [invalidEventAmountMessage],
     };
   }
 

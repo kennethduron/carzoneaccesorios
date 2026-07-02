@@ -92,6 +92,8 @@ const draftEligiblePurposes = new Set([
   "inventory_adjustment_gain",
   "inventory_adjustment_loss",
   "inventory_writeoff",
+  "accounts_payable_created",
+  "supplier_payment",
 ]);
 
 const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
@@ -196,14 +198,18 @@ function eventDetail(event: FinancialEvent) {
   if (purchaseApEventPurposes.has(event.event_purpose)) {
     const supplier = snapshotText(event.source_snapshot, ["supplier_name"]) ?? "Proveedor no identificado";
     const documentNumber = snapshotText(event.source_snapshot, ["purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id"]);
+    const paymentMethod = snapshotText(event.source_snapshot, ["payment_method"]);
     const status = snapshotText(event.source_snapshot, ["status"]);
     const date = snapshotText(event.source_snapshot, ["purchase_date", "invoice_date", "due_date", "paid_at"]);
     const total = event.source_snapshot.total ?? event.source_snapshot.total_amount ?? event.source_snapshot.amount;
+    const amount = event.source_snapshot.amount;
     const balance = event.source_snapshot.balance;
     return {
       title: supplier,
       helper: [
         documentNumber ? `Documento ${documentNumber}` : null,
+        paymentMethod ? `M\u00e9todo ${paymentMethod}` : null,
+        amount != null ? `Monto ${formatCurrency(amount)}` : null,
         total != null ? `Total ${formatCurrency(total)}` : null,
         balance != null ? `Saldo ${formatCurrency(balance)}` : null,
         status ? `Estado ${status}` : null,
@@ -231,6 +237,9 @@ function validationIssueLabel(issue: string) {
   if (issue.includes("costo histórico") || issue.includes("costo histórico")) return "Costo histórico faltante";
   if (issue.includes("ajustes de inventario")) return "Mapeo de ajuste incompleto";
   if (issue.includes("mapeos contables para inventario")) return "Mapeo de inventario incompleto";
+  if (issue.includes("proveedores por pagar")) return "Mapeo de proveedores incompleto";
+  if (issue.includes("pagos a proveedores")) return "Mapeo de pago a proveedor incompleto";
+  if (issue.includes("mapeos de compras")) return "Mapeo de compras incompleto";
   if (issue.includes("costo del producto")) return "Costo del producto faltante";
   if (issue.includes("Merma") || issue.includes("merma")) return "Merma de inventario";
   return null;
@@ -352,7 +361,7 @@ export function FinancialCenterManager({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <nav className="flex gap-2 overflow-x-auto rounded-lg border border-black/10 bg-white p-2 shadow-sm" aria-label="Secciones de contabilidad">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -551,8 +560,8 @@ export function FinancialCenterManager({
           </div>
 
           {hasEvents ? (
-            <div className="overflow-x-auto rounded-md border border-black/10">
-              <table className="w-full min-w-[1340px] text-left text-sm">
+            <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10">
+              <table className="w-full min-w-[1340px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]">
                 <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
                   <tr>
                     <th className="px-3 py-3">Tipo de evento</th>
