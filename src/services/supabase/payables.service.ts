@@ -1,8 +1,9 @@
-import "server-only";
+﻿import "server-only";
 
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type {
   AdminAccountsPayable,
+  AdminSupplierCredit,
   AdminSupplierInvoice,
   PayablesSummary,
   SupplierPaymentWithActor,
@@ -11,6 +12,12 @@ import type {
 type InvoiceQueryRow = Omit<AdminSupplierInvoice, "supplier_name" | "purchase_number"> & {
   suppliers: { name: string } | null;
   purchases: { purchase_number: string } | null;
+};
+
+type CreditQueryRow = Omit<AdminSupplierCredit, "supplier_name" | "purchase_number" | "invoice_number"> & {
+  suppliers: { name: string } | null;
+  purchases: { purchase_number: string } | null;
+  supplier_invoices: { invoice_number: string } | null;
 };
 
 type PaymentQueryRow = Omit<SupplierPaymentWithActor, "created_by_name" | "created_by_email"> & {
@@ -46,6 +53,17 @@ function normalizeInvoice(row: InvoiceQueryRow): AdminSupplierInvoice {
     total: toNumber(row.total),
     supplier_name: row.suppliers?.name ?? "Proveedor",
     purchase_number: row.purchases?.purchase_number ?? null,
+  };
+}
+
+function normalizeCredit(row: CreditQueryRow): AdminSupplierCredit {
+  return {
+    ...row,
+    amount: toNumber(row.amount),
+    remaining_amount: toNumber(row.remaining_amount),
+    supplier_name: row.suppliers?.name ?? "Proveedor",
+    purchase_number: row.purchases?.purchase_number ?? null,
+    invoice_number: row.supplier_invoices?.invoice_number ?? null,
   };
 }
 
@@ -114,9 +132,50 @@ export async function getAdminSupplierInvoices(): Promise<AdminSupplierInvoice[]
   return (data ?? []).map(normalizeInvoice);
 }
 
-export async function getAdminPayables(): Promise<{ payables: AdminAccountsPayable[]; invoices: AdminSupplierInvoice[]; summary: PayablesSummary }> {
+export async function getAdminSupplierCredits(): Promise<AdminSupplierCredit[]> {
   const admin = getSupabaseAdminClient();
-  const [payablesResult, invoices] = await Promise.all([
+  const { data, error } = await admin
+    .from("supplier_credits")
+    .select(
+      `
+      id,
+      supplier_id,
+      purchase_id,
+      supplier_invoice_id,
+      accounts_payable_id,
+      credit_number,
+      credit_date,
+      amount,
+      remaining_amount,
+      status,
+      reason,
+      created_by,
+      applied_by,
+      applied_at,
+      cancelled_by,
+      cancelled_at,
+      created_at,
+      updated_at,
+      suppliers(name),
+      purchases(purchase_number),
+      supplier_invoices(invoice_number)
+    `,
+    )
+    .order("credit_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(500)
+    .returns<CreditQueryRow[]>();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map(normalizeCredit);
+}
+
+export async function getAdminPayables(): Promise<{ payables: AdminAccountsPayable[]; invoices: AdminSupplierInvoice[]; credits: AdminSupplierCredit[]; summary: PayablesSummary }> {
+  const admin = getSupabaseAdminClient();
+  const [payablesResult, invoices, credits] = await Promise.all([
     admin
       .from("accounts_payable")
       .select(
@@ -148,6 +207,7 @@ export async function getAdminPayables(): Promise<{ payables: AdminAccountsPayab
       .limit(500)
       .returns<PayableQueryRow[]>(),
     getAdminSupplierInvoices(),
+    getAdminSupplierCredits(),
   ]);
 
   if (payablesResult.error) {
@@ -160,16 +220,21 @@ export async function getAdminPayables(): Promise<{ payables: AdminAccountsPayab
   const activePayables = payables.filter((payable) => payable.status !== "cancelled");
   const overduePayables = activePayables.filter((payable) => payable.balance > 0 && payable.due_date !== null && payable.due_date < today);
   const activePayments = payables.flatMap((payable) => payable.payments.filter((payment) => payment.status === "paid"));
+  const appliedCredits = credits.filter((credit) => credit.status === "applied");
 
   return {
     payables,
     invoices,
+    credits,
     summary: {
       totalPending: activePayables.filter((payable) => payable.balance > 0).reduce((sum, payable) => sum + payable.balance, 0),
       totalOverdue: overduePayables.reduce((sum, payable) => sum + payable.balance, 0),
       paidThisMonth: activePayments
         .filter((payment) => (payment.paid_at ?? payment.created_at).slice(0, 7) === month)
         .reduce((sum, payment) => sum + payment.amount, 0),
+      creditedThisMonth: appliedCredits
+        .filter((credit) => (credit.applied_at ?? credit.created_at).slice(0, 7) === month)
+        .reduce((sum, credit) => sum + credit.amount, 0),
       pendingCount: activePayables.filter((payable) => payable.status === "pending" || payable.status === "partial").length,
       overdueCount: overduePayables.length,
       paidCount: activePayables.filter((payable) => payable.status === "paid").length,

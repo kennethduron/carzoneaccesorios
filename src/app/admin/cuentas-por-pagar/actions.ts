@@ -1,10 +1,11 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
@@ -34,6 +35,17 @@ export type AccountsPayableFormInput = {
   notes?: string | null;
 };
 
+
+export type SupplierCreditFormInput = {
+  supplier_id: string;
+  purchase_id?: string | null;
+  supplier_invoice_id?: string | null;
+  accounts_payable_id?: string | null;
+  credit_number: string;
+  credit_date: string;
+  amount: number | string;
+  reason?: string | null;
+};
 export type SupplierPaymentFormInput = {
   accounts_payable_id: string;
   amount: number | string;
@@ -368,4 +380,41 @@ export async function voidSupplierPaymentAction(paymentId: string, notes?: strin
   await writeAuditLog({ tableName: "supplier_payments", recordId: id, action: "supplier_payments.void", newData: { accounts_payable_id: row?.accounts_payable_id ?? null } });
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Pago anulado." };
+}
+
+export async function registerSupplierCreditAction(input: SupplierCreditFormInput): Promise<ActionResult> {
+  const profile = await requirePermission("payables:manage");
+  const supplierId = cleanText(input.supplier_id);
+  const creditNumber = cleanText(input.credit_number);
+  const creditDate = cleanText(input.credit_date);
+  const amount = toMoney(input.amount);
+
+  if (!supplierId) return { ok: false, message: "Selecciona un proveedor." };
+  if (!creditNumber) return { ok: false, message: "El numero de nota de credito es obligatorio." };
+  if (!creditDate) return { ok: false, message: "La fecha de nota de credito es obligatoria." };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la nota de credito debe ser mayor que cero." };
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("register_supplier_credit", {
+    target_supplier_id: supplierId,
+    supplier_credit_number: creditNumber,
+    supplier_credit_date: creditDate,
+    credit_amount: amount,
+    target_purchase_id: cleanText(input.purchase_id),
+    target_supplier_invoice_id: cleanText(input.supplier_invoice_id),
+    target_accounts_payable_id: cleanText(input.accounts_payable_id),
+    credit_reason: cleanText(input.reason),
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "No se pudo registrar la nota de credito." };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  await writeAuditLog({ tableName: "supplier_credits", recordId: row?.supplier_credit_id ?? null, action: "supplier_credits.create", newData: { supplier_id: supplierId, amount } });
+  if (row?.supplier_credit_id) {
+    await dispatchAccountingEvent({ sourceType: "supplier_credit", sourceId: row.supplier_credit_id, eventPurpose: "supplier_credit", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
+  }
+  revalidatePath("/admin/cuentas-por-pagar");
+  return { ok: true, message: "Nota de credito de proveedor registrada." };
 }

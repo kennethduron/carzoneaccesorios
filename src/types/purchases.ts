@@ -1,4 +1,4 @@
-export type Supplier = {
+﻿export type Supplier = {
   id: string;
   name: string;
   contact_name: string | null;
@@ -115,6 +115,51 @@ export type SupplierPayment = {
   updated_at: string;
 };
 
+export type PurchaseReturnStatus = "draft" | "confirmed" | "cancelled";
+
+export type PurchaseReturn = {
+  id: string;
+  purchase_id: string;
+  supplier_id: string;
+  accounts_payable_id: string | null;
+  return_number: string;
+  return_date: string;
+  status: PurchaseReturnStatus;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  reason: string | null;
+  created_by: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SupplierCreditStatus = "open" | "applied" | "cancelled";
+
+export type SupplierCredit = {
+  id: string;
+  supplier_id: string;
+  purchase_id: string | null;
+  supplier_invoice_id: string | null;
+  accounts_payable_id: string | null;
+  credit_number: string;
+  credit_date: string;
+  amount: number;
+  remaining_amount: number;
+  status: SupplierCreditStatus;
+  reason: string | null;
+  created_by: string | null;
+  applied_by: string | null;
+  applied_at: string | null;
+  cancelled_by: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
 export type SupplierSummary = {
   total: number;
   active: number;
@@ -140,12 +185,14 @@ export type AdminPurchase = Purchase & {
   supplier_name: string;
   supplier_tax_id: string | null;
   items: PurchaseItemWithProduct[];
+  returns: PurchaseReturn[];
 };
 
 export type PurchasesSummary = {
   totalDraft: number;
   totalConfirmed: number;
   totalCancelled: number;
+  totalReturned: number;
   totalAmount: number;
 };
 
@@ -167,11 +214,20 @@ export type AdminAccountsPayable = AccountsPayable & {
   payments: SupplierPaymentWithActor[];
 };
 
+export type AdminSupplierCredit = SupplierCredit & {
+  supplier_name: string;
+  purchase_number: string | null;
+  invoice_number: string | null;
+};
+
 export type PayablesSummary = {
   totalPending: number;
   totalOverdue: number;
   paidThisMonth: number;
+  creditedThisMonth: number;
   pendingCount: number;
   overdueCount: number;
   paidCount: number;
 };
+
+

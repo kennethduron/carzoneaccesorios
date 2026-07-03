@@ -1,20 +1,22 @@
-import "server-only";
+﻿import "server-only";
 
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import type {
   AdminPurchase,
   ProductPurchaseOption,
   PurchaseItemWithProduct,
+  PurchaseReturn,
   PurchasesSummary,
 } from "@/types/purchases";
 
-type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" | "items"> & {
+type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" | "items" | "returns"> & {
   suppliers: { name: string; tax_id: string | null } | null;
   purchase_items: Array<
     Omit<PurchaseItemWithProduct, "product_name" | "product_sku"> & {
       products: { name: string; sku: string | null } | null;
     }
   > | null;
+  purchase_returns: PurchaseReturn[] | null;
 };
 
 type ProductOptionRow = Omit<ProductPurchaseOption, "cost_price"> & {
@@ -23,6 +25,15 @@ type ProductOptionRow = Omit<ProductPurchaseOption, "cost_price"> & {
 
 function toNumber(value: unknown) {
   return Number(value ?? 0);
+}
+
+function normalizeReturn(row: PurchaseReturn): PurchaseReturn {
+  return {
+    ...row,
+    subtotal: toNumber(row.subtotal),
+    tax_amount: toNumber(row.tax_amount),
+    total: toNumber(row.total),
+  };
 }
 
 function normalizePurchase(row: PurchaseQueryRow): AdminPurchase {
@@ -45,6 +56,7 @@ function normalizePurchase(row: PurchaseQueryRow): AdminPurchase {
       product_name: item.products?.name ?? null,
       product_sku: item.products?.sku ?? null,
     })),
+    returns: (row.purchase_returns ?? []).map(normalizeReturn).sort((left, right) => right.return_date.localeCompare(left.return_date)),
   };
 }
 
@@ -87,6 +99,26 @@ export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[];
         inventory_movement_id,
         created_at,
         products(name, sku)
+      ),
+      purchase_returns(
+        id,
+        purchase_id,
+        supplier_id,
+        accounts_payable_id,
+        return_number,
+        return_date,
+        status,
+        subtotal,
+        tax_amount,
+        total,
+        reason,
+        created_by,
+        confirmed_by,
+        confirmed_at,
+        cancelled_by,
+        cancelled_at,
+        created_at,
+        updated_at
       )
     `,
     )
@@ -106,6 +138,7 @@ export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[];
       totalDraft: purchases.filter((purchase) => purchase.status === "draft").length,
       totalConfirmed: purchases.filter((purchase) => purchase.status === "confirmed").length,
       totalCancelled: purchases.filter((purchase) => purchase.status === "cancelled").length,
+      totalReturned: purchases.filter((purchase) => purchase.status === "returned").length,
       totalAmount: purchases.filter((purchase) => purchase.status !== "cancelled").reduce((sum, purchase) => sum + purchase.total, 0),
     },
   };

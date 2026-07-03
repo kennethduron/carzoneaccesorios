@@ -1,9 +1,11 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import type { PurchaseStatus } from "@/types/purchases";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
@@ -29,6 +31,14 @@ export type PurchaseFormInput = {
   items: PurchaseItemInput[];
 };
 
+
+export type PurchaseReturnFormInput = {
+  purchase_id: string;
+  return_number: string;
+  return_date: string;
+  amount: number | string;
+  reason?: string | null;
+};
 function cleanText(value: unknown) {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : null;
@@ -273,6 +283,7 @@ export async function confirmPurchaseAction(purchaseId: string): Promise<ActionR
   if (error) return { ok: false, message: "No se pudo confirmar la compra." };
 
   await writeAuditLog({ tableName: "purchases", recordId: purchaseId, action: "purchases.confirm", newData: { purchase_number: purchase.purchase_number, status: "confirmed" } });
+  await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_confirmed", triggeredBy: profile.id, route: "/admin/compras" });
   revalidatePath("/admin/compras");
   return { ok: true, message: "Compra confirmada." };
 }
@@ -308,6 +319,44 @@ export async function cancelPurchaseAction(purchaseId: string): Promise<ActionRe
   if (error) return { ok: false, message: "No se pudo cancelar la compra." };
 
   await writeAuditLog({ tableName: "purchases", recordId: purchaseId, action: "purchases.cancel", newData: { purchase_number: purchase.purchase_number, status: "cancelled" } });
+  await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_cancelled", triggeredBy: profile.id, route: "/admin/compras" });
   revalidatePath("/admin/compras");
   return { ok: true, message: "Compra cancelada." };
 }
+
+export async function registerPurchaseReturnAction(input: PurchaseReturnFormInput): Promise<ActionResult> {
+  const profile = await requirePermission("purchases:manage");
+  const purchaseId = cleanText(input.purchase_id);
+  const returnNumber = cleanText(input.return_number);
+  const returnDate = cleanText(input.return_date);
+  const amount = toMoney(input.amount);
+
+  if (!purchaseId) return { ok: false, message: "Selecciona una compra." };
+  if (!returnNumber) return { ok: false, message: "El numero de devolucion es obligatorio." };
+  if (!returnDate) return { ok: false, message: "La fecha de devolucion es obligatoria." };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la devolucion debe ser mayor que cero." };
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("register_purchase_return", {
+    target_purchase_id: purchaseId,
+    purchase_return_number: returnNumber,
+    purchase_return_date: returnDate,
+    return_amount: amount,
+    return_reason: cleanText(input.reason),
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "No se pudo registrar la devolucion." };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  await writeAuditLog({ tableName: "purchase_returns", recordId: row?.purchase_return_id ?? null, action: "purchase_returns.create", newData: { purchase_id: purchaseId, amount } });
+  if (row?.purchase_return_id) {
+    await dispatchAccountingEvent({ sourceType: "purchase_return", sourceId: row.purchase_return_id, eventPurpose: "purchase_return", triggeredBy: profile.id, route: "/admin/compras" });
+  }
+  revalidatePath("/admin/compras");
+  revalidatePath("/admin/cuentas-por-pagar");
+  return { ok: true, message: "Devolucion a proveedor registrada." };
+}
+
+

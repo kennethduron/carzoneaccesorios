@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AccountsPayableManager } from "@/components/admin/accounts-payable-manager";
@@ -22,7 +22,7 @@ export default async function AccountsPayablePage() {
     redirect("/sin-permiso");
   }
 
-  const [{ payables, invoices, summary }, suppliers, purchases] = await Promise.all([
+  const [{ payables, invoices, credits, summary }, suppliers, purchases] = await Promise.all([
     getAdminPayables(),
     getSupplierOptions(true),
     getPurchaseOptions(),
@@ -36,7 +36,8 @@ export default async function AccountsPayablePage() {
           Panel administrativo
         </Link>
       </div>
-      <AccountsPayableManager payables={payables} invoices={invoices} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} />
+      <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} />
     </AdminShell>
   );
 }
+
