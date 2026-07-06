@@ -88,6 +88,45 @@ type SupplierPaymentEventRow = {
   } | null;
 };
 
+type PurchaseReturnEventRow = {
+  id: string;
+  purchase_id: string;
+  supplier_id: string;
+  accounts_payable_id: string | null;
+  return_number: string;
+  return_date: string;
+  status: string;
+  subtotal: unknown;
+  tax_amount: unknown;
+  total: unknown;
+  reason: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  suppliers: SupplierRelation;
+  purchases: { purchase_number: string | null; currency: string | null } | null;
+};
+
+type SupplierCreditEventRow = {
+  id: string;
+  supplier_id: string;
+  purchase_id: string | null;
+  supplier_invoice_id: string | null;
+  accounts_payable_id: string | null;
+  credit_number: string;
+  credit_date: string;
+  amount: unknown;
+  remaining_amount: unknown;
+  status: string;
+  reason: string | null;
+  applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+  suppliers: SupplierRelation;
+  purchases: { purchase_number: string | null } | null;
+  supplier_invoices: { invoice_number: string | null } | null;
+};
+
 const purchaseConfirmedStatuses = new Set(["confirmed", "received", "returned"]);
 const purchaseCancelledStatuses = new Set(["cancelled"]);
 const supplierInvoiceReceivedStatuses = new Set(["received", "posted_to_ap", "paid"]);
@@ -193,6 +232,47 @@ function supplierPaymentSnapshot(row: SupplierPaymentEventRow) {
   };
 }
 
+function purchaseReturnSnapshot(row: PurchaseReturnEventRow) {
+  return {
+    supplier_id: row.supplier_id,
+    supplier_name: supplierName(row.suppliers),
+    purchase_id: row.purchase_id,
+    purchase_number: row.purchases?.purchase_number ?? null,
+    accounts_payable_id: row.accounts_payable_id,
+    purchase_return_id: row.id,
+    return_number: row.return_number,
+    subtotal: toNumber(row.subtotal),
+    tax_amount: toNumber(row.tax_amount),
+    total: toNumber(row.total),
+    amount: toNumber(row.total),
+    currency: row.purchases?.currency ?? "HNL",
+    status: row.status,
+    reason: row.reason,
+    return_date: row.return_date,
+  };
+}
+
+function supplierCreditSnapshot(row: SupplierCreditEventRow) {
+  return {
+    supplier_id: row.supplier_id,
+    supplier_name: supplierName(row.suppliers),
+    purchase_id: row.purchase_id,
+    purchase_number: row.purchases?.purchase_number ?? null,
+    supplier_invoice_id: row.supplier_invoice_id,
+    invoice_number: row.supplier_invoices?.invoice_number ?? null,
+    accounts_payable_id: row.accounts_payable_id,
+    supplier_credit_id: row.id,
+    credit_number: row.credit_number,
+    amount: toNumber(row.amount),
+    remaining_amount: toNumber(row.remaining_amount),
+    total: toNumber(row.amount),
+    currency: "HNL",
+    status: row.status,
+    reason: row.reason,
+    credit_date: row.credit_date,
+  };
+}
+
 async function getPurchaseCandidates(client?: SupabaseClient): Promise<FinancialEventCandidate[]> {
   const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
@@ -219,23 +299,11 @@ async function getPurchaseCandidates(client?: SupabaseClient): Promise<Financial
     };
 
     if (purchaseConfirmedStatuses.has(row.status)) {
-      return [{
-        ...base,
-        eventType: "purchase_confirmed" as const,
-        event_purpose: "purchase_confirmed" as const,
-        occurred_at: row.confirmed_at ?? row.updated_at ?? row.created_at,
-        eligible: true,
-      }];
+      return [{ ...base, eventType: "purchase_confirmed" as const, event_purpose: "purchase_confirmed" as const, occurred_at: row.confirmed_at ?? row.updated_at ?? row.created_at, eligible: true }];
     }
 
     if (purchaseCancelledStatuses.has(row.status)) {
-      return [{
-        ...base,
-        eventType: "purchase_cancelled" as const,
-        event_purpose: "purchase_cancelled" as const,
-        occurred_at: row.cancelled_at ?? row.updated_at ?? row.created_at,
-        eligible: true,
-      }];
+      return [{ ...base, eventType: "purchase_cancelled" as const, event_purpose: "purchase_cancelled" as const, occurred_at: row.cancelled_at ?? row.updated_at ?? row.created_at, eligible: true }];
     }
 
     return [];
@@ -324,35 +392,74 @@ async function getSupplierPaymentCandidates(client?: SupabaseClient): Promise<Fi
       eligible: true,
     };
 
-    if (row.status === "paid") {
-      return [{
-        ...base,
-        eventType: "supplier_payment",
-        event_purpose: "supplier_payment",
-        occurred_at: row.paid_at ?? row.created_at,
-      }];
-    }
-
-    if (row.status === "voided") {
-      return [{
-        ...base,
-        eventType: "supplier_payment_cancelled",
-        event_purpose: "supplier_payment_cancelled",
-        occurred_at: row.voided_at ?? row.updated_at ?? row.created_at,
-      }];
-    }
-
+    if (row.status === "paid") return [{ ...base, eventType: "supplier_payment", event_purpose: "supplier_payment", occurred_at: row.paid_at ?? row.created_at }];
+    if (row.status === "voided") return [{ ...base, eventType: "supplier_payment_cancelled", event_purpose: "supplier_payment_cancelled", occurred_at: row.voided_at ?? row.updated_at ?? row.created_at }];
     return [];
   });
 }
 
+async function getPurchaseReturnCandidates(client?: SupabaseClient): Promise<FinancialEventCandidate[]> {
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data, error } = await supabase
+    .from("purchase_returns")
+    .select("id, purchase_id, supplier_id, accounts_payable_id, return_number, return_date, status, subtotal, tax_amount, total, reason, confirmed_at, created_at, updated_at, suppliers(name), purchases(purchase_number, currency)")
+    .eq("status", "confirmed")
+    .order("return_date", { ascending: false })
+    .limit(500)
+    .returns<PurchaseReturnEventRow[]>();
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map<FinancialEventCandidate>((row) => ({
+    eventType: "purchase_return",
+    source_type: "purchase_return",
+    source_id: row.id,
+    event_purpose: "purchase_return",
+    posting_version: "v1",
+    occurred_at: row.confirmed_at ?? row.updated_at ?? row.created_at,
+    amount: toNumber(row.total),
+    taxAmount: toNumber(row.tax_amount),
+    sourceNumber: row.return_number,
+    eligible: true,
+    source_snapshot: purchaseReturnSnapshot(row),
+  }));
+}
+
+async function getSupplierCreditCandidates(client?: SupabaseClient): Promise<FinancialEventCandidate[]> {
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data, error } = await supabase
+    .from("supplier_credits")
+    .select("id, supplier_id, purchase_id, supplier_invoice_id, accounts_payable_id, credit_number, credit_date, amount, remaining_amount, status, reason, applied_at, created_at, updated_at, suppliers(name), purchases(purchase_number), supplier_invoices(invoice_number)")
+    .in("status", ["open", "applied"])
+    .order("credit_date", { ascending: false })
+    .limit(500)
+    .returns<SupplierCreditEventRow[]>();
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map<FinancialEventCandidate>((row) => ({
+    eventType: "supplier_credit",
+    source_type: "supplier_credit",
+    source_id: row.id,
+    event_purpose: "supplier_credit",
+    posting_version: "v1",
+    occurred_at: row.applied_at ?? row.updated_at ?? row.created_at,
+    amount: toNumber(row.amount),
+    sourceNumber: row.credit_number,
+    eligible: true,
+    source_snapshot: supplierCreditSnapshot(row),
+  }));
+}
+
 export async function getPurchaseFinancialEventCandidates(client?: SupabaseClient): Promise<FinancialEventCandidate[]> {
-  const [purchases, supplierInvoices, accountsPayable, supplierPayments] = await Promise.all([
+  const [purchases, supplierInvoices, accountsPayable, supplierPayments, purchaseReturns, supplierCredits] = await Promise.all([
     getPurchaseCandidates(client),
     getSupplierInvoiceCandidates(client),
     getAccountsPayableCandidates(client),
     getSupplierPaymentCandidates(client),
+    getPurchaseReturnCandidates(client),
+    getSupplierCreditCandidates(client),
   ]);
 
-  return [...purchases, ...supplierInvoices, ...accountsPayable, ...supplierPayments];
+  return [...purchases, ...supplierInvoices, ...accountsPayable, ...supplierPayments, ...purchaseReturns, ...supplierCredits];
 }

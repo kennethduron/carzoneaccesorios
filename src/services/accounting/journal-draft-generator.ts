@@ -38,7 +38,9 @@ type FinancialEventPurpose =
   | "accounts_payable_created"
   | "supplier_payment"
   | "supplier_payment_cancelled"
-  | "purchase_cancelled";
+  | "purchase_cancelled"
+  | "purchase_return"
+  | "supplier_credit";
 
 type FinancialEventForDraft = {
   id: string;
@@ -133,6 +135,8 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "supplier_payment",
   "supplier_payment_cancelled",
   "purchase_cancelled",
+  "purchase_return",
+  "supplier_credit",
 ]);
 
 const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
@@ -785,6 +789,153 @@ async function buildSupplierPaymentDraft(snapshot: Record<string, unknown>, numb
     requirements: [payable.requirement, payment.requirement],
   };
 }
+
+
+async function buildSupplierPaymentCancellationDraft(event: FinancialEventForDraft, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data: originalEvent, error: eventError } = await supabase
+    .from("financial_events")
+    .select("id, journal_entry_id")
+    .eq("source_type", "supplier_payment")
+    .eq("source_id", event.source_id)
+    .eq("event_purpose", "supplier_payment")
+    .eq("posting_version", event.posting_version)
+    .maybeSingle<{ id: string; journal_entry_id: string | null }>();
+
+  if (eventError) throw new Error(eventError.message);
+  if (!originalEvent?.journal_entry_id) {
+    return { ok: false, status: "pending", message: supplierPaymentCancelledControlMessage, validationErrors: [supplierPaymentCancelledControlMessage] };
+  }
+
+  const { data: originalEntry, error: entryError } = await supabase
+    .from("journal_entries")
+    .select("id, status")
+    .eq("id", originalEvent.journal_entry_id)
+    .maybeSingle<{ id: string; status: string }>();
+
+  if (entryError) throw new Error(entryError.message);
+  if (originalEntry?.status !== "borrador") {
+    return { ok: false, status: "pending", message: supplierPaymentCancelledControlMessage, validationErrors: [supplierPaymentCancelledControlMessage] };
+  }
+
+  const { data: originalLines, error: linesError } = await supabase
+    .from("journal_entry_lines")
+    .select("account_id, debit, credit, description")
+    .eq("journal_entry_id", originalEntry.id)
+    .returns<Array<{ account_id: string; debit: unknown; credit: unknown; description: string | null }>>();
+
+  if (linesError) throw new Error(linesError.message);
+
+  const lines = (originalLines ?? []).map((line) => ({
+    account_id: line.account_id,
+    debit: toAmount(line.credit),
+    credit: toAmount(line.debit),
+    description: `Reverso: ${line.description ?? "Pago a proveedor"}`,
+  }));
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return { ok: false, status: "failed", message: lineErrors[0], validationErrors: lineErrors };
+  }
+
+  return {
+    ok: true,
+    description: `Reverso de pago a proveedor ${number}`,
+    entryDate,
+    lines,
+    requirements: [],
+  };
+}
+async function firstPurchaseApAccount(requirements: MappingRequirement[], missingMessage: string, client?: SupabaseClient) {
+  for (const item of requirements) {
+    const resolved = await resolvePurchaseApAccount(item, client);
+    if (resolved.inactive) {
+      return { ok: false as const, message: inactiveConfiguredAccountMessage, validationErrors: [inactiveConfiguredAccountMessage] };
+    }
+
+    if (resolved.account) {
+      return { ok: true as const, account: resolved.account, requirement: item };
+    }
+  }
+
+  return { ok: false as const, message: missingMessage, validationErrors: [missingMessage] };
+}
+
+async function buildPurchaseReturnDraft(snapshot: Record<string, unknown>, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const amount = snapshotAmount(snapshot);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: "failed", message: invalidEventAmountMessage, validationErrors: [invalidEventAmountMessage] };
+  }
+
+  const linkedPayable = Boolean(cleanText(snapshot.accounts_payable_id));
+  const debitRequirements = linkedPayable
+    ? [requirement("default_account", "accounts_payable", "Proveedores por pagar"), requirement("default_account", "supplier_credit", "Credito de proveedor")]
+    : [requirement("default_account", "supplier_credit", "Credito de proveedor"), requirement("default_account", "accounts_payable", "Proveedores por pagar")];
+  const creditRequirements = [
+    requirement("default_account", "purchase_return", "Devoluciones de compras"),
+    requirement("inventory", "purchase_inventory", "Inventario para compras"),
+  ];
+
+  const [debit, credit] = await Promise.all([
+    firstPurchaseApAccount(debitRequirements, "Falta la cuenta de proveedores por pagar o credito de proveedor.", client),
+    firstPurchaseApAccount(creditRequirements, "Falta la cuenta de devoluciones de compras o inventario para compras.", client),
+  ]);
+
+  if (!debit.ok) return { ok: false, status: "pending", message: debit.message, validationErrors: debit.validationErrors };
+  if (!credit.ok) return { ok: false, status: "pending", message: credit.message, validationErrors: credit.validationErrors };
+
+  const lines = [
+    accountLine(debit.account, amount, 0, linkedPayable ? "Disminucion de cuenta por pagar por devolucion" : "Credito de proveedor por devolucion"),
+    accountLine(credit.account, 0, amount, "Devolucion a proveedor"),
+  ];
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return { ok: false, status: "failed", message: lineErrors[0], validationErrors: lineErrors };
+  }
+
+  return {
+    ok: true,
+    description: `Devolucion a proveedor ${number}`,
+    entryDate,
+    lines,
+    requirements: [debit.requirement, credit.requirement],
+  };
+}
+
+async function buildSupplierCreditDraft(snapshot: Record<string, unknown>, number: string, entryDate: string, client?: SupabaseClient): Promise<DraftBuildResult> {
+  const amount = snapshotAmount(snapshot);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: "failed", message: invalidEventAmountMessage, validationErrors: [invalidEventAmountMessage] };
+  }
+
+  const [payable, credit] = await Promise.all([
+    requirePurchaseApAccount(requirement("default_account", "accounts_payable", "Proveedores por pagar"), missingPayableAccountMessage, client),
+    firstPurchaseApAccount(
+      [requirement("default_account", "supplier_credit", "Credito de proveedor"), requirement("default_account", "purchase_return", "Devoluciones de compras")],
+      "Falta la cuenta de credito de proveedor o devoluciones de compras.",
+      client,
+    ),
+  ]);
+
+  if (!payable.ok) return { ok: false, status: "pending", message: payable.message, validationErrors: payable.validationErrors };
+  if (!credit.ok) return { ok: false, status: "pending", message: credit.message, validationErrors: credit.validationErrors };
+
+  const lines = [
+    accountLine(payable.account, amount, 0, "Disminucion de cuenta por pagar por nota de credito"),
+    accountLine(credit.account, 0, amount, "Nota de credito de proveedor"),
+  ];
+  const lineErrors = validateLines(lines);
+  if (lineErrors.length > 0) {
+    return { ok: false, status: "failed", message: lineErrors[0], validationErrors: lineErrors };
+  }
+
+  return {
+    ok: true,
+    description: `Nota de credito de proveedor ${number}`,
+    entryDate,
+    lines,
+    requirements: [payable.requirement, credit.requirement],
+  };
+}
 async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient): Promise<DraftBuildResult> {
   const snapshot = asRecord(event.source_snapshot);
   const purpose = event.event_purpose as FinancialEventPurpose;
@@ -863,7 +1014,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
   }
 
   if (purpose === "supplier_payment_cancelled") {
-    return { ok: false, status: "pending", message: supplierPaymentCancelledControlMessage, validationErrors: [supplierPaymentCancelledControlMessage] };
+    return buildSupplierPaymentCancellationDraft(event, number, entryDate, client);
   }
 
   if (purpose === "accounts_payable_created") {
@@ -872,6 +1023,14 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
 
   if (purpose === "supplier_payment") {
     return buildSupplierPaymentDraft(snapshot, number, entryDate, client);
+  }
+
+  if (purpose === "purchase_return") {
+    return buildPurchaseReturnDraft(snapshot, number, entryDate, client);
+  }
+
+  if (purpose === "supplier_credit") {
+    return buildSupplierCreditDraft(snapshot, number, entryDate, client);
   }
 
   if (!Number.isFinite(amount) || amount <= 0) {

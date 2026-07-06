@@ -80,7 +80,7 @@ const eventStatusLabels: Record<FinancialEventStatus, string> = {
 };
 
 const inventoryEventPurposes = new Set(["inventory_cogs", "inventory_return", "inventory_adjustment_gain", "inventory_adjustment_loss", "inventory_writeoff"]);
-const purchaseApEventPurposes = new Set(["purchase_confirmed", "supplier_invoice_received", "accounts_payable_created", "supplier_payment", "supplier_payment_cancelled", "purchase_cancelled"]);
+const purchaseApEventPurposes = new Set(["purchase_confirmed", "supplier_invoice_received", "accounts_payable_created", "supplier_payment", "supplier_payment_cancelled", "purchase_cancelled", "purchase_return", "supplier_credit"]);
 
 const draftEligiblePurposes = new Set([
   "sale_revenue",
@@ -197,10 +197,10 @@ function eventDetail(event: FinancialEvent) {
 
   if (purchaseApEventPurposes.has(event.event_purpose)) {
     const supplier = snapshotText(event.source_snapshot, ["supplier_name"]) ?? "Proveedor no identificado";
-    const documentNumber = snapshotText(event.source_snapshot, ["purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id"]);
+    const documentNumber = snapshotText(event.source_snapshot, ["purchase_number", "invoice_number", "return_number", "credit_number", "supplier_payment_id", "accounts_payable_id"]);
     const paymentMethod = snapshotText(event.source_snapshot, ["payment_method"]);
     const status = snapshotText(event.source_snapshot, ["status"]);
-    const date = snapshotText(event.source_snapshot, ["purchase_date", "invoice_date", "due_date", "paid_at"]);
+    const date = snapshotText(event.source_snapshot, ["purchase_date", "invoice_date", "return_date", "credit_date", "due_date", "paid_at"]);
     const total = event.source_snapshot.total ?? event.source_snapshot.total_amount ?? event.source_snapshot.amount;
     const amount = event.source_snapshot.amount;
     const balance = event.source_snapshot.balance;

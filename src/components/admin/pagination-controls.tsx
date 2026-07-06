@@ -41,23 +41,23 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
         <span className="font-semibold text-[#080808]">{lastItem.toLocaleString("es-HN")}</span> de{" "}
         <span className="font-semibold text-[#080808]">{total.toLocaleString("es-HN")}</span> {label}.
       </p>
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-2 items-center gap-2 sm:flex">
         <Link
           href={buildHref(page - 1)}
           aria-disabled={page <= 1}
-          className={`rounded-md border border-black/10 px-4 py-2 font-medium ${
+          className={`rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
             page <= 1 ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >
           Anterior
         </Link>
-        <span className="min-w-24 text-center text-black/55">
+        <span className="order-first col-span-2 min-w-0 text-center text-black/55 sm:order-none sm:min-w-24">
           {page} / {totalPages}
         </span>
         <Link
           href={buildHref(page + 1)}
           aria-disabled={page >= totalPages}
-          className={`rounded-md border border-black/10 px-4 py-2 font-medium ${
+          className={`rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
             page >= totalPages ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >

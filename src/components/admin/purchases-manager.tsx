@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, Edit3, PlusCircle, Search, X } from "lucide-react";
-import { cancelPurchaseAction, confirmPurchaseAction, savePurchaseAction, type PurchaseFormInput } from "@/app/admin/compras/actions";
+import { cancelPurchaseAction, confirmPurchaseAction, registerPurchaseReturnAction, savePurchaseAction, type PurchaseFormInput, type PurchaseReturnFormInput } from "@/app/admin/compras/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { AdminPurchase, ProductPurchaseOption, PurchasesSummary, SupplierOption } from "@/types/purchases";
@@ -13,6 +13,7 @@ import { formatCurrency } from "@/utils/pricing";
 
 type LineDraft = PurchaseFormInput["items"][number] & { key: string };
 type PurchaseDraft = Omit<PurchaseFormInput, "items"> & { items: LineDraft[] };
+type ReturnDraft = PurchaseReturnFormInput;
 
 const statusLabels: Record<string, string> = {
   draft: "Borrador",
@@ -32,6 +33,10 @@ function newLine(): LineDraft {
 
 function emptyDraft(): PurchaseDraft {
   return { supplier_id: "", purchase_number: "", purchase_date: todayValue(), shipping_amount: 0, currency: "HNL", notes: "", items: [newLine()] };
+}
+
+function emptyReturnDraft(purchaseId = ""): ReturnDraft {
+  return { purchase_id: purchaseId, return_number: "", return_date: todayValue(), amount: "", reason: "" };
 }
 
 function normalize(value: string) {
@@ -71,6 +76,7 @@ export function PurchasesManager({
   const [draft, setDraft] = useState<PurchaseDraft>(emptyDraft());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(purchases[0]?.id ?? null);
+  const [returnDraft, setReturnDraft] = useState<ReturnDraft>(emptyReturnDraft(purchases[0]?.id ?? ""));
   const [isPending, startTransition] = useTransition();
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
@@ -156,6 +162,19 @@ export function PurchasesManager({
     });
   }
 
+
+  function saveReturn() {
+    startTransition(async () => {
+      const result = await registerPurchaseReturnAction(returnDraft).catch(() => ({ ok: false as const, message: "No se pudo registrar la devolucion." }));
+      if (result.ok) {
+        toast.success(result.message);
+        setReturnDraft(emptyReturnDraft(returnDraft.purchase_id));
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
   return (
     <div className="min-w-0 space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -231,6 +250,14 @@ export function PurchasesManager({
 
               <div className="grid gap-2 rounded-md border border-black/10 bg-white p-3 text-sm"><TotalRow label="Subtotal" value={draftTotals.subtotal} /><TotalRow label="Impuesto" value={draftTotals.tax} /><TotalRow label="Descuento" value={draftTotals.discount} /><TotalRow label="Envio" value={draftTotals.shipping} /><TotalRow label="Total" value={draftTotals.total} strong /></div>
               <Button type="button" onClick={savePurchase} disabled={!canManage || isPending}><PlusCircle size={16} />{isPending ? "Guardando..." : "Guardar"}</Button>
+              <div className="mt-4 grid gap-3 border-t border-black/10 pt-4">
+                <h4 className="font-semibold">Devolucion a proveedor</h4>
+                <Field label="Compra"><select value={returnDraft.purchase_id} onChange={(event) => setReturnDraft({ ...returnDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{purchases.filter((purchase) => ["confirmed", "received", "returned"].includes(purchase.status)).map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number} - {purchase.supplier_name}</option>)}</select></Field>
+                <div className="grid gap-3 sm:grid-cols-2"><Field label="Numero de devolucion"><Input value={returnDraft.return_number} onChange={(event) => setReturnDraft({ ...returnDraft, return_number: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha"><Input type="date" value={returnDraft.return_date} onChange={(event) => setReturnDraft({ ...returnDraft, return_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
+                <Field label="Monto"><Input type="number" min="0.01" step="0.01" value={returnDraft.amount} onChange={(event) => setReturnDraft({ ...returnDraft, amount: event.target.value })} disabled={!canManage || isPending} /></Field>
+                <Field label="Motivo"><textarea value={returnDraft.reason ?? ""} onChange={(event) => setReturnDraft({ ...returnDraft, reason: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
+                <Button type="button" onClick={saveReturn} disabled={!canManage || isPending}><PlusCircle size={16} />Registrar devolucion</Button>
+              </div>
             </div>
           </div>
         </div>
@@ -240,7 +267,7 @@ export function PurchasesManager({
 }
 
 function PurchaseDetails({ purchase }: { purchase: AdminPurchase }) {
-  return <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="text-sm text-black/50">Detalle de compra</p><h3 className="break-words text-lg font-semibold [overflow-wrap:anywhere]">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div><div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[700px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripcion</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin lineas registradas.</td></tr> : null}</tbody></table></div></section>;
+  return <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="text-sm text-black/50">Detalle de compra</p><h3 className="break-words text-lg font-semibold [overflow-wrap:anywhere]">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div><div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[700px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripcion</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin lineas registradas.</td></tr> : null}</tbody></table></div>{purchase.returns.length > 0 ? <div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[620px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Devolucion</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Motivo</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.returns.map((item) => <tr key={item.id}><td className="px-3 py-2 font-semibold">{item.return_number}</td><td className="px-3 py-2">{formatDate(item.return_date)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total)}</td><td className="px-3 py-2">{item.status}</td><td className="px-3 py-2">{item.reason ?? "-"}</td></tr>)}</tbody></table></div> : null}</section>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><p className="text-sm text-black/50">{label}</p><p className="mt-1 break-words text-2xl font-semibold [overflow-wrap:anywhere]">{value}</p></div>; }

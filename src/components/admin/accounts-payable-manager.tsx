@@ -10,27 +10,31 @@ import {
   cancelSupplierInvoiceAction,
   receiveSupplierInvoiceAction,
   registerSupplierPaymentAction,
+  registerSupplierCreditAction,
   saveAccountsPayableAction,
   saveSupplierInvoiceAction,
   voidSupplierPaymentAction,
   type AccountsPayableFormInput,
   type SupplierInvoiceFormInput,
   type SupplierPaymentFormInput,
+  type SupplierCreditFormInput,
 } from "@/app/admin/cuentas-por-pagar/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import type { AdminAccountsPayable, AdminSupplierInvoice, PayablesSummary, SupplierOption } from "@/types/purchases";
+import type { AdminAccountsPayable, AdminSupplierCredit, AdminSupplierInvoice, PayablesSummary, SupplierOption } from "@/types/purchases";
 import { formatCurrency } from "@/utils/pricing";
 
 const payableLabels: Record<string, string> = { pending: "Pendiente", partial: "Parcial", paid: "Pagado", cancelled: "Anulado", overdue: "Vencido" };
 const invoiceLabels: Record<string, string> = { draft: "Borrador", received: "Recibida", posted_to_ap: "En cuentas por pagar", cancelled: "Anulada", paid: "Pagada" };
 const paymentLabels: Record<string, string> = { draft: "Borrador", paid: "Pagado", voided: "Anulado" };
+const creditLabels: Record<string, string> = { open: "Abierta", applied: "Aplicada", cancelled: "Anulada" };
 
 type PurchaseOption = { id: string; supplier_id: string; purchase_number: string; status: string; total: number };
 
 type InvoiceDraft = SupplierInvoiceFormInput;
 type PayableDraft = AccountsPayableFormInput;
 type PaymentDraft = SupplierPaymentFormInput;
+type CreditDraft = SupplierCreditFormInput;
 
 function todayValue() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date());
@@ -46,6 +50,10 @@ function emptyPayableDraft(): PayableDraft {
 
 function emptyPaymentDraft(): PaymentDraft {
   return { accounts_payable_id: "", amount: "", payment_method: "", paid_at: todayValue(), notes: "" };
+}
+
+function emptyCreditDraft(): CreditDraft {
+  return { supplier_id: "", purchase_id: "", supplier_invoice_id: "", accounts_payable_id: "", credit_number: "", credit_date: todayValue(), amount: "", reason: "" };
 }
 
 function normalize(value: string) {
@@ -64,6 +72,7 @@ function invoiceTotal(draft: InvoiceDraft) {
 export function AccountsPayableManager({
   payables,
   invoices,
+  credits,
   suppliers,
   purchases,
   summary,
@@ -71,6 +80,7 @@ export function AccountsPayableManager({
 }: {
   payables: AdminAccountsPayable[];
   invoices: AdminSupplierInvoice[];
+  credits: AdminSupplierCredit[];
   suppliers: SupplierOption[];
   purchases: PurchaseOption[];
   summary: PayablesSummary;
@@ -81,10 +91,11 @@ export function AccountsPayableManager({
   const [query, setQuery] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("open");
-  const [tab, setTab] = useState<"payables" | "invoices">("payables");
+  const [tab, setTab] = useState<"payables" | "invoices" | "credits">("payables");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft>(emptyInvoiceDraft());
   const [payableDraft, setPayableDraft] = useState<PayableDraft>(emptyPayableDraft());
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(emptyPaymentDraft());
+  const [creditDraft, setCreditDraft] = useState<CreditDraft>(emptyCreditDraft());
   const [isPending, startTransition] = useTransition();
 
   const invoiceById = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
@@ -99,6 +110,15 @@ export function AccountsPayableManager({
       return normalize([payable.supplier_name, payable.invoice_number, payable.purchase_number, payable.notes, payableLabels[payable.status]].filter(Boolean).join(" ")).includes(needle);
     });
   }, [payables, query, statusFilter, supplierFilter]);
+
+  const visibleCredits = useMemo(() => {
+    const needle = normalize(query.trim());
+    return credits.filter((credit) => {
+      if (supplierFilter !== "all" && credit.supplier_id !== supplierFilter) return false;
+      if (!needle) return true;
+      return normalize([credit.supplier_name, credit.credit_number, credit.purchase_number, credit.invoice_number, creditLabels[credit.status], credit.reason].filter(Boolean).join(" ")).includes(needle);
+    });
+  }, [credits, query, supplierFilter]);
 
   const visibleInvoices = useMemo(() => {
     const needle = normalize(query.trim());
@@ -154,6 +174,18 @@ export function AccountsPayableManager({
     setPaymentDraft({ accounts_payable_id: payable.id, amount: payable.balance.toFixed(2), payment_method: "", paid_at: todayValue(), notes: "" });
   }
 
+  function selectPayableForCredit(payableId: string) {
+    const payable = payables.find((item) => item.id === payableId);
+    setCreditDraft({
+      ...creditDraft,
+      accounts_payable_id: payableId,
+      supplier_id: payable?.supplier_id ?? creditDraft.supplier_id,
+      purchase_id: payable?.purchase_id ?? creditDraft.purchase_id,
+      supplier_invoice_id: payable?.supplier_invoice_id ?? creditDraft.supplier_invoice_id,
+      amount: payable ? payable.balance.toFixed(2) : creditDraft.amount,
+    });
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -165,15 +197,17 @@ export function AccountsPayableManager({
       </section>
 
       <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-semibold">Cuentas por pagar</h2><p className="text-sm text-black/55">Facturas, saldos y pagos a proveedores.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setTab("payables")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "payables" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Cuentas por pagar</button><button type="button" onClick={() => setTab("invoices")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "invoices" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Facturas de proveedor</button></div></div>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-semibold">Cuentas por pagar</h2><p className="text-sm text-black/55">Facturas, saldos y pagos a proveedores.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setTab("payables")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "payables" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Cuentas por pagar</button><button type="button" onClick={() => setTab("invoices")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "invoices" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Facturas de proveedor</button><button type="button" onClick={() => setTab("credits")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "credits" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Notas de credito</button></div></div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px_220px_auto] lg:items-center"><label className="flex min-w-0 items-center gap-2 rounded-md border border-black/10 px-3 py-2 focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15"><Search size={18} className="shrink-0 text-black/45" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por proveedor, factura, compra o estado" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label><select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">Todos los proveedores</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm"><option value="open">Abiertas</option><option value="pending">Pendientes</option><option value="partial">Parciales</option><option value="paid">Pagadas</option><option value="cancelled">Anuladas</option><option value="all">Todas</option></select>{query ? <Button type="button" variant="ghost" onClick={() => setQuery("")}><X size={16} />Limpiar</Button> : null}</div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
           <div className="min-w-0 space-y-4">
             {tab === "payables" ? (
               <PayablesTable payables={visiblePayables} canManage={canManage} isPending={isPending} onEdit={editPayable} onPay={selectPayableForPayment} onCancel={(payable) => runAction(cancelAccountsPayableAction(payable.id))} onVoid={(paymentId) => runAction(voidSupplierPaymentAction(paymentId, prompt("Motivo de anulacion") ?? undefined))} />
-            ) : (
+            ) : tab === "invoices" ? (
               <InvoicesTable invoices={visibleInvoices} canManage={canManage} isPending={isPending} onEdit={editInvoice} onCreatePayable={createPayableFromInvoice} onReceive={(invoice) => runAction(receiveSupplierInvoiceAction(invoice.id))} onCancel={(invoice) => runAction(cancelSupplierInvoiceAction(invoice.id))} />
+            ) : (
+              <CreditsTable credits={visibleCredits} />
             )}
           </div>
 
@@ -205,6 +239,14 @@ export function AccountsPayableManager({
               <Field label="Notas"><textarea value={paymentDraft.notes ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
               <Button type="button" onClick={() => runAction(registerSupplierPaymentAction(paymentDraft), () => setPaymentDraft(emptyPaymentDraft()))} disabled={!canManage || isPending}><ReceiptText size={16} />Registrar pago</Button>
             </FormPanel>
+            <FormPanel title="Registrar nota de credito de proveedor" onReset={() => setCreditDraft(emptyCreditDraft())} showReset={Boolean(creditDraft.supplier_id || creditDraft.credit_number || creditDraft.amount)}>
+              <Field label="Proveedor"><select value={creditDraft.supplier_id} onChange={(event) => setCreditDraft({ ...creditDraft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
+              <Field label="Cuenta por pagar opcional"><select value={creditDraft.accounts_payable_id ?? ""} onChange={(event) => selectPayableForCredit(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin aplicar a cuenta</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>
+              <div className="grid gap-3 sm:grid-cols-2"><Field label="Numero de nota"><Input value={creditDraft.credit_number} onChange={(event) => setCreditDraft({ ...creditDraft, credit_number: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha"><Input type="date" value={creditDraft.credit_date} onChange={(event) => setCreditDraft({ ...creditDraft, credit_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
+              <Field label="Monto"><Input type="number" min="0.01" step="0.01" value={creditDraft.amount} onChange={(event) => setCreditDraft({ ...creditDraft, amount: event.target.value })} disabled={!canManage || isPending} /></Field>
+              <Field label="Motivo"><textarea value={creditDraft.reason ?? ""} onChange={(event) => setCreditDraft({ ...creditDraft, reason: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
+              <Button type="button" onClick={() => runAction(registerSupplierCreditAction(creditDraft), () => setCreditDraft(emptyCreditDraft()))} disabled={!canManage || isPending}><ReceiptText size={16} />Registrar nota</Button>
+            </FormPanel>
           </div>
         </div>
       </section>
@@ -220,6 +262,10 @@ function InvoicesTable({ invoices, canManage, isPending, onEdit, onCreatePayable
   return <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[900px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Factura</th><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Compra</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Vence</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Acciones</th></tr></thead><tbody className="divide-y divide-black/10">{invoices.map((invoice) => <tr key={invoice.id}><td className="px-3 py-3 align-top font-semibold">{invoice.invoice_number}</td><td className="px-3 py-3 align-top">{invoice.supplier_name}</td><td className="px-3 py-3 align-top">{invoice.purchase_number ?? "Sin compra"}</td><td className="px-3 py-3 align-top">{formatDate(invoice.invoice_date)}</td><td className="px-3 py-3 align-top">{formatDate(invoice.due_date)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(invoice.total)}</td><td className="px-3 py-3 align-top">{invoiceLabels[invoice.status]}</td><td className="px-3 py-3 align-top"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" onClick={() => onEdit(invoice)} disabled={!canManage || isPending || !["draft", "received"].includes(invoice.status)}><Edit3 size={16} />Editar</Button><Button type="button" variant="ghost" onClick={() => onReceive(invoice)} disabled={!canManage || isPending || invoice.status !== "draft"}><CheckCircle2 size={16} />Recibir</Button><Button type="button" variant="ghost" onClick={() => onCreatePayable(invoice)} disabled={!canManage || isPending || !["received", "posted_to_ap"].includes(invoice.status)}><PlusCircle size={16} />Crear cuenta</Button><Button type="button" variant="ghost" onClick={() => onCancel(invoice)} disabled={!canManage || isPending || ["cancelled", "paid"].includes(invoice.status)}><Ban size={16} />Anular</Button></div></td></tr>)}{invoices.length === 0 ? <tr><td colSpan={8} className="px-3 py-6 text-center text-black/55">No hay facturas para este filtro.</td></tr> : null}</tbody></table></div>;
 }
 
+
+function CreditsTable({ credits }: { credits: AdminSupplierCredit[] }) {
+  return <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[820px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Nota</th><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Documento</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Disponible</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Motivo</th></tr></thead><tbody className="divide-y divide-black/10">{credits.map((credit) => <tr key={credit.id}><td className="px-3 py-3 align-top font-semibold">{credit.credit_number}</td><td className="px-3 py-3 align-top">{credit.supplier_name}</td><td className="px-3 py-3 align-top">{credit.invoice_number ?? credit.purchase_number ?? "Sin documento"}</td><td className="px-3 py-3 align-top">{formatDate(credit.credit_date)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(credit.amount)}</td><td className="px-3 py-3 align-top">{formatCurrency(credit.remaining_amount)}</td><td className="px-3 py-3 align-top">{creditLabels[credit.status]}</td><td className="px-3 py-3 align-top">{credit.reason ?? "-"}</td></tr>)}{credits.length === 0 ? <tr><td colSpan={8} className="px-3 py-6 text-center text-black/55">No hay notas de credito para este filtro.</td></tr> : null}</tbody></table></div>;
+}
 function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><p className="text-sm text-black/50">{label}</p><p className="mt-1 break-words text-2xl font-semibold [overflow-wrap:anywhere]">{value}</p></div>; }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid min-w-0 gap-1 text-sm font-semibold [overflow-wrap:anywhere]">{label}{children}</label>; }
 function FormPanel({ title, children, onReset, showReset = false }: { title: string; children: ReactNode; onReset?: () => void; showReset?: boolean }) { return <div className="min-w-0 rounded-lg border border-black/10 bg-[#fafafa] p-4 [&_select]:min-w-0 [&_select]:w-full [&_textarea]:min-w-0 [&_textarea]:w-full"><div className="mb-4 flex min-w-0 flex-wrap items-start justify-between gap-3"><h3 className="font-semibold [overflow-wrap:anywhere]">{title}</h3>{showReset && onReset ? <Button type="button" variant="ghost" onClick={onReset}>Cancelar</Button> : null}</div><div className="grid min-w-0 gap-3">{children}</div></div>; }

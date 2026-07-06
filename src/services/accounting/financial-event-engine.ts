@@ -30,7 +30,9 @@ export type FinancialEventPurpose =
   | "accounts_payable_created"
   | "supplier_payment"
   | "supplier_payment_cancelled"
-  | "purchase_cancelled";
+  | "purchase_cancelled"
+  | "purchase_return"
+  | "supplier_credit";
 
 export type FinancialEventSourceType =
   | "order"
@@ -43,7 +45,9 @@ export type FinancialEventSourceType =
   | "purchase"
   | "supplier_invoice"
   | "accounts_payable"
-  | "supplier_payment";
+  | "supplier_payment"
+  | "purchase_return"
+  | "supplier_credit";
 
 export type FinancialEventCandidate = {
   eventType:
@@ -66,7 +70,9 @@ export type FinancialEventCandidate = {
     | "accounts_payable_created"
     | "supplier_payment"
     | "supplier_payment_cancelled"
-    | "purchase_cancelled";
+    | "purchase_cancelled"
+    | "purchase_return"
+    | "supplier_credit";
   source_type: FinancialEventSourceType;
   source_id: string;
   event_purpose: FinancialEventPurpose;
@@ -123,7 +129,7 @@ const purchaseApPurposes = new Set<FinancialEventPurpose>([
   "purchase_cancelled",
 ]);
 
-const purchaseApDraftEligiblePurposes = new Set<FinancialEventPurpose>(["accounts_payable_created", "supplier_payment"]);
+const purchaseApDraftEligiblePurposes = new Set<FinancialEventPurpose>(["accounts_payable_created", "supplier_payment", "purchase_return", "supplier_credit"]);
 const purchaseApControlMessages = new Map<FinancialEventPurpose, string>([
   ["purchase_confirmed", "La compra fue confirmada, pero la partida contable se generar\u00e1 desde la cuenta por pagar o factura de proveedor para evitar duplicidad."],
   ["supplier_invoice_received", "La factura de proveedor fue registrada, pero la partida contable se generar\u00e1 desde la cuenta por pagar para evitar duplicidad."],
@@ -246,6 +252,26 @@ function purchaseApMappingValidationErrors(candidate: FinancialEventCandidate, m
 
     if (!paymentMethod || !hasMapping(mappings, "payment_method", paymentMethod)) {
       errors.push("Falta la cuenta para pagos a proveedores.");
+    }
+  }
+
+  if (candidate.event_purpose === "purchase_return") {
+    if (!hasMapping(mappings, "default_account", "accounts_payable") && !hasMapping(mappings, "default_account", "supplier_credit")) {
+      errors.push("Falta la cuenta de proveedores por pagar o credito de proveedor.");
+    }
+
+    if (!hasMapping(mappings, "default_account", "purchase_return") && !hasMapping(mappings, "inventory", "purchase_inventory")) {
+      errors.push("Falta la cuenta de devoluciones de compras o inventario para compras.");
+    }
+  }
+
+  if (candidate.event_purpose === "supplier_credit") {
+    if (!hasMapping(mappings, "default_account", "accounts_payable")) {
+      errors.push("Falta la cuenta de proveedores por pagar.");
+    }
+
+    if (!hasMapping(mappings, "default_account", "supplier_credit") && !hasMapping(mappings, "default_account", "purchase_return")) {
+      errors.push("Falta la cuenta de credito de proveedor o devoluciones de compras.");
     }
   }
 

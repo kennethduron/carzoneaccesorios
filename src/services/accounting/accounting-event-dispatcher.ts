@@ -10,6 +10,7 @@ import {
   type FinancialEventPurpose,
   type FinancialEventSourceType,
 } from "@/services/accounting/financial-event-engine";
+import { getPurchaseFinancialEventCandidates } from "@/services/accounting/adapters/purchase-financial-events";
 import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
 
 export type DispatchAccountingEventInput = {
@@ -115,7 +116,7 @@ const cancelledOrderStatuses = new Set(["cancelado", "cancelled"]);
 const receivedPaymentStatuses = new Set(["approved", "confirmed", "paid"]);
 const issuedInvoiceStatuses = new Set(["emitida", "issued", "paid"]);
 const cancelledInvoiceStatuses = new Set(["anulada", "cancelled"]);
-const draftEligiblePurposes = new Set<FinancialEventPurpose>(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment", "inventory_cogs"]);
+const draftEligiblePurposes = new Set<FinancialEventPurpose>(["sale_revenue", "payment_received", "commercial_credit", "receivable_payment", "inventory_cogs", "accounts_payable_created", "supplier_payment", "purchase_return", "supplier_credit"]);
 
 function toNumber(value: unknown) {
   const numberValue = Number(value ?? 0);
@@ -490,6 +491,16 @@ async function buildCandidate(input: DispatchAccountingEventInput) {
 
   if (input.sourceType === "receivable_payment" && input.eventPurpose === "receivable_payment") {
     return buildReceivablePaymentCandidate(input);
+  }
+
+  if (["purchase", "supplier_invoice", "accounts_payable", "supplier_payment", "purchase_return", "supplier_credit"].includes(input.sourceType)) {
+    const candidates = await getPurchaseFinancialEventCandidates(getSupabaseAdminClient());
+    return candidates.find(
+      (candidate) =>
+        candidate.source_type === input.sourceType &&
+        candidate.source_id === input.sourceId &&
+        candidate.event_purpose === input.eventPurpose,
+    ) ?? null;
   }
 
   return null;

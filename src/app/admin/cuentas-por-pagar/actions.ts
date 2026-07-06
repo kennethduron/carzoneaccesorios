@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
@@ -191,6 +191,7 @@ export async function receiveSupplierInvoiceAction(invoiceId: string): Promise<A
   if (error) return { ok: false, message: "No se pudo recibir la factura." };
 
   await writeAuditLog({ tableName: "supplier_invoices", recordId: invoiceId, action: "supplier_invoices.receive", newData: { invoice_number: invoice.invoice_number, status: "received" } });
+  await dispatchAccountingEvent({ sourceType: "supplier_invoice", sourceId: invoiceId, eventPurpose: "supplier_invoice_received", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Factura recibida." };
 }
@@ -301,6 +302,7 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
   }
 
   await writeAuditLog({ tableName: "accounts_payable", recordId: data.id, action: "accounts_payable.create", newData: { total_amount: data.total_amount, status: data.status, supplier_invoice_id: data.supplier_invoice_id } });
+  await dispatchAccountingEvent({ sourceType: "accounts_payable", sourceId: data.id, eventPurpose: "accounts_payable_created", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Cuenta por pagar registrada." };
 }
@@ -331,7 +333,7 @@ export async function cancelAccountsPayableAction(payableId: string): Promise<Ac
 }
 
 export async function registerSupplierPaymentAction(input: SupplierPaymentFormInput): Promise<ActionResult> {
-  await requirePermission("payables:manage");
+  const profile = await requirePermission("payables:manage");
   const payableId = cleanText(input.accounts_payable_id);
   const amount = toMoney(input.amount);
   const paymentMethod = cleanText(input.payment_method);
@@ -356,12 +358,15 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
 
   const row = Array.isArray(data) ? data[0] : data;
   await writeAuditLog({ tableName: "supplier_payments", recordId: row?.payment_id ?? null, action: "supplier_payments.pay", newData: { accounts_payable_id: payableId, amount } });
+  if (row?.payment_id) {
+    await dispatchAccountingEvent({ sourceType: "supplier_payment", sourceId: row.payment_id, eventPurpose: "supplier_payment", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
+  }
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Pago a proveedor registrado." };
 }
 
 export async function voidSupplierPaymentAction(paymentId: string, notes?: string): Promise<ActionResult> {
-  await requirePermission("payables:manage");
+  const profile = await requirePermission("payables:manage");
   const id = cleanText(paymentId);
 
   if (!id) return { ok: false, message: "Selecciona un pago valido." };
@@ -378,6 +383,7 @@ export async function voidSupplierPaymentAction(paymentId: string, notes?: strin
 
   const row = Array.isArray(data) ? data[0] : data;
   await writeAuditLog({ tableName: "supplier_payments", recordId: id, action: "supplier_payments.void", newData: { accounts_payable_id: row?.accounts_payable_id ?? null } });
+  await dispatchAccountingEvent({ sourceType: "supplier_payment", sourceId: id, eventPurpose: "supplier_payment_cancelled", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Pago anulado." };
 }
