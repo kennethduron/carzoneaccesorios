@@ -1,4 +1,4 @@
-﻿import type { AppRole, Permission } from "@/types/auth";
+import type { AppRole, Permission } from "@/types/auth";
 
 export const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 
@@ -234,6 +234,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "accounting:create",
     "accounting:post",
     "accounting:manage",
+    "accounting:close_period",
     "accounting:view_reports",
     "accounting:export",
   ],

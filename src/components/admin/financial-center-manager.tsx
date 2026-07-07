@@ -399,7 +399,7 @@ export function FinancialCenterManager({
             <SummaryCard label="Eventos pendientes" value={formatNumber(financialData.summary.pendingEvents)} helper="Registro financiero" />
             <SummaryCard label="Mapeos configurados" value={configuredLabel} helper="Base de automatización" />
             <SummaryCard label="Configuración incompleta" value={formatNumber(financialData.summary.incompleteMappings)} helper="Mapeos requeridos" />
-            <SummaryCard label="Modo de automatización" value={accountingAutomationModeLabels[financialData.summary.automationMode]} helper="Sin publicación automática en esta fase" />
+            <SummaryCard label="Modo de automatización" value={accountingAutomationModeLabels[financialData.summary.automationMode]} helper="Publicación automática deshabilitada" />
           </div>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">

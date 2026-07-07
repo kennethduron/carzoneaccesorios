@@ -13,6 +13,10 @@ export default async function AccountingPeriodsPage() {
   const canManage =
     hasEffectivePermission(profile.role, profile.permissions, "accounting:create", profile.email) ||
     hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email);
+  const canClose =
+    hasEffectivePermission(profile.role, profile.permissions, "accounting:close_period", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "accounting:settings", profile.email);
 
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
@@ -27,14 +31,14 @@ export default async function AccountingPeriodsPage() {
             </div>
             <p className="text-sm font-semibold uppercase text-[#b91c25]">Finanzas</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-normal sm:text-4xl">Períodos contables</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-black/55">Fundación Phase 2I-1 para crear, consultar y administrar períodos abiertos sin cierre mensual, cierre anual ni reaperturas.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-black/55">Administra los períodos contables de la empresa, consulta su estado y prepara el control de cierres.</p>
           </div>
           <div className="rounded-lg border border-black/10 bg-[#fafafa] px-4 py-3 text-sm text-black/60">
             <span className="font-semibold text-black">Período actual:</span> {data.currentPeriod?.name ?? "Sin períodos configurados"}
           </div>
         </header>
 
-        <AccountingPeriodsManager periods={data.periods} currentPeriod={data.currentPeriod} canManage={canManage} />
+        <AccountingPeriodsManager periods={data.periods} currentPeriod={data.currentPeriod} canManage={canManage} canClose={canClose} />
       </div>
     </main>
   );

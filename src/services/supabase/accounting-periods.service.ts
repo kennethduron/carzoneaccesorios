@@ -12,6 +12,10 @@ function todayKey() {
   }).format(new Date());
 }
 
+function displayUserName(user: { full_name: string | null; email: string | null } | undefined) {
+  return user?.full_name?.trim() || user?.email?.trim() || null;
+}
+
 export async function getAccountingPeriodsPageData(): Promise<AccountingPeriodsPageData> {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
@@ -25,7 +29,30 @@ export async function getAccountingPeriodsPageData(): Promise<AccountingPeriodsP
     throw new Error(error.message);
   }
 
-  const periods = data ?? [];
+  const rows = data ?? [];
+  const userIds = [...new Set(rows.map((period) => period.closed_by).filter((value): value is string => Boolean(value)))];
+  const closedByUsers = new Map<string, { full_name: string | null; email: string | null }>();
+
+  if (userIds.length > 0) {
+    const { data: users, error: usersError } = await supabase
+      .from("users")
+      .select("id, full_name, email")
+      .in("id", userIds)
+      .returns<Array<{ id: string; full_name: string | null; email: string | null }>>();
+
+    if (usersError) {
+      throw new Error(usersError.message);
+    }
+
+    for (const user of users ?? []) {
+      closedByUsers.set(user.id, { full_name: user.full_name, email: user.email });
+    }
+  }
+
+  const periods = rows.map((period) => ({
+    ...period,
+    closed_by_name: period.closed_by ? displayUserName(closedByUsers.get(period.closed_by)) : null,
+  }));
   const today = todayKey();
   const currentPeriod = periods.find((period) => period.status === "open" && period.start_date <= today && period.end_date >= today) ?? null;
 

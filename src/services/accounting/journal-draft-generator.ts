@@ -139,11 +139,11 @@ const supportedPurposes = new Set<FinancialEventPurpose>([
   "supplier_credit",
 ]);
 
-const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional en esta fase.";
+const invoiceSkippedMessage = "La factura fue registrada como evento financiero, pero no requiere partida adicional para evitar duplicar ingresos.";
 const receivablePaidSkippedMessage = "La cuenta por cobrar pagada se registra como control; el cobro se contabiliza por eventos de abono para evitar duplicados.";
 const invoiceCancellationPendingMessage = "La anulación fiscal requiere revisión contable antes de generar reversos.";
 const creditCancellationPendingMessage = "La cancelación del crédito comercial requiere revisión contable antes de generar reversos.";
-const cancellationPendingMessage = "La cancelación requiere reglas de reverso en una fase posterior.";
+const cancellationPendingMessage = "La cancelación requiere revisión contable antes de generar reversos.";
 const missingMappingsMessage = "No se puede generar la partida porque faltan mapeos contables.";
 const cogsMissingMappingsMessage = "Faltan mapeos contables para inventario o costo de ventas.";
 const inventoryAdjustmentMissingMappingsMessage = "Faltan mapeos contables para inventario o ajustes de inventario.";
@@ -162,6 +162,7 @@ const purchaseConfirmedControlMessage = "La compra fue confirmada, pero la parti
 const supplierInvoiceControlMessage = "La factura de proveedor fue registrada, pero la partida contable se generar\u00e1 desde la cuenta por pagar para evitar duplicidad.";
 const purchaseCancelledControlMessage = "La anulaci\u00f3n de compra requiere revisi\u00f3n contable antes de generar reversos.";
 const supplierPaymentCancelledControlMessage = "La anulaci\u00f3n de pago a proveedor requiere revisi\u00f3n contable antes de generar reversos.";
+const closedPeriodMutationMessage = "No se puede registrar o modificar una partida dentro de un período contable cerrado.";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -175,6 +176,23 @@ function toAmount(value: unknown) {
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+async function isDateInClosedAccountingPeriod(entryDate: string, client?: SupabaseClient) {
+  const supabase = client ?? (await getSupabaseServerClient());
+  const { data, error } = await supabase
+    .from("accounting_periods")
+    .select("id")
+    .eq("status", "closed")
+    .lte("start_date", entryDate)
+    .gte("end_date", entryDate)
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data?.length ?? 0) > 0;
 }
 
 function eventDate(value: string) {
@@ -1210,6 +1228,24 @@ export async function generateJournalDraftFromFinancialEvent(
       status: draft.status,
       validationErrors: draft.validationErrors,
     };
+  }
+
+  if (await isDateInClosedAccountingPeriod(draft.entryDate, supabase)) {
+    await updateFinancialEventStatus(event.id, "pending", [closedPeriodMutationMessage], undefined, supabase);
+    await logAccountingEvent({
+      eventType: "financial_event.draft_closed_period",
+      entityType: "financial_events",
+      entityId: event.id,
+      sourceType: event.source_type,
+      sourceId: event.source_id,
+      metadata: {
+        entry_date: draft.entryDate,
+        message: closedPeriodMutationMessage,
+      },
+      createdBy,
+    }, supabase);
+
+    return { ok: false, message: closedPeriodMutationMessage, status: "pending", validationErrors: [closedPeriodMutationMessage] };
   }
 
   const { data: entry, error: entryError } = await supabase

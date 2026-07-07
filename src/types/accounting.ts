@@ -20,6 +20,7 @@ export type AccountingPeriod = {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  closed_by_name?: string | null;
 };
 
 export type AccountingPeriodInput = {
@@ -38,6 +39,29 @@ export type AccountingPeriodsPageData = {
   currentPeriod: AccountingPeriod | null;
   openPeriods: number;
   closedPeriods: number;
+};
+
+export type AccountingPeriodCloseValidationSummary = {
+  draft_entries: number;
+  unbalanced_entries: number;
+  entries_missing_lines: number;
+  invalid_account_lines: number;
+  pending_financial_events: number;
+  trial_balance_debit: number;
+  trial_balance_credit: number;
+  active_mappings: number;
+};
+
+export type AccountingPeriodCloseValidation = {
+  ok: boolean;
+  ready: boolean;
+  period_id: string | null;
+  period_name: string | null;
+  blockers: string[];
+  warnings: string[];
+  summary: AccountingPeriodCloseValidationSummary;
+  closed?: boolean;
+  message?: string;
 };
 
 export type AccountingAccount = {

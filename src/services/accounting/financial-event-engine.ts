@@ -337,7 +337,7 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
       }
 
       if (automationMode === "auto_post") {
-        validationErrors.push("El modo auto_post no est\u00e1 permitido en esta fase.");
+        validationErrors.push("El modo de publicaci\u00f3n autom\u00e1tica a\u00fan no est\u00e1 disponible.");
         return { status: "pending" as const, validationErrors: [...new Set(validationErrors)] };
       }
 
@@ -358,7 +358,7 @@ function resolveCandidateStatus(candidate: FinancialEventCandidate, mappings: Ma
   }
 
   if (automationMode === "auto_post") {
-    validationErrors.push("El modo auto_post no está permitido en esta fase.");
+    validationErrors.push("El modo de publicación automática aún no está disponible.");
     return { status: "pending" as const, validationErrors };
   }
 

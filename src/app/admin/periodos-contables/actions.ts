@@ -4,16 +4,21 @@ import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { AccountingPeriod, AccountingPeriodInput, AccountingPeriodType } from "@/types/accounting";
+import type { AccountingPeriod, AccountingPeriodCloseValidation, AccountingPeriodInput, AccountingPeriodType } from "@/types/accounting";
 
 type AccountingPeriodActionResult = {
   ok: boolean;
   message: string;
 };
 
+type AccountingPeriodCloseActionResult = AccountingPeriodActionResult & {
+  validation?: AccountingPeriodCloseValidation;
+};
+
 const periodTypes = new Set<AccountingPeriodType>(["monthly", "annual", "custom"]);
 const invalidDateMessage = "La fecha inicial debe ser anterior a la fecha final.";
 const overlapMessage = "El período contable se cruza con otro período existente.";
+const closedPeriodMessage = "No se puede registrar o modificar una partida dentro de un período contable cerrado.";
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
@@ -27,6 +32,66 @@ function cleanDate(value: unknown) {
 function cleanFiscalYear(value: unknown) {
   const year = Number(value);
   return Number.isInteger(year) ? year : 0;
+}
+
+function defaultCloseValidation(periodId: string | null = null): AccountingPeriodCloseValidation {
+  return {
+    ok: false,
+    ready: false,
+    period_id: periodId,
+    period_name: null,
+    blockers: [],
+    warnings: [],
+    summary: {
+      draft_entries: 0,
+      unbalanced_entries: 0,
+      entries_missing_lines: 0,
+      invalid_account_lines: 0,
+      pending_financial_events: 0,
+      trial_balance_debit: 0,
+      trial_balance_credit: 0,
+      active_mappings: 0,
+    },
+  };
+}
+
+function asStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function asNumber(value: unknown) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function normalizeCloseValidation(value: unknown, periodId: string | null = null): AccountingPeriodCloseValidation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaultCloseValidation(periodId);
+  }
+
+  const record = value as Record<string, unknown>;
+  const summary = record.summary && typeof record.summary === "object" && !Array.isArray(record.summary) ? (record.summary as Record<string, unknown>) : {};
+
+  return {
+    ok: Boolean(record.ok),
+    ready: Boolean(record.ready),
+    period_id: typeof record.period_id === "string" ? record.period_id : periodId,
+    period_name: typeof record.period_name === "string" ? record.period_name : null,
+    blockers: asStringArray(record.blockers),
+    warnings: asStringArray(record.warnings),
+    summary: {
+      draft_entries: asNumber(summary.draft_entries),
+      unbalanced_entries: asNumber(summary.unbalanced_entries),
+      entries_missing_lines: asNumber(summary.entries_missing_lines),
+      invalid_account_lines: asNumber(summary.invalid_account_lines),
+      pending_financial_events: asNumber(summary.pending_financial_events),
+      trial_balance_debit: asNumber(summary.trial_balance_debit),
+      trial_balance_credit: asNumber(summary.trial_balance_credit),
+      active_mappings: asNumber(summary.active_mappings),
+    },
+    closed: Boolean(record.closed),
+    message: typeof record.message === "string" ? record.message : undefined,
+  };
 }
 
 async function logAccountingPeriodEvent(input: {
@@ -97,7 +162,7 @@ function validatePeriodInput(input: AccountingPeriodInput) {
   }
 
   if (input.status && input.status !== "open") {
-    return { ok: false as const, message: "Phase 2I-1 solo permite administrar períodos abiertos." };
+    return { ok: false as const, message: "Solo se pueden guardar períodos abiertos desde este formulario." };
   }
 
   return {
@@ -139,6 +204,15 @@ async function findOverlappingPeriod(input: { id?: string; start_date: string; e
   return data?.[0] ?? null;
 }
 
+function revalidateAccountingPeriodViews() {
+  revalidatePath("/admin/periodos-contables");
+  revalidatePath("/admin/contabilidad");
+  revalidatePath("/admin/libro-mayor");
+  revalidatePath("/admin/balance-comprobacion");
+  revalidatePath("/admin/balance-general");
+  revalidatePath("/admin/estado-resultados");
+}
+
 export async function saveAccountingPeriodAction(input: AccountingPeriodInput): Promise<AccountingPeriodActionResult> {
   const profile = input.id ? await requirePermission("accounting:manage") : await requirePermission("accounting:create");
   const validation = validatePeriodInput(input);
@@ -172,7 +246,7 @@ export async function saveAccountingPeriodAction(input: AccountingPeriodInput): 
     }
 
     if (previous.status !== "open") {
-      return { ok: false, message: "Los períodos cerrados no pueden editarse en esta fase." };
+      return { ok: false, message: "Los períodos cerrados son de solo lectura." };
     }
 
     const { error } = await supabase.from("accounting_periods").update(validation.period).eq("id", input.id);
@@ -218,13 +292,111 @@ export async function saveAccountingPeriodAction(input: AccountingPeriodInput): 
     });
   }
 
-  revalidatePath("/admin/periodos-contables");
-  revalidatePath("/admin/contabilidad");
-  revalidatePath("/admin/libro-mayor");
-  revalidatePath("/admin/balance-comprobacion");
-  revalidatePath("/admin/balance-general");
-  revalidatePath("/admin/estado-resultados");
-
+  revalidateAccountingPeriodViews();
   return { ok: true, message: input.id ? "Período contable actualizado." : "Período contable creado." };
 }
 
+export async function validateAccountingPeriodCloseAction(periodId: string): Promise<AccountingPeriodCloseActionResult> {
+  const profile = await requirePermission("accounting:read");
+  const cleanedPeriodId = cleanText(periodId);
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("validate_accounting_period_close", { period_id: cleanedPeriodId });
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  const validation = normalizeCloseValidation(data, cleanedPeriodId);
+  await writeAuditLog({
+    tableName: "accounting_periods",
+    recordId: validation.period_id,
+    action: "accounting.period.close_validation",
+    newData: {
+      ready: validation.ready,
+      blockers: validation.blockers,
+      warnings: validation.warnings,
+      summary: validation.summary,
+    },
+  });
+  await logAccountingPeriodEvent({
+    eventType: "period.close_validation",
+    entityId: validation.period_id,
+    metadata: { ready: validation.ready, blockers: validation.blockers, warnings: validation.warnings, summary: validation.summary },
+    createdBy: profile.id,
+  });
+
+  return {
+    ok: validation.ready,
+    message: validation.ready ? "El período está listo para cierre." : validation.blockers[0] ?? "Se encontraron bloqueos para el cierre.",
+    validation,
+  };
+}
+
+export async function closeAccountingPeriodAction(periodId: string): Promise<AccountingPeriodCloseActionResult> {
+  const profile = await requirePermission("accounting:manage");
+  const cleanedPeriodId = cleanText(periodId);
+  const supabase = await getSupabaseServerClient();
+  const { data: previous } = await supabase
+    .from("accounting_periods")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by")
+    .eq("id", cleanedPeriodId)
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by">>();
+
+  const { data, error } = await supabase.rpc("close_accounting_period", { period_id: cleanedPeriodId });
+
+  if (error) {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: cleanedPeriodId,
+      action: "accounting.period.close_blocked",
+      newData: { error: error.message },
+    });
+    await logAccountingPeriodEvent({
+      eventType: "period.close_blocked",
+      entityId: cleanedPeriodId,
+      metadata: { error: error.message },
+      createdBy: profile.id,
+    });
+    return { ok: false, message: error.message };
+  }
+
+  const validation = normalizeCloseValidation(data, cleanedPeriodId);
+  if (!validation.closed) {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: validation.period_id,
+      action: "accounting.period.close_blocked",
+      newData: {
+        blockers: validation.blockers,
+        warnings: validation.warnings,
+        summary: validation.summary,
+      },
+    });
+    await logAccountingPeriodEvent({
+      eventType: "period.close_blocked",
+      entityId: validation.period_id,
+      metadata: { blockers: validation.blockers, warnings: validation.warnings, summary: validation.summary },
+      createdBy: profile.id,
+    });
+    return { ok: false, message: validation.blockers[0] ?? "No se pudo cerrar el período contable.", validation };
+  }
+
+  const { data: updated } = await supabase
+    .from("accounting_periods")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by")
+    .eq("id", cleanedPeriodId)
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by">>();
+
+  await writeAuditLog({
+    tableName: "accounting_periods",
+    recordId: cleanedPeriodId,
+    action: "accounting.period.closed",
+    oldData: previous ?? null,
+    newData: updated ?? { status: "closed" },
+  });
+
+  revalidateAccountingPeriodViews();
+  return { ok: true, message: validation.message ?? "Período contable cerrado correctamente.", validation };
+}
+
+export { closedPeriodMessage };

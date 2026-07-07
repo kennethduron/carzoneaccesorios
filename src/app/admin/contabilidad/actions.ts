@@ -59,6 +59,24 @@ type LineForMutation = {
 
 const accountTypes = new Set(["asset", "liability", "equity", "revenue", "cost", "expense"]);
 const normalBalances = new Set(["debit", "credit"]);
+const closedPeriodMutationMessage = "No se puede registrar o modificar una partida dentro de un período contable cerrado.";
+
+async function isDateInClosedAccountingPeriod(entryDate: string) {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounting_periods")
+    .select("id")
+    .eq("status", "closed")
+    .lte("start_date", entryDate)
+    .gte("end_date", entryDate)
+    .limit(1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data?.length ?? 0) > 0;
+}
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
@@ -681,7 +699,7 @@ export async function toggleAccountingAccountAction(accountId: string, isActive:
 export async function saveJournalDraftAction(input: JournalEntryInput): Promise<AccountingMutationResult> {
   const profile = await requirePermission("accounting:create");
   const description = cleanText(input.description);
-  const entryDate = cleanText(input.entry_date);
+  const entryDate = cleanDate(input.entry_date);
 
   if (!entryDate || description.length < 3) {
     return { ok: false, message: "Ingresa fecha y descripción de la partida." };
@@ -710,6 +728,10 @@ export async function saveJournalDraftAction(input: JournalEntryInput): Promise<
       return { ok: false, message: "Solo se pueden editar partidas en borrador." };
     }
 
+    if (await isDateInClosedAccountingPeriod(existing.entry.entry_date) || await isDateInClosedAccountingPeriod(entryDate)) {
+      return { ok: false, message: closedPeriodMutationMessage };
+    }
+
     const { error: entryError } = await supabase
       .from("journal_entries")
       .update({
@@ -729,6 +751,10 @@ export async function saveJournalDraftAction(input: JournalEntryInput): Promise<
       return { ok: false, message: deleteError.message };
     }
   } else {
+    if (await isDateInClosedAccountingPeriod(entryDate)) {
+      return { ok: false, message: closedPeriodMutationMessage };
+    }
+
     const { data, error } = await supabase
       .from("journal_entries")
       .insert({
@@ -788,6 +814,10 @@ export async function postJournalEntryAction(entryId: string): Promise<Accountin
 
   if (existing.entry.status !== "borrador") {
     return { ok: false, message: "Solo se pueden publicar partidas en borrador." };
+  }
+
+  if (await isDateInClosedAccountingPeriod(existing.entry.entry_date)) {
+    return { ok: false, message: closedPeriodMutationMessage };
   }
 
   const normalized = normalizeLines(

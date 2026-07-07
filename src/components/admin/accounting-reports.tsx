@@ -137,7 +137,7 @@ function ExportPanel({ canExport, pdfHref, excelHref }: { canExport: boolean; pd
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="font-semibold">Exportaciones</p>
-          <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde los mismos datos contables publicados del reporte filtrado. No se exporta CSV en esta fase.</p>
+          <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde los mismos datos contables publicados del reporte filtrado. La exportación CSV no está disponible para este reporte.</p>
         </div>
         <div className="grid gap-2 sm:flex sm:flex-wrap">
           <a href={excelHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${canExport ? "border-black/10 bg-white text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]" : "pointer-events-none border-black/10 bg-[#f4f4f5] text-black/35"}`}>
@@ -252,7 +252,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
         ) : <EmptyState text="No hay cuentas contables disponibles para los filtros seleccionados." />}
 
         <PaginationControls basePath="/admin/libro-mayor" page={data.page} pageSize={data.pageSize} total={data.totalMovements} label="movimientos publicados" params={filterParams(data.filters)} />
-        <p className="text-center text-xs text-black/45">Página {data.page.toLocaleString("es-HN")} de {totalPages.toLocaleString("es-HN")}. Vista de borradores deshabilitada en 2H-1.</p>
+        <p className="text-center text-xs text-black/45">Página {data.page.toLocaleString("es-HN")} de {totalPages.toLocaleString("es-HN")}. Vista de borradores deshabilitada.</p>
       </div>
     </main>
   );

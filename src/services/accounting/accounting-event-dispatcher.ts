@@ -256,7 +256,7 @@ async function buildInvoiceCandidate(input: DispatchAccountingEventInput): Promi
     eligible: isCancelled ? cancelledInvoiceStatuses.has(status) : issuedInvoiceStatuses.has(status),
     validation_errors: isCancelled
       ? ["La anulación fiscal requiere revisión contable antes de generar reversos."]
-      : ["La factura fiscal fue registrada como evento, pero no requiere partida adicional en esta fase para evitar duplicar ingresos."],
+      : ["La factura fiscal fue registrada como evento, pero no requiere partida adicional para evitar duplicar ingresos."],
     source_snapshot: {
       source_id: row.id,
       invoice_id: row.id,
