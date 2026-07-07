@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
@@ -51,7 +51,7 @@ function toMoney(value: unknown) {
 
 function purchaseErrorMessage(message: string) {
   if (message.includes("purchases_purchase_number_key")) {
-    return "Ya existe una compra con ese numero.";
+    return "Ya existe una compra con ese número.";
   }
 
   return "No se pudo guardar la compra.";
@@ -66,11 +66,11 @@ function buildPurchaseTotals(items: PurchaseItemInput[], shippingValue: unknown)
     const discountAmount = toMoney(item.discount_amount ?? 0);
 
     if (!description) {
-      throw new Error("Cada linea necesita descripcion.");
+      throw new Error("Cada línea necesita descripción.");
     }
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      throw new Error("La cantidad de cada linea debe ser mayor que cero.");
+      throw new Error("La cantidad de cada línea debe ser mayor que cero.");
     }
 
     if (!Number.isFinite(unitCost) || unitCost < 0) {
@@ -98,7 +98,7 @@ function buildPurchaseTotals(items: PurchaseItemInput[], shippingValue: unknown)
 
   const shippingAmount = toMoney(shippingValue ?? 0);
   if (!Number.isFinite(shippingAmount) || shippingAmount < 0) {
-    throw new Error("El envio no puede ser negativo.");
+    throw new Error("El envío no puede ser negativo.");
   }
 
   const subtotal = Math.round(normalizedItems.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0) * 100) / 100;
@@ -117,14 +117,14 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
   const currency = cleanText(input.currency) ?? "HNL";
 
   if (!supplierId) return { ok: false, message: "Selecciona un proveedor." };
-  if (!purchaseNumber) return { ok: false, message: "El numero de compra es obligatorio." };
+  if (!purchaseNumber) return { ok: false, message: "El número de compra es obligatorio." };
   if (!purchaseDate) return { ok: false, message: "La fecha de compra es obligatoria." };
 
   let totals: ReturnType<typeof buildPurchaseTotals>;
   try {
     totals = buildPurchaseTotals(input.items ?? [], input.shipping_amount);
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Revisa las lineas de compra." };
+    return { ok: false, message: error instanceof Error ? error.message : "Revisa las líneas de compra." };
   }
 
   const admin = getSupabaseAdminClient();
@@ -182,6 +182,17 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
       return { ok: false, message: purchaseErrorMessage(error.message) };
     }
 
+    const submittedItemIds = totals.normalizedItems.map((item) => item.id).filter((id): id is string => Boolean(id));
+    let deleteQuery = admin.from("purchase_items").delete().eq("purchase_id", input.id);
+    if (submittedItemIds.length > 0) {
+      deleteQuery = deleteQuery.not("id", "in", `(${submittedItemIds.join(",")})`);
+    }
+
+    const { error: deleteItemsError } = await deleteQuery;
+    if (deleteItemsError) {
+      return { ok: false, message: "No se pudieron quitar las líneas removidas de la compra." };
+    }
+
     for (const item of totals.normalizedItems) {
       if (item.id) {
         const { error: itemError } = await admin
@@ -198,7 +209,7 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
           .eq("id", item.id)
           .eq("purchase_id", input.id);
 
-        if (itemError) return { ok: false, message: "No se pudo actualizar una linea de compra." };
+        if (itemError) return { ok: false, message: "No se pudo actualizar una línea de compra." };
       } else {
         const { error: itemError } = await admin.from("purchase_items").insert({
           purchase_id: input.id,
@@ -211,7 +222,7 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
           total_cost: item.total_cost,
         });
 
-        if (itemError) return { ok: false, message: "No se pudo agregar una linea de compra." };
+        if (itemError) return { ok: false, message: "No se pudo agregar una línea de compra." };
       }
     }
 
@@ -245,7 +256,7 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
     );
 
     if (itemsError) {
-      return { ok: false, message: "La compra fue creada, pero no se pudieron guardar sus lineas. Revisa la compra antes de continuar." };
+      return { ok: false, message: "La compra fue creada, pero no se pudieron guardar sus líneas. Revisa la compra antes de continuar." };
     }
   }
 
@@ -272,8 +283,8 @@ export async function confirmPurchaseAction(purchaseId: string): Promise<ActionR
     .select("id", { count: "exact", head: true })
     .eq("purchase_id", purchaseId);
 
-  if (countError) return { ok: false, message: "No se pudieron validar las lineas de compra." };
-  if (!count) return { ok: false, message: "Agrega al menos una linea antes de confirmar." };
+  if (countError) return { ok: false, message: "No se pudieron validar las líneas de compra." };
+  if (!count) return { ok: false, message: "Agrega al menos una línea antes de confirmar." };
 
   const { error } = await admin
     .from("purchases")
@@ -332,9 +343,9 @@ export async function registerPurchaseReturnAction(input: PurchaseReturnFormInpu
   const amount = toMoney(input.amount);
 
   if (!purchaseId) return { ok: false, message: "Selecciona una compra." };
-  if (!returnNumber) return { ok: false, message: "El numero de devolucion es obligatorio." };
-  if (!returnDate) return { ok: false, message: "La fecha de devolucion es obligatoria." };
-  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la devolucion debe ser mayor que cero." };
+  if (!returnNumber) return { ok: false, message: "El número de devolución es obligatorio." };
+  if (!returnDate) return { ok: false, message: "La fecha de devolución es obligatoria." };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la devolución debe ser mayor que cero." };
 
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("register_purchase_return", {
@@ -346,7 +357,7 @@ export async function registerPurchaseReturnAction(input: PurchaseReturnFormInpu
   });
 
   if (error) {
-    return { ok: false, message: error.message || "No se pudo registrar la devolucion." };
+    return { ok: false, message: error.message || "No se pudo registrar la devolución." };
   }
 
   const row = Array.isArray(data) ? data[0] : data;
@@ -356,7 +367,5 @@ export async function registerPurchaseReturnAction(input: PurchaseReturnFormInpu
   }
   revalidatePath("/admin/compras");
   revalidatePath("/admin/cuentas-por-pagar");
-  return { ok: true, message: "Devolucion a proveedor registrada." };
+  return { ok: true, message: "Devolución a proveedor registrada." };
 }
-
-

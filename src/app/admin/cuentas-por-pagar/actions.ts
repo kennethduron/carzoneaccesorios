@@ -66,7 +66,7 @@ function toMoney(value: unknown) {
 
 function invoiceErrorMessage(message: string) {
   if (message.includes("supplier_invoices_supplier_invoice_active_unique") || message.includes("supplier_invoices_supplier_invoice_number_key")) {
-    return "Ya existe una factura activa con ese numero para este proveedor.";
+    return "Ya existe una factura activa con ese número para este proveedor.";
   }
 
   return "No se pudo guardar la factura de proveedor.";
@@ -142,7 +142,7 @@ export async function saveSupplierInvoiceAction(input: SupplierInvoiceFormInput)
   const currency = cleanText(input.currency) ?? "HNL";
 
   if (!supplierId) return { ok: false, message: "Selecciona un proveedor." };
-  if (!invoiceNumber) return { ok: false, message: "El numero de factura es obligatorio." };
+  if (!invoiceNumber) return { ok: false, message: "El número de factura es obligatorio." };
   if (!invoiceDate) return { ok: false, message: "La fecha de factura es obligatoria." };
   if (!Number.isFinite(subtotal) || subtotal < 0 || !Number.isFinite(taxAmount) || taxAmount < 0 || !Number.isFinite(discountAmount) || discountAmount < 0) {
     return { ok: false, message: "Los montos de la factura no pueden ser negativos." };
@@ -153,7 +153,7 @@ export async function saveSupplierInvoiceAction(input: SupplierInvoiceFormInput)
   try {
     await ensureActiveSupplier(supplierId);
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Proveedor invalido." };
+    return { ok: false, message: error instanceof Error ? error.message : "Proveedor inválido." };
   }
 
   const admin = getSupabaseAdminClient();
@@ -283,7 +283,7 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
   try {
     await ensureActiveSupplier(supplierId);
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Proveedor invalido." };
+    return { ok: false, message: error instanceof Error ? error.message : "Proveedor inválido." };
   }
 
   const admin = getSupabaseAdminClient();
@@ -391,7 +391,7 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
 
   if (!payableId) return { ok: false, message: "Selecciona una cuenta por pagar." };
   if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El pago debe ser mayor que cero." };
-  if (!paymentMethod) return { ok: false, message: "El metodo de pago es obligatorio." };
+  if (!paymentMethod) return { ok: false, message: "El método de pago es obligatorio." };
 
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("register_supplier_payment", {
@@ -446,9 +446,9 @@ export async function registerSupplierCreditAction(input: SupplierCreditFormInpu
   const amount = toMoney(input.amount);
 
   if (!supplierId) return { ok: false, message: "Selecciona un proveedor." };
-  if (!creditNumber) return { ok: false, message: "El numero de nota de credito es obligatorio." };
-  if (!creditDate) return { ok: false, message: "La fecha de nota de credito es obligatoria." };
-  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la nota de credito debe ser mayor que cero." };
+  if (!creditNumber) return { ok: false, message: "El número de nota de crédito es obligatorio." };
+  if (!creditDate) return { ok: false, message: "La fecha de nota de crédito es obligatoria." };
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El monto de la nota de crédito debe ser mayor que cero." };
 
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("register_supplier_credit", {
@@ -463,7 +463,7 @@ export async function registerSupplierCreditAction(input: SupplierCreditFormInpu
   });
 
   if (error) {
-    return { ok: false, message: error.message || "No se pudo registrar la nota de credito." };
+    return { ok: false, message: error.message || "No se pudo registrar la nota de crédito." };
   }
 
   const row = Array.isArray(data) ? data[0] : data;
@@ -472,5 +472,5 @@ export async function registerSupplierCreditAction(input: SupplierCreditFormInpu
     await dispatchAccountingEvent({ sourceType: "supplier_credit", sourceId: row.supplier_credit_id, eventPurpose: "supplier_credit", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
   }
   revalidatePath("/admin/cuentas-por-pagar");
-  return { ok: true, message: "Nota de credito de proveedor registrada." };
+  return { ok: true, message: "Nota de crédito de proveedor registrada." };
 }

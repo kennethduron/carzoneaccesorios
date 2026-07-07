@@ -94,6 +94,8 @@ const draftEligiblePurposes = new Set([
   "inventory_writeoff",
   "accounts_payable_created",
   "supplier_payment",
+  "purchase_return",
+  "supplier_credit",
 ]);
 
 const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
@@ -119,6 +121,8 @@ const eventPurposeLabels: Record<string, string> = {
   supplier_payment: "Pago a proveedor",
   supplier_payment_cancelled: "Pago a proveedor anulado",
   purchase_cancelled: "Compra anulada",
+  purchase_return: "Devolución a proveedor",
+  supplier_credit: "Nota de crédito de proveedor",
 };
 
 const sourceTypeLabels: Record<string, string> = {
@@ -133,6 +137,8 @@ const sourceTypeLabels: Record<string, string> = {
   supplier_invoice: "Factura de proveedor",
   accounts_payable: "Cuenta por pagar",
   supplier_payment: "Pago a proveedor",
+  purchase_return: "Devolución a proveedor",
+  supplier_credit: "Nota de crédito de proveedor",
 };
 
 const inventoryMovementTypeLabels: Record<string, string> = {
