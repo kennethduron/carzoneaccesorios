@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { FinancialCenterManager } from "@/components/admin/financial-center-manager";
-import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAccountingPageData } from "@/services/supabase/accounting.service";
 import { getFinancialCenterData } from "@/services/supabase/financial-center.service";
@@ -30,6 +30,8 @@ export default async function AdminAccountingPage({
   const canPost = hasEffectivePermission(profile.role, profile.permissions, "accounting:post", profile.email);
   const canReverse = hasEffectivePermission(profile.role, profile.permissions, "accounting:reverse", profile.email);
   const canConfigureAccounting = hasEffectivePermission(profile.role, profile.permissions, "accounting:settings", profile.email);
+  const canExportAccounting = hasEffectivePermission(profile.role, profile.permissions, "accounting:export", profile.email);
+  const canExportTechnicalCsv = canExportAccounting && isTechnicalOwner(profile.role, profile.email);
 
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
@@ -64,6 +66,8 @@ export default async function AdminAccountingPage({
           canPost={canPost}
           canReverse={canReverse}
           canConfigureAccounting={canConfigureAccounting}
+          canExportAccounting={canExportAccounting}
+          canExportTechnicalCsv={canExportTechnicalCsv}
           canScanEvents={canManage}
           canGenerateDrafts={canManage}
         />

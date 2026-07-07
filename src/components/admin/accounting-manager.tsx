@@ -9,6 +9,7 @@ import {
   saveJournalDraftAction,
   toggleAccountingAccountAction,
 } from "@/app/admin/contabilidad/actions";
+import { ChartOfAccountsTools } from "@/components/admin/chart-of-accounts-tools";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
@@ -31,6 +32,8 @@ type AccountingManagerProps = {
   canCreate: boolean;
   canPost: boolean;
   canReverse: boolean;
+  canExport?: boolean;
+  canCsvExport?: boolean;
   visibleSections?: AccountingManagerSection[];
 };
 
@@ -99,7 +102,7 @@ function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntry
   }));
 }
 
-export function AccountingManager({ data, canManage, canCreate, canPost, canReverse, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
+export function AccountingManager({ data, canManage, canCreate, canPost, canReverse, canExport = false, canCsvExport = false, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
   const [accountForm, setAccountForm] = useState<AccountingAccountInput>(emptyAccount);
   const [journalForm, setJournalForm] = useState({
     id: "",
@@ -243,7 +246,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
       {showAccounts || showJournal ? (
       <section className={showAccounts && showJournal ? "grid gap-6 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]" : "grid gap-6"}>
         {showAccounts ? (
-        <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
+        <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -254,6 +257,8 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
             </div>
             <a href="#libro-diario" className="text-sm font-semibold text-[#e4252c]">Libro diario</a>
           </div>
+
+          <ChartOfAccountsTools canManage={canManage} canExport={canExport} canCsvExport={canCsvExport} />
 
           {canWriteAccounts ? (
             <div className="mb-4 rounded-xl border border-black/10 bg-[#fafafa] p-3">
@@ -524,7 +529,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
       ) : null}
 
       {showEntries ? (
-      <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
+      <section className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="flex items-center gap-2">

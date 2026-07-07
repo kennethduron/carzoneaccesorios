@@ -38,6 +38,8 @@ type FinancialCenterManagerProps = {
   canPost: boolean;
   canReverse: boolean;
   canConfigureAccounting: boolean;
+  canExportAccounting: boolean;
+  canExportTechnicalCsv: boolean;
   canScanEvents: boolean;
   canGenerateDrafts: boolean;
 };
@@ -264,6 +266,8 @@ export function FinancialCenterManager({
   canPost,
   canReverse,
   canConfigureAccounting,
+  canExportAccounting,
+  canExportTechnicalCsv,
   canScanEvents,
   canGenerateDrafts,
 }: FinancialCenterManagerProps) {
@@ -369,7 +373,7 @@ export function FinancialCenterManager({
 
   return (
     <div className="min-w-0 space-y-5">
-      <nav className="flex gap-2 overflow-x-auto rounded-lg border border-black/10 bg-white p-2 shadow-sm" aria-label="Secciones de contabilidad">
+      <nav className="flex w-full max-w-full min-w-0 gap-2 overflow-x-auto rounded-lg border border-black/10 bg-white p-2 shadow-sm" aria-label="Secciones de contabilidad">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
@@ -668,6 +672,8 @@ export function FinancialCenterManager({
           canCreate={canCreate}
           canPost={canPost}
           canReverse={canReverse}
+          canExport={canExportAccounting}
+          canCsvExport={canExportTechnicalCsv}
           visibleSections={["journal", "entries"]}
         />
       ) : null}
@@ -679,6 +685,8 @@ export function FinancialCenterManager({
           canCreate={canCreate}
           canPost={canPost}
           canReverse={canReverse}
+          canExport={canExportAccounting}
+          canCsvExport={canExportTechnicalCsv}
           visibleSections={["summary", "accounts"]}
         />
       ) : null}

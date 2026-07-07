@@ -6,6 +6,11 @@ import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
 import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
+import {
+  applyChartOfAccountsImport,
+  logAccountingCatalogEvent,
+  parseAndValidateChartOfAccountsWorkbook,
+} from "@/services/supabase/accounting-catalog.service";
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
@@ -13,6 +18,7 @@ import type {
   JournalEntryLineInput,
   JournalEntryStatus,
 } from "@/types/accounting";
+import type { ChartOfAccountsImportActionState } from "@/types/accounting-catalog";
 import type { AccountingMappingInput, AutomationMode } from "@/types/financial-center";
 
 type AccountingMutationResult = {
@@ -107,6 +113,86 @@ async function logAccountingEvent(input: {
   });
 }
 
+export async function importChartOfAccountsAction(
+  _previousState: ChartOfAccountsImportActionState,
+  formData: FormData,
+): Promise<ChartOfAccountsImportActionState> {
+  const profile = await requirePermission("accounting:manage");
+  const file = formData.get("file");
+
+  if (!(file instanceof File)) {
+    return { ok: false, message: "Selecciona un archivo Excel .xlsx.", errors: ["Selecciona un archivo Excel .xlsx."] };
+  }
+
+  await writeAuditLog({
+    tableName: "accounting_accounts",
+    action: "accounting.chart_import.attempted",
+    newData: { fileName: file.name, fileSize: file.size },
+  });
+  await logAccountingCatalogEvent({
+    eventType: "chart_import.attempted",
+    metadata: { fileName: file.name, fileSize: file.size },
+    createdBy: profile.id,
+  });
+
+  try {
+    const validation = await parseAndValidateChartOfAccountsWorkbook(file);
+
+    if (!validation.ok) {
+      await writeAuditLog({
+        tableName: "accounting_accounts",
+        action: "accounting.chart_import.failed",
+        newData: { fileName: file.name, errors: validation.errors.length, rows: validation.rows.length },
+      });
+      await logAccountingCatalogEvent({
+        eventType: "chart_import.failed",
+        metadata: { fileName: file.name, errors: validation.errors.length, rows: validation.rows.length },
+        createdBy: profile.id,
+      });
+
+      return {
+        ok: false,
+        message: "Errores encontrados. No se importó ninguna cuenta.",
+        errors: validation.errors,
+      };
+    }
+
+    const summary = await applyChartOfAccountsImport(validation.rows, profile.id);
+
+    await writeAuditLog({
+      tableName: "accounting_accounts",
+      action: "accounting.chart_import.completed",
+      newData: { fileName: file.name, ...summary },
+    });
+    await logAccountingCatalogEvent({
+      eventType: "chart_import.completed",
+      metadata: { fileName: file.name, ...summary },
+      createdBy: profile.id,
+    });
+
+    revalidatePath("/admin/contabilidad");
+    return {
+      ok: true,
+      message: "Importación completada.",
+      errors: [],
+      summary,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo importar el catálogo de cuentas.";
+    await writeAuditLog({
+      tableName: "accounting_accounts",
+      action: "accounting.chart_import.failed",
+      newData: { fileName: file.name, error: message },
+    });
+    await logAccountingCatalogEvent({
+      eventType: "chart_import.failed",
+      metadata: { fileName: file.name, error: message },
+      createdBy: profile.id,
+    });
+
+    return { ok: false, message: "Errores encontrados. No se importó ninguna cuenta.", errors: [message] };
+  }
+}
 function validateAccountInput(input: AccountingAccountInput) {
   const code = cleanText(input.code).toUpperCase();
   const name = cleanText(input.name);
