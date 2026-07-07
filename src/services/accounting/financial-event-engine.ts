@@ -127,6 +127,8 @@ const purchaseApPurposes = new Set<FinancialEventPurpose>([
   "supplier_payment",
   "supplier_payment_cancelled",
   "purchase_cancelled",
+  "purchase_return",
+  "supplier_credit",
 ]);
 
 const purchaseApDraftEligiblePurposes = new Set<FinancialEventPurpose>(["accounts_payable_created", "supplier_payment", "purchase_return", "supplier_credit"]);

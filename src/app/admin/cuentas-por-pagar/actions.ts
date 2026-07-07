@@ -65,13 +65,51 @@ function toMoney(value: unknown) {
 }
 
 function invoiceErrorMessage(message: string) {
-  if (message.includes("supplier_invoices_supplier_invoice_active_unique")) {
+  if (message.includes("supplier_invoices_supplier_invoice_active_unique") || message.includes("supplier_invoices_supplier_invoice_number_key")) {
     return "Ya existe una factura activa con ese numero para este proveedor.";
   }
 
   return "No se pudo guardar la factura de proveedor.";
 }
 
+async function findActivePayableConflict(input: { supplierInvoiceId: string | null; purchaseId: string | null; excludeId?: string | null }) {
+  const admin = getSupabaseAdminClient();
+  const activeStatuses: AccountsPayableStatus[] = ["pending", "partial", "paid", "overdue"];
+
+  if (input.supplierInvoiceId) {
+    let query = admin
+      .from("accounts_payable")
+      .select("id", { count: "exact", head: true })
+      .eq("supplier_invoice_id", input.supplierInvoiceId)
+      .in("status", activeStatuses);
+
+    if (input.excludeId) {
+      query = query.neq("id", input.excludeId);
+    }
+
+    const { count, error } = await query;
+    if (error) throw new Error("No se pudo validar si la factura ya tiene cuenta por pagar activa.");
+    if ((count ?? 0) > 0) return "Ya existe una cuenta por pagar activa para esta factura.";
+  }
+
+  if (input.purchaseId) {
+    let query = admin
+      .from("accounts_payable")
+      .select("id", { count: "exact", head: true })
+      .eq("purchase_id", input.purchaseId)
+      .in("status", activeStatuses);
+
+    if (input.excludeId) {
+      query = query.neq("id", input.excludeId);
+    }
+
+    const { count, error } = await query;
+    if (error) throw new Error("No se pudo validar si la compra ya tiene cuenta por pagar activa.");
+    if ((count ?? 0) > 0) return "Ya existe una cuenta por pagar activa para esta compra.";
+  }
+
+  return null;
+}
 async function ensureActiveSupplier(supplierId: string) {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
@@ -119,6 +157,7 @@ export async function saveSupplierInvoiceAction(input: SupplierInvoiceFormInput)
   }
 
   const admin = getSupabaseAdminClient();
+
   const payload = {
     supplier_id: supplierId,
     purchase_id: purchaseId,
@@ -248,6 +287,17 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
   }
 
   const admin = getSupabaseAdminClient();
+  let conflictMessage: string | null = null;
+  try {
+    conflictMessage = await findActivePayableConflict({ supplierInvoiceId: invoiceId, purchaseId, excludeId: input.id ?? null });
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo validar duplicidad de la cuenta por pagar." };
+  }
+
+  if (conflictMessage) {
+    return { ok: false, message: conflictMessage };
+  }
+
   const payload = {
     supplier_id: supplierId,
     purchase_id: purchaseId,

@@ -247,7 +247,6 @@ function purchaseReturnSnapshot(row: PurchaseReturnEventRow) {
     amount: toNumber(row.total),
     currency: row.purchases?.currency ?? "HNL",
     status: row.status,
-    reason: row.reason,
     return_date: row.return_date,
   };
 }
@@ -268,7 +267,6 @@ function supplierCreditSnapshot(row: SupplierCreditEventRow) {
     total: toNumber(row.amount),
     currency: "HNL",
     status: row.status,
-    reason: row.reason,
     credit_date: row.credit_date,
   };
 }

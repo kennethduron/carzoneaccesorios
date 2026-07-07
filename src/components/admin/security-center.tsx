@@ -485,7 +485,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
 
                 return (
                   <article key={user.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
                       <div className="min-w-0">
                         <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{user.full_name || user.email || "Sin nombre"}</h3>
                         <p className="mt-1 break-words text-xs text-black/50 [overflow-wrap:anywhere]">{user.email ?? "-"}</p>
@@ -904,23 +904,23 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
               <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">Sin registros para los filtros seleccionados.</p>
             ) : (
               visibleAuditLogs.map((log) => (
-                <article key={log.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
+                <article key={log.id} className="min-w-0 max-w-full rounded-md border border-black/10 bg-white p-4 shadow-sm">
+                  <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-xs text-black/50">{formatDateTime(log.created_at)}</p>
                       <h3 className="mt-1 break-words font-semibold [overflow-wrap:anywhere]">{log.action}</h3>
                       <p className="mt-1 break-words text-sm text-black/60 [overflow-wrap:anywhere]">{log.user_name ?? log.user_email ?? "Sistema"}</p>
                     </div>
-                    <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{auditModule(log)}</span>
+                    <span className="max-w-full break-words rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold [overflow-wrap:anywhere] sm:shrink-0">{auditModule(log)}</span>
                   </div>
-                  <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                  <dl className="mt-4 grid min-w-0 grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                     <div className="rounded-md bg-[#f8fafc] p-2">
                       <dt className="text-xs uppercase text-black/45">Rol</dt>
-                      <dd className="mt-1 font-medium">{log.actor_role ?? "-"}</dd>
+                      <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{log.actor_role ?? "-"}</dd>
                     </div>
                     <div className="rounded-md bg-[#f8fafc] p-2">
                       <dt className="text-xs uppercase text-black/45">Resultado</dt>
-                      <dd className="mt-1 font-medium">{auditResult(log)}</dd>
+                      <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{auditResult(log)}</dd>
                     </div>
                     <div className="rounded-md bg-[#f8fafc] p-2">
                       <dt className="text-xs uppercase text-black/45">Entidad</dt>
@@ -928,7 +928,7 @@ export function SecurityCenter({ data, currentUser }: SecurityCenterProps) {
                     </div>
                     <div className="rounded-md bg-[#f8fafc] p-2">
                       <dt className="text-xs uppercase text-black/45">Dispositivo</dt>
-                      <dd className="mt-1 font-medium">{deviceLabel(log.user_agent)}</dd>
+                      <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{deviceLabel(log.user_agent)}</dd>
                     </div>
                   </dl>
                   <p className="mt-3 break-words text-xs text-black/55 [overflow-wrap:anywhere]">Nuevo: {compactJson(log.new_data)}</p>
