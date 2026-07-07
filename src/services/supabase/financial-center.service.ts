@@ -48,7 +48,7 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "supplier_payment_card", label: "Pago a proveedores - tarjeta", mappingType: "payment_method", sourceKey: "supplier_payment_card" },
   { key: "purchase_tax", label: "Impuesto de compras", mappingType: "tax", sourceKey: "purchase_tax" },
   { key: "purchase_return", label: "Devoluciones de compras", mappingType: "default_account", sourceKey: "purchase_return" },
-  { key: "supplier_credit", label: "Credito de proveedor", mappingType: "default_account", sourceKey: "supplier_credit" },
+  { key: "supplier_credit", label: "Crédito de proveedor", mappingType: "default_account", sourceKey: "supplier_credit" },
   { key: "suspense", label: "Cuenta transitoria", mappingType: "suspense", sourceKey: "suspense" },
 ];
 

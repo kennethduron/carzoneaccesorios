@@ -16,6 +16,7 @@ import {
   accountingAutomationModeLabels,
   phase2AAutomationModes,
   accountingMappingTypeLabels,
+  getAccountingMappingDisplayLabel,
 } from "@/services/supabase/accounting-config.service";
 import type { AccountingPageData } from "@/types/accounting";
 import type {
@@ -416,7 +417,7 @@ export function FinancialCenterManager({
                       <div className="min-w-0">
                         <p className="font-semibold">{item.label}</p>
                         <p className="mt-1 text-sm text-black/55">
-                          {accountingMappingTypeLabels[item.mappingType]} · {item.sourceKey}
+                          {accountingMappingTypeLabels[item.mappingType]} · {getAccountingMappingDisplayLabel(item.sourceKey)}
                         </p>
                         <p className="mt-1 text-xs text-black/45">
                           {item.account ? `${item.account.code} - ${item.account.name}` : "Cuenta no configurada"}
@@ -488,7 +489,7 @@ export function FinancialCenterManager({
                 <article key={item.key} className="grid gap-3 rounded-md border border-black/10 bg-[#fafafa] p-3 lg:grid-cols-[minmax(180px,1fr)_minmax(220px,1.4fr)_auto] lg:items-end">
                   <div>
                     <p className="font-semibold">{item.label}</p>
-                    <p className="mt-1 text-sm text-black/55">{accountingMappingTypeLabels[item.mappingType]} · {item.sourceKey}</p>
+                    <p className="mt-1 text-sm text-black/55">{accountingMappingTypeLabels[item.mappingType]} · {getAccountingMappingDisplayLabel(item.sourceKey)}</p>
                     <MappingStatusBadge status={item.status} />
                   </div>
                   <label className="block">
@@ -751,7 +752,7 @@ function MappingsTable({
           <thead className="bg-[#f3f4f6] text-xs uppercase text-black/50">
             <tr>
               <th className="px-3 py-3">Tipo</th>
-              <th className="px-3 py-3">Clave</th>
+              <th className="px-3 py-3">Concepto</th>
               <th className="px-3 py-3">Cuenta contable</th>
               <th className="px-3 py-3">Prioridad</th>
               <th className="px-3 py-3">Estado</th>
@@ -762,7 +763,7 @@ function MappingsTable({
             {mappings.map((mapping) => (
               <tr key={mapping.id}>
                 <td className="px-3 py-3">{accountingMappingTypeLabels[mapping.mapping_type]}</td>
-                <td className="px-3 py-3 font-medium">{mapping.source_key}</td>
+                <td className="px-3 py-3 font-medium">{getAccountingMappingDisplayLabel(mapping.source_key)}</td>
                 <td className="px-3 py-3">
                   {mapping.account ? `${mapping.account.code} - ${mapping.account.name}` : "Cuenta no configurada"}
                 </td>
