@@ -450,12 +450,20 @@ function statementRows(rows: AggregateRow[], accountTypes: AccountingAccountType
     .sort((left, right) => left.account.code.localeCompare(right.account.code, "es-HN", { numeric: true }));
 }
 
-async function getStatementAggregate(filters: AccountingReportFilters, mode: StatementDateMode) {
+function accountIdsForTypes(accounts: AccountingReportAccount[], accountTypes: AccountingAccountType[]) {
+  const typeSet = new Set(accountTypes);
+  return accounts.filter((account) => typeSet.has(account.type)).map((account) => account.id);
+}
+
+async function getStatementAggregate(filters: AccountingReportFilters, mode: StatementDateMode, accountIds: string[]) {
+  if (accountIds.length === 0) return [] as AggregateRow[];
+
   const supabase = await getSupabaseServerClient();
   let query = supabase
     .from("journal_entry_lines")
     .select("account_id, debit.sum(), credit.sum(), accounting_accounts!inner(id, code, name, type, normal_balance, is_active), journal_entries!inner(entry_date, status)")
-    .eq("journal_entries.status", "publicada");
+    .eq("journal_entries.status", "publicada")
+    .in("account_id", accountIds);
 
   if (mode === "asOfEnd") {
     query = query.lte("journal_entries.entry_date", filters.endDate);
@@ -497,9 +505,11 @@ function buildSection(title: string, rows: FinancialStatementRow[]) {
 export async function getBalanceSheetReport(params: SearchParamsLike): Promise<BalanceSheetReportData> {
   const initialOptions = await getAccountingReportOptions();
   const filters = normalizeFilters(params, initialOptions.periods);
+  const balanceAccountIds = accountIdsForTypes(initialOptions.accounts, balanceSheetAccountTypes);
+  const incomeAccountIds = accountIdsForTypes(initialOptions.accounts, incomeStatementAccountTypes);
   const [balanceRows, periodRows, hasPublishedEntries] = await Promise.all([
-    getStatementAggregate(filters, "asOfEnd"),
-    getStatementAggregate(filters, "period"),
+    getStatementAggregate(filters, "asOfEnd", balanceAccountIds),
+    getStatementAggregate(filters, "period", incomeAccountIds),
     hasPublishedEntriesForStatement(filters, "period"),
   ]);
 
@@ -541,8 +551,9 @@ export async function getBalanceSheetReport(params: SearchParamsLike): Promise<B
 export async function getIncomeStatementReport(params: SearchParamsLike): Promise<IncomeStatementReportData> {
   const initialOptions = await getAccountingReportOptions();
   const filters = normalizeFilters(params, initialOptions.periods);
+  const incomeAccountIds = accountIdsForTypes(initialOptions.accounts, incomeStatementAccountTypes);
   const [aggregateRows, hasPublishedEntries] = await Promise.all([
-    getStatementAggregate(filters, "period"),
+    getStatementAggregate(filters, "period", incomeAccountIds),
     hasPublishedEntriesForStatement(filters, "period"),
   ]);
 
