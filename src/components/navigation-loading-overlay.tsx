@@ -12,6 +12,18 @@ export function NavigationLoadingOverlay() {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    function isDownloadHref(anchor: HTMLAnchorElement, url: URL) {
+      if (anchor.hasAttribute("download")) {
+        return true;
+      }
+
+      if (url.pathname.startsWith("/api/")) {
+        return true;
+      }
+
+      return /\.(csv|pdf|xls|xlsx|zip|txt)$/i.test(url.pathname);
+    }
+
     function clearPendingOverlay() {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -36,6 +48,10 @@ export function NavigationLoadingOverlay() {
 
       const nextUrl = new URL(target.href);
       if (nextUrl.origin !== window.location.origin || nextUrl.href === window.location.href) {
+        return;
+      }
+
+      if (isDownloadHref(target, nextUrl)) {
         return;
       }
 

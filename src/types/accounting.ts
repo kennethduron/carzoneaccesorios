@@ -1,6 +1,44 @@
 export type AccountingAccountType = "asset" | "liability" | "equity" | "revenue" | "cost" | "expense";
 export type AccountingNormalBalance = "debit" | "credit";
 export type JournalEntryStatus = "borrador" | "publicada" | "reversada" | "anulada";
+export type AccountingPeriodStatus = "open" | "closed" | "reopened";
+export type AccountingPeriodType = "monthly" | "annual" | "custom";
+
+export type AccountingPeriod = {
+  id: string;
+  name: string;
+  period_type: AccountingPeriodType;
+  start_date: string;
+  end_date: string;
+  status: AccountingPeriodStatus;
+  fiscal_year: number;
+  closed_at: string | null;
+  closed_by: string | null;
+  reopened_at: string | null;
+  reopened_by: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AccountingPeriodInput = {
+  id?: string;
+  name: string;
+  period_type: AccountingPeriodType;
+  start_date: string;
+  end_date: string;
+  status?: AccountingPeriodStatus;
+  fiscal_year: number;
+  notes?: string | null;
+};
+
+export type AccountingPeriodsPageData = {
+  periods: AccountingPeriod[];
+  currentPeriod: AccountingPeriod | null;
+  openPeriods: number;
+  closedPeriods: number;
+};
 
 export type AccountingAccount = {
   id: string;

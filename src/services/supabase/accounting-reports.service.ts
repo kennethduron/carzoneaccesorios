@@ -161,10 +161,18 @@ function normalizeFilters(params: SearchParamsLike, periods: AccountingPeriodOpt
   };
 }
 
+function selectedPeriod(filters: AccountingReportFilters, periods: AccountingPeriodOption[]) {
+  return periods.find((item) => item.id === filters.periodId) ?? null;
+}
+
 function periodLabel(filters: AccountingReportFilters, periods: AccountingPeriodOption[]) {
-  const period = periods.find((item) => item.id === filters.periodId);
+  const period = selectedPeriod(filters, periods);
   if (period) return `${period.name} (${period.start_date} a ${period.end_date})`;
   return `${filters.startDate} a ${filters.endDate}`;
+}
+
+function periodStatus(filters: AccountingReportFilters, periods: AccountingPeriodOption[]) {
+  return selectedPeriod(filters, periods)?.status ?? null;
 }
 
 function balanceDelta(account: AccountingReportAccount, debit: number, credit: number) {
@@ -289,6 +297,7 @@ export async function getGeneralLedgerReport(params: SearchParamsLike, options: 
       filters: { ...filters, page, pageSize },
       options: filteredOptions,
       periodLabel: periodLabel(filters, filteredOptions.periods),
+      selectedPeriodStatus: periodStatus(filters, filteredOptions.periods),
       generatedAt: new Date().toISOString(),
       account: null,
       section: null,
@@ -352,6 +361,7 @@ export async function getGeneralLedgerReport(params: SearchParamsLike, options: 
     filters: { ...filters, accountId: selectedAccount.id, page, pageSize },
     options: filteredOptions,
     periodLabel: periodLabel(filters, filteredOptions.periods),
+    selectedPeriodStatus: periodStatus(filters, filteredOptions.periods),
     generatedAt: new Date().toISOString(),
     account: selectedAccount,
     section: {
@@ -417,6 +427,7 @@ export async function getTrialBalanceReport(params: SearchParamsLike): Promise<T
     filters,
     options,
     periodLabel: periodLabel(filters, options.periods),
+    selectedPeriodStatus: periodStatus(filters, options.periods),
     generatedAt: new Date().toISOString(),
     rows,
     totalDebit,
@@ -533,6 +544,7 @@ export async function getBalanceSheetReport(params: SearchParamsLike): Promise<B
     filters,
     options: initialOptions,
     periodLabel: periodLabel(filters, initialOptions.periods),
+    selectedPeriodStatus: periodStatus(filters, initialOptions.periods),
     generatedAt: new Date().toISOString(),
     assets,
     liabilities,
@@ -571,6 +583,7 @@ export async function getIncomeStatementReport(params: SearchParamsLike): Promis
     filters,
     options: initialOptions,
     periodLabel: periodLabel(filters, initialOptions.periods),
+    selectedPeriodStatus: periodStatus(filters, initialOptions.periods),
     generatedAt: new Date().toISOString(),
     revenues,
     costs,

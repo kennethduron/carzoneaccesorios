@@ -60,25 +60,25 @@ export function ChartOfAccountsTools({
 
         <div className="flex flex-wrap gap-2">
           {canManage ? (
-            <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/plantilla/excel">
+            <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/plantilla/excel" download>
               <Download size={16} />
               Descargar plantilla Excel
             </a>
           ) : null}
           {canExport ? (
             <>
-              <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/excel">
+              <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/excel" download>
                 <FileSpreadsheet size={16} />
                 Exportar Excel
               </a>
-              <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/pdf">
+              <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/pdf" download>
                 <FileText size={16} />
                 Exportar PDF
               </a>
             </>
           ) : null}
           {canCsvExport ? (
-            <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/csv">
+            <a className={linkClass} href="/api/admin/contabilidad/catalogo-cuentas/csv" download>
               <Download size={16} />
               Exportar CSV
             </a>

@@ -1,4 +1,4 @@
-import type { AccountingAccount, AccountingAccountType, AccountingNormalBalance } from "./accounting";
+import type { AccountingAccount, AccountingAccountType, AccountingNormalBalance, AccountingPeriodStatus } from "./accounting";
 
 export type AccountingReportStatus = "publicada";
 
@@ -7,7 +7,7 @@ export type AccountingPeriodOption = {
   name: string;
   start_date: string;
   end_date: string;
-  status: "open" | "closed";
+  status: AccountingPeriodStatus;
 };
 
 export type AccountingReportAccount = Pick<AccountingAccount, "id" | "code" | "name" | "type" | "normal_balance" | "is_active">;
@@ -53,6 +53,7 @@ export type GeneralLedgerReportData = {
   filters: AccountingReportFilters;
   options: AccountingReportOptions;
   periodLabel: string;
+  selectedPeriodStatus: AccountingPeriodStatus | null;
   generatedAt: string;
   account: AccountingReportAccount | null;
   section: GeneralLedgerAccountSection | null;
@@ -73,6 +74,7 @@ export type TrialBalanceReportData = {
   filters: AccountingReportFilters;
   options: AccountingReportOptions;
   periodLabel: string;
+  selectedPeriodStatus: AccountingPeriodStatus | null;
   generatedAt: string;
   rows: TrialBalanceRow[];
   totalDebit: number;
@@ -97,6 +99,7 @@ export type BalanceSheetReportData = {
   filters: AccountingReportFilters;
   options: AccountingReportOptions;
   periodLabel: string;
+  selectedPeriodStatus: AccountingPeriodStatus | null;
   generatedAt: string;
   assets: FinancialStatementSection;
   liabilities: FinancialStatementSection;
@@ -115,6 +118,7 @@ export type IncomeStatementReportData = {
   filters: AccountingReportFilters;
   options: AccountingReportOptions;
   periodLabel: string;
+  selectedPeriodStatus: AccountingPeriodStatus | null;
   generatedAt: string;
   revenues: FinancialStatementSection;
   costs: FinancialStatementSection;

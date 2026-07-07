@@ -23,6 +23,16 @@ const normalBalanceLabels = {
   credit: "Acreedor",
 };
 
+const periodStatusLabels = {
+  open: "Abierto",
+  closed: "Cerrado",
+  reopened: "Reabierto",
+};
+
+function periodStatusText(status: GeneralLedgerReportData["selectedPeriodStatus"]) {
+  return status ? periodStatusLabels[status] : "Rango manual";
+}
+
 function filterParams(filters: AccountingReportFilters) {
   return {
     period: filters.periodId,
@@ -130,11 +140,11 @@ function ExportPanel({ canExport, pdfHref, excelHref }: { canExport: boolean; pd
           <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde los mismos datos contables publicados del reporte filtrado. No se exporta CSV en esta fase.</p>
         </div>
         <div className="grid gap-2 sm:flex sm:flex-wrap">
-          <a href={excelHref} aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${canExport ? "border-black/10 bg-white text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]" : "pointer-events-none border-black/10 bg-[#f4f4f5] text-black/35"}`}>
+          <a href={excelHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${canExport ? "border-black/10 bg-white text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]" : "pointer-events-none border-black/10 bg-[#f4f4f5] text-black/35"}`}>
             <FileSpreadsheet size={16} />
             Exportar Excel
           </a>
-          <a href={pdfHref} aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${canExport ? "bg-[#080808] text-white hover:bg-[#1f1f1f]" : "pointer-events-none bg-[#f4f4f5] text-black/35"}`}>
+          <a href={pdfHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${canExport ? "bg-[#080808] text-white hover:bg-[#1f1f1f]" : "pointer-events-none bg-[#f4f4f5] text-black/35"}`}>
             <Printer size={16} />
             Exportar PDF
           </a>
@@ -155,8 +165,9 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
         <ReportFilters data={data} basePath="/admin/libro-mayor" />
         <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/libro-mayor", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/libro-mayor", data.filters, "excel")} />
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Estado" value={periodStatusText(data.selectedPeriodStatus)} />
           <Metric label="Cuenta" value={data.account ? `${data.account.code} - ${data.account.name}` : "Sin cuenta"} />
           <Metric label="Movimientos" value={data.totalMovements.toLocaleString("es-HN")} />
           <Metric label="Generado" value={formatHnDateTime(data.generatedAt)} />
@@ -257,6 +268,7 @@ export function TrialBalanceReport({ data, canExport }: { data: TrialBalanceRepo
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Estado" value={periodStatusText(data.selectedPeriodStatus)} />
           <Metric label="Cuentas" value={data.rows.length.toLocaleString("es-HN")} />
           <Metric label="Débitos" value={formatCurrency(data.totalDebit)} />
           <Metric label="Créditos" value={formatCurrency(data.totalCredit)} />
@@ -450,6 +462,7 @@ export function BalanceSheetReport({ data, canExport }: { data: BalanceSheetRepo
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Estado" value={periodStatusText(data.selectedPeriodStatus)} />
           <Metric label="Activos" value={formatCurrency(data.totalAssets)} />
           <Metric label="Pasivos" value={formatCurrency(data.totalLiabilities)} />
           <Metric label="Patrimonio" value={formatCurrency(data.totalEquity)} />
@@ -486,6 +499,7 @@ export function IncomeStatementReport({ data, canExport }: { data: IncomeStateme
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Estado" value={periodStatusText(data.selectedPeriodStatus)} />
           <Metric label="Ingresos" value={formatCurrency(data.totalRevenue)} />
           <Metric label="Costos" value={formatCurrency(data.totalCost)} />
           <Metric label="Utilidad bruta" value={formatCurrency(data.grossProfit)} />
