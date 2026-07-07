@@ -4,7 +4,7 @@ import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Input } from "@/components/ui";
 import { buildAccountingReportParams } from "@/services/supabase/accounting-reports.service";
 import type { AccountingAccountType } from "@/types/accounting";
-import type { AccountingReportFilters, GeneralLedgerReportData, TrialBalanceReportData } from "@/types/accounting-reports";
+import type { AccountingReportFilters, BalanceSheetReportData, FinancialStatementSection, GeneralLedgerReportData, IncomeStatementReportData, TrialBalanceReportData } from "@/types/accounting-reports";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -332,6 +332,186 @@ export function TrialBalanceReport({ data, canExport }: { data: TrialBalanceRepo
   );
 }
 
+function StatementFilters({ data, basePath }: { data: Pick<BalanceSheetReportData | IncomeStatementReportData, "filters" | "options">; basePath: string }) {
+  const { filters, options } = data;
+  return (
+    <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Search size={18} />
+        <h2 className="font-semibold">Filtros</h2>
+      </div>
+      <form action={basePath} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+        <Field label="Período contable">
+          <select name="period" defaultValue={filters.periodId} className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15">
+            <option value="">Rango manual</option>
+            {options.periods.map((period) => (
+              <option key={period.id} value={period.id}>{period.name}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Fecha inicial">
+          <Input name="startDate" type="date" defaultValue={filters.startDate} />
+        </Field>
+        <Field label="Fecha final">
+          <Input name="endDate" type="date" defaultValue={filters.endDate} />
+        </Field>
+        <Field label="Estado">
+          <select name="status" defaultValue="publicada" disabled className="h-10 w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 text-sm text-black/60 outline-none">
+            <option value="publicada">Solo publicadas</option>
+          </select>
+        </Field>
+        <div className="grid gap-2 sm:flex sm:items-end xl:col-span-2">
+          <button type="submit" className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#080808] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#1f1f1f]">
+            <Search size={16} />
+            Filtrar
+          </button>
+          <Link href={basePath} className="inline-flex h-10 items-center justify-center rounded-md border border-black/10 bg-white px-4 text-sm font-semibold text-[#080808] transition-colors hover:bg-[#f4f4f5]">
+            Limpiar
+          </Link>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function StatementSectionTable({ section, extraRows = [] }: { section: FinancialStatementSection; extraRows?: Array<{ label: string; amount: number }> }) {
+  const rows = section.rows;
+  return (
+    <section className="overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
+      <div className="border-b border-black/10 p-4 sm:p-5">
+        <div className="flex items-center gap-2"><FileText size={18} /><h2 className="font-semibold">{section.title}</h2></div>
+      </div>
+
+      <div className="grid gap-3 p-3 md:hidden">
+        {rows.map((row) => (
+          <article key={row.account.id} className="rounded-md border border-black/10 bg-white p-3">
+            <p className="break-words font-semibold">{row.account.code} - {row.account.name}</p>
+            <p className="mt-2 text-lg font-semibold tabular-nums">{formatCurrency(row.amount)}</p>
+          </article>
+        ))}
+        {extraRows.map((row) => (
+          <article key={row.label} className="rounded-md border border-black/10 bg-[#fafafa] p-3">
+            <p className="font-semibold">{row.label}</p>
+            <p className="mt-2 text-lg font-semibold tabular-nums">{formatCurrency(row.amount)}</p>
+          </article>
+        ))}
+        {rows.length === 0 && extraRows.length === 0 ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+        <div className="rounded-md bg-[#080808] p-3 text-white">
+          <p className="text-xs uppercase text-white/65">Subtotal</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{formatCurrency(section.total)}</p>
+        </div>
+      </div>
+
+      <div className="hidden max-w-full overflow-x-auto md:block">
+        <table className="w-full min-w-[820px] text-left text-sm">
+          <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
+            <tr>
+              <th className="px-3 py-3">Código</th>
+              <th className="px-3 py-3">Cuenta</th>
+              <th className="px-3 py-3 text-right">Saldo</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/10">
+            {rows.map((row) => (
+              <tr key={row.account.id}>
+                <td className="px-3 py-3 font-semibold">{row.account.code}</td>
+                <td className="px-3 py-3 break-words">{row.account.name}</td>
+                <td className="px-3 py-3 text-right font-semibold tabular-nums">{formatCurrency(row.amount)}</td>
+              </tr>
+            ))}
+            {extraRows.map((row) => (
+              <tr key={row.label} className="bg-[#fafafa]">
+                <td className="px-3 py-3 font-semibold">-</td>
+                <td className="px-3 py-3 font-semibold">{row.label}</td>
+                <td className="px-3 py-3 text-right font-semibold tabular-nums">{formatCurrency(row.amount)}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && extraRows.length === 0 ? <tr><td colSpan={3} className="px-3 py-6 text-center text-black/55">No hay partidas publicadas para el período seleccionado.</td></tr> : null}
+          </tbody>
+          <tfoot className="border-t border-black/10 bg-[#fafafa] font-semibold">
+            <tr>
+              <td colSpan={2} className="px-3 py-3">Subtotal {section.title}</td>
+              <td className="px-3 py-3 text-right tabular-nums">{formatCurrency(section.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export function BalanceSheetReport({ data, canExport }: { data: BalanceSheetReportData; canExport: boolean }) {
+  return (
+    <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] space-y-5">
+        <ReportHeader eyebrow="Finanzas" title="Balance General" description="Estado financiero read-only calculado exclusivamente desde partidas contables publicadas y sus líneas." />
+        <StatementFilters data={data} basePath="/admin/balance-general" />
+        <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/balance-general", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/balance-general", data.filters, "excel")} />
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Activos" value={formatCurrency(data.totalAssets)} />
+          <Metric label="Pasivos" value={formatCurrency(data.totalLiabilities)} />
+          <Metric label="Patrimonio" value={formatCurrency(data.totalEquity)} />
+          <div className={`rounded-lg border p-4 shadow-sm ${data.balanced ? "border-[#2f6f3e]/20 bg-[#edf7ed] text-[#2f6f3e]" : "border-[#e4252c]/20 bg-[#fff1f2] text-[#b91c25]"}`}>
+            <p className="text-sm opacity-80">Validación</p>
+            <p className="mt-1 text-xl font-semibold">{data.balanced ? "Balance correcto" : "Descuadre contable"}</p>
+            <p className="mt-1 text-sm">Diferencia {formatCurrency(data.difference)}</p>
+          </div>
+        </section>
+
+        {!data.hasPublishedEntries && data.totalAssets === 0 && data.totalLiabilitiesAndEquity === 0 ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+
+        <StatementSectionTable section={data.assets} />
+        <StatementSectionTable section={data.liabilities} />
+        <StatementSectionTable section={data.equity} extraRows={[{ label: "Resultado del período", amount: data.periodResult }]} />
+
+        <section className="grid gap-3 md:grid-cols-3">
+          <SmallTotal label="Total activos" value={formatCurrency(data.totalAssets)} />
+          <SmallTotal label="Pasivos + patrimonio" value={formatCurrency(data.totalLiabilitiesAndEquity)} />
+          <SmallTotal label="Generado" value={formatHnDateTime(data.generatedAt)} />
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export function IncomeStatementReport({ data, canExport }: { data: IncomeStatementReportData; canExport: boolean }) {
+  return (
+    <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1500px] space-y-5">
+        <ReportHeader eyebrow="Finanzas" title="Estado de Resultados" description="Ingresos, costos y gastos read-only calculados exclusivamente desde partidas contables publicadas." />
+        <StatementFilters data={data} basePath="/admin/estado-resultados" />
+        <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/estado-resultados", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/estado-resultados", data.filters, "excel")} />
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <Metric label="Período" value={data.periodLabel} />
+          <Metric label="Ingresos" value={formatCurrency(data.totalRevenue)} />
+          <Metric label="Costos" value={formatCurrency(data.totalCost)} />
+          <Metric label="Utilidad bruta" value={formatCurrency(data.grossProfit)} />
+          <div className={`rounded-lg border p-4 shadow-sm ${data.netIncome >= 0 ? "border-[#2f6f3e]/20 bg-[#edf7ed] text-[#2f6f3e]" : "border-[#e4252c]/20 bg-[#fff1f2] text-[#b91c25]"}`}>
+            <p className="text-sm opacity-80">Resultado</p>
+            <p className="mt-1 text-xl font-semibold">{data.resultLabel}</p>
+            <p className="mt-1 text-sm tabular-nums">{formatCurrency(data.netIncome)}</p>
+          </div>
+        </section>
+
+        {!data.hasPublishedEntries ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+
+        <StatementSectionTable section={data.revenues} />
+        <StatementSectionTable section={data.costs} />
+        <StatementSectionTable section={data.expenses} />
+
+        <section className="grid gap-3 md:grid-cols-4">
+          <SmallTotal label="Ingresos" value={formatCurrency(data.totalRevenue)} />
+          <SmallTotal label="Costos" value={formatCurrency(data.totalCost)} />
+          <SmallTotal label="Gastos" value={formatCurrency(data.totalExpense)} />
+          <SmallTotal label={data.resultLabel} value={formatCurrency(data.netIncome)} />
+        </section>
+      </div>
+    </main>
+  );
+}
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-1 block text-xs font-medium uppercase text-black/50">{label}</span>{children}</label>;
 }

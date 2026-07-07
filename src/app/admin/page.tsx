@@ -133,6 +133,8 @@ const moduleGroups = [
       { title: "Contabilidad", href: "/admin/contabilidad", description: "Catálogo de cuentas, libro diario y partidas manuales.", permissions: ["accounting:read"] },
       { title: "Libro Mayor", href: "/admin/libro-mayor", description: "Movimientos publicados por cuenta contable.", permissions: ["accounting:view_reports"] },
       { title: "Balance de Comprobación", href: "/admin/balance-comprobacion", description: "Débitos, créditos y saldos finales por cuenta.", permissions: ["accounting:view_reports"] },
+      { title: "Balance General", href: "/admin/balance-general", description: "Activos, pasivos, patrimonio y validación contable.", permissions: ["accounting:view_reports"] },
+      { title: "Estado de Resultados", href: "/admin/estado-resultados", description: "Ingresos, costos, gastos y utilidad neta.", permissions: ["accounting:view_reports"] },
       { title: "Facturas", href: "/admin/facturas", description: "Facturas fiscales, PDF, referencias y anulación.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes fiscales", href: "/admin/reportes?scope=fiscal", description: "Ventas facturadas, impuestos, facturas anuladas y correlativos.", permissions: ["reports:read", "reports:fiscal_read"] },
       { title: "Configuración fiscal", href: "/admin/configuracion-fiscal", description: "RTN, CAI, rango fiscal, fecha límite y datos legales.", permissions: ["settings:fiscal", "fiscal:read"] },

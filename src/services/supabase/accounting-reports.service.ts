@@ -6,8 +6,11 @@ import type {
   AccountingPeriodOption,
   AccountingReportAccount,
   AccountingReportFilters,
+  BalanceSheetReportData,
+  FinancialStatementRow,
   GeneralLedgerMovement,
   GeneralLedgerReportData,
+  IncomeStatementReportData,
   TrialBalanceReportData,
   TrialBalanceRow,
 } from "@/types/accounting-reports";
@@ -421,5 +424,152 @@ export async function getTrialBalanceReport(params: SearchParamsLike): Promise<T
     totalEndingBalance: roundMoney(rows.reduce((sum, row) => sum + row.endingBalance, 0)),
     difference,
     balanced: Math.abs(difference) < 0.01,
+  };
+}
+
+type StatementDateMode = "period" | "asOfEnd";
+
+const balanceSheetAccountTypes: AccountingAccountType[] = ["asset", "liability", "equity"];
+const incomeStatementAccountTypes: AccountingAccountType[] = ["revenue", "cost", "expense"];
+
+function statementAmount(account: AccountingReportAccount, debit: number, credit: number) {
+  return roundMoney(balanceDelta(account, debit, credit));
+}
+
+function statementRows(rows: AggregateRow[], accountTypes: AccountingAccountType[]) {
+  const typeSet = new Set(accountTypes);
+  return rows
+    .map((row): FinancialStatementRow | null => {
+      const account = firstJoined(row.accounting_accounts);
+      if (!account || !typeSet.has(account.type)) return null;
+      const amount = statementAmount(account, aggregateDebit(row), aggregateCredit(row));
+      if (amount === 0) return null;
+      return { account, amount };
+    })
+    .filter((row): row is FinancialStatementRow => Boolean(row))
+    .sort((left, right) => left.account.code.localeCompare(right.account.code, "es-HN", { numeric: true }));
+}
+
+async function getStatementAggregate(filters: AccountingReportFilters, mode: StatementDateMode) {
+  const supabase = await getSupabaseServerClient();
+  let query = supabase
+    .from("journal_entry_lines")
+    .select("account_id, debit.sum(), credit.sum(), accounting_accounts!inner(id, code, name, type, normal_balance, is_active), journal_entries!inner(entry_date, status)")
+    .eq("journal_entries.status", "publicada");
+
+  if (mode === "asOfEnd") {
+    query = query.lte("journal_entries.entry_date", filters.endDate);
+  } else {
+    query = query.gte("journal_entries.entry_date", filters.startDate).lte("journal_entries.entry_date", filters.endDate);
+  }
+
+  const { data, error } = await query.returns<AggregateRow[]>();
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+async function hasPublishedEntriesForStatement(filters: AccountingReportFilters, mode: StatementDateMode) {
+  const supabase = await getSupabaseServerClient();
+  let query = supabase
+    .from("journal_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "publicada");
+
+  if (mode === "asOfEnd") {
+    query = query.lte("entry_date", filters.endDate);
+  } else {
+    query = query.gte("entry_date", filters.startDate).lte("entry_date", filters.endDate);
+  }
+
+  const { count, error } = await query;
+  if (error) throw new Error(error.message);
+  return (count ?? 0) > 0;
+}
+
+function sectionTotal(rows: FinancialStatementRow[]) {
+  return roundMoney(rows.reduce((sum, row) => sum + row.amount, 0));
+}
+
+function buildSection(title: string, rows: FinancialStatementRow[]) {
+  return { title, rows, total: sectionTotal(rows) };
+}
+
+export async function getBalanceSheetReport(params: SearchParamsLike): Promise<BalanceSheetReportData> {
+  const initialOptions = await getAccountingReportOptions();
+  const filters = normalizeFilters(params, initialOptions.periods);
+  const [balanceRows, periodRows, hasPublishedEntries] = await Promise.all([
+    getStatementAggregate(filters, "asOfEnd"),
+    getStatementAggregate(filters, "period"),
+    hasPublishedEntriesForStatement(filters, "period"),
+  ]);
+
+  const allBalanceRows = statementRows(balanceRows, balanceSheetAccountTypes);
+  const incomeRows = statementRows(periodRows, incomeStatementAccountTypes);
+  const assets = buildSection("Activos", allBalanceRows.filter((row) => row.account.type === "asset"));
+  const liabilities = buildSection("Pasivos", allBalanceRows.filter((row) => row.account.type === "liability"));
+  const equityBaseRows = allBalanceRows.filter((row) => row.account.type === "equity");
+  const periodResult = roundMoney(incomeRows.reduce((sum, row) => {
+    if (row.account.type === "revenue") return sum + row.amount;
+    return sum - row.amount;
+  }, 0));
+  const equity = { ...buildSection("Patrimonio", equityBaseRows), total: roundMoney(sectionTotal(equityBaseRows) + periodResult) };
+  const totalAssets = assets.total;
+  const totalLiabilities = liabilities.total;
+  const totalEquity = equity.total;
+  const totalLiabilitiesAndEquity = roundMoney(totalLiabilities + totalEquity);
+  const difference = roundMoney(totalAssets - totalLiabilitiesAndEquity);
+
+  return {
+    filters,
+    options: initialOptions,
+    periodLabel: periodLabel(filters, initialOptions.periods),
+    generatedAt: new Date().toISOString(),
+    assets,
+    liabilities,
+    equity,
+    periodResult,
+    totalAssets,
+    totalLiabilities,
+    totalEquity,
+    totalLiabilitiesAndEquity,
+    difference,
+    balanced: Math.abs(difference) < 0.01,
+    hasPublishedEntries,
+  };
+}
+
+export async function getIncomeStatementReport(params: SearchParamsLike): Promise<IncomeStatementReportData> {
+  const initialOptions = await getAccountingReportOptions();
+  const filters = normalizeFilters(params, initialOptions.periods);
+  const [aggregateRows, hasPublishedEntries] = await Promise.all([
+    getStatementAggregate(filters, "period"),
+    hasPublishedEntriesForStatement(filters, "period"),
+  ]);
+
+  const rows = statementRows(aggregateRows, incomeStatementAccountTypes);
+  const revenues = buildSection("Ingresos", rows.filter((row) => row.account.type === "revenue"));
+  const costs = buildSection("Costos", rows.filter((row) => row.account.type === "cost"));
+  const expenses = buildSection("Gastos", rows.filter((row) => row.account.type === "expense"));
+  const totalRevenue = revenues.total;
+  const totalCost = costs.total;
+  const totalExpense = expenses.total;
+  const grossProfit = roundMoney(totalRevenue - totalCost);
+  const netIncome = roundMoney(grossProfit - totalExpense);
+
+  return {
+    filters,
+    options: initialOptions,
+    periodLabel: periodLabel(filters, initialOptions.periods),
+    generatedAt: new Date().toISOString(),
+    revenues,
+    costs,
+    expenses,
+    totalRevenue,
+    totalCost,
+    totalExpense,
+    grossProfit,
+    netIncome,
+    resultLabel: netIncome >= 0 ? "Utilidad neta" : "Pérdida neta",
+    hasPublishedEntries,
   };
 }

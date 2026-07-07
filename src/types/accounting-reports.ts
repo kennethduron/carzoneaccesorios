@@ -81,3 +81,49 @@ export type TrialBalanceReportData = {
   difference: number;
   balanced: boolean;
 };
+
+export type FinancialStatementRow = {
+  account: AccountingReportAccount;
+  amount: number;
+};
+
+export type FinancialStatementSection = {
+  title: string;
+  rows: FinancialStatementRow[];
+  total: number;
+};
+
+export type BalanceSheetReportData = {
+  filters: AccountingReportFilters;
+  options: AccountingReportOptions;
+  periodLabel: string;
+  generatedAt: string;
+  assets: FinancialStatementSection;
+  liabilities: FinancialStatementSection;
+  equity: FinancialStatementSection;
+  periodResult: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  difference: number;
+  balanced: boolean;
+  hasPublishedEntries: boolean;
+};
+
+export type IncomeStatementReportData = {
+  filters: AccountingReportFilters;
+  options: AccountingReportOptions;
+  periodLabel: string;
+  generatedAt: string;
+  revenues: FinancialStatementSection;
+  costs: FinancialStatementSection;
+  expenses: FinancialStatementSection;
+  totalRevenue: number;
+  totalCost: number;
+  totalExpense: number;
+  grossProfit: number;
+  netIncome: number;
+  resultLabel: "Utilidad neta" | "Pérdida neta";
+  hasPublishedEntries: boolean;
+};

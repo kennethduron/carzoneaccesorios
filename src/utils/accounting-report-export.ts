@@ -3,7 +3,7 @@ import "server-only";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { GeneralLedgerReportData, TrialBalanceReportData } from "@/types/accounting-reports";
+import type { BalanceSheetReportData, FinancialStatementSection, GeneralLedgerReportData, IncomeStatementReportData, TrialBalanceReportData } from "@/types/accounting-reports";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -77,6 +77,14 @@ function styleWorksheet(worksheet: ExcelJS.Worksheet) {
   worksheet.getRow(4).font = { bold: true, color: { argb: "FFFFFFFF" } };
   worksheet.getRow(4).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF080808" } };
   worksheet.getRow(4).alignment = { vertical: "middle" };
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber < 5) return;
+    row.eachCell((cell) => {
+      if (typeof cell.value === "number") {
+        cell.numFmt = '"L" #,##0.00;[Red]-"L" #,##0.00';
+      }
+    });
+  });
   worksheet.columns.forEach((column) => {
     let maxLength = 12;
     column.eachCell?.({ includeEmpty: true }, (cell) => {
@@ -173,5 +181,93 @@ export function trialBalanceExcelRows(data: TrialBalanceReportData) {
     headers: ["Código", "Cuenta", "Tipo", "Débito", "Crédito", "Saldo final"],
     rows: data.rows.map((row) => [row.account.code, row.account.name, accountTypeLabels[row.account.type] ?? "Cuenta contable", row.debit, row.credit, row.endingBalance]),
     totals: ["", "", "Totales", data.totalDebit, data.totalCredit, data.totalEndingBalance],
+  };
+}
+
+function sectionPdfRows(section: FinancialStatementSection, extraRows: Array<{ label: string; amount: number }> = []) {
+  const rows = section.rows.map((row) => [section.title, row.account.code, row.account.name, formatCurrency(row.amount)]);
+  if (section.rows.length === 0 && extraRows.length === 0) {
+    rows.push([section.title, "", "Sin movimientos publicados", formatCurrency(0)]);
+  }
+  for (const row of extraRows) {
+    rows.push([section.title, "", row.label, formatCurrency(row.amount)]);
+  }
+  rows.push([section.title, "", `Subtotal ${section.title}`, formatCurrency(section.total)]);
+  return rows;
+}
+
+function sectionExcelRows(section: FinancialStatementSection, extraRows: Array<{ label: string; amount: number }> = []) {
+  const rows: Array<Array<string | number>> = section.rows.map((row) => [section.title, row.account.code, row.account.name, row.amount]);
+  if (section.rows.length === 0 && extraRows.length === 0) {
+    rows.push([section.title, "", "Sin movimientos publicados", 0]);
+  }
+  for (const row of extraRows) {
+    rows.push([section.title, "", row.label, row.amount]);
+  }
+  rows.push([section.title, "", `Subtotal ${section.title}`, section.total]);
+  return rows;
+}
+
+export function balanceSheetPdfTable(data: BalanceSheetReportData): PdfTable {
+  const validation = data.balanced ? "Balance correcto" : "Descuadre contable";
+  return {
+    title: "Balance General",
+    subtitle: `Período: ${data.periodLabel} · Validación: ${validation}`,
+    generatedAt: data.generatedAt,
+    fileName: "car-zone-balance-general.pdf",
+    headers: ["Sección", "Código", "Cuenta", "Saldo"],
+    rows: [
+      ...sectionPdfRows(data.assets),
+      ...sectionPdfRows(data.liabilities),
+      ...sectionPdfRows(data.equity, [{ label: "Resultado del período", amount: data.periodResult }]),
+      ["Validación", "", validation, formatCurrency(data.difference)],
+    ],
+    totals: ["", "", "Pasivos + patrimonio", formatCurrency(data.totalLiabilitiesAndEquity)],
+  };
+}
+
+export function balanceSheetExcelRows(data: BalanceSheetReportData) {
+  const validation = data.balanced ? "Balance correcto" : "Descuadre contable";
+  return {
+    headers: ["Sección", "Código", "Cuenta", "Saldo"],
+    rows: [
+      ...sectionExcelRows(data.assets),
+      ...sectionExcelRows(data.liabilities),
+      ...sectionExcelRows(data.equity, [{ label: "Resultado del período", amount: data.periodResult }]),
+      ["Validación", "", validation, data.difference],
+    ],
+    totals: ["", "", "Pasivos + patrimonio", data.totalLiabilitiesAndEquity],
+  };
+}
+
+export function incomeStatementPdfTable(data: IncomeStatementReportData): PdfTable {
+  return {
+    title: "Estado de Resultados",
+    subtitle: `Período: ${data.periodLabel} · ${data.resultLabel}: ${formatCurrency(data.netIncome)}`,
+    generatedAt: data.generatedAt,
+    fileName: "car-zone-estado-resultados.pdf",
+    headers: ["Sección", "Código", "Cuenta", "Importe"],
+    rows: [
+      ...sectionPdfRows(data.revenues),
+      ...sectionPdfRows(data.costs),
+      ["Resultado", "", "Utilidad bruta", formatCurrency(data.grossProfit)],
+      ...sectionPdfRows(data.expenses),
+      ["Resultado", "", data.resultLabel, formatCurrency(data.netIncome)],
+    ],
+    totals: ["", "", data.resultLabel, formatCurrency(data.netIncome)],
+  };
+}
+
+export function incomeStatementExcelRows(data: IncomeStatementReportData) {
+  return {
+    headers: ["Sección", "Código", "Cuenta", "Importe"],
+    rows: [
+      ...sectionExcelRows(data.revenues),
+      ...sectionExcelRows(data.costs),
+      ["Resultado", "", "Utilidad bruta", data.grossProfit],
+      ...sectionExcelRows(data.expenses),
+      ["Resultado", "", data.resultLabel, data.netIncome],
+    ],
+    totals: ["", "", data.resultLabel, data.netIncome],
   };
 }
