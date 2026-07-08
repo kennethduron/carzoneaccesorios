@@ -13,10 +13,8 @@ export default async function AccountingPeriodsPage() {
   const canManage =
     hasEffectivePermission(profile.role, profile.permissions, "accounting:create", profile.email) ||
     hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email);
-  const canClose =
-    hasEffectivePermission(profile.role, profile.permissions, "accounting:close_period", profile.email) ||
-    hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email) ||
-    hasEffectivePermission(profile.role, profile.permissions, "accounting:settings", profile.email);
+  const canClose = hasEffectivePermission(profile.role, profile.permissions, "accounting:close_period", profile.email);
+  const canReopen = hasEffectivePermission(profile.role, profile.permissions, "accounting:reopen_period", profile.email);
 
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
@@ -38,7 +36,7 @@ export default async function AccountingPeriodsPage() {
           </div>
         </header>
 
-        <AccountingPeriodsManager periods={data.periods} currentPeriod={data.currentPeriod} canManage={canManage} canClose={canClose} />
+        <AccountingPeriodsManager periods={data.periods} currentPeriod={data.currentPeriod} canManage={canManage} canClose={canClose} canReopen={canReopen} />
       </div>
     </main>
   );

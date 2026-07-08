@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/session";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { getSessionProfile, requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AccountingPeriod, AccountingPeriodCloseValidation, AccountingPeriodInput, AccountingPeriodType } from "@/types/accounting";
 
@@ -15,10 +16,17 @@ type AccountingPeriodCloseActionResult = AccountingPeriodActionResult & {
   validation?: AccountingPeriodCloseValidation;
 };
 
+type AccountingPeriodReopenActionResult = AccountingPeriodActionResult & {
+  reopened?: boolean;
+};
+
 const periodTypes = new Set<AccountingPeriodType>(["monthly", "annual", "custom"]);
 const invalidDateMessage = "La fecha inicial debe ser anterior a la fecha final.";
 const overlapMessage = "El período contable se cruza con otro período existente.";
 const closedPeriodMessage = "No se puede registrar o modificar una partida dentro de un período contable cerrado.";
+const reopenUnauthorizedMessage = "Solo un usuario autorizado puede reabrir per\u00edodos cerrados.";
+const reopenReasonRequiredMessage = "Debe ingresar un motivo para reabrir el per\u00edodo.";
+const reopenClosedOnlyMessage = "Solo se pueden reabrir per\u00edodos cerrados.";
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
@@ -179,6 +187,7 @@ function validatePeriodInput(input: AccountingPeriodInput) {
       closed_by: null,
       reopened_at: null,
       reopened_by: null,
+      reopen_reason: null,
     },
   };
 }
@@ -333,14 +342,14 @@ export async function validateAccountingPeriodCloseAction(periodId: string): Pro
 }
 
 export async function closeAccountingPeriodAction(periodId: string): Promise<AccountingPeriodCloseActionResult> {
-  const profile = await requirePermission("accounting:manage");
+  const profile = await requirePermission("accounting:close_period");
   const cleanedPeriodId = cleanText(periodId);
   const supabase = await getSupabaseServerClient();
   const { data: previous } = await supabase
     .from("accounting_periods")
-    .select("id, name, start_date, end_date, status, closed_at, closed_by")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by, reopened_at, reopened_by, reopen_reason")
     .eq("id", cleanedPeriodId)
-    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by">>();
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by" | "reopened_at" | "reopened_by" | "reopen_reason">>();
 
   const { data, error } = await supabase.rpc("close_accounting_period", { period_id: cleanedPeriodId });
 
@@ -383,9 +392,9 @@ export async function closeAccountingPeriodAction(periodId: string): Promise<Acc
 
   const { data: updated } = await supabase
     .from("accounting_periods")
-    .select("id, name, start_date, end_date, status, closed_at, closed_by")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by, reopened_at, reopened_by, reopen_reason")
     .eq("id", cleanedPeriodId)
-    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by">>();
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by" | "reopened_at" | "reopened_by" | "reopen_reason">>();
 
   await writeAuditLog({
     tableName: "accounting_periods",
@@ -399,4 +408,97 @@ export async function closeAccountingPeriodAction(periodId: string): Promise<Acc
   return { ok: true, message: validation.message ?? "Período contable cerrado correctamente.", validation };
 }
 
+export async function reopenAccountingPeriodAction(periodId: string, reason: string): Promise<AccountingPeriodReopenActionResult> {
+  const profile = await getSessionProfile();
+  const cleanedPeriodId = cleanText(periodId);
+  const cleanedReason = cleanText(reason).slice(0, 500);
+
+  if (!profile || !hasEffectivePermission(profile.role, profile.permissions, "accounting:reopen_period", profile.email)) {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: cleanedPeriodId || null,
+      action: "accounting.period.reopen_denied",
+      newData: { reason: reopenUnauthorizedMessage },
+    });
+    return { ok: false, message: reopenUnauthorizedMessage };
+  }
+
+  if (!cleanedReason) {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: cleanedPeriodId || null,
+      action: "accounting.period.reopen_blocked",
+      newData: { reason: reopenReasonRequiredMessage },
+    });
+    await logAccountingPeriodEvent({
+      eventType: "period.reopen_blocked",
+      entityId: cleanedPeriodId || null,
+      metadata: { reason: reopenReasonRequiredMessage },
+      createdBy: profile.id,
+    });
+    return { ok: false, message: reopenReasonRequiredMessage };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data: previous } = await supabase
+    .from("accounting_periods")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by, reopened_at, reopened_by, reopen_reason")
+    .eq("id", cleanedPeriodId)
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by" | "reopened_at" | "reopened_by" | "reopen_reason">>();
+
+  if (previous && previous.status !== "closed") {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: cleanedPeriodId,
+      action: "accounting.period.reopen_blocked",
+      newData: { reason: reopenClosedOnlyMessage, status: previous.status },
+    });
+    await logAccountingPeriodEvent({
+      eventType: "period.reopen_blocked",
+      entityId: cleanedPeriodId,
+      metadata: { reason: reopenClosedOnlyMessage, status: previous.status },
+      createdBy: profile.id,
+    });
+    return { ok: false, message: reopenClosedOnlyMessage };
+  }
+
+  const { data, error } = await supabase.rpc("reopen_accounting_period", { period_id: cleanedPeriodId, reason: cleanedReason });
+
+  if (error) {
+    await writeAuditLog({
+      tableName: "accounting_periods",
+      recordId: cleanedPeriodId,
+      action: "accounting.period.reopen_blocked",
+      newData: { error: error.message },
+    });
+    await logAccountingPeriodEvent({
+      eventType: "period.reopen_blocked",
+      entityId: cleanedPeriodId,
+      metadata: { error: error.message },
+      createdBy: profile.id,
+    });
+    return { ok: false, message: error.message };
+  }
+
+  const { data: updated } = await supabase
+    .from("accounting_periods")
+    .select("id, name, start_date, end_date, status, closed_at, closed_by, reopened_at, reopened_by, reopen_reason")
+    .eq("id", cleanedPeriodId)
+    .maybeSingle<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status" | "closed_at" | "closed_by" | "reopened_at" | "reopened_by" | "reopen_reason">>();
+
+  await writeAuditLog({
+    tableName: "accounting_periods",
+    recordId: cleanedPeriodId,
+    action: "accounting.period.reopened",
+    oldData: previous ?? null,
+    newData: updated ?? { status: "reopened", reopen_reason: cleanedReason },
+  });
+
+  revalidateAccountingPeriodViews();
+  return {
+    ok: true,
+    reopened: true,
+    message: data && typeof data === "object" && "message" in data && typeof data.message === "string" ? data.message : "Per\u00edodo contable reabierto correctamente.",
+  };
+}
 export { closedPeriodMessage };

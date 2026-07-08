@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { AlertTriangle, CalendarDays, CheckCircle2, Edit3, LockKeyhole, Save, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Edit3, LockKeyhole, RotateCcw, Save, ShieldCheck, X } from "lucide-react";
 import {
   closeAccountingPeriodAction,
+  reopenAccountingPeriodAction,
   saveAccountingPeriodAction,
   validateAccountingPeriodCloseAction,
 } from "@/app/admin/periodos-contables/actions";
@@ -17,6 +18,7 @@ type Props = {
   currentPeriod: AccountingPeriod | null;
   canManage: boolean;
   canClose: boolean;
+  canReopen: boolean;
 };
 
 type CloseResult = {
@@ -68,15 +70,22 @@ function formatAmount(value: number) {
   return value.toLocaleString("es-HN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function AccountingPeriodsManager({ periods, currentPeriod, canManage, canClose }: Props) {
+function isCloseableStatus(status: AccountingPeriod["status"]) {
+  return status === "open" || status === "reopened";
+}
+
+export function AccountingPeriodsManager({ periods, currentPeriod, canManage, canClose, canReopen }: Props) {
   const [form, setForm] = useState<AccountingPeriodInput>(() => emptyForm());
   const [message, setMessage] = useState("");
   const [closeResult, setCloseResult] = useState<CloseResult | null>(null);
+  const [reopenTarget, setReopenTarget] = useState<AccountingPeriod | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const editingPeriod = useMemo(() => periods.find((period) => period.id === form.id) ?? null, [form.id, periods]);
   const canSubmit = canManage && (!editingPeriod || editingPeriod.status === "open");
   const openCount = periods.filter((period) => period.status === "open").length;
+  const reopenedCount = periods.filter((period) => period.status === "reopened").length;
   const closedCount = periods.filter((period) => period.status === "closed").length;
 
   function setField<Key extends keyof AccountingPeriodInput>(key: Key, value: AccountingPeriodInput[Key]) {
@@ -107,7 +116,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
   }
 
   function validateClose(period: AccountingPeriod) {
-    if (!canClose || period.status !== "open") return;
+    if (!canClose || !isCloseableStatus(period.status)) return;
     startTransition(async () => {
       const result = await validateAccountingPeriodCloseAction(period.id);
       setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
@@ -120,7 +129,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
   }
 
   function closePeriod(period: AccountingPeriod) {
-    if (!canClose || period.status !== "open" || closeResult?.periodId !== period.id || !closeResult.validation?.ready) return;
+    if (!canClose || !isCloseableStatus(period.status) || closeResult?.periodId !== period.id || !closeResult.validation?.ready) return;
     startTransition(async () => {
       const result = await closeAccountingPeriodAction(period.id);
       setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
@@ -133,20 +142,46 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
     });
   }
 
+  function openReopenDialog(period: AccountingPeriod) {
+    if (!canReopen || period.status !== "closed") return;
+    setReopenTarget(period);
+    setReopenReason("");
+  }
+
+  function cancelReopen() {
+    setReopenTarget(null);
+    setReopenReason("");
+  }
+
+  function confirmReopen() {
+    if (!reopenTarget || !canReopen || !reopenReason.trim()) return;
+    startTransition(async () => {
+      const result = await reopenAccountingPeriodAction(reopenTarget.id, reopenReason);
+      if (result.ok) {
+        toast.success(result.message);
+        setCloseResult(null);
+        resetForm();
+        cancelReopen();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
   return (
     <div className="min-w-0 space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Período actual" value={currentPeriod?.name ?? "Sin períodos configurados"} helper={currentPeriod ? `${formatHnDate(currentPeriod.start_date)} a ${formatHnDate(currentPeriod.end_date)}` : "No hay períodos contables configurados."} />
         <Metric label="Períodos configurados" value={periods.length.toLocaleString("es-HN")} helper="Ordenados por fecha inicial" />
-        <Metric label="Abiertos" value={openCount.toLocaleString("es-HN")} helper="Disponibles para registro y revisión" />
-        <Metric label="Cerrados" value={closedCount.toLocaleString("es-HN")} helper="Solo lectura" />
+        <Metric label="Abiertos y reabiertos" value={(openCount + reopenedCount).toLocaleString("es-HN")} helper={`${openCount} abiertos / ${reopenedCount} reabiertos`} />
+        <Metric label="Cerrados" value={closedCount.toLocaleString("es-HN")} helper="Protegidos contra registro contable" />
       </section>
 
       <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Nuevo período</h2>
-            <p className="mt-1 text-sm leading-6 text-black/55">Crea y administra períodos contables abiertos. El cierre se realiza desde los controles autorizados.</p>
+            <p className="mt-1 text-sm leading-6 text-black/55">Crea y administra períodos contables abiertos. El cierre y la reapertura se realizan desde controles autorizados.</p>
           </div>
           {form.id ? (
             <Button type="button" variant="ghost" onClick={resetForm} disabled={isPending}>
@@ -201,7 +236,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
               <CalendarDays size={18} />
               <h2 className="font-semibold">Períodos contables</h2>
             </div>
-            <p className="mt-1 text-sm text-black/55">Valida cierres, consulta bloqueos y revisa períodos cerrados en modo de solo lectura.</p>
+            <p className="mt-1 text-sm text-black/55">Valida cierres, consulta bloqueos, reabre períodos cerrados con autorización y revisa la trazabilidad.</p>
           </div>
           {currentPeriod ? <StatusBadge status={currentPeriod.status} /> : null}
         </div>
@@ -212,27 +247,58 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
             periods={periods}
             canManage={canManage}
             canClose={canClose}
+            canReopen={canReopen}
             isPending={isPending}
             closeResult={closeResult}
             onEdit={(period) => setForm(toInput(period))}
             onValidate={validateClose}
             onClose={closePeriod}
+            onReopen={openReopenDialog}
           />
         )}
       </section>
+
+      {reopenTarget ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-3 sm:items-center sm:justify-center" role="dialog" aria-modal="true" aria-labelledby="reopen-period-title">
+          <div className="w-full max-w-lg rounded-lg border border-black/10 bg-white p-4 shadow-xl sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p id="reopen-period-title" className="text-lg font-semibold">Reabrir período</p>
+                <p className="mt-1 text-sm text-black/55">{reopenTarget.name}</p>
+              </div>
+              <Button type="button" variant="ghost" onClick={cancelReopen} disabled={isPending} aria-label="Cerrar">
+                <X size={16} />
+              </Button>
+            </div>
+            <label className="mt-4 block">
+              <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de reapertura</span>
+              <textarea value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} rows={4} maxLength={500} disabled={isPending} className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15 disabled:bg-[#f4f4f5]" />
+            </label>
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" onClick={cancelReopen} disabled={isPending}>Cancelar</Button>
+              <Button type="button" variant="dark" onClick={confirmReopen} disabled={isPending || !reopenReason.trim()}>
+                <RotateCcw size={16} />
+                Reabrir período
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function PeriodList({ periods, canManage, canClose, isPending, closeResult, onEdit, onValidate, onClose }: {
+function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeResult, onEdit, onValidate, onClose, onReopen }: {
   periods: AccountingPeriod[];
   canManage: boolean;
   canClose: boolean;
+  canReopen: boolean;
   isPending: boolean;
   closeResult: CloseResult | null;
   onEdit: (period: AccountingPeriod) => void;
   onValidate: (period: AccountingPeriod) => void;
   onClose: (period: AccountingPeriod) => void;
+  onReopen: (period: AccountingPeriod) => void;
 }) {
   return (
     <>
@@ -246,20 +312,14 @@ function PeriodList({ periods, canManage, canClose, isPending, closeResult, onEd
               </div>
               <StatusBadge status={period.status} />
             </div>
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <InfoBox label="Año fiscal" value={String(period.fiscal_year)} />
-              <InfoBox label="Tipo" value={typeLabels[period.period_type]} />
-              <InfoBox label="Actualizado" value={formatHnDateTime(period.updated_at)} wide />
-              {period.status === "closed" ? <InfoBox label="Cerrado por" value={period.closed_by_name ?? "Usuario registrado"} wide /> : null}
-              {period.closed_at ? <InfoBox label="Fecha de cierre" value={formatHnDateTime(period.closed_at)} wide /> : null}
-            </dl>
-            <PeriodActions period={period} canManage={canManage} canClose={canClose} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} mobile />
+            <PeriodMetadata period={period} mobile />
+            <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} mobile />
             {closeResult?.periodId === period.id ? <ValidationPanel result={closeResult} /> : null}
           </article>
         ))}
       </div>
       <div className="hidden max-w-full overflow-x-auto md:block">
-        <table className="w-full min-w-[1120px] text-left text-sm">
+        <table className="w-full min-w-[1180px] text-left text-sm">
           <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
             <tr>
               <th className="px-3 py-3">Período</th>
@@ -267,9 +327,9 @@ function PeriodList({ periods, canManage, canClose, isPending, closeResult, onEd
               <th className="px-3 py-3">Fecha inicial</th>
               <th className="px-3 py-3">Fecha final</th>
               <th className="px-3 py-3">Estado</th>
-              <th className="px-3 py-3">Cierre</th>
+              <th className="px-3 py-3">Trazabilidad</th>
               <th className="px-3 py-3">Actualizado</th>
-              {canManage || canClose ? <th className="px-3 py-3">Acción</th> : null}
+              {canManage || canClose || canReopen ? <th className="px-3 py-3">Acción</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-black/10">
@@ -280,19 +340,11 @@ function PeriodList({ periods, canManage, canClose, isPending, closeResult, onEd
                 <td className="px-3 py-3">{formatHnDate(period.start_date)}</td>
                 <td className="px-3 py-3">{formatHnDate(period.end_date)}</td>
                 <td className="px-3 py-3"><StatusBadge status={period.status} /></td>
-                <td className="px-3 py-3">
-                  {period.status === "closed" ? (
-                    <div className="space-y-1 text-xs text-black/55">
-                      <p className="font-semibold text-black/65">Período cerrado</p>
-                      <p>Cerrado por: {period.closed_by_name ?? "Usuario registrado"}</p>
-                      {period.closed_at ? <p>Fecha de cierre: {formatHnDateTime(period.closed_at)}</p> : null}
-                    </div>
-                  ) : <span className="text-xs text-black/45">Pendiente de cierre</span>}
-                </td>
+                <td className="px-3 py-3"><PeriodTrace period={period} /></td>
                 <td className="px-3 py-3">{formatHnDateTime(period.updated_at)}</td>
-                {canManage || canClose ? (
+                {canManage || canClose || canReopen ? (
                   <td className="px-3 py-3">
-                    <PeriodActions period={period} canManage={canManage} canClose={canClose} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} />
+                    <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} />
                   </td>
                 ) : null}
               </tr>
@@ -305,33 +357,46 @@ function PeriodList({ periods, canManage, canClose, isPending, closeResult, onEd
   );
 }
 
-function PeriodActions({ period, canManage, canClose, isPending, closeResult, onEdit, onValidate, onClose, mobile = false }: {
+function PeriodActions({ period, canManage, canClose, canReopen, isPending, closeResult, onEdit, onValidate, onClose, onReopen, mobile = false }: {
   period: AccountingPeriod;
   canManage: boolean;
   canClose: boolean;
+  canReopen: boolean;
   isPending: boolean;
   closeResult: CloseResult | null;
   onEdit: (period: AccountingPeriod) => void;
   onValidate: (period: AccountingPeriod) => void;
   onClose: (period: AccountingPeriod) => void;
+  onReopen: (period: AccountingPeriod) => void;
   mobile?: boolean;
 }) {
   const validationReady = closeResult?.periodId === period.id && closeResult.validation?.ready;
-  const baseClass = mobile ? "mt-3 grid gap-2 sm:grid-cols-3" : "flex flex-wrap gap-2";
+  const closeable = isCloseableStatus(period.status);
+  const baseClass = mobile ? "mt-3 grid gap-2 sm:grid-cols-2" : "flex flex-wrap gap-2";
 
   if (period.status === "closed") {
-    return <div className={baseClass}><span className="inline-flex items-center justify-center gap-1 rounded-md border border-black/10 bg-[#fafafa] px-3 py-2 text-xs font-semibold text-black/55"><LockKeyhole size={14} />Solo lectura</span></div>;
+    return (
+      <div className={baseClass}>
+        <span className="inline-flex items-center justify-center gap-1 rounded-md border border-black/10 bg-[#fafafa] px-3 py-2 text-xs font-semibold text-black/55"><LockKeyhole size={14} />Solo lectura</span>
+        {canReopen ? (
+          <Button type="button" variant="ghost" onClick={() => onReopen(period)} disabled={isPending} className={mobile ? "w-full" : ""}>
+            <RotateCcw size={16} />
+            Reabrir período
+          </Button>
+        ) : null}
+      </div>
+    );
   }
 
   return (
     <div className={baseClass}>
-      {canManage ? (
+      {canManage && period.status === "open" ? (
         <Button type="button" variant="ghost" onClick={() => onEdit(period)} disabled={isPending} className={mobile ? "w-full" : ""}>
           <Edit3 size={16} />
           Editar
         </Button>
       ) : null}
-      {canClose ? (
+      {canClose && closeable ? (
         <>
           <Button type="button" variant="ghost" onClick={() => onValidate(period)} disabled={isPending} className={mobile ? "w-full" : ""}>
             <ShieldCheck size={16} />
@@ -343,6 +408,41 @@ function PeriodActions({ period, canManage, canClose, isPending, closeResult, on
           </Button>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function PeriodMetadata({ period, mobile = false }: { period: AccountingPeriod; mobile?: boolean }) {
+  return (
+    <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+      <InfoBox label="Año fiscal" value={String(period.fiscal_year)} />
+      <InfoBox label="Tipo" value={typeLabels[period.period_type]} />
+      {period.status === "reopened" ? <InfoBox label="Estado" value="Período reabierto" wide /> : null}
+      <InfoBox label="Actualizado" value={formatHnDateTime(period.updated_at)} wide />
+      {period.closed_by_name ? <InfoBox label="Cerrado por" value={period.closed_by_name} wide /> : null}
+      {period.closed_at ? <InfoBox label="Fecha de cierre" value={formatHnDateTime(period.closed_at)} wide /> : null}
+      {period.reopened_by_name ? <InfoBox label="Reabierto por" value={period.reopened_by_name} wide /> : null}
+      {period.reopened_at ? <InfoBox label="Fecha de reapertura" value={formatHnDateTime(period.reopened_at)} wide /> : null}
+      {period.reopen_reason ? <InfoBox label="Motivo de reapertura" value={period.reopen_reason} wide /> : null}
+      {!mobile && period.status === "open" ? <InfoBox label="Actividad" value="Disponible para registro" wide /> : null}
+    </dl>
+  );
+}
+
+function PeriodTrace({ period }: { period: AccountingPeriod }) {
+  if (period.status === "open" && !period.closed_at && !period.reopened_at) {
+    return <span className="text-xs text-black/45">Disponible para registro</span>;
+  }
+
+  return (
+    <div className="space-y-1 text-xs text-black/55">
+      {period.status === "closed" ? <p className="font-semibold text-black/65">Período cerrado</p> : null}
+      {period.status === "reopened" ? <p className="font-semibold text-[#3730a3]">Período reabierto</p> : null}
+      {period.closed_by_name ? <p>Cerrado por: {period.closed_by_name}</p> : null}
+      {period.closed_at ? <p>Fecha de cierre: {formatHnDateTime(period.closed_at)}</p> : null}
+      {period.reopened_by_name ? <p>Reabierto por: {period.reopened_by_name}</p> : null}
+      {period.reopened_at ? <p>Fecha de reapertura: {formatHnDateTime(period.reopened_at)}</p> : null}
+      {period.reopen_reason ? <p className="max-w-[260px] break-words">Motivo de reapertura: {period.reopen_reason}</p> : null}
     </div>
   );
 }

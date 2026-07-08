@@ -59,6 +59,7 @@ export type Permission =
   | "accounting:export"
   | "accounting:settings"
   | "accounting:close_period"
+  | "accounting:reopen_period"
   | "accounting:view_reports"
   | "shipments:manage"
   | "crm:manage"

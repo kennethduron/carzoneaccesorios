@@ -53,6 +53,7 @@ export const allPermissions: Permission[] = [
   "accounting:export",
   "accounting:settings",
   "accounting:close_period",
+  "accounting:reopen_period",
   "accounting:view_reports",
   "shipments:manage",
   "crm:manage",
@@ -98,6 +99,7 @@ const accountingFullPermissions: Permission[] = [
   "accounting:export",
   "accounting:settings",
   "accounting:close_period",
+  "accounting:reopen_period",
   "accounting:view_reports",
 ];
 

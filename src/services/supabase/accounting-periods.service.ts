@@ -20,7 +20,7 @@ export async function getAccountingPeriodsPageData(): Promise<AccountingPeriodsP
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("accounting_periods")
-    .select("id, name, period_type, start_date, end_date, status, fiscal_year, closed_at, closed_by, reopened_at, reopened_by, notes, created_by, created_at, updated_at")
+    .select("id, name, period_type, start_date, end_date, status, fiscal_year, closed_at, closed_by, reopened_at, reopened_by, reopen_reason, notes, created_by, created_at, updated_at")
     .order("start_date", { ascending: false })
     .limit(120)
     .returns<AccountingPeriod[]>();
@@ -30,8 +30,14 @@ export async function getAccountingPeriodsPageData(): Promise<AccountingPeriodsP
   }
 
   const rows = data ?? [];
-  const userIds = [...new Set(rows.map((period) => period.closed_by).filter((value): value is string => Boolean(value)))];
-  const closedByUsers = new Map<string, { full_name: string | null; email: string | null }>();
+  const userIds = [
+    ...new Set(
+      rows
+        .flatMap((period) => [period.closed_by, period.reopened_by])
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const periodUsers = new Map<string, { full_name: string | null; email: string | null }>();
 
   if (userIds.length > 0) {
     const { data: users, error: usersError } = await supabase
@@ -45,16 +51,17 @@ export async function getAccountingPeriodsPageData(): Promise<AccountingPeriodsP
     }
 
     for (const user of users ?? []) {
-      closedByUsers.set(user.id, { full_name: user.full_name, email: user.email });
+      periodUsers.set(user.id, { full_name: user.full_name, email: user.email });
     }
   }
 
   const periods = rows.map((period) => ({
     ...period,
-    closed_by_name: period.closed_by ? displayUserName(closedByUsers.get(period.closed_by)) : null,
+    closed_by_name: period.closed_by ? displayUserName(periodUsers.get(period.closed_by)) : null,
+    reopened_by_name: period.reopened_by ? displayUserName(periodUsers.get(period.reopened_by)) : null,
   }));
   const today = todayKey();
-  const currentPeriod = periods.find((period) => period.status === "open" && period.start_date <= today && period.end_date >= today) ?? null;
+  const currentPeriod = periods.find((period) => (period.status === "open" || period.status === "reopened") && period.start_date <= today && period.end_date >= today) ?? null;
 
   return {
     periods,

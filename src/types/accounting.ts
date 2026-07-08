@@ -16,11 +16,13 @@ export type AccountingPeriod = {
   closed_by: string | null;
   reopened_at: string | null;
   reopened_by: string | null;
+  reopen_reason: string | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
   closed_by_name?: string | null;
+  reopened_by_name?: string | null;
 };
 
 export type AccountingPeriodInput = {
