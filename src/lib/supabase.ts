@@ -41,6 +41,10 @@ export function getSupabaseAdminClient() {
 }
 
 export function getSupabasePublicClient() {
+  if (typeof window !== "undefined") {
+    return getSupabaseBrowserClient();
+  }
+
   if (!publicClient) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
