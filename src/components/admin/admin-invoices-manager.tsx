@@ -8,6 +8,7 @@ import {
   getInvoiceDetailAction,
   updateInvoiceCustomerDataAction,
 } from "@/app/admin/facturas/actions";
+import { AccountingTraceabilityCard } from "@/components/admin/accounting-traceability-card";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
 import { PaginationControls } from "@/components/admin/pagination-controls";
@@ -719,6 +720,10 @@ function InvoiceModal({
           </div>
           <Info label="Estado" value={statusLabels[invoice.status]} />
           <Info label="Fecha" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
+        </div>
+
+        <div className="mt-5">
+          <AccountingTraceabilityCard traceability={invoice.accounting_traceability} />
         </div>
 
         {canCorrectInvoices && invoice.status !== "anulada" && invoice.status !== "cancelled" ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, FilePlus2, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
+import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, ExternalLink, FilePlus2, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   generateJournalDraftFromFinancialEventAction,
   saveAccountingMappingAction,
@@ -231,6 +231,33 @@ function eventDetail(event: FinancialEvent) {
     title: snapshotText(event.source_snapshot, ["customer_name", "customer", "client_name"]) ?? "-",
     helper: "",
   };
+}
+
+function resolveAccountingOriginHref(sourceType: string, sourceId?: string | null) {
+  if (!sourceId) return null;
+  switch (sourceType) {
+    case "order":
+    case "payment":
+      return "/admin/pedidos";
+    case "invoice":
+      return "/admin/facturas";
+    case "commercial_credit":
+    case "accounts_receivable":
+    case "receivable_payment":
+      return "/admin/cuentas-por-cobrar";
+    case "purchase":
+      return "/admin/compras";
+    case "supplier_invoice":
+    case "accounts_payable":
+    case "supplier_payment":
+    case "purchase_return":
+    case "supplier_credit":
+      return "/admin/cuentas-por-pagar";
+    case "inventory_movement":
+      return "/admin/inventario";
+    default:
+      return null;
+  }
 }
 
 function eventStatusText(event: FinancialEvent) {
@@ -594,18 +621,23 @@ export function FinancialCenterManager({
                     const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id", "inventory_movement_id"]);
                     const issues = validationMessages(event.validation_errors);
                     const linkedDraft = event.journal_entry;
+                    const originHref = resolveAccountingOriginHref(event.source_type, event.source_id);
                     const canGenerateDraft = canGenerateDrafts && canGenerateDraftForEvent(event);
 
                     return (
                       <tr key={event.id}>
                         <td className="px-3 py-3">
-                          <p className="font-medium">{eventPurposeLabels[event.event_purpose] ?? event.event_purpose}</p>
-                          <p className="text-xs text-black/45">{event.posting_version}</p>
+                          <p className="font-medium">{eventPurposeLabels[event.event_purpose] ?? "Evento contable"}</p>
                         </td>
                         <td className="px-3 py-3">
-                          <p className="font-medium">{sourceTypeLabels[event.source_type] ?? event.source_type}</p>
-                          <p className="text-xs text-black/45">{sourceNumber ?? event.source_id}</p>
-                          <p className="text-xs text-black/35">{event.source_id}</p>
+                          <p className="font-medium">{sourceTypeLabels[event.source_type] ?? "Origen operativo"}</p>
+                          <p className="text-xs text-black/45">{sourceNumber ?? "Referencia operativa"}</p>
+                          {originHref ? (
+                            <a href={originHref} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
+                              <ExternalLink size={13} />
+                              Ver origen
+                            </a>
+                          ) : null}
                         </td>
                         <td className="px-3 py-3 font-medium">{amount === undefined || amount === null ? "-" : formatCurrency(amount)}</td>
                         <td className="px-3 py-3">
@@ -615,7 +647,13 @@ export function FinancialCenterManager({
                         <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
                         <td className="px-3 py-3">
                           {linkedDraft ? (
-                            <p className="font-medium">{linkedDraft.entry_number}</p>
+                            <div>
+                              <p className="font-medium">{linkedDraft.entry_number}</p>
+                              <a href={`/admin/contabilidad#partida-${linkedDraft.id}`} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
+                                <ExternalLink size={13} />
+                                Ver partida contable
+                              </a>
+                            </div>
                           ) : event.journal_entry_id ? (
                             <p className="font-medium">Partida vinculada</p>
                           ) : (

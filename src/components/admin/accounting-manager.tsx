@@ -56,6 +56,29 @@ const normalBalanceLabels: Record<AccountingNormalBalance, string> = {
   credit: "Crédito",
 };
 
+const journalSourceLabels: Record<string, string> = {
+  manual: "Partida manual",
+  financial_event: "Evento financiero",
+  order: "Venta",
+  payment: "Pago recibido",
+  invoice: "Factura",
+  commercial_credit: "Credito comercial",
+  accounts_receivable: "Cuenta por cobrar",
+  receivable_payment: "Abono recibido",
+  inventory_movement: "Inventario",
+  purchase: "Compra",
+  supplier_invoice: "Factura de proveedor",
+  accounts_payable: "Cuenta por pagar",
+  supplier_payment: "Pago a proveedor",
+  purchase_return: "Devolucion a proveedor",
+  supplier_credit: "Credito de proveedor",
+};
+
+function journalSourceLabel(sourceType: string | null) {
+  if (!sourceType) return "Partida manual";
+  return journalSourceLabels[sourceType] ?? "Origen contable";
+}
+
 const emptyAccount: AccountingAccountInput = {
   code: "",
   name: "",
@@ -685,7 +708,7 @@ function JournalEntries({
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase text-black/45">{entry.entry_date}</p>
                 <h3 className="mt-1 break-words font-semibold">{entry.description}</h3>
-                <p className="mt-1 text-xs text-black/45">{entry.entry_number} · {entry.source_type ?? "Manual"}</p>
+                <p className="mt-1 text-xs text-black/45">{entry.entry_number} · {journalSourceLabel(entry.source_type)}</p>
               </div>
               <EntryStatus status={entry.status} />
             </div>
@@ -726,7 +749,6 @@ function JournalEntries({
             <tr>
               <th className="px-3 py-3">Fecha</th>
               <th className="px-3 py-3">Descripción</th>
-              <th className="px-3 py-3">Tipo</th>
               <th className="px-3 py-3">Origen</th>
               <th className="px-3 py-3 text-right">Débito</th>
               <th className="px-3 py-3 text-right">Crédito</th>
@@ -746,8 +768,7 @@ function JournalEntries({
                       <p className="font-medium">{entry.description}</p>
                       <p className="mt-1 text-xs text-black/45">{entry.entry_number} · Creada: {formatHnDateTime(entry.created_at)}</p>
                     </td>
-                    <td className="px-3 py-3">{entry.source_type ?? "Manual"}</td>
-                    <td className="px-3 py-3 text-black/55">{entry.source_id ?? "-"}</td>
+                    <td className="px-3 py-3">{journalSourceLabel(entry.source_type)}</td>
                     <td className="px-3 py-3 text-right font-semibold">{formatCurrency(entry.total_debit)}</td>
                     <td className="px-3 py-3 text-right font-semibold">{formatCurrency(entry.total_credit)}</td>
                     <td className="px-3 py-3"><EntryStatus status={entry.status} /></td>
@@ -763,7 +784,7 @@ function JournalEntries({
                   </tr>
                   {expanded ? (
                     <tr>
-                      <td className="bg-[#fafafa] px-3 py-3" colSpan={8}>
+                      <td className="bg-[#fafafa] px-3 py-3" colSpan={7}>
                         <div className="overflow-x-auto rounded-lg border border-black/10 bg-white">
                           <table className="w-full min-w-[620px] text-left text-sm">
                             <thead className="text-xs uppercase text-black/45">

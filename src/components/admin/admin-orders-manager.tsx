@@ -14,6 +14,7 @@ import {
   updateOrderPaymentStatusAction,
   updateOrderStatusAction,
 } from "@/app/admin/pedidos/actions";
+import { AccountingTraceabilityCard } from "@/components/admin/accounting-traceability-card";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -1077,6 +1078,10 @@ function OrderDetail({
               </p>
             ) : null}
           </details>
+        ) : null}
+
+        {canViewFinancialData ? (
+          <AccountingTraceabilityCard traceability={order.accounting_traceability} />
         ) : null}
 
         {canViewFinancialData && cashOnDeliveryRequired ? (

@@ -1,4 +1,5 @@
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import type { AccountingTraceabilitySummary } from "@/types/accounting-traceability";
 import type { CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { AdditionalFee } from "@/types/financial";
 import type { FiscalCorrectionHistoryEntry } from "@/types/fiscal-corrections";
@@ -150,4 +151,5 @@ export type AdminOrderRow = {
   receivable_payment_received_method: CommercialCreditPaymentReceivedMethod | null;
   receivable_payment_received_reference: string | null;
   receivable_payment_recorded_by: string | null;
+  accounting_traceability: AccountingTraceabilitySummary | null;
 };

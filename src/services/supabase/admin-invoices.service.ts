@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getInvoiceAccountingTraceability } from "@/services/supabase/accounting-traceability.service";
 import { getFiscalCorrectionHistory } from "@/services/supabase/fiscal-corrections.service";
 import type { AdminInvoiceDetail, AdminInvoiceItem, AdminInvoiceRow } from "@/types/invoices";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
@@ -148,6 +149,7 @@ function normalizeDetail(row: InvoiceDetailQueryRow, paymentByOrder: Map<string,
     due_at: row.due_at,
     items: normalizeItems(row.invoice_items),
     fiscal_correction_history: [],
+    accounting_traceability: null,
   };
 }
 
@@ -265,7 +267,10 @@ export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
   return page.invoices;
 }
 
-export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInvoiceDetail | null> {
+export async function getAdminInvoiceDetail(
+  invoiceId: string,
+  options: { includeAccountingTraceability?: boolean } = {},
+): Promise<AdminInvoiceDetail | null> {
   const supabase = await getSupabaseServerClient();
   const { data: invoice, error } = await supabase
     .from("invoices")
@@ -353,6 +358,13 @@ export async function getAdminInvoiceDetail(invoiceId: string): Promise<AdminInv
     orderId: invoice.order_id,
     invoiceId,
   });
+  detail.accounting_traceability = options.includeAccountingTraceability
+    ? await getInvoiceAccountingTraceability({
+        invoiceId,
+        orderId: invoice.order_id,
+        paymentId: payment?.id,
+      })
+    : null;
 
   return detail;
 }

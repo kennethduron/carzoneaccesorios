@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getOrderAccountingTraceabilityBatch } from "@/services/supabase/accounting-traceability.service";
 import { getFiscalCorrectionHistory } from "@/services/supabase/fiscal-corrections.service";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
@@ -184,6 +185,7 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     receivable_payment_received_method: receivable?.payment_received_method ?? null,
     receivable_payment_received_reference: receivable?.payment_received_reference ?? null,
     receivable_payment_recorded_by: receivable?.payment_recorded_by ?? null,
+    accounting_traceability: null,
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -213,10 +215,12 @@ export async function getAdminOrdersPage({
   page: rawPage,
   pageSize: rawPageSize,
   task,
+  includeAccountingTraceability = false,
 }: {
   page?: number;
   pageSize?: number;
   task?: AdminOrderTask | null;
+  includeAccountingTraceability?: boolean;
 } = {}): Promise<AdminOrdersPage> {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(rawPage);
@@ -328,10 +332,22 @@ export async function getAdminOrdersPage({
     ),
   );
 
+  const traceabilityByOrderId = includeAccountingTraceability
+    ? await getOrderAccountingTraceabilityBatch(
+        orders.map((order) => ({
+          orderId: order.id,
+          paymentId: order.payment_id,
+          invoiceId: order.invoice_id,
+          receivableId: order.receivable_id,
+        })),
+      )
+    : new Map();
+
   return {
     orders: orders.map((order, index) => ({
       ...order,
       fiscal_correction_history: correctionHistories[index],
+      accounting_traceability: traceabilityByOrderId.get(order.id) ?? null,
     })),
     total: count ?? 0,
     page,

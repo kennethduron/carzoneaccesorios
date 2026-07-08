@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
@@ -21,6 +22,11 @@ function normalizeOptionalRtn(value: string) {
   return digits;
 }
 
+function canViewAccountingTraceability(profile: Awaited<ReturnType<typeof requirePermission>>) {
+  return ["technical_owner", "business_owner", "admin", "contadora"].includes(profile.role)
+    || hasEffectivePermission(profile.role, profile.permissions, "accounting:read", profile.email);
+}
+
 async function getAuditRequestMetadata() {
   const headerStore = await headers();
   const forwardedFor = headerStore.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
@@ -33,8 +39,10 @@ async function getAuditRequestMetadata() {
 }
 
 export async function getInvoiceDetailAction(invoiceId: string) {
-  await requirePermission("invoices:read");
-  const detail = await getAdminInvoiceDetail(invoiceId);
+  const profile = await requirePermission("invoices:read");
+  const detail = await getAdminInvoiceDetail(invoiceId, {
+    includeAccountingTraceability: canViewAccountingTraceability(profile),
+  });
 
   if (!detail) {
     return { ok: false, message: "Factura no encontrada.", invoice: null };

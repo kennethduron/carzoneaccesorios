@@ -42,6 +42,7 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     receivable_status: null,
     receivable_due_date: null,
     receivable_balance_due: null,
+    accounting_traceability: null,
     customer_rtn: null,
     fiscal_customer_rtn: null,
     order_items: order.order_items.map((item) => ({
@@ -93,7 +94,15 @@ export default async function AdminOrdersPage({
     profile.permissions.some((permission) =>
       ["payments:read", "payments:manage", "payments:confirm", "payments:reject", "invoices:read", "invoices:create", "invoices:manage", "reports:read"].includes(permission),
     );
-  const ordersPage = await getAdminOrdersPage({ page: Number(params.page ?? 1), pageSize: 50, task });
+  const canViewAccountingTraceability =
+    ["technical_owner", "business_owner", "admin", "contadora"].includes(profile.role) ||
+    hasEffectivePermission(profile.role, profile.permissions, "accounting:read", profile.email);
+  const ordersPage = await getAdminOrdersPage({
+    page: Number(params.page ?? 1),
+    pageSize: 50,
+    task,
+    includeAccountingTraceability: canViewAccountingTraceability,
+  });
   const visibleOrders = canViewFinancialData ? ordersPage.orders : ordersPage.orders.map(stripFinancialOrderData);
 
   return (
