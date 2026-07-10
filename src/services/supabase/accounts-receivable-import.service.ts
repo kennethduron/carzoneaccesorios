@@ -57,7 +57,6 @@ type CustomerLookupRow = {
 };
 
 type CustomerMatch = {
-  assignedCustomerId: string | null;
   suggestedCustomerId: string | null;
   assignmentStatus: ImportPreviewRow["assignmentStatus"];
   messages: string[];
@@ -305,19 +304,17 @@ function matchCustomer(row: HistoricalReceivableNormalizedRow, customers: Custom
 
   if (safeMatches.length === 1) {
     return {
-      assignedCustomerId: safeMatches[0].id,
-      suggestedCustomerId: null,
-      assignmentStatus: "confirmed",
+      suggestedCustomerId: safeMatches[0].id,
+      assignmentStatus: "suggested",
       messages: [],
     };
   }
 
   if (safeMatches.length > 1) {
     return {
-      assignedCustomerId: null,
       suggestedCustomerId: safeMatches[0].id,
       assignmentStatus: "suggested",
-      messages: [`Hay varios clientes con correo, telefono o RTN coincidente. Confirma manualmente el cliente correcto.`],
+      messages: [],
     };
   }
 
@@ -326,7 +323,6 @@ function matchCustomer(row: HistoricalReceivableNormalizedRow, customers: Custom
     ?? customers.find((customer) => normalizeImportLabel(displayCustomerName(customer)).includes(rowName) || rowName.includes(normalizeImportLabel(displayCustomerName(customer))));
 
   return {
-    assignedCustomerId: null,
     suggestedCustomerId: suggested?.id ?? null,
     assignmentStatus: suggested ? "suggested" : "pending",
     messages: [],
@@ -386,18 +382,15 @@ export async function parseHistoricalAccountsReceivableWorkbook(file: File): Pro
   const rows = rawRows.map((row) => {
     const match = matchCustomer(row.normalized, customers);
     const validationMessages = [...row.messages, ...(duplicateByRow.get(row.rowNumber) ?? []), ...match.messages];
-    const valid = validationMessages.length === 0;
-    const pendingAssignment = !match.assignedCustomerId;
-
     return buildImportPreviewRow({
       rowNumber: row.rowNumber,
       originalData: row.original,
       normalizedData: row.normalized,
       validationMessages,
       assignmentType: "customer",
-      assignmentStatus: valid ? match.assignmentStatus : pendingAssignment ? match.assignmentStatus : "not_required",
+      assignmentStatus: match.assignmentStatus,
       suggestedCustomerId: match.suggestedCustomerId,
-      assignedCustomerId: valid ? match.assignedCustomerId : null,
+      assignedCustomerId: null,
     });
   });
 

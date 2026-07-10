@@ -2,10 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
+import {
+  applyHistoricalPayableImportBatch,
+  assignHistoricalPayableImportRow,
+  cancelHistoricalPayableImportRow,
+  createHistoricalAccountsPayableImportBatch,
+  rollbackHistoricalPayableImportBatch,
+} from "@/services/supabase/accounts-payable-import.service";
+import { setImportBatchStatus } from "@/services/supabase/import-foundation.service";
+import type { HistoricalPayableImportActionState } from "@/types/accounts-payable-import";
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
@@ -473,4 +483,176 @@ export async function registerSupplierCreditAction(input: SupplierCreditFormInpu
   }
   revalidatePath("/admin/cuentas-por-pagar");
   return { ok: true, message: "Nota de crédito de proveedor registrada." };
+}
+
+const initialError = "No se pudo procesar la importacion de cuentas por pagar.";
+
+function canImportPayables(profile: Awaited<ReturnType<typeof requirePermission>>) {
+  return hasEffectivePermission(profile.role, profile.permissions, "payables:import", profile.email);
+}
+
+function canAssignPayables(profile: Awaited<ReturnType<typeof requirePermission>>) {
+  return hasEffectivePermission(profile.role, profile.permissions, "payables:assign", profile.email);
+}
+
+function canApplyPayables(profile: Awaited<ReturnType<typeof requirePermission>>) {
+  return hasEffectivePermission(profile.role, profile.permissions, "payables:apply", profile.email);
+}
+
+function canRollbackPayables(profile: Awaited<ReturnType<typeof requirePermission>>) {
+  return ["technical_owner", "business_owner"].includes(profile.role) && hasEffectivePermission(profile.role, profile.permissions, "payables:rollback", profile.email);
+}
+
+function revalidatePayableImportPaths(batchId?: string | null) {
+  revalidatePath("/admin/cuentas-por-pagar");
+  revalidatePath("/admin/importaciones");
+  if (batchId) revalidatePath(`/admin/cuentas-por-pagar?importBatch=${batchId}`);
+}
+
+export async function importHistoricalAccountsPayableAction(
+  _previousState: HistoricalPayableImportActionState,
+  formData: FormData,
+): Promise<HistoricalPayableImportActionState> {
+  const profile = await requirePermission("admin:access");
+  if (!canImportPayables(profile)) return { ok: false, message: "No tienes permiso para importar cuentas por pagar.", errors: ["Permiso insuficiente."] };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, message: "Selecciona un archivo Excel .xlsx.", errors: ["Selecciona un archivo Excel .xlsx."] };
+
+  await writeAuditLog({
+    tableName: "import_batches",
+    action: "historical_payable_import.attempted",
+    newData: { fileName: file.name, fileSize: file.size },
+  });
+
+  try {
+    const result = await createHistoricalAccountsPayableImportBatch(file, profile.id);
+    await writeAuditLog({
+      tableName: "import_batches",
+      recordId: result.batchId,
+      action: "historical_payable_import.staged",
+      newData: { fileName: file.name, rows: result.rows.length, errors: result.errors.length, status: result.status },
+    });
+    revalidatePayableImportPaths(result.batchId);
+
+    if (result.errors.length > 0 || result.rows.some((row) => row.validationStatus === "invalid")) {
+      return {
+        ok: false,
+        message: "El archivo fue guardado en staging con errores para revision.",
+        errors: result.errors.length > 0 ? result.errors : ["Revisa las filas marcadas con error."],
+        batchId: result.batchId,
+      };
+    }
+
+    const pending = result.rows.filter((row) => row.assignmentStatus === "pending" || row.assignmentStatus === "suggested").length;
+    return {
+      ok: true,
+      message: pending > 0 ? "Importacion validada. Hay proveedores pendientes de confirmacion." : "Importacion validada y lista para aplicar.",
+      errors: [],
+      batchId: result.batchId,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : initialError;
+    await writeAuditLog({
+      tableName: "import_batches",
+      action: "historical_payable_import.failed",
+      newData: { fileName: file.name, error: message },
+    });
+    return { ok: false, message: initialError, errors: [message] };
+  }
+}
+
+export async function assignHistoricalPayableRowAction(rowId: string, supplierId: string) {
+  const profile = await requirePermission("admin:access");
+  if (!canAssignPayables(profile)) return { ok: false, message: "No tienes permiso para confirmar proveedores." };
+
+  try {
+    await assignHistoricalPayableImportRow(rowId, supplierId);
+    await writeAuditLog({
+      tableName: "import_rows",
+      recordId: rowId,
+      action: "historical_payable_import.supplier_confirmed",
+      newData: { supplierConfirmed: true },
+    });
+    revalidatePayableImportPaths();
+    return { ok: true, message: "Proveedor confirmado." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo confirmar el proveedor." };
+  }
+}
+
+export async function cancelHistoricalPayableRowAction(rowId: string) {
+  const profile = await requirePermission("admin:access");
+  if (!canImportPayables(profile)) return { ok: false, message: "No tienes permiso para cancelar filas en staging." };
+
+  try {
+    await cancelHistoricalPayableImportRow(rowId);
+    await writeAuditLog({
+      tableName: "import_rows",
+      recordId: rowId,
+      action: "historical_payable_import.row_cancelled",
+      newData: { cancelled: true },
+    });
+    revalidatePayableImportPaths();
+    return { ok: true, message: "Fila cancelada en staging." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo cancelar la fila." };
+  }
+}
+
+export async function applyHistoricalPayableBatchAction(batchId: string) {
+  const profile = await requirePermission("admin:access");
+  if (!canApplyPayables(profile)) return { ok: false, message: "No tienes permiso para aplicar el lote." };
+
+  try {
+    const summary = await applyHistoricalPayableImportBatch(batchId);
+    await writeAuditLog({
+      tableName: "import_batches",
+      recordId: batchId,
+      action: "historical_payable_import.batch_applied",
+      newData: summary,
+    });
+    revalidatePayableImportPaths(batchId);
+    return { ok: true, message: `Lote aplicado. CxP creadas: ${summary.payables.toLocaleString("es-HN")}. Pagos historicos: ${summary.payments.toLocaleString("es-HN")}.` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo aplicar el lote." };
+  }
+}
+
+export async function cancelHistoricalPayableBatchAction(batchId: string) {
+  const profile = await requirePermission("admin:access");
+  if (!canImportPayables(profile)) return { ok: false, message: "No tienes permiso para cancelar lotes." };
+
+  try {
+    await setImportBatchStatus(batchId, "cancelled", { cancelled_from: "historical_accounts_payable_import" });
+    await writeAuditLog({
+      tableName: "import_batches",
+      recordId: batchId,
+      action: "historical_payable_import.batch_cancelled",
+      newData: { cancelled: true },
+    });
+    revalidatePayableImportPaths(batchId);
+    return { ok: true, message: "Lote cancelado." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo cancelar el lote." };
+  }
+}
+
+export async function rollbackHistoricalPayableBatchAction(batchId: string, reason: string) {
+  const profile = await requirePermission("admin:access");
+  if (!canRollbackPayables(profile)) return { ok: false, message: "Solo technical_owner o business_owner pueden revertir lotes aplicados." };
+
+  try {
+    const result = await rollbackHistoricalPayableImportBatch(batchId, reason.trim());
+    await writeAuditLog({
+      tableName: "import_batches",
+      recordId: batchId,
+      action: "historical_payable_import.batch_rolled_back",
+      newData: { reason, ...result },
+    });
+    revalidatePayableImportPaths(batchId);
+    return { ok: true, message: "Rollback completado." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo revertir el lote." };
+  }
 }

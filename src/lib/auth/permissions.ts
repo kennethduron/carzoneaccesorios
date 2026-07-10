@@ -98,6 +98,10 @@ const purchasesApFullPermissions: Permission[] = [
   "purchases:manage",
   "payables:read",
   "payables:manage",
+  "payables:import",
+  "payables:apply",
+  "payables:assign",
+  "payables:review",
 ];
 
 const receivablesImportPermissions: Permission[] = [
@@ -210,6 +214,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:mark_paid",
     ...receivablesImportPermissions,
     "receivables:rollback",
+    "payables:rollback",
     ...purchasesApFullPermissions,
     ...accountingFullPermissions,
     "shipments:manage",
