@@ -16,7 +16,7 @@ import type {
   HistoricalReceivablePaymentMethod,
   HistoricalReceivableImportStatus,
 } from "@/types/accounts-receivable-import";
-import type { AssignmentSelectorOption, ImportBatch, ImportPreviewRow, ImportRow, ImportTemplateDefinition } from "@/types/import-foundation";
+import type { AssignmentSelectorOption, ImportBatch, ImportPreviewRow, ImportTemplateDefinition } from "@/types/import-foundation";
 import { importCellText } from "@/utils/import-excel";
 import { buildImportPreviewRow, normalizeImportLabel, sharedImportMaxRows, validateDuplicateImportRows, validateImportRowLimit } from "@/utils/import-validation";
 
