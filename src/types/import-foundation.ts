@@ -92,6 +92,8 @@ export type ImportPreviewRow = {
   applyStatus: ImportApplyStatus;
   suggestedCustomerId?: string | null;
   suggestedSupplierId?: string | null;
+  assignedCustomerId?: string | null;
+  assignedSupplierId?: string | null;
 };
 
 export type ImportValidationResult = {

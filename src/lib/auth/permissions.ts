@@ -100,6 +100,15 @@ const purchasesApFullPermissions: Permission[] = [
   "payables:manage",
 ];
 
+const receivablesImportPermissions: Permission[] = [
+  "receivables:read",
+  "receivables:export",
+  "receivables:import",
+  "receivables:apply",
+  "receivables:assign",
+  "receivables:review",
+];
+
 const accountingFullPermissions: Permission[] = [
   "accounting:read",
   "accounting:create",
@@ -150,8 +159,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:read",
     "credit:manage",
     "credit:mark_paid",
-    "receivables:read",
-    "receivables:export",
+    ...receivablesImportPermissions,
     ...purchasesApFullPermissions,
     ...accountingFullPermissions,
     "commercial_settings:manage",
@@ -200,8 +208,8 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "credit:read",
     "credit:manage",
     "credit:mark_paid",
-    "receivables:read",
-    "receivables:export",
+    ...receivablesImportPermissions,
+    "receivables:rollback",
     ...purchasesApFullPermissions,
     ...accountingFullPermissions,
     "shipments:manage",
@@ -239,8 +247,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "reports:fiscal_read",
     "reports:fiscal_export",
     "credit:read",
-    "receivables:read",
-    "receivables:export",
+    ...receivablesImportPermissions,
     ...purchasesApFullPermissions,
     "accounting:read",
     "accounting:create",

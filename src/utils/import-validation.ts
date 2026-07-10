@@ -80,6 +80,8 @@ export function buildImportPreviewRow(input: {
   assignmentStatus?: ImportPreviewRow["assignmentStatus"];
   suggestedCustomerId?: string | null;
   suggestedSupplierId?: string | null;
+  assignedCustomerId?: string | null;
+  assignedSupplierId?: string | null;
 }): ImportPreviewRow {
   const validationMessages = input.validationMessages ?? [];
 
@@ -94,5 +96,7 @@ export function buildImportPreviewRow(input: {
     applyStatus: "pending",
     suggestedCustomerId: input.suggestedCustomerId ?? null,
     suggestedSupplierId: input.suggestedSupplierId ?? null,
+    assignedCustomerId: input.assignedCustomerId ?? null,
+    assignedSupplierId: input.assignedSupplierId ?? null,
   };
 }

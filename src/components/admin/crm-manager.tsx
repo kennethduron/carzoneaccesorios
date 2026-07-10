@@ -2898,7 +2898,7 @@ function CustomerProfileCredit({
               <article key={item.id} className="rounded-lg border border-black/10 bg-white p-4 text-sm">
                 <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                   <div className="min-w-0">
-                    <p className="break-words font-semibold [overflow-wrap:anywhere]">Pedido {order?.order_number ?? item.order_id.slice(0, 8)}</p>
+                    <p className="break-words font-semibold [overflow-wrap:anywhere]">{order?.order_number ? `Pedido ${order.order_number}` : item.order_id ? `Pedido ${item.order_id.slice(0, 8)}` : "Cuenta historica"}</p>
                     <p className="mt-1 text-xs text-black/50">Vencimiento: {formatHnDate(item.due_date)}</p>
                   </div>
                   <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">{creditStatusLabel[item.status] ?? "Abierto"}</span>
@@ -2944,7 +2944,7 @@ function CustomerProfileCredit({
               {receivablesWithOrders.map(({ item, order }) => {
                 return (
                   <tr key={item.id}>
-                    <td className="px-2 py-2">{order?.order_number ?? item.order_id.slice(0, 8)}</td>
+                    <td className="px-2 py-2">{order?.order_number ?? (item.order_id ? item.order_id.slice(0, 8) : "Historica")}</td>
                     <td className="px-2 py-2">{formatCurrency(item.original_amount)}</td>
                     <td className="px-2 py-2">{formatCurrency(item.total_paid)}</td>
                     <td className="px-2 py-2 font-semibold">{formatCurrency(item.balance_due)}</td>
@@ -2983,7 +2983,7 @@ function CustomerProfileCredit({
           <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm text-black/50">Pedido {selectedReceivable.order_number ?? selectedReceivable.order_id.slice(0, 8)}</p>
+                <p className="text-sm text-black/50">{selectedReceivable.order_number ? `Pedido ${selectedReceivable.order_number}` : selectedReceivable.order_id ? `Pedido ${selectedReceivable.order_id.slice(0, 8)}` : "Cuenta historica"}</p>
                 <h2 className="mt-1 text-xl font-semibold">Registrar abono</h2>
               </div>
               <button

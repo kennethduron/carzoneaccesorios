@@ -251,7 +251,7 @@ export default async function CuentaPage({
                   <div key={item.id} className="rounded-md border border-black/10 p-3 text-sm">
                     <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                       <div>
-                        <p className="font-semibold">Pedido {item.order_number ?? item.order_id.slice(0, 8)}</p>
+                        <p className="font-semibold">{item.order_number ? `Pedido ${item.order_number}` : item.order_id ? `Pedido ${item.order_id.slice(0, 8)}` : "Cuenta historica"}</p>
                         <p className="text-xs text-black/50">Fecha límite: {formatDate(item.due_date)}</p>
                       </div>
                       <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">

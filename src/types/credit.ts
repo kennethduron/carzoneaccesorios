@@ -6,7 +6,7 @@ export type AccountsReceivablePaymentRow = {
   id: string;
   receivable_id: string;
   customer_id: string;
-  order_id: string;
+  order_id: string | null;
   amount: number;
   payment_method: CommercialCreditPaymentReceivedMethod;
   reference: string | null;
@@ -42,7 +42,7 @@ export type CustomerCreditAccount = {
 export type AccountsReceivableRow = {
   id: string;
   customer_id: string;
-  order_id: string;
+  order_id: string | null;
   invoice_id: string | null;
   original_amount: number;
   total_paid: number;

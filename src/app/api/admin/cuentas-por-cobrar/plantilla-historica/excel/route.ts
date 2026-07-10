@@ -1,0 +1,27 @@
+import { writeAuditLog } from "@/lib/audit";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { requirePermission } from "@/lib/auth/session";
+import { accountsReceivableImportTemplate } from "@/services/supabase/accounts-receivable-import.service";
+import { buildImportTemplateResponse } from "@/utils/import-excel";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export async function GET() {
+  const profile = await requirePermission("admin:access");
+  const allowed =
+    hasEffectivePermission(profile.role, profile.permissions, "receivables:import", profile.email) ||
+    hasEffectivePermission(profile.role, profile.permissions, "receivables:review", profile.email);
+
+  if (!allowed) {
+    await requirePermission("technical:tools");
+  }
+
+  await writeAuditLog({
+    tableName: "import_batches",
+    action: "historical_receivable_import.template_downloaded",
+    newData: { format: "xlsx" },
+  });
+
+  return buildImportTemplateResponse(accountsReceivableImportTemplate, "car-zone-plantilla-cuentas-por-cobrar-historicas.xlsx");
+}

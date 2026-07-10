@@ -54,6 +54,7 @@ type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount" | "recorded_b
 };
 
 type AdminReceivableQueryRow = ReceivableQueryRow & {
+  historical_invoice_number: string | null;
   customers: {
     contact_name: string | null;
     business_name: string | null;
@@ -304,7 +305,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       customer_email: row.customers?.email ?? null,
       customer_phone: row.customers?.phone ?? null,
       order_number: row.orders?.order_number ?? null,
-      invoice_number: row.invoices?.invoice_number ?? null,
+      invoice_number: row.invoices?.invoice_number ?? row.historical_invoice_number ?? null,
     };
   });
   const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0);

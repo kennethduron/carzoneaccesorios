@@ -109,6 +109,8 @@ export async function stageImportRows(batchId: string, rows: ImportPreviewRow[])
     validation_messages: row.validationMessages,
     suggested_customer_id: row.suggestedCustomerId ?? null,
     suggested_supplier_id: row.suggestedSupplierId ?? null,
+    assigned_customer_id: row.assignedCustomerId ?? null,
+    assigned_supplier_id: row.assignedSupplierId ?? null,
     assignment_type: row.assignmentType,
     assignment_status: row.assignmentStatus,
     apply_status: row.applyStatus,
