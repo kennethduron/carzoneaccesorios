@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Database, Download, FileSpreadsheet, RotateCcw, Search, ShieldCheck, Upload } from "lucide-react";
+import { CheckCircle2, Database, FileSpreadsheet, RotateCcw, Search, ShieldCheck, Upload } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -18,20 +18,12 @@ export function ImportFoundationManager({ data }: { data: ImportFoundationData }
       <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <p className="text-sm font-semibold uppercase text-[#b91c25]">Fundacion compartida</p>
-            <h2 className="mt-1 text-2xl font-semibold">Importaciones historicas</h2>
+            <p className="text-sm font-semibold uppercase text-[#b91c25]">Centro de importaciones</p>
+            <h2 className="mt-1 text-2xl font-semibold">Historial de importaciones</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-black/55">
-              Infraestructura reutilizable para cargar Excel, validar filas, guardar staging, resolver asignaciones y preparar confirmacion futura sin tocar tablas operativas.
+              Consulta y administra los archivos importados, los registros pendientes de revision y el historial de aplicaciones.
             </p>
           </div>
-          <a
-            href="/api/admin/importaciones/plantilla-base/excel"
-            download
-            className="inline-flex max-w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-4 py-2 text-center text-sm font-semibold leading-snug text-[#080808] transition-all duration-200 [overflow-wrap:anywhere] hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
-          >
-            <Download size={16} />
-            Descargar plantilla base
-          </a>
         </div>
       </section>
 
@@ -47,18 +39,18 @@ export function ImportFoundationManager({ data }: { data: ImportFoundationData }
         <div className="min-w-0 rounded-lg border border-black/10 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="text-base font-semibold">Arquitectura de staging</h3>
-              <p className="text-xs text-black/50">Flujo comun para CxC y CxP sin inserciones operativas directas.</p>
+              <h3 className="text-base font-semibold">Registros en revision</h3>
+              <p className="text-xs text-black/50">Seguimiento de archivos, validaciones y asignaciones antes de aplicar datos.</p>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full bg-[#edf7ed] px-2.5 py-1 text-xs font-semibold text-[#2f6f3e]">
               <ShieldCheck size={14} />
-              Sin contabilidad
+              Controlado
             </span>
           </div>
           <div className="grid gap-2 md:grid-cols-3">
-            <Step icon={FileSpreadsheet} title="Excel y validacion" text="Parser, limite de filas, columnas requeridas, duplicados y vista previa reutilizable." />
-            <Step icon={Database} title="Staging" text="Lotes y filas con datos originales, normalizados, mensajes, progreso y auditoria." />
-            <Step icon={Search} title="Asignacion" text="Soporte para sugerencias, seleccion manual y confirmacion de cliente o proveedor." />
+            <Step icon={FileSpreadsheet} title="Validacion de archivos" text="Revision de columnas, filas, duplicados y mensajes antes de continuar." />
+            <Step icon={Database} title="Registros listos" text="Resumen de lotes con pendientes, registros validados, aplicados y con errores." />
+            <Step icon={Search} title="Asignacion de clientes y proveedores" text="Busqueda y confirmacion manual cuando un registro necesita relacionarse con una cuenta existente." />
           </div>
         </div>
 
@@ -69,7 +61,7 @@ export function ImportFoundationManager({ data }: { data: ImportFoundationData }
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-base font-semibold">Lotes recientes</h3>
-            <p className="text-xs text-black/50">Solo staging compartido. La aplicacion real se conectara en fases futuras.</p>
+            <p className="text-xs text-black/50">Historial de archivos cargados y avance de cada proceso de importacion.</p>
           </div>
           <Link href="/admin/contabilidad" className="text-xs font-semibold text-[#e4252c] hover:text-[#b91c25]">Ver centro financiero</Link>
         </div>
@@ -100,7 +92,7 @@ export function ImportFoundationManager({ data }: { data: ImportFoundationData }
               ))}
               {data.batches.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-black/55">No hay lotes de importacion compartidos todavia.</td>
+                  <td colSpan={7} className="px-3 py-6 text-center text-black/55">No hay lotes de importacion registrados todavia.</td>
                 </tr>
               ) : null}
             </tbody>

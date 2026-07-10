@@ -55,6 +55,27 @@ function lineTotal(line: LineDraft) {
   return Math.max(Math.round((quantity * unitCost + tax - discount) * 100) / 100, 0);
 }
 
+function LineNumberField({
+  label,
+  min,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  min: string;
+  value: number | string | null | undefined;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-[11px] font-semibold uppercase leading-none text-black/50">{label}</span>
+      <Input type="number" min={min} step="0.01" value={value ?? 0} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
+    </label>
+  );
+}
+
 export function PurchasesManager({
   purchases,
   suppliers,
@@ -256,8 +277,14 @@ export function PurchasesManager({
                     <div className="grid gap-2">
                       <select value={line.product_id ?? ""} onChange={(event) => chooseProduct(line, event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin producto vinculado</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku ? `${product.sku} - ` : ""}{product.name}</option>)}</select>
                       <Input value={line.description} onChange={(event) => updateLine(line.key, { description: event.target.value })} placeholder="Descripción" disabled={!canManage || isPending} />
-                      <div className="grid gap-2 sm:grid-cols-2"><Input type="number" min="0.01" step="0.01" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: event.target.value })} disabled={!canManage || isPending} /><Input type="number" min="0" step="0.01" value={line.unit_cost} onChange={(event) => updateLine(line.key, { unit_cost: event.target.value })} disabled={!canManage || isPending} /></div>
-                      <div className="grid gap-2 sm:grid-cols-2"><Input type="number" min="0" step="0.01" value={line.tax_amount ?? 0} onChange={(event) => updateLine(line.key, { tax_amount: event.target.value })} disabled={!canManage || isPending} /><Input type="number" min="0" step="0.01" value={line.discount_amount ?? 0} onChange={(event) => updateLine(line.key, { discount_amount: event.target.value })} disabled={!canManage || isPending} /></div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <LineNumberField label="Cantidad" min="0.01" value={line.quantity} onChange={(value) => updateLine(line.key, { quantity: value })} disabled={!canManage || isPending} />
+                        <LineNumberField label="Costo unitario" min="0" value={line.unit_cost} onChange={(value) => updateLine(line.key, { unit_cost: value })} disabled={!canManage || isPending} />
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <LineNumberField label="Impuesto" min="0" value={line.tax_amount ?? 0} onChange={(value) => updateLine(line.key, { tax_amount: value })} disabled={!canManage || isPending} />
+                        <LineNumberField label="Descuento" min="0" value={line.discount_amount ?? 0} onChange={(value) => updateLine(line.key, { discount_amount: value })} disabled={!canManage || isPending} />
+                      </div>
                       <p className="text-sm font-semibold">Total línea: {formatCurrency(lineTotal(line))}</p>
                     </div>
                   </div>

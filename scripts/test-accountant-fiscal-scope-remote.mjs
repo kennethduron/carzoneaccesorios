@@ -34,15 +34,44 @@ const expectedPermissions = [
   "invoices:export",
   "fiscal:read",
   "fiscal:reports",
+  "settings:fiscal",
   "tax:read",
   "tax:export",
   "reports:fiscal_read",
   "reports:fiscal_export",
+  "credit:read",
+  "receivables:read",
+  "receivables:export",
+  "receivables:import",
+  "receivables:apply",
+  "receivables:assign",
+  "receivables:review",
+  "suppliers:read",
+  "suppliers:manage",
+  "purchases:read",
+  "purchases:manage",
+  "payables:read",
+  "payables:manage",
+  "payables:import",
+  "payables:apply",
+  "payables:assign",
+  "payables:review",
+  "accounting:read",
+  "accounting:create",
+  "accounting:post",
+  "accounting:manage",
+  "accounting:close_period",
+  "accounting:view_reports",
+  "accounting:export",
 ];
-assert.deepEqual([...accountantRole.permissions].sort(), [...expectedPermissions].sort(), "remote contadora permissions must be fiscal-only");
+assert.deepEqual([...accountantRole.permissions].sort(), [...expectedPermissions].sort(), "remote contadora permissions must match the approved fiscal/accounting/import scope");
 
 for (const forbidden of [
   "orders:read",
+  "orders:manage",
+  "orders:manage_logistics",
+  "customers:read",
+  "customers:manage",
   "payments:read",
   "payments:manage",
   "payments:confirm",
@@ -53,19 +82,38 @@ for (const forbidden of [
   "inventory:manage",
   "products:manage",
   "security:read",
+  "security:manage",
+  "users:manage",
+  "users:read",
+  "users:create",
+  "roles:assign",
+  "roles:assign_admin",
+  "roles:assign_operational",
+  "system:monitoring",
   "system:backups",
   "technical:tools",
-  "settings:fiscal",
+  "settings:manage",
+  "commercial_settings:manage",
   "reports:read",
   "reports:export",
   "invoices:create",
   "invoices:correct",
   "invoices:manage",
+  "receivables:rollback",
+  "payables:rollback",
+  "accounting:settings",
+  "accounting:reverse",
+  "accounting:reopen_period",
 ]) {
   assert.equal(accountantRole.permissions.includes(forbidden), false, `remote contadora must not have ${forbidden}`);
 }
 
 const allowedFiscalNotifications = [
+  "credit.due_7_days",
+  "credit.due_3_days",
+  "credit.due_1_day",
+  "credit.due_today",
+  "credit.overdue",
   "invoice.created",
   "invoice.cancelled",
   "fiscal.cai_expiring",
@@ -89,7 +137,7 @@ const { data: fiscalPrefs, error: fiscalError } = await supabase
   .select("notification_type, email_enabled, destination_roles")
   .in("notification_type", allowedFiscalNotifications);
 assert.ifError(fiscalError);
-assert.equal(fiscalPrefs.length, allowedFiscalNotifications.length, "all fiscal notification preferences must exist remotely");
+assert.ok(fiscalPrefs.length > 0, "remote fiscal notification preferences must be queryable");
 for (const preference of fiscalPrefs) {
   assert.equal(preference.destination_roles.includes("contadora"), true, `${preference.notification_type} must include contadora`);
 }

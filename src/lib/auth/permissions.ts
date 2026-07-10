@@ -247,6 +247,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "invoices:export",
     "fiscal:read",
     "fiscal:reports",
+    "settings:fiscal",
     "tax:read",
     "tax:export",
     "reports:fiscal_read",

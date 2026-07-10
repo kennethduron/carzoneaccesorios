@@ -50,7 +50,7 @@ export async function buildImportTemplateWorkbook(definition: ImportTemplateDefi
   worksheet.getCell(1, 1).font = { bold: true, size: 16 };
   worksheet.getCell(2, 1).value = definition.description;
   worksheet.getCell(2, 1).alignment = { wrapText: true };
-  worksheet.getRow(4).values = ["", ...definition.columns.map((column) => column.label)];
+  worksheet.getRow(4).values = definition.columns.map((column) => column.label);
 
   for (const [index, column] of definition.columns.entries()) {
     const excelColumn = index + 1;
