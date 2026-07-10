@@ -130,6 +130,7 @@ const moduleGroups = [
     modules: [
       { title: "Cuentas por cobrar", href: "/admin/cuentas-por-cobrar", description: "Créditos abiertos, próximos a vencer y vencidos.", permissions: ["receivables:read"] },
       { title: "Cuentas por pagar", href: "/admin/cuentas-por-pagar", description: "Saldos, facturas y pagos a proveedores.", permissions: ["payables:read", "payables:manage"] },
+      { title: "Importaciones", href: "/admin/importaciones", description: "Fundacion compartida para staging, validacion y asignaciones historicas.", permissions: ["receivables:read", "payables:read", "payables:manage"] },
       { title: "Contabilidad", href: "/admin/contabilidad", description: "Catálogo de cuentas, libro diario y partidas manuales.", permissions: ["accounting:read"] },
       { title: "Libro Mayor", href: "/admin/libro-mayor", description: "Movimientos publicados por cuenta contable.", permissions: ["accounting:view_reports"] },
       { title: "Balance de Comprobación", href: "/admin/balance-comprobacion", description: "Débitos, créditos y saldos finales por cuenta.", permissions: ["accounting:view_reports"] },
