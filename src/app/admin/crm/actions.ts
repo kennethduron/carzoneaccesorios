@@ -8,7 +8,7 @@ import { requirePermission, requireSession } from "@/lib/auth/session";
 import { writeErrorLog } from "@/lib/error-logging";
 import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { queueWholesaleApprovedEmail, queueWholesaleRejectedEmail } from "@/lib/notifications/customer-lifecycle-emails";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
 import type { AppRole, AuthProfile } from "@/types/auth";

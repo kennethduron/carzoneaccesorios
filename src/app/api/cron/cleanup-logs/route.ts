@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { logCronRun, verifyCronRequest } from "@/lib/cron";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 

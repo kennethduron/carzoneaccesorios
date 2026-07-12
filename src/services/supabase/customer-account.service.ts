@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { AdminInvoiceItem, InvoiceStatus, StoreInvoice } from "@/types/invoices";
 import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";

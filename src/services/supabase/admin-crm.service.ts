@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
 import { getCustomerCreditAccount, getCustomerReceivables } from "@/services/supabase/credit.service";

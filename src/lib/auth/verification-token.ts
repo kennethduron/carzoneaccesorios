@@ -1,3 +1,5 @@
+import "server-only";
+
 import { createHmac, timingSafeEqual } from "crypto";
 
 type VerificationStatus = "verified" | "already";
@@ -8,7 +10,7 @@ function getSigningSecret() {
   const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!secret) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY for verification token signing");
+    throw new Error("Server configuration is unavailable.");
   }
 
   return secret;

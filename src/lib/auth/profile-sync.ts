@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { AppRole } from "@/types/auth";
 import { normalizeUsername, validateUsername } from "@/utils/usernames";
 

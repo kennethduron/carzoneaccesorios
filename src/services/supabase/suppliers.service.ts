@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { Supplier, SupplierOption, SupplierSummary } from "@/types/purchases";
 
 export async function getAdminSuppliers(): Promise<{ suppliers: Supplier[]; summary: SupplierSummary }> {

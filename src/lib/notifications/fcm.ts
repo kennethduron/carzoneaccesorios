@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createHash, createSign } from "node:crypto";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type FcmMessage = {
   userIds?: string[];

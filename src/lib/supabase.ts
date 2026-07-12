@@ -2,7 +2,6 @@ import { createBrowserClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let browserClient: SupabaseClient | null = null;
-let adminClient: SupabaseClient | null = null;
 let publicClient: SupabaseClient | null = null;
 
 export function getSupabaseBrowserClient() {
@@ -18,26 +17,6 @@ export function getSupabaseBrowserClient() {
   }
 
   return browserClient;
-}
-
-export function getSupabaseAdminClient() {
-  if (!adminClient) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !serviceRoleKey) {
-      throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-    }
-
-    adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-  }
-
-  return adminClient;
 }
 
 export function getSupabasePublicClient() {

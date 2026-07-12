@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { canUseTechnicalTools, canViewSecurityUser, visibleSecurityRolesFor } from "@/lib/auth/access-control";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";

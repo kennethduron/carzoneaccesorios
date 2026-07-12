@@ -13,7 +13,7 @@ import {
   dispatchLatestReceivablePaymentAccountingEvent,
   dispatchPaymentReceivedAccountingEventForOrder,
 } from "@/services/accounting/accounting-event-dispatcher";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";

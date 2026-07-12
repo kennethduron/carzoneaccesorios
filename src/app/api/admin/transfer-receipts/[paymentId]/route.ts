@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { requirePermission } from "@/lib/auth/session";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { writeAuditLog } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";

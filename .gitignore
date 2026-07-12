@@ -14,6 +14,13 @@
 /coverage
 /.visual-check/
 /tmp/
+/backups/
+/exports/
+/downloads/
+*.bak
+*.dump
+*.backup
+*-backup-*.zip
 
 # next.js
 /.next/

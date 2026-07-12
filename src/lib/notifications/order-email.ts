@@ -1,4 +1,4 @@
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { writeErrorLog } from "@/lib/error-logging";
 import { enqueueEmail, processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { queuePreferenceEmail } from "@/lib/notifications/cron-jobs";

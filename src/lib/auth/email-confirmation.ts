@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { normalizeAuthEmail } from "@/lib/auth/profile-sync";
 
 export function isValidAuthEmail(email: string) {

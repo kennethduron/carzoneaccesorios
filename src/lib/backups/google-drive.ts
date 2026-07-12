@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSign } from "node:crypto";
 import JSZip from "jszip";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { AuthProfile } from "@/types/auth";
 import type { BackupType } from "@/types/security";
 

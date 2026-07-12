@@ -1,6 +1,6 @@
 ﻿import "server-only";
 
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type {
   AdminPurchase,
   ProductPurchaseOption,

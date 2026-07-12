@@ -7,7 +7,7 @@ import { queuePreferenceEmail } from "@/lib/notifications/cron-jobs";
 import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { writeErrorLog } from "@/lib/error-logging";
 import { sanitizeLogText } from "@/lib/operational-errors";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { NotificationLogStatus } from "@/types/notifications";
 
 export type PublicFormKind = "contact_general" | "wholesale";

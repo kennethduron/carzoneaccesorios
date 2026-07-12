@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { writeErrorLog } from "@/lib/error-logging";
 import { notifyPublicFormSubmission, getPublicRequestContext } from "@/lib/public-form-support";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { optionalText, requireText, validateHondurasPhone } from "@/utils/validation";
 
 type WholesaleRequestInput = {

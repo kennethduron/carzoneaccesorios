@@ -14,7 +14,7 @@ import {
   isProtectedTechnicalUser as isProtectedTechnicalSecurityUser,
 } from "@/lib/auth/access-control";
 import { requirePermission, requireSession } from "@/lib/auth/session";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { AppRole, AuthProfile } from "@/types/auth";
 import type { BackupType } from "@/types/security";

@@ -7,7 +7,7 @@ import { writeErrorLog } from "@/lib/error-logging";
 import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchCommercialCreditAccountingEventForOrder } from "@/services/accounting/accounting-event-dispatcher";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";

@@ -4,7 +4,7 @@ import JSZip from "jszip";
 import { sendTransactionalEmail } from "@/lib/email/email-provider";
 import { createTechnicalNotification } from "@/lib/notifications/notification-center";
 import { maskEmail, sanitizeLogText, sanitizeMetadata } from "@/lib/operational-errors";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { AuthProfile } from "@/types/auth";
 import type { BackupType } from "@/types/security";
 

@@ -10,7 +10,7 @@ import {
   writeRegisteredWholesaleAudit,
 } from "@/lib/public-form-support";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import type {

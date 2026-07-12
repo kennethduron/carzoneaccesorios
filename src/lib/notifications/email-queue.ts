@@ -3,7 +3,7 @@ import "server-only";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getEmailProviderStatus, sendTransactionalEmail } from "@/lib/email/email-provider";
 import { createTechnicalNotification } from "@/lib/notifications/notification-center";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { EmailQueueItem, NotificationModule } from "@/types/notifications";
 import { canonicalOrderStatus } from "@/utils/order-workflow";
 

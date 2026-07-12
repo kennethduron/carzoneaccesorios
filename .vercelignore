@@ -2,6 +2,13 @@
 .next-stale-*
 .visual-check
 tmp
+backups
+exports
+downloads
+*.bak
+*.dump
+*.backup
+*-backup-*.zip
 test-results
 *.tsbuildinfo
 supabase/.temp

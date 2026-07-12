@@ -1,7 +1,7 @@
 import "server-only";
 
 import { NextResponse, type NextRequest } from "next/server";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type CronRunStatus = "success" | "failed";
 

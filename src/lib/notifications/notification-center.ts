@@ -2,7 +2,7 @@ import "server-only";
 
 import { getCatalogItem } from "@/lib/notifications/catalog";
 import { sendFcmNotification } from "@/lib/notifications/fcm";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { NotificationModule, NotificationPreference, NotificationSeverity } from "@/types/notifications";
 
 type CreateInternalNotificationInput = {

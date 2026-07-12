@@ -2,7 +2,7 @@ import "server-only";
 
 import { enqueueEmail, processCriticalEmailQueue, processEmailQueue } from "@/lib/notifications/email-queue";
 import { createInternalNotification, createTechnicalNotification, getPreferenceDelivery } from "@/lib/notifications/notification-center";
-import { getSupabaseAdminClient } from "@/lib/supabase";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { NotificationModule, NotificationSeverity } from "@/types/notifications";
 import { isSafeTestAccountEmail } from "@/utils/test-accounts";
 
