@@ -2,9 +2,9 @@
 .next-stale-*
 .visual-check
 tmp
-backups
-exports
-downloads
+/backups
+/exports
+/downloads
 *.bak
 *.dump
 *.backup
