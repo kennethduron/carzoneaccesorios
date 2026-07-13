@@ -51,8 +51,13 @@ Antes de conectar datos reales, crea un archivo `.env.local` con:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+VERIFICATION_SIGNING_SECRET=
 NEXT_PUBLIC_SUPABASE_PRODUCT_IMAGES_BUCKET=product-images
 ```
+
+`VERIFICATION_SIGNING_SECRET` es opcional durante la transición y se usa exclusivamente en el servidor para los tokens personalizados de confirmación visual. Cuando no existe o contiene menos de 32 bytes UTF-8, Producción conserva temporalmente la firma heredada para no interrumpir el flujo actual ni invalidar enlaces existentes. La retirada de este fallback requiere una fase separada y aprobada.
+
+Cuando se configure en una fase futura, debe ser un valor aleatorio de al menos 32 bytes, mantenerse solo en el servidor, no usar el prefijo `NEXT_PUBLIC_` y nunca escribirse en el repositorio, registros, errores ni salidas de pruebas. Debe ser exclusivo: no puede reutilizar claves de Supabase, cron, Resend, Cloudinary, Firebase, contraseñas ni ningún otro secreto del sistema.
 
 La validacion final de codigos mayoristas debe moverse a una funcion segura en backend, guardando hashes en `wholesale_codes.code_hash`.
 

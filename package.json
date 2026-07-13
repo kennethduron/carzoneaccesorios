@@ -10,6 +10,7 @@
     "security:client-boundary": "node scripts/security-client-boundary.mjs",
     "security:sensitive-artifacts": "node scripts/security-sensitive-artifacts.mjs",
     "security:validate": "npm run security:client-boundary && npm run security:sensitive-artifacts && npm run test:role-hierarchy && npm run test:commercial-credit && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-accountant-fiscal-scope.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-access-and-warehouse-scope.mjs",
+    "test:auth-security": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-security-s3.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",
     "test:wholesale-permissions:remote": "node scripts/test-wholesale-permissions-remote.mjs",

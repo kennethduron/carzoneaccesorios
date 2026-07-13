@@ -11,6 +11,8 @@ const resolutionExtensions = ["", ...sourceExtensions];
 const knownPrivilegedPaths = [
   "src/lib/supabase-admin.ts",
   "src/lib/auth/verification-token.ts",
+  "src/lib/auth/verification-signing-secret.ts",
+  "src/lib/auth/verification-token-core.ts",
   "src/lib/cron.ts",
   "src/lib/cloudinary.ts",
   "src/lib/backups/email.ts",
@@ -22,6 +24,7 @@ const knownPrivilegedPaths = [
 
 const sensitiveEnvironmentNames = new Set([
   "SUPABASE_SERVICE_ROLE_KEY",
+  "VERIFICATION_SIGNING_SECRET",
   "SUPABASE_ACCESS_TOKEN",
   "RESEND_API_KEY",
   "BREVO_API_KEY",
