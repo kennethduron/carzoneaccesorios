@@ -11,6 +11,10 @@ import {
   logAccountingCatalogEvent,
   parseAndValidateChartOfAccountsWorkbook,
 } from "@/services/supabase/accounting-catalog.service";
+import {
+  getAccountingAccountSaveErrorMessage,
+  validateAccountingAccountParent,
+} from "@/services/supabase/accounting-account.service";
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
@@ -232,10 +236,6 @@ function validateAccountInput(input: AccountingAccountInput) {
 
   if (!normalBalances.has(normalBalance)) {
     return { ok: false as const, message: "Selecciona una naturaleza válida." };
-  }
-
-  if (input.parent_id && input.id && input.parent_id === input.id) {
-    return { ok: false as const, message: "Una cuenta no puede ser su propia cuenta padre." };
   }
 
   return {
@@ -606,6 +606,16 @@ export async function saveAccountingAccountAction(input: AccountingAccountInput)
     return { ok: false, message: validation.message };
   }
 
+  const parentValidation = await validateAccountingAccountParent({
+    accountId: input.id ?? null,
+    parentId: validation.account.parent_id,
+  });
+  if (!parentValidation.ok) {
+    return { ok: false, message: parentValidation.message };
+  }
+
+  const accountPayload = { ...validation.account, parent_id: parentValidation.parentId };
+
   const supabase = await getSupabaseServerClient();
   if (input.id) {
     const { data: previous } = await supabase
@@ -613,10 +623,10 @@ export async function saveAccountingAccountAction(input: AccountingAccountInput)
       .select("id, code, name, type, parent_id, normal_balance, is_active, description")
       .eq("id", input.id)
       .maybeSingle();
-    const { error } = await supabase.from("accounting_accounts").update(validation.account).eq("id", input.id);
+    const { error } = await supabase.from("accounting_accounts").update(accountPayload).eq("id", input.id);
 
     if (error) {
-      return { ok: false, message: error.message };
+      return { ok: false, message: getAccountingAccountSaveErrorMessage(error, { hasParent: Boolean(accountPayload.parent_id) }) };
     }
 
     await writeAuditLog({
@@ -624,37 +634,37 @@ export async function saveAccountingAccountAction(input: AccountingAccountInput)
       recordId: input.id,
       action: "accounting.account.updated",
       oldData: previous ?? null,
-      newData: validation.account,
+      newData: accountPayload,
     });
     await logAccountingEvent({
       eventType: "account.updated",
       entityType: "accounting_accounts",
       entityId: input.id,
-      metadata: validation.account,
+      metadata: accountPayload,
       createdBy: profile.id,
     });
   } else {
     const { data, error } = await supabase
       .from("accounting_accounts")
-      .insert({ ...validation.account, created_by: profile.id })
+      .insert({ ...accountPayload, created_by: profile.id })
       .select("id")
       .single<{ id: string }>();
 
     if (error) {
-      return { ok: false, message: error.message };
+      return { ok: false, message: getAccountingAccountSaveErrorMessage(error, { hasParent: Boolean(accountPayload.parent_id) }) };
     }
 
     await writeAuditLog({
       tableName: "accounting_accounts",
       recordId: data.id,
       action: "accounting.account.created",
-      newData: validation.account,
+      newData: accountPayload,
     });
     await logAccountingEvent({
       eventType: "account.created",
       entityType: "accounting_accounts",
       entityId: data.id,
-      metadata: validation.account,
+      metadata: accountPayload,
       createdBy: profile.id,
     });
   }

@@ -91,6 +91,11 @@ export type AccountingAccountInput = {
   description?: string | null;
 };
 
+export type AccountingAccountHierarchyOption = Pick<
+  AccountingAccount,
+  "id" | "code" | "name" | "parent_id" | "is_active"
+>;
+
 export type JournalEntryLine = {
   id: string;
   journal_entry_id: string;
@@ -156,6 +161,7 @@ export type AccountingPageData = {
   summary: AccountingDashboardSummary;
   accounts: AccountingAccount[];
   activeAccounts: AccountingAccount[];
+  accountHierarchyOptions: AccountingAccountHierarchyOption[];
   journalEntries: JournalEntry[];
   accountPage: number;
   accountPageSize: number;

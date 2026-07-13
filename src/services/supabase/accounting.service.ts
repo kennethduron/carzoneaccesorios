@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getAccountingAccountHierarchyOptions } from "@/services/supabase/accounting-account.service";
 import type {
   AccountingAccount,
   AccountingDashboardSummary,
@@ -149,6 +150,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
   const [
     { data: accounts, error: accountsError, count: accountTotal },
     { data: activeAccounts, error: activeAccountsError, count: activeAccountsTotal },
+    accountHierarchyOptions,
     { data: journalRows, error: journalError, count: journalTotal },
     { count: journalEntriesThisMonth, error: monthError },
     { count: draftEntries, error: draftError },
@@ -167,6 +169,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
       .order("code", { ascending: true })
       .limit(500)
       .returns<AccountingAccount[]>(),
+    getAccountingAccountHierarchyOptions(),
     supabase
       .from("journal_entries")
       .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, created_at, updated_at", { count: "exact" })
@@ -207,6 +210,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     summary,
     accounts: accounts ?? [],
     activeAccounts: activeAccounts ?? [],
+    accountHierarchyOptions,
     journalEntries,
     accountPage,
     accountPageSize,

@@ -10,6 +10,7 @@ import {
   toggleAccountingAccountAction,
 } from "@/app/admin/contabilidad/actions";
 import { ChartOfAccountsTools } from "@/components/admin/chart-of-accounts-tools";
+import { ParentAccountCombobox } from "@/components/admin/parent-account-combobox";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
@@ -325,6 +326,13 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
                     ))}
                   </select>
                 </label>
+                <ParentAccountCombobox
+                  accounts={data.accountHierarchyOptions}
+                  value={accountForm.parent_id ?? null}
+                  editingAccountId={accountForm.id ?? null}
+                  disabled={isPending}
+                  onChange={(parentId) => setAccountForm((current) => ({ ...current, parent_id: parentId }))}
+                />
               </div>
               <label className="mt-3 block">
                 <span className="mb-1 block text-xs font-medium uppercase text-black/50">Descripción</span>
