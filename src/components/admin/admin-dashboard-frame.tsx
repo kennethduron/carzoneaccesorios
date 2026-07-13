@@ -10,6 +10,7 @@ import {
   markAdminDashboardNotificationReadAction,
   markAllAdminDashboardNotificationsReadAction,
 } from "@/app/admin/actions";
+import { LogoutMenuItemProvider } from "@/components/auth/logout-button";
 import { useToast } from "@/contexts/toast-context";
 import {
   addTokenSyncedListener,
@@ -150,12 +151,15 @@ export function AdminDashboardFrame({
   const searchRef = useRef<HTMLInputElement>(null);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const userMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeResult, setActiveResult] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([]);
   const [pendingNotificationIds, setPendingNotificationIds] = useState<string[]>([]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
@@ -175,6 +179,17 @@ export function AdminDashboardFrame({
   useEffect(() => {
     window.localStorage.setItem("carzone:admin-sidebar-collapsed", String(collapsed));
   }, [collapsed]);
+
+  useEffect(() => {
+    const desktopMedia = window.matchMedia("(min-width: 640px)");
+
+    function onBreakpointChange(event: MediaQueryListEvent) {
+      if (event.matches) setIsUserMenuOpen(false);
+    }
+
+    desktopMedia.addEventListener("change", onBreakpointChange);
+    return () => desktopMedia.removeEventListener("change", onBreakpointChange);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -204,14 +219,20 @@ export function AdminDashboardFrame({
     function onKeyDown(event: globalThis.KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setIsUserMenuOpen(false);
         setSearchOpen(true);
         searchRef.current?.focus();
       }
 
       if (event.key === "Escape") {
+        const restoreUserMenuFocus = isUserMenuOpen;
         setSearchOpen(false);
         setNotificationsOpen(false);
         setDrawerOpen(false);
+        setIsUserMenuOpen(false);
+        if (restoreUserMenuFocus) {
+          window.requestAnimationFrame(() => userMenuButtonRef.current?.focus());
+        }
       }
     }
 
@@ -223,6 +244,9 @@ export function AdminDashboardFrame({
       if (notificationRef.current && !notificationRef.current.contains(target)) {
         setNotificationsOpen(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(target)) {
+        setIsUserMenuOpen(false);
+      }
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -232,7 +256,7 @@ export function AdminDashboardFrame({
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("mousedown", onPointerDown);
     };
-  }, []);
+  }, [isUserMenuOpen]);
 
   const results = useMemo(() => {
     const needle = normalize(query);
@@ -413,7 +437,10 @@ export function AdminDashboardFrame({
               type="button"
               className="inline-flex size-10 shrink-0 items-center justify-center rounded-md border border-black/10 text-black/70 xl:hidden"
               aria-label="Abrir menú"
-              onClick={() => setDrawerOpen(true)}
+              onClick={() => {
+                setIsUserMenuOpen(false);
+                setDrawerOpen(true);
+              }}
             >
               <Menu size={19} />
             </button>
@@ -434,9 +461,13 @@ export function AdminDashboardFrame({
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setActiveResult(0);
+                  setIsUserMenuOpen(false);
                   setSearchOpen(true);
                 }}
-                onFocus={() => setSearchOpen(true)}
+                onFocus={() => {
+                  setIsUserMenuOpen(false);
+                  setSearchOpen(true);
+                }}
                 onKeyDown={onSearchKeyDown}
                 type="search"
                 placeholder="Buscar en todo el sistema..."
@@ -480,7 +511,10 @@ export function AdminDashboardFrame({
                   className="relative inline-flex size-10 items-center justify-center rounded-md text-black/65 transition-colors hover:bg-[#fafafa]"
                   aria-label="Notificaciones"
                   aria-expanded={notificationsOpen}
-                  onClick={() => setNotificationsOpen((current) => !current)}
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    setNotificationsOpen((current) => !current);
+                  }}
                 >
                   <Bell size={18} />
                   {visibleNotifications.length > 0 ? (
@@ -593,10 +627,44 @@ export function AdminDashboardFrame({
                   <span className="block capitalize text-black/50">{roleText}</span>
                 </span>
               </div>
-              <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#e4252c] text-xs font-semibold text-white">
-                {avatarLetter}
-              </span>
-              <div className="hidden sm:block">{logoutSlot}</div>
+              <div ref={userMenuRef} className="relative flex shrink-0 items-center gap-2">
+                <button
+                  ref={userMenuButtonRef}
+                  type="button"
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-[#e4252c] text-xs font-semibold text-white outline-none transition-colors hover:bg-[#b91c25] focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 sm:hidden"
+                  aria-label="Abrir menú de usuario"
+                  aria-haspopup="menu"
+                  aria-expanded={isUserMenuOpen}
+                  aria-controls="admin-mobile-user-menu"
+                  onClick={() => {
+                    const nextOpen = !isUserMenuOpen;
+                    if (nextOpen) {
+                      setSearchOpen(false);
+                      setNotificationsOpen(false);
+                      setDrawerOpen(false);
+                    }
+                    setIsUserMenuOpen(nextOpen);
+                  }}
+                >
+                  {avatarLetter}
+                </button>
+                <span className="hidden size-9 shrink-0 items-center justify-center rounded-full bg-[#e4252c] text-xs font-semibold text-white sm:inline-flex">
+                  {avatarLetter}
+                </span>
+                {isUserMenuOpen ? (
+                  <div
+                    id="admin-mobile-user-menu"
+                    role="menu"
+                    onSubmitCapture={() => {
+                      window.requestAnimationFrame(() => setIsUserMenuOpen(false));
+                    }}
+                    className="absolute right-0 top-full z-50 mt-2 w-44 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-md border border-black/10 bg-white p-1 shadow-xl shadow-black/10 sm:hidden"
+                  >
+                    <LogoutMenuItemProvider>{logoutSlot}</LogoutMenuItemProvider>
+                  </div>
+                ) : null}
+                <div className="hidden sm:block">{logoutSlot}</div>
+              </div>
             </div>
           </div>
         </header>
