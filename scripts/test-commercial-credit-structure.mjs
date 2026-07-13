@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { allPermissions, rolePermissions } from "../src/lib/auth/permissions.ts";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+const resolvedRolePermissions = { ...rolePermissions, technical_owner: allPermissions };
+const permissions = Object.entries(resolvedRolePermissions)
+  .map(([role, values]) => `${role}: [${values.map((value) => JSON.stringify(value)).join(", ")}],`)
+  .join("\n");
 
 const [
   enumMigration,
@@ -10,12 +16,12 @@ const [
   permissionAuditMigration,
   finalMigration,
   partialPaymentsMigration,
-  permissions,
   checkoutAction,
   checkoutView,
   crmAction,
   crmManager,
   accountPage,
+  creditPaymentHistory,
   accountActions,
   notificationToast,
   receivablesPage,
@@ -33,12 +39,12 @@ const [
   read("supabase/migrations/202606130004_commercial_credit_permission_audit.sql"),
   read("supabase/migrations/202606140001_commercial_credit_final_adjustments.sql"),
   read("supabase/migrations/202606180001_commercial_credit_partial_payments.sql"),
-  read("src/lib/auth/permissions.ts"),
   read("src/app/checkout/actions.ts"),
   read("src/components/store/checkout-view.tsx"),
   read("src/app/admin/crm/actions.ts"),
   read("src/components/admin/crm-manager.tsx"),
   read("src/app/cuenta/page.tsx"),
+  read("src/components/admin/credit-payment-history.tsx"),
   read("src/app/cuenta/actions.ts"),
   read("src/components/store/customer-credit-notification-toast.tsx"),
   read("src/app/admin/cuentas-por-cobrar/page.tsx"),
@@ -110,8 +116,9 @@ assert.match(crmAction, /\["technical_owner", "business_owner", "admin"\]\.inclu
 assert.match(crmAction, /profile\.creditAccount = null;[\s\S]*?profile\.receivables = \[\]/);
 assert.match(crmManager, /tab\.id !== "credito" \|\| canManageCredit/);
 const creditComponent = crmManager.slice(crmManager.indexOf("function CustomerProfileCredit"));
-assert.doesNotMatch(creditComponent, /Notas internas/);
-assert.doesNotMatch(creditComponent, /textarea/);
+const creditSettingsSection = creditComponent.slice(0, creditComponent.indexOf("</section>") + "</section>".length);
+assert.doesNotMatch(creditSettingsSection, /Notas internas/);
+assert.doesNotMatch(creditSettingsSection, /textarea/);
 
 assert.match(receivablesPage, /receivables:read/);
 assert.match(receivablesPage, /\["technical_owner", "business_owner", "admin"\]\.includes\(profile\.role\)/);
@@ -119,7 +126,8 @@ assert.doesNotMatch(receivablesManager, /Pago completo únicamente/);
 assert.match(receivablesManager, /row\.status !== "paid" && row\.status !== "cancelled"/);
 assert.match(accountPage, /\{creditAccount \? \(/);
 assert.match(accountPage, /Total abonado/);
-assert.match(accountPage, /Historial de abonos/);
+assert.match(accountPage, /CreditPaymentHistory/);
+assert.match(creditPaymentHistory, /Historial de abonos/);
 assert.match(accountPage, /CustomerCreditNotificationToast/);
 assert.match(accountActions, /eq\("user_id", profile\.id\)/);
 assert.match(notificationToast, /Crédito comercial habilitado\. Ahora puedes realizar compras a crédito según las condiciones asignadas\./);

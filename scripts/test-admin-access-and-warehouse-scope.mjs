@@ -79,7 +79,13 @@ for (const permission of [
 const pedidosActions = await readFile(new URL("../src/app/admin/pedidos/actions.ts", import.meta.url), "utf8");
 assert.match(pedidosActions, /requirePermission\(status === "approved" \? "payments:confirm" : "payments:reject"\)/);
 assert.match(pedidosActions, /requirePermission\("invoices:create"\)/);
-assert.match(pedidosActions, /requirePermission\("invoices:correct"\)/);
+const fiscalCorrectionAction = pedidosActions.slice(
+  pedidosActions.indexOf("export async function correctOrderFiscalCustomerDataAction"),
+  pedidosActions.indexOf("export async function", pedidosActions.indexOf("export async function correctOrderFiscalCustomerDataAction") + 1),
+);
+assert.match(fiscalCorrectionAction, /requirePermission\("admin:access"\)/);
+assert.match(fiscalCorrectionAction, /\["technical_owner", "business_owner", "admin"\]\.includes\(profile\.role\)/);
+assert.match(fiscalCorrectionAction, /hasEffectivePermission\(profile\.role, profile\.permissions, "invoices:correct", profile\.email\)/);
 assert.match(pedidosActions, /orders:manage_logistics/);
 assert.match(pedidosActions, /normalizedStatus === "cancelado" && !canManageOrders && !canCancelOrders/);
 
@@ -90,8 +96,9 @@ assert.match(invoiceActions, /requirePermission\("invoices:create"\)/);
 
 const guide = await readFile(new URL("../src/app/admin/guia/page.tsx", import.meta.url), "utf8");
 const help = await readFile(new URL("../src/app/admin/ayuda/page.tsx", import.meta.url), "utf8");
-assert.match(guide, /visibleProcessSteps = processSteps\.filter/);
-assert.match(help, /visibleWorkflows = workflows\.filter/);
+assert.match(guide, /visibleSections = guideSections\.filter\(\(section\) => isVisibleToRole\(profile, section\.roles, section\.permissions\)\)/);
+assert.match(help, /visibleBlocks = helpBlocks\.filter\(\(block\) => isBlockVisible\(profile, block\)\)/);
+assert.match(help, /visibleTips = dailyTips\.filter\(\(tip\) => hasAnyPermission\(profile, tip\.permissions\)\)/);
 assert.doesNotMatch(guide, /Contadora[\s\S]{0,500}Confirma o rechaza pagos/);
 assert.doesNotMatch(help, /Contadora[\s\S]{0,500}Confirmar pagos/);
 

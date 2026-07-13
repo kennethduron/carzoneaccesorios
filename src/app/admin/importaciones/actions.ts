@@ -8,6 +8,12 @@ import type { AssignmentSelectorKind } from "@/types/import-foundation";
 export async function searchImportAssignmentOptionsAction(kind: AssignmentSelectorKind, query: string) {
   const profile = await requirePermission("admin:access");
 
+  if (kind !== "customer" && kind !== "supplier") {
+    return [];
+  }
+
+  const normalizedQuery = typeof query === "string" ? query.slice(0, 120) : "";
+
   const allowed =
     kind === "customer"
       ? hasEffectivePermission(profile.role, profile.permissions, "customers:read", profile.email) ||
@@ -21,5 +27,5 @@ export async function searchImportAssignmentOptionsAction(kind: AssignmentSelect
     return [];
   }
 
-  return searchImportAssignmentOptions(kind, query);
+  return searchImportAssignmentOptions(kind, normalizedQuery);
 }
