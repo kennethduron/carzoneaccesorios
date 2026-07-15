@@ -9,7 +9,6 @@ const accountantForbiddenRoutes = {
   "src/app/admin/crm/page.tsx": "crm:manage",
   "src/app/admin/clientes/page.tsx": "crm:manage",
   "src/app/admin/clientes-mayoristas/page.tsx": "wholesale:manage",
-  "src/app/admin/productos/page.tsx": "products:manage",
   "src/app/admin/seguridad/page.tsx": "security:read",
   "src/app/admin/uso/page.tsx": "technical:tools",
   "src/app/admin/banners/page.tsx": "commercial_settings:manage",
@@ -20,6 +19,9 @@ for (const [path, permission] of Object.entries(accountantForbiddenRoutes)) {
   const source = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
   assert.match(source, new RegExp(`require(?:Strict)?Permission\\("${permission}"\\)`), `${path} must require ${permission}`);
 }
+const productsPage = await readFile(new URL("../src/app/admin/productos/page.tsx", import.meta.url), "utf8");
+assert.match(productsPage, /requireProductCapability\("read"\)/);
+assert.match(productsPage, /capabilities=\{capabilities\}/);
 
 const ordersPage = await readFile(new URL("../src/app/admin/pedidos/page.tsx", import.meta.url), "utf8");
 assert.match(ordersPage, /requirePermission\("admin:access"\)/);
@@ -31,6 +33,9 @@ assert.equal(rolePermissions.contadora.includes("admin:access"), true);
 for (const permission of [
   "orders:read",
   "inventory:manage",
+  "products:manage",
+  "products:delete",
+  "products:adjust_stock",
   "orders:manage_logistics",
   "payments:confirm",
   "payments:reject",

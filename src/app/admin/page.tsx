@@ -71,7 +71,7 @@ const moduleGroups = [
       { title: "Pedidos", href: "/admin/pedidos", description: "Seguimiento de pedidos, preparación y estados.", permissions: ["orders:read", "orders:manage"] },
       { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decisión humana.", permissions: ["reservations:review"] },
       { title: "Inventario", href: "/admin/inventario", description: "Entradas, salidas, ajustes e inventario bajo.", permissions: ["inventory:manage"] },
-      { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:manage"] },
+      { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:read", "products:manage"] },
     ],
   },
   {
@@ -118,7 +118,7 @@ const moduleGroups = [
     modules: [
       { title: "Inventario bajo", href: "/admin/inventario?filter=low_stock", description: "Productos bajo mínimo o sin stock.", permissions: ["inventory:manage"] },
       { title: "Movimientos", href: "/admin/inventario", description: "Entradas, salidas, devoluciones y ajustes.", permissions: ["inventory:manage"] },
-      { title: "Catálogo", href: "/admin/productos", description: "Productos, precios y contenido del catálogo.", permissions: ["products:manage"] },
+      { title: "Catálogo", href: "/admin/productos", description: "Productos, precios y contenido del catálogo.", permissions: ["products:read", "products:manage"] },
     ],
   },
   {
@@ -593,7 +593,7 @@ export default async function AdminPage() {
     { label: "Ventas hoy", value: formatCurrency(overview.salesToday), detail: "0% vs ayer", href: "/admin/reportes", icon: Receipt, tone: "bg-[#fdecec] text-[#e4252c]", visible: visibleCards.sales_today && canAccessModule(profile.role, profile.email, profile.permissions, ["reports:read"]) },
     { label: "Pedidos hoy", value: overview.ordersToday.toLocaleString("es-HN"), detail: "0% vs ayer", href: "/admin/pedidos", icon: ClipboardList, tone: "bg-[#eaf2ff] text-[#2563eb]", visible: visibleCards.pending_orders && canAccessModule(profile.role, profile.email, profile.permissions, ["orders:read", "orders:manage"]) },
     { label: "Clientes nuevos (mes)", value: overview.newCustomersMonth.toLocaleString("es-HN"), detail: `${overview.newCustomersToday.toLocaleString("es-HN")} hoy`, href: "/admin/clientes", icon: UserPlus, tone: "bg-[#edf7ed] text-[#2f6f3e]", visible: visibleCards.customers_attention && canAccessModule(profile.role, profile.email, profile.permissions, ["crm:manage", "customers:manage"]) },
-    { label: "Productos activos", value: "Sin dato", detail: "Sin consulta nueva", href: "/admin/productos", icon: Package, tone: "bg-[#f3e8ff] text-[#7c3aed]", visible: canAccessModule(profile.role, profile.email, profile.permissions, ["products:manage"]) },
+    { label: "Productos activos", value: "Sin dato", detail: "Sin consulta nueva", href: "/admin/productos", icon: Package, tone: "bg-[#f3e8ff] text-[#7c3aed]", visible: canAccessModule(profile.role, profile.email, profile.permissions, ["products:read", "products:manage"]) },
     { label: "Stock bajo", value: overview.lowStockProducts.toLocaleString("es-HN"), detail: "Requieren atención", href: "/admin/inventario?filter=low_stock", icon: AlertTriangle, tone: "bg-[#fff7ed] text-[#ea580c]", visible: visibleCards.low_inventory && canAccessModule(profile.role, profile.email, profile.permissions, ["inventory:manage"]) },
   ].filter((card) => card.visible);
 

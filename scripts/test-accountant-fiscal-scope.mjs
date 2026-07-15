@@ -5,6 +5,12 @@ import { rolePermissions } from "../src/lib/auth/permissions.ts";
 
 const allowedPermissions = new Set([
   "admin:access",
+  "products:read",
+  "products:create",
+  "products:update",
+  "products:import",
+  "products:images_manage",
+  "products:export",
   "notifications:read",
   "invoices:read",
   "invoices:export",
@@ -82,7 +88,7 @@ const forbiddenPermissions = [
   "accounting:reopen_period",
 ];
 
-assert.deepEqual(new Set(rolePermissions.contadora), allowedPermissions, "contadora must match the approved fiscal/accounting/import scope");
+assert.deepEqual(new Set(rolePermissions.contadora), allowedPermissions, "contadora must match the approved fiscal/accounting/import/product scope");
 for (const permission of forbiddenPermissions) {
   assert.equal(rolePermissions.contadora.includes(permission), false, `contadora must not have ${permission}`);
 }

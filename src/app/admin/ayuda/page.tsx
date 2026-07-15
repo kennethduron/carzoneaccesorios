@@ -86,7 +86,7 @@ const helpBlocks: HelpBlock[] = [
     title: "Mantener productos",
     description: "Crea o edita el catálogo, los precios, la categoría, el SKU, las imágenes y el estado.",
     href: "/admin/productos",
-    permissions: ["products:manage"],
+    permissions: ["products:read", "products:manage"],
     roles: adminRoles,
     checklist: ["Completar el SKU.", "Asignar la categoría.", "Definir el precio normal.", "Definir el precio mayorista.", "Activar solo si está listo."],
     avoid: "No publiques productos sin imagen, precio revisado o stock confirmado.",

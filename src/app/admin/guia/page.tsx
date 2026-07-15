@@ -104,7 +104,7 @@ const guideSections: GuideSection[] = [
     href: "/admin/productos",
     screenshot: "/help/car-zone/productos.png",
     roles: businessRoles,
-    permissions: ["products:manage"],
+    permissions: ["products:read", "products:manage"],
     what: "Módulo para administrar el nombre, SKU, categoría, precios, compatibilidad, estado e imágenes de cada producto.",
     purpose: "Mantiene el catálogo ordenado y evita vender productos con datos incompletos.",
     steps: [

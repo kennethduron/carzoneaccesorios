@@ -3,7 +3,7 @@
 import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/session";
+import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -49,6 +49,11 @@ type ProductStockRpcResult = {
   stock_before: number;
   stock_after: number;
   quantity: number;
+};
+
+type ProductCatalogSaveRpcResult = {
+  product_id: string;
+  removed_asset_ids: string[] | null;
 };
 
 type ProductDbPayload = {
@@ -192,15 +197,14 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
   };
 }
 
-function imagePayload(productId: string, images: ProductImageInput[]) {
+function imagePayload(images: ProductImageInput[]) {
   const validImages = images.filter((image) => cleanText(image.public_url)).slice(0, 5);
   const selectedPrimaryIndex = validImages.findIndex((image) => image.is_primary);
   const primaryIndex = selectedPrimaryIndex >= 0 ? selectedPrimaryIndex : 0;
 
   return validImages.map((image, index) => ({
-      product_id: productId,
       storage_bucket: "product-images",
-      storage_path: cleanText(image.storage_path) ?? cleanText(image.public_id) ?? `${productId}/${index}-${Date.now()}`,
+      storage_path: cleanText(image.storage_path) ?? cleanText(image.public_id) ?? `products/import-${index}-${Date.now()}`,
       public_id: cleanText(image.public_id) ?? cleanText(image.storage_path),
       public_url: image.public_url.trim(),
       angle: cleanText(image.angle) ?? "principal",
@@ -214,6 +218,31 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
   const uniquePublicIds = Array.from(new Set(publicIds.map((value) => value.trim()).filter(Boolean)));
 
   if (uniquePublicIds.length === 0) {
+    return;
+  }
+  const supabase = await getSupabaseServerClient();
+  const [publicIdReferences, storagePathReferences] = await Promise.all([
+    supabase.from("product_images").select("public_id, storage_path").in("public_id", uniquePublicIds),
+    supabase.from("product_images").select("public_id, storage_path").in("storage_path", uniquePublicIds),
+  ]);
+  const referenceError = publicIdReferences.error ?? storagePathReferences.error;
+  if (referenceError) {
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.cloudinary_reference_check_failed",
+      errorMessage: referenceError.message,
+      metadata: context,
+    });
+    return;
+  }
+
+  const referencedAssets = new Set(
+    [...(publicIdReferences.data ?? []), ...(storagePathReferences.data ?? [])]
+      .flatMap((image) => [image.public_id, image.storage_path])
+      .filter((value): value is string => Boolean(value)),
+  );
+  const deletablePublicIds = uniquePublicIds.filter((publicId) => !referencedAssets.has(publicId));
+  if (deletablePublicIds.length === 0) {
     return;
   }
 
@@ -232,7 +261,7 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
   }
 
   await Promise.all(
-    uniquePublicIds.map(async (publicId) => {
+    deletablePublicIds.map(async (publicId) => {
       try {
         await cloudinary.uploader.destroy(publicId, { resource_type: "image" });
       } catch (error) {
@@ -246,44 +275,6 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
       }
     }),
   );
-}
-
-async function replaceImages(productId: string, images: ProductImageInput[]) {
-  const supabase = await getSupabaseServerClient();
-  const { data: existingImages, error: existingError } = await supabase
-    .from("product_images")
-    .select("public_id, storage_path")
-    .eq("product_id", productId)
-    .returns<Array<{ public_id: string | null; storage_path: string | null }>>();
-
-  if (existingError) {
-    throw new Error(existingError.message);
-  }
-
-  const nextRows = imagePayload(productId, images);
-  const nextPublicIds = new Set(nextRows.map((image) => image.public_id).filter(Boolean));
-  const removedPublicIds = (existingImages ?? [])
-    .map((image) => image.public_id ?? image.storage_path)
-    .filter((publicId): publicId is string => Boolean(publicId && !nextPublicIds.has(publicId)));
-
-  const { error: deleteError } = await supabase.from("product_images").delete().eq("product_id", productId);
-
-  if (deleteError) {
-    throw new Error(deleteError.message);
-  }
-
-  if (nextRows.length === 0) {
-    await removeCloudinaryImages(removedPublicIds, { product_id: productId, reason: "product_images_removed" });
-    return;
-  }
-
-  const { error } = await supabase.from("product_images").insert(nextRows);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  await removeCloudinaryImages(removedPublicIds, { product_id: productId, reason: "product_images_replaced" });
 }
 
 async function setProductStockLocked(productId: string, nextStock: number): Promise<ProductStockRpcResult | null> {
@@ -302,7 +293,7 @@ async function setProductStockLocked(productId: string, nextStock: number): Prom
 }
 
 export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
-  const profile = await requirePermission("products:manage");
+  const profile = await requireProductCapability("manageImages");
 
   try {
     const cloudinary = configureCloudinary();
@@ -429,7 +420,7 @@ export async function uploadProductImageAction(formData: FormData): Promise<Prod
 }
 
 export async function deleteUploadedProductImageAction(publicId: string): Promise<ProductMutationResult> {
-  await requirePermission("products:manage");
+  await requireProductCapability("manageImages");
 
   const cleanPublicId = cleanText(publicId);
   if (!cleanPublicId) {
@@ -441,75 +432,80 @@ export async function deleteUploadedProductImageAction(publicId: string): Promis
 }
 
 export async function saveProductAction(input: ProductFormInput): Promise<ProductMutationResult> {
-  await requirePermission("products:manage");
+  const profile = await requireProductCapability(input.id ? "update" : "create");
+  const capabilities = getProductCapabilities(profile);
+  const candidateAssetIds = capabilities.manageImages
+    ? input.images.map((image) => image.public_id ?? image.storage_path).filter((value): value is string => Boolean(value))
+    : [];
 
   try {
     const supabase = await getSupabaseServerClient();
     const payload = productPayload(input);
+    const { stock: targetStock, ...catalogPayload } = payload;
+    const { data, error } = await supabase.rpc("save_product_catalog_locked", {
+      target_product_id: input.id ?? null,
+      product_data: catalogPayload,
+      images_data: capabilities.manageImages ? imagePayload(input.images) : null,
+    });
+    if (error) throw new Error(error.message);
 
-    if (input.id) {
-      const { stock: targetStock, ...productUpdatePayload } = payload;
+    const saved = (Array.isArray(data) ? data[0] : data) as ProductCatalogSaveRpcResult | null;
+    if (!saved?.product_id) throw new Error("No se pudo confirmar el producto guardado.");
 
-      const { error } = await supabase.from("products").update(productUpdatePayload).eq("id", input.id);
+    await removeCloudinaryImages(saved.removed_asset_ids ?? [], {
+      product_id: saved.product_id,
+      reason: "product_images_replaced",
+    });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+    const stockMovement = capabilities.adjustStock ? await setProductStockLocked(saved.product_id, targetStock) : null;
+    const effectiveStock = capabilities.adjustStock
+      ? stockMovement?.stock_after ?? targetStock
+      : input.id
+        ? "preserved"
+        : 0;
 
-      await replaceImages(input.id, input.images);
-      const stockMovement = await setProductStockLocked(input.id, targetStock);
-      await writeAuditLog({
-        tableName: "products",
-        recordId: input.id,
-        action: "product.updated",
-        oldData: { stock: stockMovement?.stock_before },
-        newData: payload,
-      });
-      revalidateProductCatalog(payload.slug);
-      return { ok: true, message: "Producto actualizado correctamente." };
-    }
-
-    const { data, error } = await supabase
-      .from("products")
-      .insert({ ...payload, stock: 0 })
-      .select("id")
-      .single<{ id: string }>();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    await replaceImages(data.id, input.images);
-    if (payload.stock > 0) {
-      await setProductStockLocked(data.id, payload.stock);
-    }
     await writeAuditLog({
       tableName: "products",
-      recordId: data.id,
-      action: "product.created",
-      newData: payload,
+      recordId: saved.product_id,
+      action: input.id ? "product.updated" : "product.created",
+      oldData: input.id ? { stock: stockMovement?.stock_before ?? "preserved" } : null,
+      newData: {
+        ...catalogPayload,
+        stock: effectiveStock,
+        stock_adjustment_authorized: capabilities.adjustStock,
+        images_updated: capabilities.manageImages,
+      },
     });
 
     revalidateProductCatalog(payload.slug);
-    return { ok: true, message: "Producto creado correctamente. Puede tardar unos segundos en aparecer en la tienda." };
+    const stockMessage = capabilities.adjustStock
+      ? ""
+      : input.id
+        ? " El stock y las reservas se conservaron sin cambios."
+        : " El producto se creó con stock 0.";
+    return {
+      ok: true,
+      message: `${input.id ? "Producto actualizado" : "Producto creado"} correctamente.${stockMessage}`,
+    };
   } catch (error) {
+    await removeCloudinaryImages(candidateAssetIds, {
+      product_id: input.id ?? null,
+      reason: "product_save_compensation",
+    });
     const message = friendlyProductError(error instanceof Error ? error.message : "No se pudo guardar el producto.");
     await writeErrorLog({
       route: "/admin/productos",
       action: "products.save_failed",
       errorMessage: message,
       errorStack: error instanceof Error ? error.stack : null,
-      metadata: {
-        product_id: input.id ?? null,
-        sku: input.sku,
-      },
+      metadata: { product_id: input.id ?? null, sku: input.sku },
     });
     return { ok: false, message };
   }
 }
 
 export async function setProductActiveAction(id: string, active: boolean): Promise<ProductMutationResult> {
-  await requirePermission("products:manage");
+  await requireProductCapability("update");
 
   const supabase = await getSupabaseServerClient();
   const { error } = await supabase
@@ -564,7 +560,7 @@ function hasProductHistory(history: ProductHistoryCounts) {
 }
 
 export async function deleteProductAction(id: string, confirmation?: string): Promise<ProductMutationResult> {
-  await requirePermission("products:manage");
+  await requireProductCapability("deleteProducts");
 
   const supabase = await getSupabaseServerClient();
   const { data: product, error: productError } = await supabase
@@ -645,7 +641,7 @@ export async function deleteProductAction(id: string, confirmation?: string): Pr
 }
 
 export async function getProductImportSkuStatusAction(skus: string[]): Promise<ProductImportSkuStatusResult> {
-  await requirePermission("products:manage");
+  await requireProductCapability("importProducts");
   const supabase = await getSupabaseServerClient();
 
   const normalizedSkus = Array.from(new Set(skus.map((sku) => sku.trim().toUpperCase()).filter(Boolean))).slice(0, 5000);
@@ -678,7 +674,8 @@ export async function importProductsAction(
     };
   } = {},
 ): Promise<ProductMutationResult> {
-  const profile = await requirePermission("products:manage");
+  const profile = await requireProductCapability("importProducts");
+  const capabilities = getProductCapabilities(profile);
   const supabase = await getSupabaseServerClient();
   const mode = options.mode ?? "create_and_update";
 
@@ -714,6 +711,8 @@ export async function importProductsAction(
         images_uploaded: options.imageSummary?.uploaded ?? 0,
         images_missing: options.imageSummary?.missing ?? 0,
         image_summary: options.imageSummary ?? null,
+        stock_columns_ignored: !capabilities.adjustStock,
+        stock_adjustment_authorized: capabilities.adjustStock,
         errors,
         skus: products.map((product) => product.sku.trim().toUpperCase()).filter(Boolean),
       },
@@ -791,6 +790,6 @@ export async function importProductsAction(
   revalidateProductCatalog();
   return {
     ok: true,
-    message: `Importacion completada. ${created} nuevos, ${updated} actualizados, ${skipped} omitidos.`,
+    message: `Importacion completada. ${created} nuevos, ${updated} actualizados, ${skipped} omitidos.${capabilities.adjustStock ? "" : " El stock del archivo fue ignorado: los existentes conservaron su stock y los nuevos quedaron en 0."}`,
   };
 }

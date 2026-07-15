@@ -11,6 +11,13 @@ export type AppRole =
 export type Permission =
   | "admin:access"
   | "products:read"
+  | "products:create"
+  | "products:update"
+  | "products:import"
+  | "products:images_manage"
+  | "products:export"
+  | "products:delete"
+  | "products:adjust_stock"
   | "products:manage"
   | "inventory:manage"
   | "orders:read"

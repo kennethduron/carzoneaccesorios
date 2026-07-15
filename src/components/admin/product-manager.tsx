@@ -57,6 +57,7 @@ import {
   productImageTooManyPixelsMessage,
 } from "@/utils/product-image-rules";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
+import type { ProductCapabilities } from "@/lib/auth/product-access";
 import type { CategoryOption, ProductAdminRow, ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 
 type ProductManagerProps = {
@@ -67,7 +68,7 @@ type ProductManagerProps = {
   total: number;
   page: number;
   pageSize: number;
-  canUseTechnicalExports: boolean;
+  capabilities: ProductCapabilities;
   filters: {
     query: string;
     status: string;
@@ -389,8 +390,13 @@ const productOperationalExportHeaders = [
 const requiredImportHeaders = ["SKU", "Nombre del producto", "Categoría", "Stock", "Precio al detalle"];
 const zipMaxBytes = 250 * 1024 * 1024;
 
+function spreadsheetSafeValue(value: unknown) {
+  const text = String(value ?? "");
+  return /^[=+\-@]/.test(text.trimStart()) ? `'${text}` : text;
+}
+
 function csvValue(value: unknown) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  return `"${spreadsheetSafeValue(value).replaceAll('"', '""')}"`;
 }
 
 function parseCsvLine(line: string) {
@@ -440,7 +446,7 @@ function downloadBlob(content: BlobPart, fileName: string, type: string) {
 function buildExcelTable(title: string, columns: string[], rows: unknown[][]) {
   const header = columns.map((column) => `<th>${htmlEscape(column)}</th>`).join("");
   const body = rows
-    .map((row) => `<tr>${row.map((value) => `<td>${htmlEscape(value)}</td>`).join("")}</tr>`)
+    .map((row) => `<tr>${row.map((value) => `<td>${htmlEscape(spreadsheetSafeValue(value))}</td>`).join("")}</tr>`)
     .join("");
 
   return `
@@ -529,7 +535,7 @@ export function ProductManager({
   total,
   page,
   pageSize,
-  canUseTechnicalExports,
+  capabilities,
   filters,
 }: ProductManagerProps) {
   const [query, setQuery] = useState(filters.query);
@@ -1204,7 +1210,7 @@ export function ProductManager({
   void importCsv;
 
   function exportTechnicalCsv() {
-    if (!canUseTechnicalExports) return;
+    if (!capabilities.technicalExports) return;
     exportCsv();
   }
 
@@ -1395,7 +1401,8 @@ export function ProductManager({
         if (!sku) errors.push("SKU obligatorio.");
         if (!name) errors.push("Nombre del producto obligatorio.");
         if (!category) errors.push(`Categoría inválida: ${categoryName || "vacía"}.`);
-        if (stock < 0) errors.push("Stock no puede ser negativo.");
+        if (capabilities.adjustStock && stock < 0) errors.push("Stock no puede ser negativo.");
+        if (!capabilities.adjustStock) warnings.push("Stock ignorado: los productos existentes conservarán su stock y los nuevos se crearán con stock 0.");
         if (minStock < 0) errors.push("Stock mínimo no puede ser negativo.");
         if (retailPrice <= 0) errors.push("Precio al detalle debe ser mayor a 0.");
         if (wholesalePrice < 0) errors.push("Precio mayorista no puede ser negativo.");
@@ -1482,7 +1489,7 @@ export function ProductManager({
     const modeCopy = productImportModeCopy[importMode];
     const confirmed = await toast.confirm({
       title: "Confirmar importación",
-      message: `Vas a importar productos con el modo: ${modeCopy.label}. ${modeCopy.confirmation}`,
+      message: `Vas a importar productos con el modo: ${modeCopy.label}. ${modeCopy.confirmation}${capabilities.adjustStock ? "" : " La columna Stock será ignorada: los productos existentes conservarán su stock y los nuevos se crearán con stock 0."}`,
       confirmLabel: "Confirmar importación",
       cancelLabel: "Cancelar",
     });
@@ -1495,6 +1502,7 @@ export function ProductManager({
     let uploaded = 0;
     let missing = 0;
     let imageErrors = 0;
+    const uploadedAssetIds: string[] = [];
 
     try {
       const productsToSave: ProductFormInput[] = [];
@@ -1508,6 +1516,8 @@ export function ProductManager({
           const upload = await uploadProductImageAction(formData);
           if (upload.ok && upload.publicUrl) {
             uploaded += 1;
+            const uploadedAssetId = upload.publicId ?? upload.storagePath;
+            if (uploadedAssetId) uploadedAssetIds.push(uploadedAssetId);
             product = {
               ...product,
               images: [{
@@ -1533,12 +1543,16 @@ export function ProductManager({
         imageSummary: { uploaded, missing, errors: imageErrors },
       });
       showMessage(result.message, result.ok ? "success" : "error");
+      if (!result.ok) {
+        await Promise.all(uploadedAssetIds.map((publicId) => deleteUploadedProductImageAction(publicId)));
+      }
       if (result.ok) {
         setImportPreview(null);
         setExcelFile(null);
         setZipFile(null);
       }
     } catch (error) {
+      await Promise.all(uploadedAssetIds.map((publicId) => deleteUploadedProductImageAction(publicId)));
       showMessage(error instanceof Error ? `No se pudo importar: ${error.message}` : "No se pudo importar.", "error");
     } finally {
       setIsImportingProducts(false);
@@ -1600,15 +1614,19 @@ export function ProductManager({
           >
             Limpiar filtros
           </Link>
-          <Button onClick={openNewProduct} variant="dark">
-            <Plus size={17} />
-            Nuevo
-          </Button>
-          <Button onClick={exportExcel} variant="ghost">
-            <FileSpreadsheet size={17} />
-            Excel
-          </Button>
-          {canUseTechnicalExports ? (
+          {capabilities.create ? (
+            <Button onClick={openNewProduct} variant="dark">
+              <Plus size={17} />
+              Nuevo
+            </Button>
+          ) : null}
+          {capabilities.exportProducts ? (
+            <Button onClick={exportExcel} variant="ghost">
+              <FileSpreadsheet size={17} />
+              Excel
+            </Button>
+          ) : null}
+          {capabilities.exportProducts && capabilities.technicalExports ? (
             <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica disponible solo para el Technical Owner">
               <Download size={17} />
               CSV técnico
@@ -1634,6 +1652,7 @@ export function ProductManager({
         ) : null}
       </section>
 
+      {capabilities.importProducts ? (
       <section className="rounded-lg border border-black/10 bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -1726,6 +1745,7 @@ export function ProductManager({
           />
         ) : null}
       </section>
+      ) : null}
 
       <div className="flex justify-end gap-2">
         {page > 1 ? (
@@ -1785,15 +1805,21 @@ export function ProductManager({
                 </dl>
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  <IconButton label="Editar" onClick={() => openExistingProduct(product)}>
-                    <Pencil size={16} />
-                  </IconButton>
-                  <IconButton label={product.active ? "Desactivar" : "Activar"} onClick={() => toggleActive(product)}>
-                    {product.active ? <Archive size={16} /> : <CheckCircle2 size={16} />}
-                  </IconButton>
-                  <IconButton label="Eliminar" onClick={() => deleteProduct(product)}>
-                    <Trash2 size={16} />
-                  </IconButton>
+                  {capabilities.update ? (
+                    <IconButton label="Editar" onClick={() => openExistingProduct(product)}>
+                      <Pencil size={16} />
+                    </IconButton>
+                  ) : null}
+                  {capabilities.update ? (
+                    <IconButton label={product.active ? "Desactivar" : "Activar"} onClick={() => toggleActive(product)}>
+                      {product.active ? <Archive size={16} /> : <CheckCircle2 size={16} />}
+                    </IconButton>
+                  ) : null}
+                  {capabilities.deleteProducts ? (
+                    <IconButton label="Eliminar" onClick={() => deleteProduct(product)}>
+                      <Trash2 size={16} />
+                    </IconButton>
+                  ) : null}
                 </div>
               </article>
             ))
@@ -1851,15 +1877,21 @@ export function ProductManager({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      <IconButton label="Editar" onClick={() => openExistingProduct(product)}>
-                        <Pencil size={16} />
-                      </IconButton>
-                      <IconButton label={product.active ? "Desactivar" : "Activar"} onClick={() => toggleActive(product)}>
-                        {product.active ? <Archive size={16} /> : <CheckCircle2 size={16} />}
-                      </IconButton>
-                      <IconButton label="Eliminar" onClick={() => deleteProduct(product)}>
-                        <Trash2 size={16} />
-                      </IconButton>
+                      {capabilities.update ? (
+                    <IconButton label="Editar" onClick={() => openExistingProduct(product)}>
+                      <Pencil size={16} />
+                    </IconButton>
+                  ) : null}
+                      {capabilities.update ? (
+                    <IconButton label={product.active ? "Desactivar" : "Activar"} onClick={() => toggleActive(product)}>
+                      {product.active ? <Archive size={16} /> : <CheckCircle2 size={16} />}
+                    </IconButton>
+                  ) : null}
+                      {capabilities.deleteProducts ? (
+                    <IconButton label="Eliminar" onClick={() => deleteProduct(product)}>
+                      <Trash2 size={16} />
+                    </IconButton>
+                  ) : null}
                     </div>
                   </td>
                 </tr>
@@ -1878,6 +1910,8 @@ export function ProductManager({
           product={editing}
           pending={isPending}
           imageUploads={imageUploads}
+          canAdjustStock={capabilities.adjustStock}
+          canManageImages={capabilities.manageImages}
           onClose={closeEditor}
           onSubmit={submitProduct}
           onField={updateField}
@@ -2055,7 +2089,7 @@ function ImportPreviewPanel({
         </Button>
         <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0} className="w-full sm:w-auto">
           {pending ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
-          Importar productos
+          {pending ? "Importando productos..." : "Importar productos"}
         </Button>
       </div>
     </div>
@@ -2133,6 +2167,8 @@ function ProductEditor({
   product,
   pending,
   imageUploads,
+  canAdjustStock,
+  canManageImages,
   onClose,
   onSubmit,
   onField,
@@ -2149,6 +2185,8 @@ function ProductEditor({
   product: EditableProductInput;
   pending: boolean;
   imageUploads: Record<number, ImageUploadState>;
+  canAdjustStock: boolean;
+  canManageImages: boolean;
   onClose: () => void;
   onSubmit: () => void;
   onField: <K extends keyof EditableProductInput>(field: K, value: EditableProductInput[K]) => void;
@@ -2353,9 +2391,18 @@ function ProductEditor({
 
             <FormSection title="Precios e inventario" description="Controla stock, costo y precios para venta al detalle y mayorista.">
               <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Stock" help="No puede ser negativo.">
-                  <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
-                </Field>
+                {canAdjustStock ? (
+                  <Field label="Stock" help="No puede ser negativo.">
+                    <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
+                  </Field>
+                ) : (
+                  <Field label="Stock" help="Solo lectura. Se administra desde Inventario.">
+                    <div className="rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm font-semibold">
+                      {product.id ? product.stock : 0}
+                      <span className="ml-2 font-normal text-black/50">{product.id ? "Se conservará sin cambios" : "Nuevo producto: stock 0"}</span>
+                    </div>
+                  </Field>
+                )}
                 <Field label="Stock mínimo" help="Activa alertas cuando el producto llega a este nivel.">
                   <IntegerProductInput value={product.min_stock} onChange={(value) => onField("min_stock", value)} />
                 </Field>
@@ -2622,9 +2669,18 @@ function ProductEditor({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Stock">
-                <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
-              </Field>
+              {canAdjustStock ? (
+                <Field label="Stock">
+                  <IntegerProductInput value={product.stock} onChange={(value) => onField("stock", value)} />
+                </Field>
+              ) : (
+                <Field label="Stock">
+                  <div className="rounded-md border border-black/10 bg-[#f4f4f5] px-3 py-2 text-sm font-semibold">
+                    {product.id ? product.stock : 0}
+                    <span className="ml-2 block font-normal text-black/50">{product.id ? "Se conservará" : "Stock inicial 0"}</span>
+                  </div>
+                </Field>
+              )}
               <Field label="Stock mínimo">
                 <IntegerProductInput value={product.min_stock} onChange={(value) => onField("min_stock", value)} />
               </Field>
@@ -2647,6 +2703,7 @@ function ProductEditor({
             </div>
           </div>
 
+          {canManageImages ? (
           <FormSection
             title="Imágenes del producto"
             description="Sube la imagen principal y, si hace falta, imágenes adicionales para la galería."
@@ -2807,6 +2864,13 @@ function ProductEditor({
               );
             })}
           </FormSection>
+          ) : (
+          <FormSection title="Imágenes del producto" description="Solo lectura para este perfil.">
+            <p className="rounded-md bg-[#f4f4f5] px-3 py-2 text-sm text-black/60">
+              No tienes permiso para agregar, reemplazar ni eliminar imágenes.
+            </p>
+          </FormSection>
+          )}
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 px-5 py-4">

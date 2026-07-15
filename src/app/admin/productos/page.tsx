@@ -2,7 +2,7 @@ import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { requirePermission } from "@/lib/auth/session";
+import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
 import { getAdminProductCatalogPage } from "@/services/supabase/admin-products.service";
 
 export const dynamic = "force-dynamic";
@@ -17,11 +17,8 @@ export default async function AdminProductsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
 }) {
-  const profile = await requirePermission("products:manage");
-  const canUseTechnicalExports =
-    profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
-    profile.role === "technical_owner" ||
-    profile.permissions.includes("technical:tools");
+  const profile = await requireProductCapability("read");
+  const capabilities = getProductCapabilities(profile);
   const params = await searchParams;
   const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
     query: params.q,
@@ -50,7 +47,7 @@ export default async function AdminProductsPage({
         total={total}
         page={page}
         pageSize={pageSize}
-        canUseTechnicalExports={canUseTechnicalExports}
+        capabilities={capabilities}
         filters={{
           query: params.q ?? "",
           status: params.status ?? "all",
