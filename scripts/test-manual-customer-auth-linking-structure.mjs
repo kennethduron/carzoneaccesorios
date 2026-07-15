@@ -5,6 +5,10 @@ const migration = readFileSync(
   "supabase/migrations/202607150003_manual_customer_auth_linking.sql",
   "utf8",
 );
+const checkoutOverloadMigration = readFileSync(
+  "supabase/migrations/202607150004_remove_obsolete_checkout_overload.sql",
+  "utf8",
+);
 const wholesale = readFileSync("src/app/actions/wholesale.ts", "utf8");
 const crmActions = readFileSync("src/app/admin/crm/actions.ts", "utf8");
 const profileSync = readFileSync("src/lib/auth/profile-sync.ts", "utf8");
@@ -15,6 +19,7 @@ const portal = readFileSync("src/app/cuenta/page.tsx", "utf8");
 const customerAccount = readFileSync("src/services/supabase/customer-account.service.ts", "utf8");
 const creditService = readFileSync("src/services/supabase/credit.service.ts", "utf8");
 const receivableImport = readFileSync("src/services/supabase/accounts-receivable-import.service.ts", "utf8");
+const checkoutActions = readFileSync("src/app/checkout/actions.ts", "utf8");
 
 assert.match(migration, /create unique index if not exists customers_user_id_unique_idx/i);
 assert.match(migration, /create or replace function public\.link_customer_portal_account_manual/i);
@@ -73,5 +78,8 @@ assert.doesNotMatch(customerAccount, /customers[\s\S]{0,120}ilike\("email"/i);
 assert.match(creditService, /\.eq\("customers\.user_id", userId\)/);
 assert.match(creditService, /\.eq\("user_id", userId\)/);
 assert.doesNotMatch(receivableImport, /customers\.user_id|user_id\s*:/i);
+assert.match(checkoutOverloadMigration, /drop function public\.create_checkout_order/i);
+assert.match(checkoutActions, /\.rpc\("create_checkout_order_v2"/);
+assert.doesNotMatch(checkoutActions, /\.rpc\("create_checkout_order"/);
 
 console.log("Manual customer/Auth linking structural checks passed.");

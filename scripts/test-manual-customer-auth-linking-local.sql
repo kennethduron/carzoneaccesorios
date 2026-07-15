@@ -14,6 +14,27 @@ insert into public.roles (id, name, permissions) values
   ('10000000-0000-4000-8000-000000000008', 'cliente', '[]'::jsonb);
 
 \ir ../supabase/migrations/202607150003_manual_customer_auth_linking.sql
+\ir ../supabase/migrations/202607150004_remove_obsolete_checkout_overload.sql
+
+do $$
+begin
+  if to_regprocedure(
+    'public.create_checkout_order(text,text,text,text,public.order_price_mode,public.payment_method,text,jsonb,text,uuid,text)'
+  ) is not null then
+    raise exception 'Obsolete checkout overload remains available';
+  end if;
+  if to_regprocedure(
+    'public.create_checkout_order(text,text,text,text,text,public.order_price_mode,public.payment_method,text,jsonb,text,uuid,text,text,text,text,text)'
+  ) is null then
+    raise exception 'Identity-safe checkout function is missing';
+  end if;
+  if to_regprocedure(
+    'public.create_checkout_order_v2(text,text,text,text,text,public.order_price_mode,public.payment_method,text,jsonb,text,uuid,text,text,text,text,text,text)'
+  ) is null then
+    raise exception 'Active checkout v2 wrapper is missing';
+  end if;
+end;
+$$;
 
 do $$
 begin
