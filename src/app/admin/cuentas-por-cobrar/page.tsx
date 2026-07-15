@@ -23,9 +23,7 @@ export default async function AccountsReceivablePage({ searchParams }: { searchP
   const canRollback =
     ["technical_owner", "business_owner"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "receivables:rollback", profile.email);
-  const canMarkPaid =
-    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
-    hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
+  const canMarkPaid = hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
 
   if (!canRead) {
     redirect("/sin-permiso");

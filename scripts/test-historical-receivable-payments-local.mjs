@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -23,7 +23,7 @@ function refuse(message) {
 if (process.env.ALLOW_LOCAL_MUTATING_TESTS !== "true") refuse("ALLOW_LOCAL_MUTATING_TESTS=true is required.");
 if (!["127.0.0.1", "localhost"].includes(dbHost)) refuse("Only localhost/127.0.0.1 is allowed.");
 if ([dbHost, dbName, dbUser, container].some((value) => value.includes(".supabase.co"))) refuse("Remote Supabase target detected.");
-if (container !== "car-zone-schema-validation-local") refuse("Unexpected Docker container for local mutating test.");
+if (!["car-zone-schema-validation-local", "car-zone-phase-a-postgres"].includes(container)) refuse("Unexpected Docker container for local mutating test.");
 if (!dbPassword || dbPassword.includes("supabase.co")) refuse("A temporary local DB password is required.");
 
 const ids = {

@@ -16,6 +16,7 @@ const allowedPermissions = new Set([
   "reports:fiscal_read",
   "reports:fiscal_export",
   "credit:read",
+  "credit:mark_paid",
   "receivables:read",
   "receivables:export",
   "receivables:import",

@@ -10,6 +10,7 @@ import {
   cancelHistoricalReceivableImportRow,
   createHistoricalAccountsReceivableImportBatch,
   rollbackHistoricalReceivableImportBatch,
+  updateHistoricalReceivableImportIdentity,
 } from "@/services/supabase/accounts-receivable-import.service";
 import { setImportBatchStatus } from "@/services/supabase/import-foundation.service";
 import type { HistoricalReceivableImportActionState } from "@/types/accounts-receivable-import";
@@ -125,6 +126,30 @@ export async function assignHistoricalReceivableRowAction(rowId: string, custome
   }
 }
 
+export async function updateHistoricalReceivableIdentityAction(
+  rowId: string,
+  input: { email?: string; phone?: string; taxId?: string },
+) {
+  const profile = await requirePermission("admin:access");
+  if (!canAssignReceivables(profile)) {
+    return { ok: false, message: "No tienes permiso para completar la identidad del cliente." };
+  }
+
+  try {
+    await updateHistoricalReceivableImportIdentity(rowId, input);
+    await writeAuditLog({
+      tableName: "import_rows",
+      recordId: rowId,
+      action: "historical_receivable_import.identity_completed",
+      newData: { identityCompleted: true },
+    });
+    revalidateReceivableImportPaths();
+    return { ok: true, message: "Identidad guardada. Revisa el preview antes de confirmar." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la identidad." };
+  }
+}
+
 export async function cancelHistoricalReceivableRowAction(rowId: string) {
   const profile = await requirePermission("admin:access");
   if (!canImportReceivables(profile)) {
@@ -161,7 +186,7 @@ export async function applyHistoricalReceivableBatchAction(batchId: string) {
       newData: summary,
     });
     revalidateReceivableImportPaths(batchId);
-    return { ok: true, message: `Lote aplicado. Cuentas creadas: ${summary.created.toLocaleString("es-HN")}.` };
+    return { ok: true, message: `Importación confirmada. CxC creadas: ${summary.created_receivables.toLocaleString("es-HN")}.` };
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo aplicar el lote." };
   }

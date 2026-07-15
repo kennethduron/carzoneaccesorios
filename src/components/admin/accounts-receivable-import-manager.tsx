@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, History, RotateCcw, Search, Upload, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, History, RotateCcw, Search, Upload, UserRoundPlus, XCircle } from "lucide-react";
 import {
   applyHistoricalReceivableBatchAction,
   assignHistoricalReceivableRowAction,
@@ -11,6 +11,7 @@ import {
   cancelHistoricalReceivableRowAction,
   importHistoricalAccountsReceivableAction,
   rollbackHistoricalReceivableBatchAction,
+  updateHistoricalReceivableIdentityAction,
 } from "@/app/admin/cuentas-por-cobrar/actions";
 import { searchImportAssignmentOptionsAction } from "@/app/admin/importaciones/actions";
 import { Button } from "@/components/ui";
@@ -25,6 +26,13 @@ const initialImportState: HistoricalReceivableImportActionState = { ok: false, m
 type ConfirmationDraft = {
   row: ImportRow;
   option: AssignmentSelectorOption;
+};
+
+type IdentityDraft = {
+  row: ImportRow;
+  email: string;
+  phone: string;
+  taxId: string;
 };
 
 const statusBadgeClass: Record<string, string> = {
@@ -53,6 +61,8 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
   const [optionsByRow, setOptionsByRow] = useState<Record<string, AssignmentSelectorOption[]>>({});
   const [rollbackReason, setRollbackReason] = useState("");
   const [confirmationDraft, setConfirmationDraft] = useState<ConfirmationDraft | null>(null);
+  const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
+  const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
 
   const selectedId = data.selectedBatch?.id ?? "";
   const allOptions = useMemo(() => {
@@ -63,6 +73,10 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
     }
     return map;
   }, [data.assignmentOptions, optionsByRow]);
+  const previewByRow = useMemo(
+    () => new Map((data.preview?.rows ?? []).map((row) => [row.row_id, row])),
+    [data.preview],
+  );
 
   useEffect(() => {
     if (!state.message) return;
@@ -93,6 +107,33 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
     const { row, option } = confirmationDraft;
     setConfirmationDraft(null);
     runAction(() => assignHistoricalReceivableRowAction(row.id, option.id));
+  }
+
+  function openIdentity(row: ImportRow) {
+    setIdentityDraft({
+      row,
+      email: String(row.normalized_data.customer_email ?? ""),
+      phone: String(row.normalized_data.customer_phone ?? ""),
+      taxId: String(row.normalized_data.customer_tax_id ?? ""),
+    });
+  }
+
+  function saveIdentity() {
+    if (!identityDraft) return;
+    const draft = identityDraft;
+    setIdentityDraft(null);
+    runAction(() => updateHistoricalReceivableIdentityAction(draft.row.id, {
+      email: draft.email,
+      phone: draft.phone,
+      taxId: draft.taxId,
+    }));
+  }
+
+  function confirmAndApply() {
+    if (!data.selectedBatch) return;
+    const batchId = data.selectedBatch.id;
+    setApplyConfirmationOpen(false);
+    runAction(() => applyHistoricalReceivableBatchAction(batchId));
   }
 
   function searchCustomers(row: ImportRow) {
@@ -216,13 +257,18 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
           {data.selectedBatch ? (
             <>
               <BatchSummary batch={data.selectedBatch} rows={data.rows} />
+              <DirectImportPreview preview={data.preview} batch={data.selectedBatch} rows={data.rows} />
               <div className="flex flex-wrap gap-2">
-                {data.canApply && readyRows(data.rows) > 0 ? (
-                  <Button type="button" onClick={() => runAction(() => applyHistoricalReceivableBatchAction(data.selectedBatch!.id))} disabled={isPending} variant="primary">
-                    <Upload size={16} />
-                    Aplicar lote
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  onClick={() => setApplyConfirmationOpen(true)}
+                  disabled={isPending || !data.canApply || data.selectedBatch.status === "cancelled" || (data.preview?.processable ?? 0) === 0}
+                  variant="primary"
+                  title={confirmDisabledReason(data)}
+                >
+                  <Upload size={16} />
+                  {isPending ? "Importando cuentas por cobrar..." : "Confirmar e importar cuentas por cobrar"}
+                </Button>
                 {data.canImport && !["applied", "rolled_back", "cancelled"].includes(data.selectedBatch.status) ? (
                   <Button type="button" onClick={() => runAction(() => cancelHistoricalReceivableBatchAction(data.selectedBatch!.id))} disabled={isPending} variant="ghost">
                     <XCircle size={16} />
@@ -256,10 +302,18 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
                 onSearchChange={(rowId, value) => setSearchByRow((current) => ({ ...current, [rowId]: value }))}
                 onSearch={searchCustomers}
                 onAssign={openConfirmation}
+                onEditIdentity={openIdentity}
+                previewByRow={previewByRow}
                 onCancel={(rowId) => runAction(() => cancelHistoricalReceivableRowAction(rowId))}
               />
               {confirmationDraft ? (
                 <CustomerConfirmationDialog draft={confirmationDraft} isPending={isPending} onCancel={() => setConfirmationDraft(null)} onConfirm={confirmCustomer} />
+              ) : null}
+              {identityDraft ? (
+                <IdentityDialog draft={identityDraft} isPending={isPending} onChange={setIdentityDraft} onCancel={() => setIdentityDraft(null)} onConfirm={saveIdentity} />
+              ) : null}
+              {applyConfirmationOpen && data.preview ? (
+                <ApplyConfirmationDialog preview={data.preview} isPending={isPending} onCancel={() => setApplyConfirmationOpen(false)} onConfirm={confirmAndApply} />
               ) : null}
             </>
           ) : (
@@ -271,6 +325,80 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
   );
 }
 
+function confirmDisabledReason(data: HistoricalReceivableImportData) {
+  if (!data.canApply) return "No tienes permiso para confirmar importaciones.";
+  if (data.selectedBatch?.status === "cancelled") return "Este lote fue cancelado. Corrige el archivo y vuelve a importarlo.";
+  if ((data.preview?.processable ?? 0) === 0) return "Completa la identidad o asigna un cliente en las filas en revisión.";
+  return "Revisa el resumen antes de confirmar.";
+}
+
+function DirectImportPreview({ preview, batch, rows }: { preview: HistoricalReceivableImportData["preview"]; batch: ImportBatch; rows: ImportRow[] }) {
+  if (batch.status === "cancelled") {
+    return <p className="rounded-md border border-[#b45309]/20 bg-[#fff7ed] p-3 text-sm text-[#92400e]">Este lote fue cancelado. Corrige el archivo y vuelve a importarlo.</p>;
+  }
+  if (!preview) return null;
+  const validRows = rows.filter((row) => row.validation_status === "valid" || row.validation_status === "warning").length;
+  const cancelledRows = rows.filter((row) => row.apply_status === "skipped").length;
+  return (
+    <div className="border-y border-black/10 py-4">
+      <h3 className="text-sm font-semibold">Próximo paso</h3>
+      <ol className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+        <li>1. Revisar resumen</li><li>2. Confirmar e importar</li><li>3. Registrar abonos en el detalle</li>
+      </ol>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryBadge label="Válidas" value={validRows} tone="good" />
+        <SummaryBadge label="Crearán cliente" value={preview.create_customers} tone="good" />
+        <SummaryBadge label="Reutilizarán cliente" value={preview.reuse_customers} tone="neutral" />
+        <SummaryBadge label="CxC por crear" value={preview.create_receivables} tone="good" />
+        <SummaryBadge label="Ambiguas" value={preview.ambiguous} tone={preview.ambiguous ? "warn" : "neutral"} />
+        <SummaryBadge label="Duplicadas" value={preview.duplicates} tone="neutral" />
+        <SummaryBadge label="Con error" value={preview.rejected} tone={preview.rejected ? "bad" : "neutral"} />
+        <SummaryBadge label="Canceladas" value={cancelledRows} tone={cancelledRows ? "warn" : "neutral"} />
+      </div>
+    </div>
+  );
+}
+
+function ApplyConfirmationDialog({ preview, isPending, onCancel, onConfirm }: { preview: NonNullable<HistoricalReceivableImportData["preview"]>; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="apply-import-title">
+      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+        <h3 id="apply-import-title" className="text-base font-semibold">Confirmar importación operativa</h3>
+        <div className="mt-3 space-y-1 text-sm text-black/70">
+          <p>Se crearán {preview.create_receivables} cuentas por cobrar.</p>
+          <p>Se crearán {preview.create_customers} clientes operativos sin cuenta web.</p>
+          <p>Se reutilizarán {preview.reuse_customers} clientes existentes.</p>
+          <p>{preview.review_required} filas quedarán en revisión.</p>
+          <p>{preview.duplicates + preview.rejected} filas serán omitidas por duplicidad o error.</p>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>Confirmar e importar</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IdentityDialog({ draft, isPending, onChange, onCancel, onConfirm }: { draft: IdentityDraft; isPending: boolean; onChange: (draft: IdentityDraft) => void; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="identity-title">
+      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+        <h3 id="identity-title" className="text-base font-semibold">Completar identidad del cliente</h3>
+        <p className="mt-2 text-sm text-black/60">Ingresa al menos RTN, correo o teléfono. El nombre por sí solo no se usa para vincular automáticamente.</p>
+        <div className="mt-4 grid gap-3">
+          <label className="text-sm">Correo<input type="email" value={draft.email} onChange={(event) => onChange({ ...draft, email: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
+          <label className="text-sm">Teléfono<input value={draft.phone} onChange={(event) => onChange({ ...draft, phone: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
+          <label className="text-sm">RTN<input value={draft.taxId} onChange={(event) => onChange({ ...draft, taxId: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
+          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>Guardar identidad</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function CustomerConfirmationDialog({ draft, isPending, onCancel, onConfirm }: { draft: ConfirmationDraft; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
   const normalized = draft.row.normalized_data;
   return (
@@ -341,6 +469,8 @@ function RowsTable({
   onSearchChange,
   onSearch,
   onAssign,
+  onEditIdentity,
+  previewByRow,
   onCancel,
 }: {
   rows: ImportRow[];
@@ -353,10 +483,93 @@ function RowsTable({
   onSearchChange: (rowId: string, value: string) => void;
   onSearch: (row: ImportRow) => void;
   onAssign: (row: ImportRow, option: AssignmentSelectorOption) => void;
+  onEditIdentity: (row: ImportRow) => void;
+  previewByRow: Map<string, { outcome: string; reason: string }>;
   onCancel: (rowId: string) => void;
 }) {
   return (
-    <div className="max-w-full overflow-x-auto rounded-md border border-black/10">
+    <>
+      <div className="grid gap-3 md:hidden">
+        {rows.map((row) => {
+          const normalized = row.normalized_data;
+          const assigned = row.assigned_customer_id ? allOptions.get(row.assigned_customer_id) : null;
+          const suggested = row.suggested_customer_id ? allOptions.get(row.suggested_customer_id) : null;
+          const rowOptions = optionsByRow[row.id] ?? [];
+          const canResolve = canAssign && row.apply_status !== "applied" && row.apply_status !== "rolled_back";
+          const preview = previewByRow.get(row.id);
+          return (
+            <article key={row.id} className="rounded-md border border-black/10 bg-white p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-black/45">Fila {row.row_number}</p>
+                  <p className="break-words font-semibold">{String(normalized.customer_name ?? "Sin cliente")}</p>
+                  <p className="break-words text-xs text-black/50">{String(normalized.invoice_number ?? "Sin factura")}</p>
+                </div>
+                <Badge tone={rowStatusTone(row)}>{rowStatusLabel(row)}</Badge>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <Info label="Monto original" value={formatCurrency(Number(normalized.original_amount ?? 0))} />
+                <Info label="Abonado" value={formatCurrency(Number(normalized.paid_amount ?? 0))} />
+                <Info label="Saldo" value={formatCurrency(Number(normalized.balance_due ?? 0))} />
+              </div>
+              <div className="mt-3">
+                {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : <span className="text-xs text-black/45">Pendiente de asignación</span>}
+              </div>
+              {preview ? <p className="mt-2 text-xs text-black/55">{preview.reason}</p> : null}
+              {canResolve ? (
+                <div className="mt-3 grid gap-2 border-t border-black/10 pt-3">
+                  <div className="flex gap-2">
+                    <input
+                      value={searchByRow[row.id] ?? ""}
+                      onChange={(event) => onSearchChange(row.id, event.target.value)}
+                      placeholder="Nombre, correo, teléfono, RTN"
+                      className="min-w-0 flex-1 rounded-md border border-black/10 px-2 py-2 text-xs"
+                    />
+                    <button type="button" onClick={() => onSearch(row)} disabled={isPending} className="rounded-md border border-black/10 p-2 hover:bg-[#fff1f2]" aria-label="Buscar cliente">
+                      <Search size={15} />
+                    </button>
+                  </div>
+                  {rowOptions.length > 0 ? (
+                    <select
+                      defaultValue=""
+                      onChange={(event) => {
+                        const option = rowOptions.find((item) => item.id === event.target.value);
+                        if (option) onAssign(row, option);
+                        event.currentTarget.value = "";
+                      }}
+                      disabled={isPending}
+                      className="w-full rounded-md border border-black/10 bg-white px-2 py-2 text-xs"
+                    >
+                      <option value="">Seleccionar cliente</option>
+                      {rowOptions.map((option) => (
+                        <option key={option.id} value={option.id}>{customerOptionText(option)}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
+                    <UserRoundPlus size={16} />
+                    Completar identidad
+                  </Button>
+                  {suggested && !assigned ? (
+                    <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
+                      <CheckCircle2 size={16} />
+                      Confirmar asignación
+                    </Button>
+                  ) : null}
+                  {canImport && row.apply_status !== "skipped" ? (
+                    <Button type="button" onClick={() => onCancel(row.id)} disabled={isPending} variant="ghost">
+                      <XCircle size={16} />
+                      Cancelar fila
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+        {rows.length === 0 ? <p className="rounded-md border border-black/10 bg-white p-5 text-center text-sm text-black/55">Este lote no tiene filas.</p> : null}
+      </div>
+      <div className="hidden max-w-full overflow-x-auto rounded-md border border-black/10 md:block">
       <table className="w-full min-w-[1180px] text-left text-sm">
         <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
           <tr>
@@ -367,7 +580,7 @@ function RowsTable({
             <th className="px-3 py-2">Estado</th>
             <th className="px-3 py-2">Cliente asignado</th>
             <th className="px-3 py-2">Mensajes</th>
-            <th className="px-3 py-2">Acción</th>
+            <th className="sticky right-0 z-10 border-l border-black/10 bg-[#e7e5e4] px-3 py-2">Acción</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-black/10 bg-white">
@@ -377,6 +590,7 @@ function RowsTable({
             const suggested = row.suggested_customer_id ? allOptions.get(row.suggested_customer_id) : null;
             const rowOptions = optionsByRow[row.id] ?? [];
             const canResolve = canAssign && row.apply_status !== "applied" && row.apply_status !== "rolled_back";
+            const preview = previewByRow.get(row.id);
             return (
               <tr key={row.id}>
                 <td className="px-3 py-3 align-top font-semibold">{row.row_number}</td>
@@ -408,7 +622,7 @@ function RowsTable({
                     <span className="text-xs text-black/45">Sin errores</span>
                   )}
                 </td>
-                <td className="px-3 py-3 align-top">
+                <td className="sticky right-0 border-l border-black/10 bg-white px-3 py-3 align-top">
                   {canResolve ? (
                     <div className="grid min-w-64 gap-2">
                       <div className="flex gap-2">
@@ -439,6 +653,11 @@ function RowsTable({
                           ))}
                         </select>
                       ) : null}
+                      {preview ? <p className="text-xs text-black/55">{preview.reason}</p> : null}
+                      <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
+                        <UserRoundPlus size={16} />
+                        Completar identidad
+                      </Button>
                       {suggested && !assigned ? (
                         <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
                           <CheckCircle2 size={16} />
@@ -466,7 +685,8 @@ function RowsTable({
           ) : null}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 

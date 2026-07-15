@@ -280,6 +280,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       payment_received_method,
       payment_received_reference,
       payment_recorded_by,
+      historical_invoice_number,
       created_at,
       updated_at,
       accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email)),

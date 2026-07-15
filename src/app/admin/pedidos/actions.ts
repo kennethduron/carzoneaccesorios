@@ -114,10 +114,7 @@ function revalidateOperationalPaths() {
 }
 
 function canManageCommercialCredit(role: AppRole, permissions: Permission[], email: string | null) {
-  return (
-    ["technical_owner", "business_owner", "admin"].includes(role) &&
-    hasEffectivePermission(role, permissions, "credit:mark_paid", email)
-  );
+  return hasEffectivePermission(role, permissions, "credit:mark_paid", email);
 }
 
 function normalizeCreditPaymentMethod(value: unknown): CreditPaymentReceivedMethod | null {

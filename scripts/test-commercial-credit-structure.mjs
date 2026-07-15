@@ -77,7 +77,7 @@ assert.match(permissionAuditMigration, /return false/);
 for (const role of ["technical_owner", "business_owner", "admin"]) {
   assert.match(permissions, new RegExp(`${role}:[\\s\\S]*?"credit:manage"[\\s\\S]*?"credit:mark_paid"`));
 }
-assert.match(permissions, /contadora:[\s\S]*?"credit:read"[\s\S]*?"receivables:read"[\s\S]*?"receivables:export"/);
+assert.match(permissions, /contadora:[\s\S]*?"credit:read"[\s\S]*?"credit:mark_paid"[\s\S]*?"receivables:read"[\s\S]*?"receivables:export"/);
 for (const role of ["vendedor", "bodega", "soporte", "cliente"]) {
   const roleBlock = permissions.match(new RegExp(`${role}: \\[[\\s\\S]*?\\],`))?.[0] ?? "";
   assert.doesNotMatch(roleBlock, /credit:manage|credit:mark_paid|receivables:read/);
@@ -121,7 +121,7 @@ assert.doesNotMatch(creditSettingsSection, /Notas internas/);
 assert.doesNotMatch(creditSettingsSection, /textarea/);
 
 assert.match(receivablesPage, /receivables:read/);
-assert.match(receivablesPage, /\["technical_owner", "business_owner", "admin"\]\.includes\(profile\.role\)/);
+assert.match(receivablesPage, /const canMarkPaid = hasEffectivePermission\(profile\.role, profile\.permissions, "credit:mark_paid", profile\.email\)/);
 assert.doesNotMatch(receivablesManager, /Pago completo únicamente/);
 assert.match(receivablesManager, /row\.status !== "paid" && row\.status !== "cancelled"/);
 assert.match(accountPage, /\{creditAccount \? \(/);

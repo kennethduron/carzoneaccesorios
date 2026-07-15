@@ -5,6 +5,7 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
 const [
   migration,
+  effectiveMigration,
   orderActions,
   receivablesManager,
   accountPage,
@@ -13,6 +14,7 @@ const [
   accountingDispatcher,
 ] = await Promise.all([
   read("supabase/migrations/202607140001_historical_receivable_payments_rpc.sql"),
+  read("supabase/migrations/202607140002_direct_receivable_import_and_accountant_payments.sql"),
   read("src/app/admin/pedidos/actions.ts"),
   read("src/components/admin/accounts-receivable-manager.tsx"),
   read("src/app/cuenta/page.tsx"),
@@ -32,6 +34,17 @@ assert.doesNotMatch(withoutFunctionBody, /\b(alter|drop|truncate|update|delete|i
 assert.match(migration, /if actor_role_name not in \('technical_owner', 'business_owner', 'admin'\) then/);
 assert.doesNotMatch(migration, /or not public\.has_permission\('credit:mark_paid'\) then/);
 assert.match(migration, /raise exception 'No tienes permiso para registrar abonos de credito comercial\.'/);
+
+assert.match(effectiveMigration, /create or replace function public\.register_credit_receivable_payment\(/);
+assert.match(effectiveMigration, /if actor_id is null or not public\.has_permission\('credit:mark_paid'\) then/);
+assert.doesNotMatch(effectiveMigration, /if actor_role_name not in \('technical_owner', 'business_owner', 'admin'\) then/);
+assert.match(effectiveMigration, /when unique_violation then[\s\S]*where idempotency_key = normalized_request_key[\s\S]*payment_id := saved_payment\.id;[\s\S]*return next;/);
+assert.match(effectiveMigration, /customer\.commercial_credit\.payment_registered:' \|\| saved_payment\.id::text/);
+assert.match(effectiveMigration, /'credit-payment:' \|\| saved_payment\.id::text/);
+assert.match(effectiveMigration, /left join public\.orders o on o\.id = ar\.order_id/);
+assert.match(effectiveMigration, /security definer/);
+assert.match(effectiveMigration, /set search_path = public/);
+assert.match(effectiveMigration, /grant execute on function public\.register_credit_receivable_payment\(uuid, numeric, text, text, timestamptz, text, text, text, text\) to authenticated;/);
 
 assert.match(migration, /when unique_violation then/);
 assert.match(migration, /when unique_violation then[\s\S]*where idempotency_key = normalized_request_key[\s\S]*payment_id := saved_payment\.id;[\s\S]*return next;/);

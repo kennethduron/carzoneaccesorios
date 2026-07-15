@@ -30,9 +30,39 @@ export type HistoricalReceivableImportActionState = {
   batchId?: string;
 };
 
+export type HistoricalReceivablePreviewOutcome =
+  | "applied"
+  | "cancelled"
+  | "rejected"
+  | "reuse_customer"
+  | "create_customer"
+  | "duplicate"
+  | "ambiguous"
+  | "review_required";
+
+export type HistoricalReceivablePreviewSummary = {
+  batch_status: string;
+  create_customers: number;
+  reuse_customers: number;
+  create_receivables: number;
+  duplicates: number;
+  ambiguous: number;
+  rejected: number;
+  review_required: number;
+  processable: number;
+  rows: Array<{ row_id: string; outcome: HistoricalReceivablePreviewOutcome; reason: string }>;
+};
+
 export type HistoricalReceivableApplySummary = {
-  created: number;
-  skipped: number;
+  created_customers: number;
+  reused_customers: number;
+  created_receivables: number;
+  reused_receivables: number;
+  duplicates: number;
+  ambiguous: number;
+  rejected: number;
+  applied_rows: number;
+  review_required_rows: number;
 };
 
 export type HistoricalReceivableImportData = {
@@ -40,6 +70,7 @@ export type HistoricalReceivableImportData = {
   selectedBatch: ImportBatch | null;
   rows: ImportRow[];
   assignmentOptions: AssignmentSelectorOption[];
+  preview: HistoricalReceivablePreviewSummary | null;
   canImport: boolean;
   canApply: boolean;
   canAssign: boolean;

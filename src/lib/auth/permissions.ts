@@ -253,6 +253,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "reports:fiscal_read",
     "reports:fiscal_export",
     "credit:read",
+    "credit:mark_paid",
     ...receivablesImportPermissions,
     ...purchasesApFullPermissions,
     "accounting:read",

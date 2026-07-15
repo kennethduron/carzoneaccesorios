@@ -15,6 +15,7 @@ import type {
   HistoricalReceivableNormalizedRow,
   HistoricalReceivablePaymentMethod,
   HistoricalReceivableImportStatus,
+  HistoricalReceivablePreviewSummary,
 } from "@/types/accounts-receivable-import";
 import type { AssignmentSelectorOption, ImportBatch, ImportPreviewRow, ImportTemplateDefinition } from "@/types/import-foundation";
 import { importCellText } from "@/utils/import-excel";
@@ -449,13 +450,17 @@ export async function getHistoricalAccountsReceivableImportData(input: {
       rows.flatMap((row) => [row.assigned_customer_id, row.suggested_customer_id]).filter((id): id is string => Boolean(id)),
     ),
   ];
-  const assignmentOptions = await getCustomerAssignmentOptions(customerIds);
+  const [assignmentOptions, preview] = await Promise.all([
+    getCustomerAssignmentOptions(customerIds),
+    selectedBatch ? previewHistoricalReceivableImportBatch(selectedBatch.id) : Promise.resolve(null),
+  ]);
 
   return {
     batches,
     selectedBatch,
     rows,
     assignmentOptions,
+    preview,
     canImport: input.canImport,
     canApply: input.canApply,
     canAssign: input.canAssign,
@@ -502,14 +507,78 @@ export async function cancelHistoricalReceivableImportRow(rowId: string) {
   if (error) throw new Error(error.message);
 }
 
+export async function previewHistoricalReceivableImportBatch(batchId: string): Promise<HistoricalReceivablePreviewSummary> {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("preview_historical_accounts_receivable_import", {
+    target_batch_id: batchId,
+  });
+  if (error) throw new Error(error.message);
+  return data as HistoricalReceivablePreviewSummary;
+}
+
+export async function updateHistoricalReceivableImportIdentity(
+  rowId: string,
+  input: { email?: string; phone?: string; taxId?: string },
+) {
+  const supabase = await getSupabaseServerClient();
+  const { data: row, error: rowError } = await supabase
+    .from("import_rows")
+    .select("normalized_data, validation_status, validation_messages")
+    .eq("id", rowId)
+    .eq("module", "accounts_receivable")
+    .maybeSingle<{
+      normalized_data: Record<string, unknown>;
+      validation_status: "pending" | "valid" | "invalid" | "warning";
+      validation_messages: string[];
+    }>();
+
+  if (rowError) throw new Error(rowError.message);
+  if (!row) throw new Error("Fila de importación no encontrada.");
+
+  const email = normalizeEmail(input.email);
+  const phoneDigits = digitsOnly(input.phone);
+  const taxId = digitsOnly(input.taxId);
+  const phone = phoneDigits.length === 8 || (phoneDigits.length === 11 && phoneDigits.startsWith("504")) ? phoneDigits : "";
+
+  if (input.email?.trim() && !email) throw new Error("Ingresa un correo válido.");
+  if (input.phone?.trim() && !phone) throw new Error("Ingresa un teléfono hondureño válido.");
+  if (input.taxId?.trim() && taxId.length !== 14) throw new Error("El RTN debe contener 14 dígitos.");
+  if (!email && !phone && taxId.length !== 14) {
+    throw new Error("Completa RTN, correo o teléfono para identificar al cliente.");
+  }
+
+  const nextNormalizedData = {
+    ...row.normalized_data,
+    customer_email: email || null,
+    customer_phone: phone || null,
+    customer_tax_id: taxId.length === 14 ? taxId : null,
+  };
+
+  const { error } = await supabase.rpc("update_import_row_staging", {
+    target_row_id: rowId,
+    next_normalized_data: nextNormalizedData,
+    next_validation_status: row.validation_status,
+    next_validation_messages: row.validation_messages,
+    correction_metadata: { source: "historical_receivable_direct_import_identity" },
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function applyHistoricalReceivableImportBatch(batchId: string): Promise<HistoricalReceivableApplySummary> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("apply_historical_accounts_receivable_import", { target_batch_id: batchId });
+  const { data, error } = await supabase.rpc("confirm_and_apply_receivable_import_batch", { target_batch_id: batchId });
   if (error) throw new Error(error.message);
   const summary = data as Partial<HistoricalReceivableApplySummary> | null;
   return {
-    created: Number(summary?.created ?? 0),
-    skipped: Number(summary?.skipped ?? 0),
+    created_customers: Number(summary?.created_customers ?? 0),
+    reused_customers: Number(summary?.reused_customers ?? 0),
+    created_receivables: Number(summary?.created_receivables ?? 0),
+    reused_receivables: Number(summary?.reused_receivables ?? 0),
+    duplicates: Number(summary?.duplicates ?? 0),
+    ambiguous: Number(summary?.ambiguous ?? 0),
+    rejected: Number(summary?.rejected ?? 0),
+    applied_rows: Number(summary?.applied_rows ?? 0),
+    review_required_rows: Number(summary?.review_required_rows ?? 0),
   };
 }
 
