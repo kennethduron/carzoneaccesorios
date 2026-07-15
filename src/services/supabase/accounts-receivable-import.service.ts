@@ -543,9 +543,6 @@ export async function updateHistoricalReceivableImportIdentity(
   if (input.email?.trim() && !email) throw new Error("Ingresa un correo válido.");
   if (input.phone?.trim() && !phone) throw new Error("Ingresa un teléfono hondureño válido.");
   if (input.taxId?.trim() && taxId.length !== 14) throw new Error("El RTN debe contener 14 dígitos.");
-  if (!email && !phone && taxId.length !== 14) {
-    throw new Error("Completa RTN, correo o teléfono para identificar al cliente.");
-  }
 
   const nextNormalizedData = {
     ...row.normalized_data,

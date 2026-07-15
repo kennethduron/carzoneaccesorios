@@ -109,33 +109,6 @@ export async function ensureRetailProfile(input: {
     return existingUser.roles.name;
   }
 
-  const { data: pendingCustomer } = await admin
-    .from("customers")
-    .select("id, is_wholesale, wholesale_status")
-    .is("user_id", null)
-    .ilike("email", email)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string; is_wholesale: boolean; wholesale_status: string | null }>();
-
-  if (pendingCustomer?.id) {
-    const approvedWholesale = pendingCustomer.wholesale_status === "approved" || pendingCustomer.is_wholesale;
-    await admin
-      .from("customers")
-      .update({
-        user_id: input.userId,
-        contact_name: fullName,
-        email,
-        phone,
-        is_wholesale: approvedWholesale,
-        wholesale_status: approvedWholesale ? "approved" : pendingCustomer.wholesale_status,
-        status: "active",
-        active: true,
-      })
-      .eq("id", pendingCustomer.id);
-    return "cliente";
-  }
-
   const { data: existingCustomer } = await admin
     .from("customers")
     .select("id")
@@ -154,17 +127,8 @@ export async function ensureRetailProfile(input: {
     return "cliente";
   }
 
-  await admin.from("customers").insert({
-    user_id: input.userId,
-    contact_name: fullName,
-    email,
-    phone,
-    is_wholesale: false,
-    status: "active",
-    active: true,
-    notes: "Cliente al detalle registrado desde la tienda pública.",
-  });
-
+  // A portal account does not own an operational customer until an authorized
+  // administrator performs the separate, explicit linking workflow.
   return "cliente";
 }
 

@@ -409,7 +409,7 @@ export function AccountsReceivableManager({
                 <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                   <div className="min-w-0">
                     <p className="break-words font-semibold [overflow-wrap:anywhere]">{row.customer_name}</p>
-                    <p className="mt-1 text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? "Sin contacto"}</p>
+                    <p className="mt-1 text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? "No registrado"}</p>
                     <p className="mt-1 text-xs text-black/50">Pedido {row.order_number ?? "Sin pedido"}</p>
                   </div>
                   <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">{statusLabels[row.status]}</span>
@@ -470,7 +470,7 @@ export function AccountsReceivableManager({
                   <tr key={row.id} className={row.status === "overdue" ? "bg-[#fff7ed]" : undefined}>
                     <td className="px-3 py-3 align-top">
                       <p className="font-semibold">{row.customer_name}</p>
-                      <p className="text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? ""}</p>
+                      <p className="text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? "No registrado"}</p>
                     </td>
                     <td className="px-3 py-3 align-top">{row.order_number ?? "Sin pedido"}</td>
                     <td className="px-3 py-3 align-top">{formatCurrency(row.original_amount)}</td>

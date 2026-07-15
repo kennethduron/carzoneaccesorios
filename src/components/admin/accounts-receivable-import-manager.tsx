@@ -313,7 +313,7 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
                 <IdentityDialog draft={identityDraft} isPending={isPending} onChange={setIdentityDraft} onCancel={() => setIdentityDraft(null)} onConfirm={saveIdentity} />
               ) : null}
               {applyConfirmationOpen && data.preview ? (
-                <ApplyConfirmationDialog preview={data.preview} isPending={isPending} onCancel={() => setApplyConfirmationOpen(false)} onConfirm={confirmAndApply} />
+                <ApplyConfirmationDialog preview={data.preview} rows={data.rows} isPending={isPending} onCancel={() => setApplyConfirmationOpen(false)} onConfirm={confirmAndApply} />
               ) : null}
             </>
           ) : (
@@ -328,7 +328,7 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
 function confirmDisabledReason(data: HistoricalReceivableImportData) {
   if (!data.canApply) return "No tienes permiso para confirmar importaciones.";
   if (data.selectedBatch?.status === "cancelled") return "Este lote fue cancelado. Corrige el archivo y vuelve a importarlo.";
-  if ((data.preview?.processable ?? 0) === 0) return "Completa la identidad o asigna un cliente en las filas en revisión.";
+  if ((data.preview?.processable ?? 0) === 0) return "No hay cuentas por cobrar procesables en este lote.";
   return "Revisa el resumen antes de confirmar.";
 }
 
@@ -338,7 +338,7 @@ function DirectImportPreview({ preview, batch, rows }: { preview: HistoricalRece
   }
   if (!preview) return null;
   const validRows = rows.filter((row) => row.validation_status === "valid" || row.validation_status === "warning").length;
-  const cancelledRows = rows.filter((row) => row.apply_status === "skipped").length;
+  const cancelledRows = rows.filter((row) => row.apply_status === "skipped" || row.normalized_data.status === "cancelled").length;
   return (
     <div className="border-y border-black/10 py-4">
       <h3 className="text-sm font-semibold">Próximo paso</h3>
@@ -350,7 +350,7 @@ function DirectImportPreview({ preview, batch, rows }: { preview: HistoricalRece
         <SummaryBadge label="Crearán cliente" value={preview.create_customers} tone="good" />
         <SummaryBadge label="Reutilizarán cliente" value={preview.reuse_customers} tone="neutral" />
         <SummaryBadge label="CxC por crear" value={preview.create_receivables} tone="good" />
-        <SummaryBadge label="Ambiguas" value={preview.ambiguous} tone={preview.ambiguous ? "warn" : "neutral"} />
+        <SummaryBadge label="Revisión requerida" value={preview.review_required} tone={preview.review_required ? "warn" : "neutral"} />
         <SummaryBadge label="Duplicadas" value={preview.duplicates} tone="neutral" />
         <SummaryBadge label="Con error" value={preview.rejected} tone={preview.rejected ? "bad" : "neutral"} />
         <SummaryBadge label="Canceladas" value={cancelledRows} tone={cancelledRows ? "warn" : "neutral"} />
@@ -359,33 +359,36 @@ function DirectImportPreview({ preview, batch, rows }: { preview: HistoricalRece
   );
 }
 
-function ApplyConfirmationDialog({ preview, isPending, onCancel, onConfirm }: { preview: NonNullable<HistoricalReceivableImportData["preview"]>; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
+function ApplyConfirmationDialog({ preview, rows, isPending, onCancel, onConfirm }: { preview: NonNullable<HistoricalReceivableImportData["preview"]>; rows: ImportRow[]; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const cancelledRows = rows.filter((row) => row.apply_status === "skipped" || row.normalized_data.status === "cancelled").length;
   return (
     <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="apply-import-title">
       <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
         <h3 id="apply-import-title" className="text-base font-semibold">Confirmar importación operativa</h3>
         <div className="mt-3 space-y-1 text-sm text-black/70">
-          <p>Se crearán {preview.create_receivables} cuentas por cobrar.</p>
           <p>Se crearán {preview.create_customers} clientes operativos sin cuenta web.</p>
           <p>Se reutilizarán {preview.reuse_customers} clientes existentes.</p>
-          <p>{preview.review_required} filas quedarán en revisión.</p>
-          <p>{preview.duplicates + preview.rejected} filas serán omitidas por duplicidad o error.</p>
+          <p>Se crearán {preview.create_receivables} cuentas por cobrar.</p>
+          <p>{preview.review_required} filas requieren revisión y no serán procesadas.</p>
+          <p>{preview.duplicates} filas duplicadas serán omitidas.</p>
+          <p>{preview.rejected} filas con error serán omitidas.</p>
+          <p>{cancelledRows} filas canceladas no serán procesadas.</p>
+          <p className="pt-2 font-medium text-black/80">Los clientes operativos no necesitan una cuenta web. La vinculación con una cuenta del portal será manual y opcional.</p>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>Confirmar e importar</Button>
+          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>{isPending ? "Importando cuentas por cobrar..." : "Confirmar e importar"}</Button>
         </div>
       </div>
     </div>
   );
 }
-
 function IdentityDialog({ draft, isPending, onChange, onCancel, onConfirm }: { draft: IdentityDraft; isPending: boolean; onChange: (draft: IdentityDraft) => void; onCancel: () => void; onConfirm: () => void }) {
   return (
     <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="identity-title">
       <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-        <h3 id="identity-title" className="text-base font-semibold">Completar identidad del cliente</h3>
-        <p className="mt-2 text-sm text-black/60">Ingresa al menos RTN, correo o teléfono. El nombre por sí solo no se usa para vincular automáticamente.</p>
+        <h3 id="identity-title" className="text-base font-semibold">Revisar datos del cliente</h3>
+        <p className="mt-2 text-sm text-black/60">RTN, correo y teléfono son opcionales. El nombre por sí solo nunca reutiliza ni vincula automáticamente un cliente existente.</p>
         <div className="mt-4 grid gap-3">
           <label className="text-sm">Correo<input type="email" value={draft.email} onChange={(event) => onChange({ ...draft, email: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
           <label className="text-sm">Teléfono<input value={draft.phone} onChange={(event) => onChange({ ...draft, phone: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
@@ -505,7 +508,7 @@ function RowsTable({
                   <p className="break-words font-semibold">{String(normalized.customer_name ?? "Sin cliente")}</p>
                   <p className="break-words text-xs text-black/50">{String(normalized.invoice_number ?? "Sin factura")}</p>
                 </div>
-                <Badge tone={rowStatusTone(row)}>{rowStatusLabel(row)}</Badge>
+                <Badge tone={preview ? previewOutcomeTone(preview.outcome) : rowStatusTone(row)}>{preview ? previewOutcomeLabel(preview.outcome) : rowStatusLabel(row)}</Badge>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                 <Info label="Monto original" value={formatCurrency(Number(normalized.original_amount ?? 0))} />
@@ -513,7 +516,7 @@ function RowsTable({
                 <Info label="Saldo" value={formatCurrency(Number(normalized.balance_due ?? 0))} />
               </div>
               <div className="mt-3">
-                {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : <span className="text-xs text-black/45">Pendiente de asignación</span>}
+                {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : preview?.outcome === "create_customer" ? <span className="text-xs font-semibold text-[#2f6f3e]">Creará cliente operativo</span> : <span className="text-xs text-black/45">Sin selección manual</span>}
               </div>
               {preview ? <p className="mt-2 text-xs text-black/55">{preview.reason}</p> : null}
               {canResolve ? (
@@ -548,7 +551,7 @@ function RowsTable({
                   ) : null}
                   <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
                     <UserRoundPlus size={16} />
-                    Completar identidad
+                    Revisar datos
                   </Button>
                   {suggested && !assigned ? (
                     <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
@@ -608,10 +611,10 @@ function RowsTable({
                   <p className="font-semibold">Saldo {formatCurrency(Number(normalized.balance_due ?? 0))}</p>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  <Badge tone={rowStatusTone(row)}>{rowStatusLabel(row)}</Badge>
+                  <Badge tone={preview ? previewOutcomeTone(preview.outcome) : rowStatusTone(row)}>{preview ? previewOutcomeLabel(preview.outcome) : rowStatusLabel(row)}</Badge>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : <span className="text-xs text-black/45">Pendiente de asignación</span>}
+                  {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : preview?.outcome === "create_customer" ? <span className="text-xs font-semibold text-[#2f6f3e]">Creará cliente operativo</span> : <span className="text-xs text-black/45">Sin selección manual</span>}
                 </td>
                 <td className="px-3 py-3 align-top">
                   {row.validation_messages.length > 0 ? (
@@ -656,7 +659,7 @@ function RowsTable({
                       {preview ? <p className="text-xs text-black/55">{preview.reason}</p> : null}
                       <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
                         <UserRoundPlus size={16} />
-                        Completar identidad
+                        Revisar datos
                       </Button>
                       {suggested && !assigned ? (
                         <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
@@ -713,6 +716,23 @@ function CustomerMini({ option, prefix }: { option: AssignmentSelectorOption; pr
   );
 }
 
+function previewOutcomeLabel(outcome: string) {
+  if (outcome === "create_customer") return "Creará cliente";
+  if (outcome === "reuse_customer") return "Reutilizará cliente";
+  if (outcome === "review_required" || outcome === "ambiguous") return "Revisión requerida";
+  if (outcome === "duplicate") return "Duplicada";
+  if (outcome === "rejected") return "Error";
+  if (outcome === "cancelled") return "Cancelada";
+  if (outcome === "applied") return "Aplicada";
+  return "Validada";
+}
+
+function previewOutcomeTone(outcome: string): keyof typeof statusBadgeClass {
+  if (["create_customer", "reuse_customer", "applied"].includes(outcome)) return "good";
+  if (["review_required", "ambiguous"].includes(outcome)) return "warn";
+  if (outcome === "rejected") return "bad";
+  return "neutral";
+}
 function rowStatusLabel(row: ImportRow) {
   if (row.apply_status === "applied") return "Aplicada";
   if (row.apply_status === "rolled_back") return "Revertida";
