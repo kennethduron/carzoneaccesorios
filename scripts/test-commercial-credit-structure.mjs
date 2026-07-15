@@ -106,7 +106,7 @@ assert.match(orderActions, /received_payment_method: paymentMethod/);
 assert.match(orderActions, /register_credit_receivable_payment/);
 assert.match(receivablesManager, /Registrar abono/);
 assert.match(receivablesManager, /Historial/);
-assert.match(receivablesManager, /El abono no puede ser mayor que el saldo pendiente de este pedido\./);
+assert.match(receivablesManager, /El abono no puede ser mayor que el saldo pendiente de esta cuenta por cobrar\./);
 assert.match(ordersManager, /Método con el que pagó el cliente/);
 assert.match(ordersManager, /creditPaymentIsPaid/);
 assert.doesNotMatch(orderActions, /markCreditReceivablePaidAction\(receivableId: string\)/);
@@ -125,6 +125,7 @@ assert.match(receivablesPage, /\["technical_owner", "business_owner", "admin"\]\
 assert.doesNotMatch(receivablesManager, /Pago completo únicamente/);
 assert.match(receivablesManager, /row\.status !== "paid" && row\.status !== "cancelled"/);
 assert.match(accountPage, /\{creditAccount \? \(/);
+assert.match(accountPage, /creditReceivables\.length > 0/);
 assert.match(accountPage, /Total abonado/);
 assert.match(accountPage, /CreditPaymentHistory/);
 assert.match(creditPaymentHistory, /Historial de abonos/);

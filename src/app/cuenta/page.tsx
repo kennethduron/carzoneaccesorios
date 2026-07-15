@@ -138,7 +138,8 @@ export default async function CuentaPage({
         : "Pendiente de primera compra"
       : wholesaleStatusLabels[wholesaleState.kind] ?? "No solicitado";
   const pendingInvoiceOrders = recentOrders.filter((order) => !orderHasIssuedInvoice(order)).slice(0, 3);
-  const openReceivables = creditReceivables.filter((item) => item.status !== "paid" && item.status !== "cancelled");
+  const openReceivables = creditReceivables.filter((item) => item.status !== "paid" && item.status !== "cancelled" && item.balance_due > 0);
+  const paidReceivables = creditReceivables.filter((item) => item.status === "paid" || item.balance_due <= 0);
   const totalCreditOriginal = creditReceivables.reduce((sum, item) => sum + item.original_amount, 0);
   const totalCreditPaid = creditReceivables.reduce((sum, item) => sum + item.total_paid, 0);
   const pendingCreditBalance = openReceivables.reduce((sum, item) => sum + item.balance_due, 0);
@@ -228,7 +229,7 @@ export default async function CuentaPage({
           <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
-                <p className="text-sm text-black/50">Crédito comercial</p>
+                <p className="text-sm text-black/50">Línea de crédito</p>
                 <h2 className="mt-1 text-xl font-semibold">Crédito activo</h2>
                 <p className="mt-2 text-sm text-black/60">
                   Puedes comprar con Crédito Comercial. Cada pedido muestra sus abonos y saldo pendiente.
@@ -245,42 +246,33 @@ export default async function CuentaPage({
               <Info label="Saldo pendiente" value={formatCurrency(pendingCreditBalance)} />
               <Info label="Plazo de pago" value={`${creditAccount.terms_days} días`} />
             </div>
-            {creditReceivables.length > 0 ? (
-              <div className="mt-4 grid gap-2">
-                {creditReceivables.slice(0, 10).map((item) => (
-                  <div key={item.id} className="rounded-md border border-black/10 p-3 text-sm">
-                    <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                      <div>
-                        <p className="font-semibold">{item.order_number ? `Pedido ${item.order_number}` : item.order_id ? `Pedido ${item.order_id.slice(0, 8)}` : "Cuenta historica"}</p>
-                        <p className="text-xs text-black/50">Fecha límite: {formatDate(item.due_date)}</p>
-                      </div>
-                      <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">
-                        {creditStatusLabels[item.status] ?? "Abierto"}
-                      </span>
-                    </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <MiniInfo label="Total original" value={formatCurrency(item.original_amount)} />
-                      <MiniInfo label="Total abonado" value={formatCurrency(item.total_paid)} />
-                      <MiniInfo label="Saldo pendiente" value={formatCurrency(item.balance_due)} />
-                    </div>
-                    <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
-                      <CreditPaymentHistory
-                        payments={item.payments}
-                        totalPaid={item.total_paid}
-                        showRecordedBy={false}
-                        showNotes={false}
-                        balanceDue={item.balance_due}
-                        status={item.status}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">
-                No tienes cuentas por cobrar.
+          </section>
+        ) : null}
+
+        {creditReceivables.length > 0 ? (
+          <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+            <div>
+              <p className="text-sm text-black/50">Cuentas por cobrar</p>
+              <h2 className="mt-1 text-xl font-semibold">Saldos y abonos</h2>
+              <p className="mt-2 text-sm text-black/60">
+                Estas cuentas corresponden a saldos aplicados por la empresa. No representan una nueva línea de crédito.
               </p>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Info label="Monto original" value={formatCurrency(totalCreditOriginal)} />
+              <Info label="Total abonado" value={formatCurrency(totalCreditPaid)} />
+              <Info label="Saldo pendiente" value={formatCurrency(pendingCreditBalance)} />
+            </div>
+            {openReceivables.length > 0 ? (
+              <ReceivablesList title="Pendientes" receivables={openReceivables.slice(0, 10)} />
+            ) : (
+              <p className="mt-4 rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">No tienes cuentas por cobrar pendientes.</p>
             )}
+            {paidReceivables.length > 0 ? <ReceivablesList title="Historial pagado" receivables={paidReceivables.slice(0, 10)} /> : null}
+          </section>
+        ) : creditAccount ? (
+          <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+            <p className="rounded-md bg-[#f0fdf4] p-3 text-sm font-medium text-[#166534]">No tienes cuentas por cobrar.</p>
           </section>
         ) : null}
 
@@ -417,6 +409,48 @@ export default async function CuentaPage({
         </section>
       </section>
     </PublicStoreShell>
+  );
+}
+
+function ReceivablesList({
+  title,
+  receivables,
+}: {
+  title: string;
+  receivables: Awaited<ReturnType<typeof getCustomerReceivablesForUser>>;
+}) {
+  return (
+    <div className="mt-4 grid gap-2">
+      <h3 className="text-sm font-semibold text-black/65">{title}</h3>
+      {receivables.map((item) => (
+        <div key={item.id} className="rounded-md border border-black/10 p-3 text-sm">
+          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+            <div>
+              <p className="font-semibold">{item.order_number ? `Pedido ${item.order_number}` : item.order_id ? `Pedido ${item.order_id.slice(0, 8)}` : "Cuenta histórica"}</p>
+              <p className="text-xs text-black/50">Fecha límite: {formatDate(item.due_date)}</p>
+            </div>
+            <span className="w-fit rounded-md bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">
+              {creditStatusLabels[item.status] ?? "Abierto"}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <MiniInfo label="Total original" value={formatCurrency(item.original_amount)} />
+            <MiniInfo label="Total abonado" value={formatCurrency(item.total_paid)} />
+            <MiniInfo label="Saldo pendiente" value={formatCurrency(item.balance_due)} />
+          </div>
+          <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
+            <CreditPaymentHistory
+              payments={item.payments}
+              totalPaid={item.total_paid}
+              showRecordedBy={false}
+              showNotes={false}
+              balanceDue={item.balance_due}
+              status={item.status}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

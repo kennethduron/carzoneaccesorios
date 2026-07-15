@@ -177,7 +177,7 @@ export function AccountsReceivableManager({
     }
 
     if (amount > selectedRow.balance_due) {
-      toast.error("El abono no puede ser mayor que el saldo pendiente de este pedido.");
+      toast.error("El abono no puede ser mayor que el saldo pendiente de esta cuenta por cobrar.");
       return;
     }
 
@@ -351,7 +351,7 @@ export function AccountsReceivableManager({
         <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
             <h2 className="font-semibold">Detalle de cuentas por cobrar</h2>
-            <p className="mt-1 text-sm text-black/55">Los abonos se registran por pedido y cada saldo se calcula desde su historial.</p>
+            <p className="mt-1 text-sm text-black/55">Los abonos se registran por cuenta por cobrar y cada saldo se calcula desde su historial.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {(["pending", "partial", "overdue", "paid", "all"] as const).map((option) => (
@@ -514,7 +514,7 @@ export function AccountsReceivableManager({
           <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm text-black/50">Pedido {selectedRow.order_number ?? ""}</p>
+                <p className="text-sm text-black/50">{selectedRow.order_number ? `Pedido ${selectedRow.order_number}` : selectedRow.invoice_number ? `Factura ${selectedRow.invoice_number}` : "Cuenta histórica"}</p>
                 <h2 className="mt-1 text-xl font-semibold">Registrar abono</h2>
               </div>
               <button

@@ -82,8 +82,9 @@ type PaymentEventRow = {
 type ReceivableEventRow = {
   id: string;
   customer_id: string;
-  order_id: string;
+  order_id: string | null;
   invoice_id: string | null;
+  historical_invoice_number: string | null;
   original_amount: unknown;
   balance_due: unknown;
   due_date: string | null;
@@ -101,7 +102,7 @@ type ReceivablePaymentEventRow = {
   id: string;
   receivable_id: string;
   customer_id: string;
-  order_id: string;
+  order_id: string | null;
   amount: unknown;
   payment_method: string | null;
   received_at: string | null;
@@ -321,7 +322,7 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
+    .select("id, customer_id, order_id, invoice_id, historical_invoice_number, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
     .eq("id", input.sourceId)
     .maybeSingle<ReceivableEventRow>();
 
@@ -345,7 +346,7 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
     taxAmount: toNumber(row.orders?.tax),
     paymentMethod: row.orders?.payment_method ?? "commercial_credit",
     customerName: name,
-    sourceNumber: row.orders?.order_number ?? row.id,
+    sourceNumber: row.orders?.order_number ?? row.historical_invoice_number ?? row.id,
     eligible: isCancelled ? status === "cancelled" : status !== "cancelled",
     validation_errors: isCancelled
       ? ["La cancelación del crédito comercial requiere revisión contable antes de generar reversos."]
@@ -359,6 +360,7 @@ async function buildCommercialCreditCandidate(input: DispatchAccountingEventInpu
       order_number: row.orders?.order_number ?? null,
       invoice_id: row.invoice_id,
       invoice_number: row.invoices?.invoice_number ?? null,
+      historical_invoice_number: row.historical_invoice_number,
       payment_method: row.orders?.payment_method ?? "commercial_credit",
       customer_id: row.customer_id,
       customer_name: name,
@@ -377,7 +379,7 @@ async function buildReceivablePaidCandidate(input: DispatchAccountingEventInput)
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("accounts_receivable")
-    .select("id, customer_id, order_id, invoice_id, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
+    .select("id, customer_id, order_id, invoice_id, historical_invoice_number, original_amount, balance_due, due_date, status, paid_at, payment_received_method, created_at, updated_at, customers(contact_name, business_name), orders(order_number, payment_method, tax), invoices(invoice_number)")
     .eq("id", input.sourceId)
     .maybeSingle<ReceivableEventRow>();
 
@@ -400,7 +402,7 @@ async function buildReceivablePaidCandidate(input: DispatchAccountingEventInput)
     taxAmount: toNumber(row.orders?.tax),
     paymentMethod: row.payment_received_method ?? row.orders?.payment_method ?? "commercial_credit",
     customerName: name,
-    sourceNumber: row.orders?.order_number ?? row.id,
+    sourceNumber: row.orders?.order_number ?? row.historical_invoice_number ?? row.id,
     eligible: status === "paid",
     validation_errors: ["La cuenta por cobrar pagada se registra como control; el cobro se contabiliza por eventos de abono para evitar duplicados."],
     source_snapshot: {
@@ -410,6 +412,7 @@ async function buildReceivablePaidCandidate(input: DispatchAccountingEventInput)
       order_number: row.orders?.order_number ?? null,
       invoice_id: row.invoice_id,
       invoice_number: row.invoices?.invoice_number ?? null,
+      historical_invoice_number: row.historical_invoice_number,
       payment_method: row.payment_received_method ?? row.orders?.payment_method ?? "commercial_credit",
       customer_id: row.customer_id,
       customer_name: name,

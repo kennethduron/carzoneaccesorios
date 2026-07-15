@@ -76,7 +76,7 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
     startTransition(async () => {
       const result = await action().catch((error) => ({
         ok: false,
-        message: error instanceof Error ? error.message : "No se pudo completar la accion.",
+        message: error instanceof Error ? error.message : "No se pudo completar la acción.",
       }));
       if (result.ok) toast.success(result.message);
       else toast.error(result.message);
@@ -138,7 +138,7 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <FileSpreadsheet size={19} />
-            <h2 className="text-base font-semibold">Importacion historica CxC</h2>
+            <h2 className="text-base font-semibold">Importación histórica CxC</h2>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -200,7 +200,7 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
                 href={`/admin/cuentas-por-cobrar?importBatch=${batch.id}`}
                 className={`block rounded-md border p-3 text-sm ${batch.id === selectedId ? "border-[#e4252c]/30 bg-[#fff1f2]" : "border-black/10 bg-white hover:bg-[#f4f4f5]"}`}
               >
-                <span className="font-semibold">Import #{data.batches.length - index}</span>
+                <span className="font-semibold">Importación #{data.batches.length - index}</span>
                 <span className="mt-1 block text-xs text-black/55">{formatDateTime(batch.created_at)}</span>
                 <span className="mt-2 flex flex-wrap gap-1">
                   <Badge tone={batch.status === "applied" ? "good" : batch.status === "failed" ? "bad" : "neutral"}>{importBatchStatusLabels[batch.status]}</Badge>
@@ -234,12 +234,12 @@ export function AccountsReceivableImportManager({ data }: { data: HistoricalRece
                     <input
                       value={rollbackReason}
                       onChange={(event) => setRollbackReason(event.target.value)}
-                      placeholder="Motivo de rollback"
+                      placeholder="Motivo de reversión"
                       className="min-w-0 rounded-md border border-black/10 px-3 py-2 text-sm"
                     />
                     <Button type="button" onClick={() => runAction(() => rollbackHistoricalReceivableBatchAction(data.selectedBatch!.id, rollbackReason))} disabled={isPending} variant="ghost">
                       <RotateCcw size={16} />
-                      Rollback
+                      Revertir
                     </Button>
                   </div>
                 ) : null}
@@ -277,11 +277,11 @@ function CustomerConfirmationDialog({ draft, isPending, onCancel, onConfirm }: {
     <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-black/45 p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="customer-confirmation-title">
       <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
         <h3 id="customer-confirmation-title" className="text-base font-semibold">Confirmar cliente</h3>
-        <p className="mt-2 text-sm text-black/65">Revise cuidadosamente la informacion antes de vincular esta cuenta por cobrar.</p>
+        <p className="mt-2 text-sm text-black/65">Revise cuidadosamente la información antes de vincular esta cuenta por cobrar.</p>
         <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
           <Info label="Cliente" value={draft.option.name} />
           <Info label="Correo" value={draft.option.email ?? "Sin correo"} />
-          <Info label="Telefono" value={draft.option.phone ?? "Sin telefono"} />
+          <Info label="Teléfono" value={draft.option.phone ?? "Sin teléfono"} />
           <Info label="RTN" value={draft.option.taxId ?? "Sin RTN"} />
           <Info label="Factura" value={String(normalized.invoice_number ?? "")} />
           <Info label="Monto original" value={formatCurrency(Number(normalized.original_amount ?? 0))} />
@@ -317,15 +317,15 @@ function BatchSummary({ batch, rows }: { batch: ImportBatch; rows: ImportRow[] }
 
   return (
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      <SummaryBadge label="Total Rows" value={batch.total_rows} tone="neutral" />
-      <SummaryBadge label="Validated" value={batch.validated_rows} tone="good" />
-      <SummaryBadge label="Pending Assignment" value={pending} tone={pending > 0 ? "warn" : "neutral"} />
-      <SummaryBadge label="Pending Confirmation" value={pendingConfirmation} tone={pendingConfirmation > 0 ? "warn" : "neutral"} />
-      <SummaryBadge label="Rows With Errors" value={errors || batch.failed_rows} tone={errors > 0 || batch.failed_rows > 0 ? "bad" : "neutral"} />
-      <SummaryBadge label="Ready To Apply" value={ready} tone={ready > 0 ? "good" : "neutral"} />
-      <SummaryBadge label="Applied" value={batch.applied_rows} tone={batch.applied_rows > 0 ? "good" : "neutral"} />
-      <SummaryBadge label="Cancelled" value={rows.filter((row) => row.apply_status === "skipped").length} tone="neutral" />
-      <SummaryBadge label="Rollback Available" value={rollbackAvailable ? "Si" : "No"} tone={rollbackAvailable ? "warn" : "neutral"} />
+      <SummaryBadge label="Total de filas" value={batch.total_rows} tone="neutral" />
+      <SummaryBadge label="Validadas" value={batch.validated_rows} tone="good" />
+      <SummaryBadge label="Pendientes de asignación" value={pending} tone={pending > 0 ? "warn" : "neutral"} />
+      <SummaryBadge label="Pendientes de confirmación" value={pendingConfirmation} tone={pendingConfirmation > 0 ? "warn" : "neutral"} />
+      <SummaryBadge label="Filas con errores" value={errors || batch.failed_rows} tone={errors > 0 || batch.failed_rows > 0 ? "bad" : "neutral"} />
+      <SummaryBadge label="Listas para aplicar" value={ready} tone={ready > 0 ? "good" : "neutral"} />
+      <SummaryBadge label="Aplicadas" value={batch.applied_rows} tone={batch.applied_rows > 0 ? "good" : "neutral"} />
+      <SummaryBadge label="Canceladas" value={rows.filter((row) => row.apply_status === "skipped").length} tone="neutral" />
+      <SummaryBadge label="Reversión disponible" value={rollbackAvailable ? "Si" : "No"} tone={rollbackAvailable ? "warn" : "neutral"} />
     </div>
   );
 }
@@ -367,7 +367,7 @@ function RowsTable({
             <th className="px-3 py-2">Estado</th>
             <th className="px-3 py-2">Cliente asignado</th>
             <th className="px-3 py-2">Mensajes</th>
-            <th className="px-3 py-2">Accion</th>
+            <th className="px-3 py-2">Acción</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-black/10 bg-white">
@@ -389,15 +389,15 @@ function RowsTable({
                   <p className="text-xs text-black/50">{String(normalized.issue_date ?? "")} / {String(normalized.due_date ?? "")}</p>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  <p>Original {formatCurrency(Number(normalized.original_amount ?? 0))}</p>
-                  <p>Pagado {formatCurrency(Number(normalized.paid_amount ?? 0))}</p>
+                  <p>Monto original {formatCurrency(Number(normalized.original_amount ?? 0))}</p>
+                  <p>Abonado {formatCurrency(Number(normalized.paid_amount ?? 0))}</p>
                   <p className="font-semibold">Saldo {formatCurrency(Number(normalized.balance_due ?? 0))}</p>
                 </td>
                 <td className="px-3 py-3 align-top">
                   <Badge tone={rowStatusTone(row)}>{rowStatusLabel(row)}</Badge>
                 </td>
                 <td className="px-3 py-3 align-top">
-                  {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : <span className="text-xs text-black/45">Pendiente de asignacion</span>}
+                  {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : <span className="text-xs text-black/45">Pendiente de asignación</span>}
                 </td>
                 <td className="px-3 py-3 align-top">
                   {row.validation_messages.length > 0 ? (
@@ -415,7 +415,7 @@ function RowsTable({
                         <input
                           value={searchByRow[row.id] ?? ""}
                           onChange={(event) => onSearchChange(row.id, event.target.value)}
-                          placeholder="Nombre, correo, telefono, RTN"
+                          placeholder="Nombre, correo, teléfono, RTN"
                           className="min-w-0 flex-1 rounded-md border border-black/10 px-2 py-1.5 text-xs"
                         />
                         <button type="button" onClick={() => onSearch(row)} disabled={isPending} className="rounded-md border border-black/10 p-2 hover:bg-[#fff1f2]" aria-label="Buscar cliente">
@@ -442,7 +442,7 @@ function RowsTable({
                       {suggested && !assigned ? (
                         <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
                           <CheckCircle2 size={16} />
-                          Confirmar asignacion
+                          Confirmar asignación
                         </Button>
                       ) : null}
                       {canImport && row.apply_status !== "skipped" ? (
@@ -453,7 +453,7 @@ function RowsTable({
                       ) : null}
                     </div>
                   ) : (
-                    <span className="text-xs text-black/45">Sin accion</span>
+                    <span className="text-xs text-black/45">Sin acción</span>
                   )}
                 </td>
               </tr>
@@ -495,11 +495,11 @@ function CustomerMini({ option, prefix }: { option: AssignmentSelectorOption; pr
 
 function rowStatusLabel(row: ImportRow) {
   if (row.apply_status === "applied") return "Aplicada";
-  if (row.apply_status === "rolled_back") return "Rollback";
+  if (row.apply_status === "rolled_back") return "Revertida";
   if (row.apply_status === "skipped") return "Cancelada";
   if (row.validation_status === "invalid") return "Error";
-  if (row.assignment_status === "suggested") return "Pendiente de confirmacion";
-  if (["pending", "unassigned"].includes(row.assignment_status)) return "Pendiente de asignacion";
+  if (row.assignment_status === "suggested") return "Pendiente de confirmación";
+  if (["pending", "unassigned"].includes(row.assignment_status)) return "Pendiente de asignación";
   if (row.validation_status === "valid" && row.assignment_status === "confirmed") return "Lista para aplicar";
   return "Validada";
 }
@@ -508,7 +508,7 @@ function rowStatusTone(row: ImportRow): keyof typeof statusBadgeClass {
   const label = rowStatusLabel(row);
   if (label === "Aplicada" || label === "Lista para aplicar" || label === "Validada") return "good";
   if (label === "Error") return "bad";
-  if (label === "Pendiente de confirmacion" || label === "Pendiente de asignacion") return "warn";
+  if (label === "Pendiente de confirmación" || label === "Pendiente de asignación") return "warn";
   return "neutral";
 }
 
