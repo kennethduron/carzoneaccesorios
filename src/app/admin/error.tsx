@@ -51,7 +51,7 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
             <p className="mt-2 text-sm text-black/60">
               {isDevelopment
                 ? "La acción se detuvo. Abajo tienes el detalle técnico para depurar en desarrollo."
-                : "La acción se detuvo de forma segura. Reintenta o revisa la configuración de Supabase si el problema continúa."}
+                : "No fue posible cargar esta sección. Reintenta y, si el problema continúa, contacta al equipo técnico."}
             </p>
           </div>
         </div>

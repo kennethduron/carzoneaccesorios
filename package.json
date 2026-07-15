@@ -13,6 +13,7 @@
     "test:auth-security": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-security-s3.mjs",
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
+    "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
     "test:product-accountant-access": "node scripts/test-product-accountant-access.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",

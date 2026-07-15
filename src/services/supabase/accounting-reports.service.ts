@@ -71,12 +71,44 @@ type LedgerLineRow = {
 };
 
 type AggregateRow = {
-  account_id?: string | null;
-  debit?: unknown;
-  credit?: unknown;
-  sum?: unknown;
-  accounting_accounts?: JoinedAccount | JoinedAccount[] | null;
+  calculation_mode: "opening" | "period" | "as_of";
+  account_id: string;
+  debit_total: unknown;
+  credit_total: unknown;
 };
+
+type AggregateMode = "opening" | "period" | "both" | "as_of";
+
+type SupabaseReportError = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message?: string;
+  status?: number;
+  requestId?: string;
+};
+
+class AccountingReportDataError extends Error {
+  constructor(operation: string, error: SupabaseReportError) {
+    super("No fue posible cargar el reporte contable.");
+    this.name = "AccountingReportDataError";
+    logAccountingReportError(operation, error);
+  }
+}
+
+function logAccountingReportError(operation: string, error: SupabaseReportError) {
+  console.error("[accounting-report-data-error]", {
+    timestamp: new Date().toISOString(),
+    operation,
+    rpc: "get_accounting_report_aggregates",
+    code: error.code ?? null,
+    status: error.status ?? null,
+    requestId: error.requestId ?? null,
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  });
+}
 
 function toNumber(value: unknown) {
   const numberValue = Number(value ?? 0);
@@ -184,12 +216,12 @@ function referenceLabel(entry: JoinedEntry | null) {
   return sourceReferenceLabels[entry.source_type] ?? "Referencia contable";
 }
 
-function aggregateDebit(row: AggregateRow) {
-  return toNumber(row.debit ?? row.sum);
+function aggregateDebit(row: Partial<AggregateRow>) {
+  return toNumber(row.debit_total);
 }
 
-function aggregateCredit(row: AggregateRow) {
-  return toNumber(row.credit ?? 0);
+function aggregateCredit(row: Partial<AggregateRow>) {
+  return toNumber(row.credit_total);
 }
 
 function exportQueryParams(filters: AccountingReportFilters) {
@@ -205,6 +237,28 @@ function exportQueryParams(filters: AccountingReportFilters) {
 
 export function buildAccountingReportParams(filters: AccountingReportFilters) {
   return exportQueryParams(filters).toString();
+}
+
+async function getAccountingReportAggregates(args: {
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  accountIds?: string[] | null;
+  mode: AggregateMode;
+  operation: string;
+}) {
+  if (args.accountIds?.length === 0) return [] as AggregateRow[];
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .rpc("get_accounting_report_aggregates", {
+      p_date_from: args.dateFrom ?? null,
+      p_date_to: args.dateTo ?? null,
+      p_account_ids: args.accountIds ?? null,
+      p_mode: args.mode,
+    });
+
+  if (error) throw new AccountingReportDataError(args.operation, error);
+  return (data ?? []) as unknown as AggregateRow[];
 }
 
 export async function getAccountingReportOptions(filters?: Pick<AccountingReportFilters, "accountType" | "search">) {
@@ -246,40 +300,24 @@ export async function getAccountingReportOptions(filters?: Pick<AccountingReport
 async function getOpeningTotals(accountId: string, startDate: string) {
   if (!accountId || !startDate) return { debit: 0, credit: 0 };
 
-  const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("journal_entry_lines")
-    .select("debit.sum(), credit.sum(), journal_entries!inner(entry_date, status)")
-    .eq("account_id", accountId)
-    .eq("journal_entries.status", "publicada")
-    .lt("journal_entries.entry_date", startDate)
-    .returns<AggregateRow[]>();
-
-  if (error) throw new Error(error.message);
-
-  const row = data?.[0] ?? null;
+  const data = await getAccountingReportAggregates({
+    dateFrom: startDate,
+    accountIds: [accountId],
+    mode: "opening",
+    operation: "general-ledger-opening",
+  });
+  const row = data[0] ?? null;
   return { debit: aggregateDebit(row ?? {}), credit: aggregateCredit(row ?? {}) };
 }
 
-async function getTrialAggregate(filters: AccountingReportFilters, beforeStart: boolean, accountIds: string[]) {
-  if (accountIds.length === 0) return [] as AggregateRow[];
-
-  const supabase = await getSupabaseServerClient();
-  let query = supabase
-    .from("journal_entry_lines")
-    .select("account_id, debit.sum(), credit.sum(), accounting_accounts!inner(id, code, name, type, normal_balance, is_active), journal_entries!inner(entry_date, status)")
-    .eq("journal_entries.status", "publicada")
-    .in("account_id", accountIds);
-
-  if (beforeStart) {
-    query = query.lt("journal_entries.entry_date", filters.startDate);
-  } else {
-    query = query.gte("journal_entries.entry_date", filters.startDate).lte("journal_entries.entry_date", filters.endDate);
-  }
-
-  const { data, error } = await query.returns<AggregateRow[]>();
-  if (error) throw new Error(error.message);
-  return data ?? [];
+async function getTrialAggregate(filters: AccountingReportFilters, accountIds: string[]) {
+  return getAccountingReportAggregates({
+    dateFrom: filters.startDate,
+    dateTo: filters.endDate,
+    accountIds,
+    mode: "both",
+    operation: "trial-balance",
+  });
 }
 
 export async function getGeneralLedgerReport(params: SearchParamsLike, options: { exportMode?: boolean } = {}): Promise<GeneralLedgerReportData> {
@@ -384,10 +422,9 @@ export async function getTrialBalanceReport(params: SearchParamsLike): Promise<T
   const options = await getAccountingReportOptions({ accountType: filters.accountType, search: filters.search });
   const accounts = filters.accountId ? options.accounts.filter((account) => account.id === filters.accountId) : options.accounts;
   const accountIds = accounts.map((account) => account.id);
-  const [openingRows, movementRows] = await Promise.all([
-    getTrialAggregate(filters, true, accountIds),
-    getTrialAggregate(filters, false, accountIds),
-  ]);
+  const aggregateRows = await getTrialAggregate(filters, accountIds);
+  const openingRows = aggregateRows.filter((row) => row.calculation_mode === "opening");
+  const movementRows = aggregateRows.filter((row) => row.calculation_mode === "period");
 
   const openingByAccount = new Map<string, { debit: number; credit: number }>();
   const movementByAccount = new Map<string, { debit: number; credit: number }>();
@@ -447,11 +484,12 @@ function statementAmount(account: AccountingReportAccount, debit: number, credit
   return roundMoney(balanceDelta(account, debit, credit));
 }
 
-function statementRows(rows: AggregateRow[], accountTypes: AccountingAccountType[]) {
+function statementRows(rows: AggregateRow[], accounts: AccountingReportAccount[], accountTypes: AccountingAccountType[]) {
   const typeSet = new Set(accountTypes);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
   return rows
     .map((row): FinancialStatementRow | null => {
-      const account = firstJoined(row.accounting_accounts);
+      const account = accountsById.get(row.account_id) ?? null;
       if (!account || !typeSet.has(account.type)) return null;
       const amount = statementAmount(account, aggregateDebit(row), aggregateCredit(row));
       if (amount === 0) return null;
@@ -467,24 +505,13 @@ function accountIdsForTypes(accounts: AccountingReportAccount[], accountTypes: A
 }
 
 async function getStatementAggregate(filters: AccountingReportFilters, mode: StatementDateMode, accountIds: string[]) {
-  if (accountIds.length === 0) return [] as AggregateRow[];
-
-  const supabase = await getSupabaseServerClient();
-  let query = supabase
-    .from("journal_entry_lines")
-    .select("account_id, debit.sum(), credit.sum(), accounting_accounts!inner(id, code, name, type, normal_balance, is_active), journal_entries!inner(entry_date, status)")
-    .eq("journal_entries.status", "publicada")
-    .in("account_id", accountIds);
-
-  if (mode === "asOfEnd") {
-    query = query.lte("journal_entries.entry_date", filters.endDate);
-  } else {
-    query = query.gte("journal_entries.entry_date", filters.startDate).lte("journal_entries.entry_date", filters.endDate);
-  }
-
-  const { data, error } = await query.returns<AggregateRow[]>();
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return getAccountingReportAggregates({
+    dateFrom: mode === "period" ? filters.startDate : null,
+    dateTo: filters.endDate,
+    accountIds,
+    mode: mode === "asOfEnd" ? "as_of" : "period",
+    operation: mode === "asOfEnd" ? "balance-sheet" : "income-statement",
+  });
 }
 
 async function hasPublishedEntriesForStatement(filters: AccountingReportFilters, mode: StatementDateMode) {
@@ -524,8 +551,8 @@ export async function getBalanceSheetReport(params: SearchParamsLike): Promise<B
     hasPublishedEntriesForStatement(filters, "period"),
   ]);
 
-  const allBalanceRows = statementRows(balanceRows, balanceSheetAccountTypes);
-  const incomeRows = statementRows(periodRows, incomeStatementAccountTypes);
+  const allBalanceRows = statementRows(balanceRows, initialOptions.accounts, balanceSheetAccountTypes);
+  const incomeRows = statementRows(periodRows, initialOptions.accounts, incomeStatementAccountTypes);
   const assets = buildSection("Activos", allBalanceRows.filter((row) => row.account.type === "asset"));
   const liabilities = buildSection("Pasivos", allBalanceRows.filter((row) => row.account.type === "liability"));
   const equityBaseRows = allBalanceRows.filter((row) => row.account.type === "equity");
@@ -569,7 +596,7 @@ export async function getIncomeStatementReport(params: SearchParamsLike): Promis
     hasPublishedEntriesForStatement(filters, "period"),
   ]);
 
-  const rows = statementRows(aggregateRows, incomeStatementAccountTypes);
+  const rows = statementRows(aggregateRows, initialOptions.accounts, incomeStatementAccountTypes);
   const revenues = buildSection("Ingresos", rows.filter((row) => row.account.type === "revenue"));
   const costs = buildSection("Costos", rows.filter((row) => row.account.type === "cost"));
   const expenses = buildSection("Gastos", rows.filter((row) => row.account.type === "expense"));
