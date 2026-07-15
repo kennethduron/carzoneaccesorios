@@ -23,6 +23,7 @@ import type {
 
 type CustomerAccessRow = {
   id: string;
+  user_id: string | null;
   business_name: string | null;
   company_name: string | null;
   contact_name: string;
@@ -192,6 +193,63 @@ function suspendedWholesaleState(): WholesaleAccessState {
   };
 }
 
+const customerAccessColumns =
+  "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, status, active";
+
+async function getWholesaleCustomersForPortalUser(userId: string) {
+  const admin = getSupabaseAdminClient();
+  const [linkedResult, requestNotesResult] = await Promise.all([
+    admin
+      .from("customers")
+      .select(customerAccessColumns)
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false })
+      .returns<CustomerAccessRow[]>(),
+    admin
+      .from("crm_notes")
+      .select("customer_id")
+      .eq("user_id", userId)
+      .eq("note_type", "wholesale_status")
+      .eq("note", "Solicitud mayorista enviada desde cuenta registrada.")
+      .order("created_at", { ascending: false })
+      .limit(20)
+      .returns<Array<{ customer_id: string }>>(),
+  ]);
+
+  if (linkedResult.error || requestNotesResult.error) {
+    return {
+      customers: [] as CustomerAccessRow[],
+      error: linkedResult.error ?? requestNotesResult.error,
+    };
+  }
+
+  const linkedCustomers = linkedResult.data ?? [];
+  const linkedIds = new Set(linkedCustomers.map((customer) => customer.id));
+  const requestCustomerIds = Array.from(
+    new Set((requestNotesResult.data ?? []).map((note) => note.customer_id).filter((id) => !linkedIds.has(id))),
+  );
+
+  if (requestCustomerIds.length === 0) {
+    return { customers: linkedCustomers, error: null };
+  }
+
+  const requestCustomersResult = await admin
+    .from("customers")
+    .select(customerAccessColumns)
+    .in("id", requestCustomerIds)
+    .order("updated_at", { ascending: false })
+    .returns<CustomerAccessRow[]>();
+
+  if (requestCustomersResult.error) {
+    return { customers: [] as CustomerAccessRow[], error: requestCustomersResult.error };
+  }
+
+  const requestCustomers = (requestCustomersResult.data ?? []).filter(
+    (customer) => customer.user_id === null || customer.user_id === userId,
+  );
+  return { customers: [...linkedCustomers, ...requestCustomers], error: null };
+}
+
 export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessState> {
   const supabase = await getSupabaseServerClient();
   const {
@@ -202,15 +260,7 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
     return guestWholesaleState();
   }
 
-  const admin = getSupabaseAdminClient();
-  const { data: customers, error } = await admin
-    .from("customers")
-    .select(
-      "id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, status, active",
-    )
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false })
-    .returns<CustomerAccessRow[]>();
+  const { customers, error } = await getWholesaleCustomersForPortalUser(user.id);
 
   if (error) {
     await writeErrorLog({
@@ -231,10 +281,23 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
     };
   }
 
-  const customerRows = customers ?? [];
+  const customerRows = customers;
   const approvedCustomer = customerRows.find((customer) => getWholesaleStatus(customer) === "approved" && customer.active);
 
   if (approvedCustomer) {
+    if (approvedCustomer.user_id !== user.id) {
+      return {
+        kind: "approved",
+        title: "Solicitud comercial aprobada",
+        message:
+          "La aprobación mayorista está lista, pero tu cuenta web aún no está vinculada al cliente operativo. Un usuario autorizado debe confirmar la vinculación manual antes de habilitar precios privados.",
+        canEnterCode: false,
+        account: null,
+        shouldShowApprovedNotice: false,
+        customerType: approvedCustomer.wholesale_customer_type,
+        firstPurchaseRequirement: null,
+      };
+    }
     const requirement = await getFirstPurchaseRequirement(approvedCustomer);
     const isExisting = approvedCustomer.wholesale_customer_type === "existing";
     return {
@@ -310,29 +373,38 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   }
 
   const email = (userProfile.email || user.email || "").trim().toLowerCase();
-  const customerFilter = email ? `user_id.eq.${user.id},email.ilike.${email}` : `user_id.eq.${user.id}`;
-  const { data: customerRows, error: customerError } = await admin
-    .from("customers")
-    .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, status, active",
-    )
-    .or(customerFilter)
-    .order("updated_at", { ascending: false })
-    .returns<(CustomerAccessRow & { user_id: string | null })[]>();
+  const { customers, error: customerError } = await getWholesaleCustomersForPortalUser(user.id);
 
   if (customerError) {
     return { ok: false, message: "No pudimos revisar tu estado mayorista. Intenta nuevamente." };
   }
 
-  const customers = customerRows ?? [];
   if (customers.some((customer) => getWholesaleStatus(customer) === "approved")) {
     const approvedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "approved")!;
+    if (approvedCustomer.user_id !== user.id) {
+      return {
+        ok: false,
+        message:
+          "La solicitud comercial ya fue aprobada. Falta que un usuario autorizado vincule manualmente tu cuenta web con el cliente operativo.",
+        state: {
+          kind: "approved",
+          title: "Solicitud comercial aprobada",
+          message:
+            "La cuenta web sigue sin cliente vinculado y todavía no puede acceder a precios ni datos privados del customer.",
+          canEnterCode: false,
+          account: null,
+          shouldShowApprovedNotice: false,
+          customerType: approvedCustomer.wholesale_customer_type,
+          firstPurchaseRequirement: null,
+        },
+      };
+    }
     const requirement = await getFirstPurchaseRequirement(approvedCustomer);
     await writeRegisteredWholesaleAudit({
       action: "public_form.wholesale.overwrite_blocked",
       customerId: approvedCustomer.id,
       email,
-      phone: approvedCustomer.phone ?? userProfile.phone ?? "00000000",
+      phone: approvedCustomer.phone ?? userProfile.phone ?? "",
       outcome: "approved",
       context: requestContext,
     });
@@ -357,14 +429,14 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     await ensureRegisteredWholesaleFollowup({
       customerId: pendingCustomer.id,
       userId: user.id,
-      phone: pendingCustomer.phone ?? userProfile.phone ?? "00000000",
+      phone: pendingCustomer.phone ?? userProfile.phone ?? "",
       note: "Solicitud mayorista pendiente confirmada desde cuenta registrada.",
     });
     await writeRegisteredWholesaleAudit({
       action: "public_form.wholesale.duplicate_pending",
       customerId: pendingCustomer.id,
       email,
-      phone: pendingCustomer.phone ?? userProfile.phone ?? "00000000",
+      phone: pendingCustomer.phone ?? userProfile.phone ?? "",
       outcome: "pending",
       context: requestContext,
     });
@@ -377,7 +449,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
       action: "public_form.wholesale.overwrite_blocked",
       customerId: suspendedCustomer.id,
       email,
-      phone: suspendedCustomer.phone ?? userProfile.phone ?? "00000000",
+      phone: suspendedCustomer.phone ?? userProfile.phone ?? "",
       outcome: "suspended",
       context: requestContext,
     });
@@ -387,7 +459,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   const rejectedCustomer = customers.find((customer) => getWholesaleStatus(customer) === "rejected");
   if (rejectedCustomer) {
     const rejectedName = rejectedCustomer.contact_name || userProfile.full_name || email || "Cliente registrado";
-    const rejectedPhone = rejectedCustomer.phone || userProfile.phone || "00000000";
+    const rejectedPhone = rejectedCustomer.phone || userProfile.phone || "";
     const rejectedNote = [
       "[SOLICITUD_MAYOREO]",
       "Origen: Cuenta registrada",
@@ -433,9 +505,9 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
   }
 
   const now = requestContext.submittedAt;
-  const targetCustomer = customers.find((customer) => customer.user_id === user.id) ?? customers[0] ?? null;
+  const targetCustomer = customers[0] ?? null;
   const contactName = targetCustomer?.contact_name || userProfile.full_name || email || "Cliente registrado";
-  const phone = targetCustomer?.phone || userProfile.phone || "00000000";
+  const phone = targetCustomer?.phone || userProfile.phone || "";
   const note = [
     "[SOLICITUD_MAYOREO]",
     "Origen: Cuenta registrada",
@@ -448,7 +520,6 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     .join("\n");
 
   const payload = {
-    user_id: user.id,
     contact_name: contactName,
     email,
     phone,
@@ -465,12 +536,19 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     updated_at: now,
   };
 
-  const customerQuery = targetCustomer?.id
-    ? admin.from("customers").update(payload).eq("id", targetCustomer.id).select("id").single<{ id: string }>()
+  const customerQuery = targetCustomer
+    ? admin
+        .from("customers")
+        .update(payload)
+        .eq("id", targetCustomer.id)
+        .or(`user_id.is.null,user_id.eq.${user.id}`)
+        .select("id")
+        .single<{ id: string }>()
     : admin
         .from("customers")
         .insert({
           ...payload,
+          user_id: null,
           lead_status: "prospecto",
           estimated_value: 0,
           monthly_amount: 0,
@@ -510,8 +588,7 @@ export async function submitRegisteredWholesaleRequestAction(): Promise<Wholesal
     recordId: customer.id,
     action: "wholesale_request.created_from_account",
     newData: {
-      user_id: user.id,
-      email,
+      portal_account_linked: Boolean(targetCustomer?.user_id === user.id),
       wholesale_status: "pending",
       wholesale_request_source: "cuenta_registrada",
       wholesale_requested_at: now,

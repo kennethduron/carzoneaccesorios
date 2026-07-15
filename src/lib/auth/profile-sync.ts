@@ -67,7 +67,7 @@ export async function ensureRetailProfile(input: {
   const admin = getSupabaseAdminClient();
   const email = normalizeAuthEmail(input.email);
   const fullName = normalizeAuthText(input.fullName ?? "") || email;
-  const phone = normalizeAuthPhone(input.phone ?? "") || "00000000";
+  const phone = normalizeAuthPhone(input.phone ?? "") || null;
   const usernameValidation = input.username ? validateUsername(input.username) : null;
   const username = usernameValidation?.ok ? usernameValidation.username : null;
 
@@ -109,26 +109,8 @@ export async function ensureRetailProfile(input: {
     return existingUser.roles.name;
   }
 
-  const { data: existingCustomer } = await admin
-    .from("customers")
-    .select("id")
-    .eq("user_id", input.userId)
-    .maybeSingle<{ id: string }>();
-
-  if (existingCustomer?.id) {
-    await admin
-      .from("customers")
-      .update({
-        contact_name: fullName,
-        email,
-        phone,
-      })
-      .eq("id", existingCustomer.id);
-    return "cliente";
-  }
-
-  // A portal account does not own an operational customer until an authorized
-  // administrator performs the separate, explicit linking workflow.
+  // Profile synchronization is intentionally limited to public.users.
+  // It never finds, creates, updates or links an operational customer.
   return "cliente";
 }
 

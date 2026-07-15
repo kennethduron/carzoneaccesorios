@@ -221,7 +221,7 @@ function getRegisterErrorMessage(rawMessage: string) {
   }
 
   if (message.includes("password") && message.includes("weak")) {
-    return "La contraseña es muy débil. Usa al menos 6 caracteres.";
+    return "La contraseña es muy débil. Usa al menos 8 caracteres.";
   }
 
   return mapOperationalError(
@@ -470,8 +470,8 @@ export async function registerWithEmailAction(input: {
     return { ok: false, message: "Ingresa un número de teléfono válido." };
   }
 
-  if (input.password.length < 6) {
-    return { ok: false, message: "La contraseña debe tener al menos 6 caracteres." };
+  if (input.password.length < 8) {
+    return { ok: false, message: "La contraseña debe tener al menos 8 caracteres." };
   }
 
   if (await emailExistsInProfile(email)) {

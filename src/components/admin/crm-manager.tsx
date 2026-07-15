@@ -51,6 +51,7 @@ import {
 import { registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
+import { CustomerPortalLinkWorkspace } from "@/components/admin/customer-portal-link-workspace";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
@@ -85,6 +86,7 @@ type CrmManagerProps = {
   focus?: "customers" | "followups";
   activeTask?: { id: string; label: string } | null;
   canManageCredit?: boolean;
+  canLinkPortalAccount?: boolean;
 };
 
 type CustomerFilter = "clients" | "internal" | "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
@@ -295,6 +297,7 @@ export function CrmManager({
   focus = "followups",
   activeTask = null,
   canManageCredit = false,
+  canLinkPortalAccount = false,
 }: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
@@ -1203,6 +1206,7 @@ export function CrmManager({
             error={profileError}
             pending={isPending}
             canManageCredit={canManageCredit}
+            canLinkPortalAccount={canLinkPortalAccount}
             onProfileUpdated={setCustomerProfile}
             onClose={closeCustomerProfile}
             onApproveWholesale={approveWholesaleCustomer}
@@ -1379,6 +1383,7 @@ export function CrmManager({
           error={profileError}
           pending={isPending}
           canManageCredit={canManageCredit}
+          canLinkPortalAccount={canLinkPortalAccount}
           onProfileUpdated={setCustomerProfile}
           onClose={closeCustomerProfile}
           onApproveWholesale={approveWholesaleCustomer}
@@ -2126,6 +2131,7 @@ function CustomerProfileDrawer({
   error,
   pending,
   canManageCredit,
+  canLinkPortalAccount,
   onProfileUpdated,
   onClose,
   onApproveWholesale,
@@ -2148,6 +2154,7 @@ function CustomerProfileDrawer({
   error: string | null;
   pending: boolean;
   canManageCredit: boolean;
+  canLinkPortalAccount: boolean;
   onProfileUpdated: (profile: CrmCustomerProfile) => void;
   onClose: () => void;
   onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
@@ -2319,7 +2326,9 @@ function CustomerProfileDrawer({
               {visibleActiveTab === "acciones" ? (
                 <CustomerProfileActions
                   customer={customer}
+                  profile={profile}
                   pending={pending}
+                  canLinkPortalAccount={canLinkPortalAccount}
                   isWholesaleRequest={isWholesaleRequest}
                   isSuspended={isSuspended}
                   onApproveWholesale={onApproveWholesale}
@@ -3187,7 +3196,9 @@ function CustomerProfileWholesale({
 
 function CustomerProfileActions({
   customer,
+  profile,
   pending,
+  canLinkPortalAccount,
   isWholesaleRequest,
   isSuspended,
   onApproveWholesale,
@@ -3199,7 +3210,9 @@ function CustomerProfileActions({
   onDeleteCustomer,
 }: {
   customer: CrmCustomerOption;
+  profile: CrmCustomerProfile | null;
   pending: boolean;
+  canLinkPortalAccount: boolean;
   isWholesaleRequest: boolean;
   isSuspended: boolean;
   onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
@@ -3300,6 +3313,27 @@ function CustomerProfileActions({
       <div className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
         Para unificar duplicados, usa el panel de posibles duplicados y revisa primero el perfil principal y el registro sugerido.
       </div>
+      {canLinkPortalAccount ? (
+        <div className="mt-5 border-t border-black/10 pt-5">
+          <CustomerPortalLinkWorkspace
+            compact
+            initialCustomer={{
+              id: customer.id,
+              displayName: customerDisplayName(customer),
+              email: customer.email,
+              phone: customer.phone,
+              taxId: customer.tax_id,
+              active: customer.active,
+              status: customer.status,
+              linked: Boolean(customer.user_id),
+              linkedAccountEmail: customer.account_email,
+              orderCount: customer.order_count,
+              receivableCount: profile?.receivables.length ?? 0,
+              hasCreditAccount: Boolean(profile?.creditAccount),
+            }}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

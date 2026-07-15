@@ -3,6 +3,7 @@ import type { AppRole, Permission } from "@/types/auth";
 export const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 
 export const allPermissions: Permission[] = [
+  "customers:link_portal_account",
   "admin:access",
   "products:read",
   "products:create",
@@ -136,6 +137,7 @@ const accountingFullPermissions: Permission[] = [
 export const rolePermissions: Record<AppRole, Permission[]> = {
   technical_owner: allPermissions,
   admin: [
+    "customers:link_portal_account",
     "admin:access",
     "products:manage",
     "inventory:manage",
@@ -185,6 +187,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "shipments:manage",
   ],
   business_owner: [
+    "customers:link_portal_account",
     "admin:access",
     "products:manage",
     "inventory:manage",
@@ -248,6 +251,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
     "notifications:read",
   ],
   contadora: [
+    "customers:link_portal_account",
     "admin:access",
     "products:read",
     "products:create",

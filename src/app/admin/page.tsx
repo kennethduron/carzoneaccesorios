@@ -94,6 +94,12 @@ const moduleGroups = [
     defaultOpen: true,
     modules: [
       { title: "Clientes", href: "/admin/clientes", description: "Clientes, notas y seguimiento comercial.", permissions: ["crm:manage", "customers:manage"] },
+      {
+        title: "Vincular cuenta web",
+        href: "/admin/vincular-cuenta-cliente",
+        description: "Vinculación manual y auditada entre customer y cuenta del portal.",
+        permissions: ["customers:link_portal_account"],
+      },
       { title: "Clientes mayoristas", href: "/admin/clientes-mayoristas", description: "Aprobar, rechazar, suspender y reactivar mayoristas.", permissions: ["wholesale:manage"] },
       { title: "CRM", href: "/admin/crm", description: "Seguimientos, oportunidades y atención vencida.", permissions: ["crm:manage", "customers:manage"] },
     ],

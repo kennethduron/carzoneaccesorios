@@ -64,6 +64,7 @@ export type CustomerAccountSummary = {
   phone: string | null;
   registeredAt: string | null;
   emailConfirmed: boolean;
+  linkedToOperationalCustomer: boolean;
   orderCount: number;
   totalPurchased: number;
   issuedInvoiceCount: number;
@@ -383,7 +384,7 @@ async function getCustomerOrderIds(userId: string, limit = 500) {
 
 export async function getCustomerAccountSummary(userId: string): Promise<CustomerAccountSummary> {
   const admin = getSupabaseAdminClient();
-  const [{ data: profile }, authResult, summaryResult] = await Promise.all([
+  const [{ data: profile }, authResult, summaryResult, linkedCustomerResult] = await Promise.all([
     admin
       .from("users")
       .select("phone, created_at")
@@ -396,6 +397,7 @@ export async function getCustomerAccountSummary(userId: string): Promise<Custome
         target_email: null,
       })
       .single<CustomerAccountSummaryRow>(),
+    admin.from("customers").select("id").eq("user_id", userId).limit(1).maybeSingle<{ id: string }>(),
   ]);
 
   const summary = summaryResult.data ?? null;
@@ -404,6 +406,7 @@ export async function getCustomerAccountSummary(userId: string): Promise<Custome
     phone: profile?.phone ?? null,
     registeredAt: profile?.created_at ?? authResult.data.user?.created_at ?? null,
     emailConfirmed: Boolean(authResult.data.user?.email_confirmed_at || authResult.data.user?.confirmed_at),
+    linkedToOperationalCustomer: Boolean(linkedCustomerResult.data?.id),
     orderCount: summary?.order_count ?? 0,
     totalPurchased: toNumber(summary?.total_purchased),
     issuedInvoiceCount: summary?.issued_invoice_count ?? 0,

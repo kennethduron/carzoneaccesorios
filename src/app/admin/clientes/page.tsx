@@ -22,6 +22,12 @@ export default async function AdminCustomersPage({
   const canManageCredit =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
+  const canLinkPortalAccount = hasEffectivePermission(
+    profile.role,
+    profile.permissions,
+    "customers:link_portal_account",
+    profile.email,
+  );
   const params = await searchParams;
   const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role });
 
@@ -36,7 +42,13 @@ export default async function AdminCustomersPage({
           Panel administrativo
         </Link>
       </div>
-      <CrmManager data={crm} basePath="/admin/clientes" focus="customers" canManageCredit={canManageCredit} />
+      <CrmManager
+        data={crm}
+        basePath="/admin/clientes"
+        focus="customers"
+        canManageCredit={canManageCredit}
+        canLinkPortalAccount={canLinkPortalAccount}
+      />
     </AdminShell>
   );
 }

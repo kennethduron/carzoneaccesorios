@@ -5,6 +5,7 @@ import { rolePermissions } from "../src/lib/auth/permissions.ts";
 
 const allowedPermissions = new Set([
   "admin:access",
+  "customers:link_portal_account",
   "products:read",
   "products:create",
   "products:update",

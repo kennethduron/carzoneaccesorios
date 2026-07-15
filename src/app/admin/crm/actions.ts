@@ -30,6 +30,33 @@ type CrmMutationResult = {
   deletion_block?: DeletionBlock;
 };
 
+export type PortalAccountCandidate = {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  username: string | null;
+  role: AppRole | null;
+  active: boolean;
+  authExists: boolean;
+  linkedToThisCustomer: boolean;
+  linkedToAnotherCustomer: boolean;
+};
+
+export type PortalLinkCustomerCandidate = {
+  id: string;
+  displayName: string;
+  email: string | null;
+  phone: string | null;
+  taxId: string | null;
+  active: boolean;
+  status: string;
+  linked: boolean;
+  linkedAccountEmail: string | null;
+  orderCount: number;
+  receivableCount: number;
+  hasCreditAccount: boolean;
+};
+
 type CustomerProfileResult = {
   ok: boolean;
   message: string;
@@ -94,6 +121,246 @@ const wholesaleManagementRoles: AppRole[] = ["technical_owner", "business_owner"
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function safePortalSearchValue(value: string) {
+  const withoutFilterSyntax = ["%", "_", ",", ".", "(", ")"].reduce(
+    (current, token) => current.replaceAll(token, " "),
+    value.trim(),
+  );
+  return withoutFilterSyntax.split(" ").filter(Boolean).join(" ").slice(0, 80);
+}
+
+export async function searchPortalAccountCandidatesAction(
+  customerId: string,
+  query: string,
+): Promise<{ ok: boolean; message: string; candidates: PortalAccountCandidate[] }> {
+  await requirePermission("customers:link_portal_account");
+  const customer = uuidLike(customerId, "Cliente");
+  const search = safePortalSearchValue(query);
+
+  if (!customer.ok) {
+    return { ok: false, message: customer.message, candidates: [] };
+  }
+
+  if (search.length < 3) {
+    return { ok: false, message: "Escribe al menos 3 caracteres para buscar una cuenta web.", candidates: [] };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const pattern = "%" + search + "%";
+  const columns = "id, email, full_name, username, active, roles(name)";
+  const [byEmail, byName, byUsername] = await Promise.all([
+    admin.from("users").select(columns).ilike("email", pattern).limit(10),
+    admin.from("users").select(columns).ilike("full_name", pattern).limit(10),
+    admin.from("users").select(columns).ilike("username", pattern).limit(10),
+  ]);
+
+  const firstError = byEmail.error ?? byName.error ?? byUsername.error;
+  if (firstError) {
+    return { ok: false, message: "No fue posible buscar cuentas web.", candidates: [] };
+  }
+
+  type PortalUserRow = {
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    username: string | null;
+    active: boolean;
+    roles: Array<{ name: AppRole }> | { name: AppRole } | null;
+  };
+
+  const candidatesById = new Map<string, PortalUserRow>();
+  for (const row of [...(byEmail.data ?? []), ...(byName.data ?? []), ...(byUsername.data ?? [])] as unknown as PortalUserRow[]) {
+    candidatesById.set(row.id, row);
+  }
+
+  const rows = [...candidatesById.values()].slice(0, 10);
+  if (rows.length === 0) {
+    return { ok: true, message: "No se encontraron cuentas web.", candidates: [] };
+  }
+
+  const ids = rows.map((row) => row.id);
+  const [{ data: linkedCustomers, error: linkedError }, authChecks] = await Promise.all([
+    admin.from("customers").select("id, user_id").in("user_id", ids),
+    Promise.all(rows.map((row) => admin.auth.admin.getUserById(row.id))),
+  ]);
+
+  if (linkedError) {
+    return { ok: false, message: "No fue posible validar el estado de vinculación.", candidates: [] };
+  }
+
+  const links = new Map(
+    ((linkedCustomers ?? []) as Array<{ id: string; user_id: string | null }>)
+      .filter((row) => row.user_id)
+      .map((row) => [row.user_id as string, row.id]),
+  );
+
+  return {
+    ok: true,
+    message: rows.length === 1 ? "Se encontró 1 cuenta web." : "Se encontraron cuentas web.",
+    candidates: rows.map((row, index) => ({
+      id: row.id,
+      email: row.email,
+      fullName: row.full_name,
+      username: row.username,
+      role: (Array.isArray(row.roles) ? row.roles[0]?.name : row.roles?.name) ?? null,
+      active: row.active,
+      authExists: !authChecks[index].error && Boolean(authChecks[index].data.user),
+      linkedToThisCustomer: links.get(row.id) === customer.value,
+      linkedToAnotherCustomer: Boolean(links.get(row.id) && links.get(row.id) !== customer.value),
+    })),
+  };
+}
+
+export async function searchCustomersForPortalLinkAction(
+  query: string,
+): Promise<{ ok: boolean; message: string; customers: PortalLinkCustomerCandidate[] }> {
+  await requirePermission("customers:link_portal_account");
+  const search = safePortalSearchValue(query);
+
+  if (search.length < 2) {
+    return { ok: false, message: "Escribe al menos 2 caracteres para buscar un cliente.", customers: [] };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const pattern = "%" + search + "%";
+  const columns = "id, business_name, company_name, contact_name, email, phone, tax_id, active, status, user_id";
+  const [byName, byBusiness, byEmail, byPhone] = await Promise.all([
+    admin.from("customers").select(columns).ilike("contact_name", pattern).limit(10),
+    admin.from("customers").select(columns).ilike("business_name", pattern).limit(10),
+    admin.from("customers").select(columns).ilike("email", pattern).limit(10),
+    admin.from("customers").select(columns).ilike("phone", pattern).limit(10),
+  ]);
+
+  const firstError = byName.error ?? byBusiness.error ?? byEmail.error ?? byPhone.error;
+  if (firstError) {
+    return { ok: false, message: "No fue posible buscar clientes operativos.", customers: [] };
+  }
+
+  type LinkCustomerRow = {
+    id: string;
+    business_name: string | null;
+    company_name: string | null;
+    contact_name: string;
+    email: string | null;
+    phone: string | null;
+    tax_id: string | null;
+    active: boolean;
+    status: string;
+    user_id: string | null;
+  };
+
+  const customersById = new Map<string, LinkCustomerRow>();
+  for (const row of [
+    ...(byName.data ?? []),
+    ...(byBusiness.data ?? []),
+    ...(byEmail.data ?? []),
+    ...(byPhone.data ?? []),
+  ] as LinkCustomerRow[]) {
+    customersById.set(row.id, row);
+  }
+
+  const rows = [...customersById.values()].slice(0, 10);
+  if (rows.length === 0) {
+    return { ok: true, message: "No se encontraron clientes operativos.", customers: [] };
+  }
+
+  const customerIds = rows.map((row) => row.id);
+  const linkedUserIds = rows.flatMap((row) => (row.user_id ? [row.user_id] : []));
+  const [orders, receivables, creditAccounts, linkedUsers] = await Promise.all([
+    admin.from("orders").select("customer_id").in("customer_id", customerIds),
+    admin.from("accounts_receivable").select("customer_id").in("customer_id", customerIds),
+    admin.from("customer_credit_accounts").select("customer_id").in("customer_id", customerIds),
+    linkedUserIds.length
+      ? admin.from("users").select("id, email").in("id", linkedUserIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; email: string | null }>, error: null }),
+  ]);
+
+  const aggregateError = orders.error ?? receivables.error ?? creditAccounts.error ?? linkedUsers.error;
+  if (aggregateError) {
+    return { ok: false, message: "No fue posible validar el resumen operativo.", customers: [] };
+  }
+
+  const countByCustomer = (values: Array<{ customer_id: string | null }>) =>
+    values.reduce((counts, value) => {
+      if (value.customer_id) counts.set(value.customer_id, (counts.get(value.customer_id) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+  const orderCounts = countByCustomer((orders.data ?? []) as Array<{ customer_id: string | null }>);
+  const receivableCounts = countByCustomer((receivables.data ?? []) as Array<{ customer_id: string | null }>);
+  const creditCustomerIds = new Set((creditAccounts.data ?? []).map((row) => row.customer_id));
+  const linkedEmails = new Map((linkedUsers.data ?? []).map((row) => [row.id, row.email]));
+
+  return {
+    ok: true,
+    message: rows.length === 1 ? "Se encontró 1 cliente operativo." : "Se encontraron clientes operativos.",
+    customers: rows.map((row) => ({
+      id: row.id,
+      displayName: row.business_name || row.company_name || row.contact_name,
+      email: row.email,
+      phone: row.phone,
+      taxId: row.tax_id,
+      active: row.active,
+      status: row.status,
+      linked: Boolean(row.user_id),
+      linkedAccountEmail: row.user_id ? linkedEmails.get(row.user_id) ?? null : null,
+      orderCount: orderCounts.get(row.id) ?? 0,
+      receivableCount: receivableCounts.get(row.id) ?? 0,
+      hasCreditAccount: creditCustomerIds.has(row.id),
+    })),
+  };
+}
+
+export async function linkCustomerPortalAccountAction(input: {
+  customerId: string;
+  userId: string;
+  reason: string;
+  confirmed: boolean;
+}): Promise<CrmMutationResult & { status?: string }> {
+  await requirePermission("customers:link_portal_account");
+  const customer = uuidLike(input.customerId, "Cliente");
+  const user = uuidLike(input.userId, "Cuenta web");
+  const reason = input.reason.trim();
+
+  if (!customer.ok) return { ok: false, message: customer.message };
+  if (!user.ok) return { ok: false, message: user.message };
+  if (!input.confirmed) return { ok: false, message: "Confirma explícitamente la vinculación." };
+  if (reason.length < 10 || reason.length > 500) {
+    return { ok: false, message: "El motivo debe tener entre 10 y 500 caracteres." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("link_customer_portal_account_manual", {
+    p_customer_id: customer.value,
+    p_user_id: user.value,
+    p_reason: reason,
+    p_confirmed: true,
+  });
+
+  if (error) {
+    await writeErrorLog({
+      route: "/admin/vincular-cuenta-cliente",
+      action: "customer_portal_link.rpc_failed",
+      errorMessage: error.message,
+      metadata: { code: error.code ?? null },
+    });
+    return { ok: false, message: "No fue posible vincular la cuenta. Revisa el estado e intenta nuevamente." };
+  }
+
+  const result = (data as Array<{ ok: boolean; status: string; message: string }> | null)?.[0];
+  if (!result) {
+    return { ok: false, message: "La vinculación no devolvió un resultado válido." };
+  }
+
+  if (result.ok) {
+    revalidatePath("/admin/crm");
+    revalidatePath("/admin/clientes");
+    revalidatePath("/admin/vincular-cuenta-cliente");
+    revalidatePath("/cuenta");
+  }
+
+  return { ok: result.ok, status: result.status, message: result.message };
 }
 
 function localPhoneCandidate(normalizedPhone: string) {
@@ -667,7 +934,7 @@ export async function approveWholesaleRequestAction(
       business_name: string | null;
       company_name: string | null;
       contact_name: string;
-      phone: string;
+      phone: string | null;
       notes: string | null;
       wholesale_status: string | null;
       wholesale_customer_type: WholesaleCustomerType;
@@ -682,38 +949,23 @@ export async function approveWholesaleRequestAction(
   }
 
   const email = customerRow.email?.trim().toLowerCase() ?? "";
-  if (!email) {
-    return { ok: false, message: "La solicitud no tiene correo para vincular cuenta." };
-  }
-
-  const { data: userProfile } = await admin
-    .from("users")
-    .select("id, email, active")
-    .ilike("email", email)
-    .maybeSingle<{ id: string; email: string | null; active: boolean }>();
-
-  const hasActiveAccount = Boolean(userProfile?.id && userProfile.active !== false);
   const nextWholesaleStatus = "approved";
   const approvedAt = new Date().toISOString();
-  const nextNotes = hasActiveAccount
-    ? customerRow.notes
-    : [customerRow.notes, "Mayorista aprobado, pendiente de cuenta activa vinculada para iniciar sesión."].filter(Boolean).join("\n");
 
   const { error: updateError } = await admin
     .from("customers")
     .update({
-      user_id: userProfile?.id ?? null,
       business_name: customerRow.business_name ?? customerRow.company_name ?? customerRow.contact_name,
       company_name: customerRow.company_name ?? customerRow.business_name ?? customerRow.contact_name,
-      is_wholesale: hasActiveAccount,
+      is_wholesale: true,
       wholesale_status: nextWholesaleStatus,
       wholesale_customer_type: wholesaleCustomerType,
       wholesale_approved_at: approvedAt,
       wholesale_approved_notice_seen: false,
-      status: hasActiveAccount ? "active" : "pending_account",
+      status: "active",
       active: true,
       lead_status: "cliente",
-      notes: nextNotes,
+      notes: customerRow.notes,
     })
     .eq("id", customer.value);
 
@@ -735,13 +987,12 @@ export async function approveWholesaleRequestAction(
       active: customerRow.active,
     },
     newData: {
-      user_id: userProfile?.id ?? null,
-      is_wholesale: hasActiveAccount,
+      is_wholesale: true,
       wholesale_status: nextWholesaleStatus,
       wholesale_customer_type: wholesaleCustomerType,
       wholesale_approved_at: approvedAt,
       wholesale_approved_notice_seen: false,
-      status: hasActiveAccount ? "active" : "pending_account",
+      status: "active",
       active: true,
       audit_context: auditContext,
     },
@@ -756,12 +1007,14 @@ export async function approveWholesaleRequestAction(
   });
 
   await completePendingWholesaleFollowups(customer.value);
-  await queueWholesaleApprovedEmail({
-    customerId: customer.value,
-    email,
-    name: customerRow.contact_name,
-    wholesaleCustomerType,
-  });
+  if (email) {
+    await queueWholesaleApprovedEmail({
+      customerId: customer.value,
+      email,
+      name: customerRow.contact_name,
+      wholesaleCustomerType,
+    });
+  }
 
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");
@@ -769,9 +1022,7 @@ export async function approveWholesaleRequestAction(
 
   return {
     ok: true,
-    message: hasActiveAccount
-      ? `Mayorista ${wholesaleCustomerType === "existing" ? "existente" : "nuevo"} aprobado. La cuenta ya obtiene precios mayoristas al iniciar sesión.`
-      : "Solicitud aprobada, pero falta una cuenta activa vinculada para activar precios al iniciar sesión.",
+    message: `Mayorista ${wholesaleCustomerType === "existing" ? "existente" : "nuevo"} aprobado. La vinculación con una cuenta web permanece manual y separada.`,
   };
 }
 

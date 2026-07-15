@@ -9,6 +9,7 @@ export type AppRole =
   | "cliente";
 
 export type Permission =
+  | "customers:link_portal_account"
   | "admin:access"
   | "products:read"
   | "products:create"

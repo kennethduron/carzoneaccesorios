@@ -488,7 +488,7 @@ export function AuthCard({ mode }: AuthCardProps) {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Contraseña"
-              minLength={6}
+              minLength={isLogin ? undefined : 8}
               autoComplete={isLogin ? "current-password" : "new-password"}
               disabled={loading}
               required

@@ -153,6 +153,12 @@ export default async function CuentaPage({
             Correo electrónico confirmado correctamente. Tu cuenta ya está activa.
           </div>
         ) : null}
+        {!accountSummary.linkedToOperationalCustomer ? (
+          <div className="mb-4 rounded-lg border border-[#f59e0b]/25 bg-[#fffbeb] p-4 text-sm text-[#78350f]">
+            Tu cuenta web aún no está vinculada con un cliente operativo. Puedes usarla para tus compras web, pero no se
+            mostrará información comercial de ningún customer hasta que un usuario autorizado confirme la vinculación manual.
+          </div>
+        ) : null}
 
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>

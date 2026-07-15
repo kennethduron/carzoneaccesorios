@@ -513,8 +513,8 @@ export async function writeRegisteredWholesaleAudit(input: {
     customerId: input.customerId,
     context: input.context,
     data: {
-      email: input.email,
-      phone: input.phone,
+      email_provided: Boolean(input.email),
+      phone_provided: Boolean(input.phone),
       origin: "cuenta_registrada",
       result: input.outcome,
     },
