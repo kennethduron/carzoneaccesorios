@@ -72,8 +72,10 @@ assert.match(profileSync, /phone = normalizeAuthPhone\(input\.phone \?\? ""\) \|
 assert.match(authActions, /input\.password\.length < 8/);
 assert.match(authCard, /minLength=\{isLogin \? undefined : 8\}/);
 assert.match(permissions, /customers:link_portal_account/);
-assert.match(portal, /aún no está vinculada con un cliente operativo/);
+assert.doesNotMatch(portal, /aún no está vinculada con un cliente operativo/);
+assert.match(portal, /getCustomerAccountSummary\(profile\.id\)/);
 assert.match(customerAccount, /\.from\("customers"\)\.select\("id"\)\.eq\("user_id", userId\)/);
+assert.match(customerAccount, /linkedToOperationalCustomer: Boolean\(linkedCustomerResult\.data\?\.id\)/);
 assert.doesNotMatch(customerAccount, /customers[\s\S]{0,120}ilike\("email"/i);
 assert.match(creditService, /\.eq\("customers\.user_id", userId\)/);
 assert.match(creditService, /\.eq\("user_id", userId\)/);
