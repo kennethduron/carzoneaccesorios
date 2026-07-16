@@ -20,6 +20,7 @@ export type Permission =
   | "products:delete"
   | "products:adjust_stock"
   | "products:manage"
+  | "inventory:read"
   | "inventory:manage"
   | "orders:read"
   | "orders:manage"

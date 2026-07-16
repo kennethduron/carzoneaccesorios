@@ -7,6 +7,7 @@ export type AdminInventoryFilters = {
   filter?: "low_stock" | null;
   movementPage?: number;
   movementPageSize?: number;
+  includeManagementOptions?: boolean;
 };
 
 export type AdminInventorySummary = {
@@ -123,12 +124,14 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
           .returns<InventoryProductOption[]>()
       : productsQuery.returns<ProductOptionQueryRow[]>();
 
-  const productOptionsRequest = supabase
-    .from("products")
-    .select(productOptionSelect)
-    .order("name", { ascending: true })
-    .limit(1000)
-    .returns<ProductOptionQueryRow[]>();
+  const productOptionsRequest = filters.includeManagementOptions
+    ? supabase
+        .from("products")
+        .select(productOptionSelect)
+        .order("name", { ascending: true })
+        .limit(1000)
+        .returns<ProductOptionQueryRow[]>()
+    : Promise.resolve({ data: [] as ProductOptionQueryRow[], error: null });
 
   const [
     { data: products, error: productsError, count },

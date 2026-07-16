@@ -30,7 +30,11 @@ assert.equal(rolePermissions.contadora.includes("payments:manage"), false);
 assert.equal(rolePermissions.contadora.includes("payments:confirm"), false);
 assert.equal(rolePermissions.contadora.includes("orders:read"), false);
 assert.equal(rolePermissions.contadora.includes("crm:manage"), false);
+assert.equal(rolePermissions.contadora.includes("inventory:read"), true);
 assert.equal(rolePermissions.contadora.includes("inventory:manage"), false);
+assert.equal(rolePermissions.admin.includes("inventory:read"), true);
+assert.equal(rolePermissions.business_owner.includes("inventory:read"), true);
+assert.equal(rolePermissions.bodega.includes("inventory:read"), true);
 
 for (const role of operationalRoles) {
   assert.equal(rolePermissions[role].includes("security:read"), false, `${role} must not access security`);

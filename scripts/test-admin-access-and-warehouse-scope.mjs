@@ -5,7 +5,6 @@ import { rolePermissions } from "../src/lib/auth/permissions.ts";
 import { canRoleReceiveNotificationType, filterPreferencesForRole } from "../src/lib/notifications/accountant-scope.ts";
 
 const accountantForbiddenRoutes = {
-  "src/app/admin/inventario/page.tsx": "inventory:manage",
   "src/app/admin/crm/page.tsx": "crm:manage",
   "src/app/admin/clientes/page.tsx": "crm:manage",
   "src/app/admin/clientes-mayoristas/page.tsx": "wholesale:manage",
@@ -23,6 +22,13 @@ const productsPage = await readFile(new URL("../src/app/admin/productos/page.tsx
 assert.match(productsPage, /requireProductCapability\("read"\)/);
 assert.match(productsPage, /capabilities=\{capabilities\}/);
 
+const inventoryPage = await readFile(new URL("../src/app/admin/inventario/page.tsx", import.meta.url), "utf8");
+assert.match(inventoryPage, /requirePermission\("admin:access"\)/);
+assert.match(inventoryPage, /"inventory:read"/);
+assert.match(inventoryPage, /"inventory:manage"/);
+assert.match(inventoryPage, /if \(!canReadInventory\) \{[\s\S]*redirect\("\/sin-permiso"\)/);
+assert.match(inventoryPage, /canManageInventory=\{canManageInventory\}/);
+
 const ordersPage = await readFile(new URL("../src/app/admin/pedidos/page.tsx", import.meta.url), "utf8");
 assert.match(ordersPage, /requirePermission\("admin:access"\)/);
 assert.match(ordersPage, /hasEffectivePermission\(profile\.role, profile\.permissions, "orders:read"/);
@@ -30,6 +36,7 @@ assert.match(ordersPage, /hasEffectivePermission\(profile\.role, profile\.permis
 assert.match(ordersPage, /if \(!canReadOrders\) \{[\s\S]*redirect\("\/sin-permiso"\)/);
 
 assert.equal(rolePermissions.contadora.includes("admin:access"), true);
+assert.equal(rolePermissions.contadora.includes("inventory:read"), true);
 for (const permission of [
   "orders:read",
   "inventory:manage",
@@ -52,6 +59,7 @@ for (const permission of [
 assert.deepEqual(new Set(rolePermissions.bodega), new Set([
   "admin:access",
   "products:read",
+  "inventory:read",
   "inventory:manage",
   "shipments:manage",
   "orders:read",

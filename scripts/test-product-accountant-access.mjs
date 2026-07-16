@@ -36,9 +36,11 @@ for (const permission of allowed) {
 for (const permission of forbidden) {
   assert.doesNotMatch(contadoraBlock, new RegExp(`"${permission.replace(":", "\\:")}"`), `contadora unexpectedly has ${permission}`);
 }
+assert.match(contadoraBlock, /"inventory:read"/, "contadora must receive read-only inventory access");
 
 assert.match(productAccess, /const hasLegacyManage = hasPermission\(profile, "products:manage"\)/);
 assert.match(productAccess, /hasPermission\(profile, "inventory:manage"\)/);
+assert.doesNotMatch(productAccess, /inventory:read/, "inventory read must never enable product stock adjustment");
 assert.match(page, /requireProductCapability\("read"\)/);
 assert.match(page, /capabilities=\{capabilities\}/);
 assert.match(adminPage, /permissions: \["products:read", "products:manage"\]/);

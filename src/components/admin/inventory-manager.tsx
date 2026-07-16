@@ -23,6 +23,7 @@ type InventoryManagerProps = {
   summary: AdminInventorySummary;
   productQuery: string;
   activeFilter?: { id: string; label: string } | null;
+  canManageInventory: boolean;
 };
 
 const movementLabels: Record<InventoryMovementType, string> = {
@@ -46,7 +47,15 @@ const emptyMovement: InventoryMovementInput = {
   notes: "",
 };
 
-export function InventoryManager({ products, productOptions, movements, summary, productQuery, activeFilter = null }: InventoryManagerProps) {
+export function InventoryManager({
+  products,
+  productOptions,
+  movements,
+  summary,
+  productQuery,
+  activeFilter = null,
+  canManageInventory,
+}: InventoryManagerProps) {
   const [movement, setMovement] = useState<InventoryMovementInput>(emptyMovement);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -73,31 +82,32 @@ export function InventoryManager({ products, productOptions, movements, summary,
 
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Productos encontrados" value={summary.productsTotal.toLocaleString("es-HN")} />
-        <Metric label="Opciones cargadas" value={summary.productOptionsLoaded.toLocaleString("es-HN")} />
+        <Metric
+          label={canManageInventory ? "Opciones cargadas" : "Bajo mínimo"}
+          value={(canManageInventory ? summary.productOptionsLoaded : summary.lowStockProducts).toLocaleString("es-HN")}
+        />
         <Metric label="Reservas activas" value={summary.activeReservations.toLocaleString("es-HN")} />
         <Metric label="Productos sin stock" value={summary.outOfStockProducts.toLocaleString("es-HN")} />
       </div>
 
-      <section className="grid gap-5 lg:grid-cols-[420px_1fr]">
-        <div className="rounded-lg border border-black/10 bg-white p-5">
+      {!canManageInventory ? (
+        <>
+          <p className="rounded-lg border border-[#2563eb]/20 bg-[#eff6ff] px-4 py-3 text-sm text-[#1e40af]" role="status">
+            Acceso de consulta. Las entradas y cambios de inventario se registran mediante Compras o por usuarios autorizados.
+          </p>
+          <InventorySearchForm productQuery={productQuery} activeFilter={activeFilter} />
+        </>
+      ) : null}
+
+      <section className={canManageInventory ? "grid gap-5 lg:grid-cols-[420px_1fr]" : "block"}>
+        {canManageInventory ? (
+          <div className="rounded-lg border border-black/10 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
             <PackagePlus size={19} />
             <h2 className="font-semibold">Registrar movimiento</h2>
           </div>
           <div className="grid gap-3">
-            <form action="/admin/inventario" className="grid gap-2 rounded-md border border-black/10 bg-[#f4f4f5] p-3">
-              {activeFilter ? <input type="hidden" name="filter" value={activeFilter.id} /> : null}
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium uppercase text-black/50">Buscar producto</span>
-                <Input name="q" defaultValue={productQuery} placeholder="SKU, código, nombre o marca" />
-              </label>
-              <Button type="submit" variant="ghost">
-                Buscar opciones
-              </Button>
-              <p className="text-xs text-black/50">
-                Se cargan hasta 1000 opciones para mantener rápida esta pantalla. Usa búsqueda si no ves el producto.
-              </p>
-            </form>
+            <InventorySearchForm productQuery={productQuery} activeFilter={activeFilter} managementMode />
 
             <ProductCombobox
               products={productOptions}
@@ -156,7 +166,8 @@ export function InventoryManager({ products, productOptions, movements, summary,
               </p>
             ) : null}
           </div>
-        </div>
+          </div>
+        ) : null}
 
         <div className="rounded-lg border border-black/10 bg-white p-5">
           <div className="mb-4 flex items-center gap-2">
@@ -377,6 +388,34 @@ export function InventoryManager({ products, productOptions, movements, summary,
         </div>
       </section>
     </div>
+  );
+}
+
+function InventorySearchForm({
+  productQuery,
+  activeFilter,
+  managementMode = false,
+}: {
+  productQuery: string;
+  activeFilter: { id: string; label: string } | null;
+  managementMode?: boolean;
+}) {
+  return (
+    <form action="/admin/inventario" className="grid gap-2 rounded-md border border-black/10 bg-[#f4f4f5] p-3">
+      {activeFilter ? <input type="hidden" name="filter" value={activeFilter.id} /> : null}
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium uppercase text-black/50">Buscar producto</span>
+        <Input name="q" defaultValue={productQuery} placeholder="SKU, código, nombre o marca" />
+      </label>
+      <Button type="submit" variant="ghost">
+        Buscar inventario
+      </Button>
+      {managementMode ? (
+        <p className="text-xs text-black/50">
+          Se cargan hasta 1000 opciones para registrar movimientos. Usa búsqueda si no ves el producto.
+        </p>
+      ) : null}
+    </form>
   );
 }
 

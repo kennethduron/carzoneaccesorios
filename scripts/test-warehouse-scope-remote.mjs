@@ -30,6 +30,7 @@ assert.ifError(rolesError);
 const roleByName = new Map(roles.map((role) => [role.name, role]));
 assert.deepEqual([...roleByName.get("bodega").permissions].sort(), [
   "admin:access",
+  "inventory:read",
   "inventory:manage",
   "notifications:read",
   "orders:manage_logistics",
