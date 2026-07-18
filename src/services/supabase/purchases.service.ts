@@ -19,8 +19,9 @@ type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" 
   purchase_returns: PurchaseReturn[] | null;
 };
 
-type ProductOptionRow = Omit<ProductPurchaseOption, "cost_price"> & {
+type ProductOptionRow = Omit<ProductPurchaseOption, "cost_price" | "available_stock"> & {
   cost_price: unknown;
+  available_stock: unknown;
 };
 
 function toNumber(value: unknown) {
@@ -180,8 +181,7 @@ export async function getPurchaseProductOptions(): Promise<ProductPurchaseOption
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("products")
-    .select("id, sku, name, cost_price, active")
-    .eq("active", true)
+    .select("id, sku, name, cost_price, active, status, available_stock, auto_disabled_by_stock")
     .order("name", { ascending: true })
     .limit(500)
     .returns<ProductOptionRow[]>();
@@ -190,5 +190,10 @@ export async function getPurchaseProductOptions(): Promise<ProductPurchaseOption
     throw new Error(error.message);
   }
 
-  return (data ?? []).map((row) => ({ ...row, cost_price: toNumber(row.cost_price) }));
+  return (data ?? []).map((row) => ({
+    ...row,
+    cost_price: toNumber(row.cost_price),
+    available_stock: toNumber(row.available_stock),
+    auto_disabled_by_stock: Boolean(row.auto_disabled_by_stock),
+  }));
 }

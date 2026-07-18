@@ -1,8 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { InventoryMovementInput } from "@/types/inventory";
 
@@ -54,10 +54,9 @@ export async function createInventoryMovementAction(input: InventoryMovementInpu
     },
   });
 
-  revalidatePath("/admin/inventario");
-  revalidatePath("/admin/productos");
-  revalidatePath("/catalogo");
-  revalidatePath("/");
+  revalidateProductAvailability({
+    adminPaths: ["/admin/inventario", "/admin/productos", "/admin/reportes", "/admin/contabilidad"],
+  });
 
   return { ok: true, message: "Movimiento de inventario registrado." };
 }

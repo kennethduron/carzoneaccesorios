@@ -11,6 +11,9 @@ export type InventoryProductOption = {
   reserved_stock: number;
   available_stock: number;
   min_stock: number;
+  active?: boolean;
+  auto_disabled_by_stock?: boolean;
+  status?: "active" | "inactive" | "draft" | "archived";
 };
 
 export type InventoryMovementRow = {

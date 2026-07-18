@@ -6,6 +6,7 @@ import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { createInternalNotification } from "@/lib/notifications/notification-center";
 import { notifyAdminsOfNewOrder } from "@/lib/notifications/order-email";
+import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -898,7 +899,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   revalidatePath("/admin/inventario");
   revalidatePath("/admin/reportes");
   if (accountingResult) revalidatePath("/admin/contabilidad");
-  revalidatePath("/catalogo");
+  revalidateProductAvailability();
 
   try {
     await notifyAdminsOfNewOrder({

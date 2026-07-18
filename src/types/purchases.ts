@@ -174,6 +174,9 @@ export type ProductPurchaseOption = {
   name: string;
   cost_price: number;
   active: boolean;
+  status: "active" | "inactive" | "draft" | "archived";
+  available_stock: number;
+  auto_disabled_by_stock: boolean;
 };
 
 export type PurchaseItemWithProduct = PurchaseItem & {

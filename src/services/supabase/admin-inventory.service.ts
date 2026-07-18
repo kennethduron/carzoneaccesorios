@@ -78,6 +78,9 @@ function normalizeProductOption(product: InventoryProductOption | ProductOptionQ
     reserved_stock: toNumber(product.reserved_stock),
     available_stock: toNumber(product.available_stock ?? product.stock),
     min_stock: toNumber(product.min_stock),
+    active: product.active == null ? undefined : Boolean(product.active),
+    auto_disabled_by_stock: product.auto_disabled_by_stock == null ? undefined : Boolean(product.auto_disabled_by_stock),
+    status: product.status,
   };
 }
 
@@ -102,7 +105,7 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
   const movementPageSize = normalizePageSize(filters.movementPageSize);
   const movementFrom = (movementPage - 1) * movementPageSize;
   const movementTo = movementFrom + movementPageSize - 1;
-  const productOptionSelect = "id, sku, internal_code, name, brand, stock, reserved_stock, available_stock, min_stock, categories(name)";
+  const productOptionSelect = "id, sku, internal_code, name, brand, stock, reserved_stock, available_stock, min_stock, active, status, auto_disabled_by_stock, categories(name)";
 
   let productsQuery = supabase
     .from("products")

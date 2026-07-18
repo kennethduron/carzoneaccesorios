@@ -55,15 +55,33 @@ function lineTotal(line: LineDraft) {
   return Math.max(Math.round((quantity * unitCost + tax - discount) * 100) / 100, 0);
 }
 
+function purchaseProductLabel(product: ProductPurchaseOption) {
+  const identity = `${product.sku ? `${product.sku} - ` : ""}${product.name}`;
+  const state = product.status === "draft"
+    ? "Borrador"
+    : product.status === "archived"
+      ? "Archivado"
+      : product.active
+        ? product.available_stock > 0
+          ? "Activo"
+          : "Sin inventario"
+        : product.auto_disabled_by_stock
+          ? "Inactivo por inventario"
+          : "Inactivo manual";
+  return `${identity} (${state})`;
+}
+
 function LineNumberField({
   label,
   min,
+  step = "0.01",
   value,
   onChange,
   disabled,
 }: {
   label: string;
   min: string;
+  step?: string;
   value: number | string | null | undefined;
   onChange: (value: string) => void;
   disabled: boolean;
@@ -71,7 +89,7 @@ function LineNumberField({
   return (
     <label className="block min-w-0">
       <span className="mb-1 block text-[11px] font-semibold uppercase leading-none text-black/50">{label}</span>
-      <Input type="number" min={min} step="0.01" value={value ?? 0} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
+      <Input type="number" min={min} step={step} value={value ?? 0} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
     </label>
   );
 }
@@ -161,6 +179,10 @@ export function PurchasesManager({
 
   function savePurchase() {
     if (!canManage) return;
+    if (draft.items.some((line) => line.product_id && !Number.isInteger(Number(line.quantity)))) {
+      toast.error("La cantidad de un producto de inventario debe ser un número entero.");
+      return;
+    }
     startTransition(async () => {
       const result = await savePurchaseAction({ ...draft, items: draft.items.map((line) => ({ id: line.id, product_id: line.product_id, description: line.description, quantity: line.quantity, unit_cost: line.unit_cost, tax_amount: line.tax_amount, discount_amount: line.discount_amount })) }).catch(() => ({ ok: false as const, message: "No se pudo guardar la compra." }));
       if (result.ok) {
@@ -250,7 +272,7 @@ export function PurchasesManager({
           </div>
 
           <div className="min-w-0 rounded-lg border border-black/10 bg-[#fafafa] p-4 [&_select]:min-w-0 [&_select]:w-full [&_textarea]:min-w-0 [&_textarea]:w-full">
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{editingId ? "Editar compra" : "Registrar compra"}</h3><p className="text-sm text-black/55">Las líneas no crean movimientos de inventario.</p></div>{editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancelar</Button> : null}</div>
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{editingId ? "Editar compra" : "Registrar compra"}</h3><p className="text-sm text-black/55">Al guardar, las líneas vinculadas actualizan inventario inmediatamente.</p></div>{editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancelar</Button> : null}</div>
             <div className="mt-4 grid gap-3">
               <Field label="Proveedor"><select value={draft.supplier_id} onChange={(event) => setDraft({ ...draft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}{supplier.is_active ? "" : " (inactivo)"}</option>)}</select></Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Número de compra"><Input value={draft.purchase_number} onChange={(event) => setDraft({ ...draft, purchase_number: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de compra"><Input type="date" value={draft.purchase_date} onChange={(event) => setDraft({ ...draft, purchase_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
@@ -275,10 +297,10 @@ export function PurchasesManager({
                       </button>
                     </div>
                     <div className="grid gap-2">
-                      <select value={line.product_id ?? ""} onChange={(event) => chooseProduct(line, event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin producto vinculado</option>{products.map((product) => <option key={product.id} value={product.id}>{product.sku ? `${product.sku} - ` : ""}{product.name}</option>)}</select>
+                      <select value={line.product_id ?? ""} onChange={(event) => chooseProduct(line, event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin producto vinculado</option>{products.map((product) => <option key={product.id} value={product.id}>{purchaseProductLabel(product)}</option>)}</select>
                       <Input value={line.description} onChange={(event) => updateLine(line.key, { description: event.target.value })} placeholder="Descripción" disabled={!canManage || isPending} />
                       <div className="grid gap-2 sm:grid-cols-2">
-                        <LineNumberField label="Cantidad" min="0.01" value={line.quantity} onChange={(value) => updateLine(line.key, { quantity: value })} disabled={!canManage || isPending} />
+                        <LineNumberField label="Cantidad" min={line.product_id ? "1" : "0.01"} step={line.product_id ? "1" : "0.01"} value={line.quantity} onChange={(value) => updateLine(line.key, { quantity: value })} disabled={!canManage || isPending} />
                         <LineNumberField label="Costo unitario" min="0" value={line.unit_cost} onChange={(value) => updateLine(line.key, { unit_cost: value })} disabled={!canManage || isPending} />
                       </div>
                       <div className="grid gap-2 sm:grid-cols-2">

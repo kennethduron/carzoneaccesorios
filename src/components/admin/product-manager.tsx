@@ -511,6 +511,14 @@ function displayStatus(status: ProductStatus) {
   return statusLabels[status] ?? status;
 }
 
+function productStateLabel(product: ProductAdminRow) {
+  if (product.auto_disabled_by_stock) {
+    return "Inactivo por falta de inventario";
+  }
+
+  return product.active ? displayStatus(product.status) : "Inactivo manualmente";
+}
+
 function persistProductDraft(product: EditableProductInput | null) {
   if (typeof window === "undefined") {
     return;
@@ -1022,7 +1030,22 @@ export function ProductManager({
     });
   }
 
-  function toggleActive(product: ProductAdminRow) {
+  async function toggleActive(product: ProductAdminRow) {
+    if (!product.active && product.available_stock <= 0) {
+      const confirmed = await toast.confirm({
+        title: "Producto sin inventario disponible",
+        message:
+          "Puedes solicitar la activacion, pero el producto permanecera inactivo y no podra comprarse hasta que vuelva a tener existencias.",
+        confirmLabel: "Continuar",
+        cancelLabel: "Cancelar",
+        tone: "neutral",
+      });
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     startTransition(async () => {
       const result = await setProductActiveAction(product.id, !product.active);
       showMessage(result.message, result.ok ? "success" : "error");
@@ -1779,7 +1802,7 @@ export function ProductManager({
                       {product.sku} {product.internal_code ? `/ ${product.internal_code}` : ""}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{statusLabels[product.status]}</span>
+                  <span className="shrink-0 rounded-md bg-[#fff1f2] px-2 py-1 text-xs font-semibold">{productStateLabel(product)}</span>
                 </div>
 
                 <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -1873,7 +1896,7 @@ export function ProductManager({
                     {product.is_new ? <span className="rounded-md bg-black px-2 py-1 text-xs font-semibold text-white">Nuevo</span> : "-"}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{statusLabels[product.status]}</span>
+                    <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-xs">{productStateLabel(product)}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">

@@ -47,6 +47,18 @@ const emptyMovement: InventoryMovementInput = {
   notes: "",
 };
 
+function inventoryProductState(product: InventoryProductOption) {
+  if (product.auto_disabled_by_stock) {
+    return "Inactivo por inventario";
+  }
+
+  if (product.active === false) {
+    return "Inactivo manual";
+  }
+
+  return "Activo";
+}
+
 export function InventoryManager({
   products,
   productOptions,
@@ -215,6 +227,7 @@ export function InventoryManager({
                   <div className="min-w-0">
                     <h3 className="break-words font-semibold [overflow-wrap:anywhere]">{product.name}</h3>
                     <p className="mt-1 break-words text-xs text-black/45 [overflow-wrap:anywhere]">{product.sku}</p>
+                    <p className="mt-1 text-xs font-medium text-black/55">{inventoryProductState(product)}</p>
                   </div>
                   <span
                     className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -266,6 +279,7 @@ export function InventoryManager({
                   <td className="px-4 py-3">
                     <p className="font-medium">{product.name}</p>
                     <p className="text-xs text-black/45">{product.sku}</p>
+                    <p className="text-xs text-black/55">{inventoryProductState(product)}</p>
                   </td>
                   <td className="px-4 py-3 font-semibold">{product.stock}</td>
                   <td className="px-4 py-3">{product.reserved_stock}</td>

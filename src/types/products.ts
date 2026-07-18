@@ -38,6 +38,9 @@ export type ProductAdminRow = {
   is_new: boolean;
   status: ProductStatus;
   active: boolean;
+  reserved_stock: number;
+  available_stock: number;
+  auto_disabled_by_stock: boolean;
   created_at: string;
   updated_at: string;
   images: ProductImageInput[];

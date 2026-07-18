@@ -7,6 +7,7 @@ import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
+import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import {
   dispatchAccountingEvent,
   dispatchCommercialCreditCancellationAccountingEventForOrder,
@@ -202,6 +203,7 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
 
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
+  revalidateProductAvailability();
 
   const accountingWarning = accountingResult.ok && creditCancellationResult?.ok !== false ? "" : " Advertencia: no se pudo registrar el evento contable.";
   return {
@@ -454,6 +456,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     const creditCancellationResult = await dispatchCommercialCreditCancellationAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" });
     revalidateOperationalPaths();
     revalidatePath("/admin/contabilidad");
+    revalidateProductAvailability();
     const accountingWarning = accountingResult.ok && creditCancellationResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
     return { ok: true, message: "Pedido cancelado y reserva liberada." + accountingWarning };
   }
@@ -569,6 +572,7 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
 
   revalidateOperationalPaths();
   if (accountingResult) revalidatePath("/admin/contabilidad");
+  revalidateProductAvailability();
 
   await notifyCustomerOfOrderChange({
     orderId,

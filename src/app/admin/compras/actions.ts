@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
-import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import type { PurchaseStatus } from "@/types/purchases";
@@ -54,7 +54,43 @@ function purchaseErrorMessage(message: string) {
     return "Ya existe una compra con ese número.";
   }
 
+  if (message.includes("IDs de lineas duplicados")) {
+    return "La solicitud contiene líneas duplicadas. Recarga la compra e intenta nuevamente.";
+  }
+
+  if (message.includes("Solo se pueden editar compras en borrador")) {
+    return "Solo se pueden editar compras en borrador.";
+  }
+
+  if (message.includes("por debajo de sus unidades reservadas")) {
+    return "La edición dejaría el inventario por debajo de las unidades reservadas.";
+  }
+
+  if (message.includes("proveedor seleccionado esta inactivo")) {
+    return "El proveedor seleccionado está inactivo.";
+  }
+
   return "No se pudo guardar la compra.";
+}
+
+function purchaseTransitionErrorMessage(message: string, fallback: string) {
+  const knownMessages = [
+    "La compra no existe.",
+    "Solo se pueden confirmar compras en borrador.",
+    "Agrega al menos una linea antes de confirmar.",
+    "La compra ya fue cancelada.",
+    "Esta compra ya no se puede cancelar.",
+    "No se puede cancelar una compra con factura o cuenta por pagar activa.",
+  ];
+  const known = knownMessages.find((candidate) => message.includes(candidate));
+  if (known) return known.replace("linea", "línea");
+  if (message.includes("inventario") && message.includes("ya fue consumido")) {
+    return "No se puede cancelar la compra porque parte de su inventario ya fue consumido.";
+  }
+  if (message.includes("unidades reservadas")) {
+    return "No se puede cancelar la compra porque parte de su inventario está reservado.";
+  }
+  return fallback;
 }
 
 function buildPurchaseTotals(items: PurchaseItemInput[], shippingValue: unknown) {
@@ -109,191 +145,102 @@ function buildPurchaseTotals(items: PurchaseItemInput[], shippingValue: unknown)
   return { normalizedItems, subtotal, taxAmount, discountAmount, shippingAmount, total };
 }
 
+type PurchaseInventorySaveRow = {
+  purchase_id: string;
+  purchase_number: string;
+  purchase_status: PurchaseStatus;
+  purchase_total: number;
+  was_created: boolean;
+  affected_products: Array<{ id: string; slug: string | null; category_id: string | null }>;
+};
+
+type PurchaseTransitionRow = {
+  purchase_id: string;
+  purchase_number: string;
+  purchase_status: PurchaseStatus;
+};
+
+type PurchaseCancellationRow = PurchaseTransitionRow & {
+  affected_products: Array<{ id: string; slug: string | null; category_id: string | null }>;
+};
+
 export async function savePurchaseAction(input: PurchaseFormInput): Promise<ActionResult> {
-  const profile = await requirePermission("purchases:manage");
+  await requirePermission("purchases:manage");
   const supplierId = cleanText(input.supplier_id);
   const purchaseNumber = cleanText(input.purchase_number);
   const purchaseDate = cleanText(input.purchase_date);
   const currency = cleanText(input.currency) ?? "HNL";
 
   if (!supplierId) return { ok: false, message: "Selecciona un proveedor." };
-  if (!purchaseNumber) return { ok: false, message: "El número de compra es obligatorio." };
+  if (!purchaseNumber) return { ok: false, message: "El numero de compra es obligatorio." };
   if (!purchaseDate) return { ok: false, message: "La fecha de compra es obligatoria." };
 
   let totals: ReturnType<typeof buildPurchaseTotals>;
   try {
     totals = buildPurchaseTotals(input.items ?? [], input.shipping_amount);
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Revisa las líneas de compra." };
+    return { ok: false, message: error instanceof Error ? error.message : "Revisa las lineas de compra." };
   }
 
-  const admin = getSupabaseAdminClient();
-  const { data: supplier, error: supplierError } = await admin
-    .from("suppliers")
-    .select("id, name, is_active")
-    .eq("id", supplierId)
-    .maybeSingle<{ id: string; name: string; is_active: boolean }>();
-
-  if (supplierError || !supplier) {
-    return { ok: false, message: "El proveedor seleccionado no existe." };
+  if (totals.normalizedItems.length === 0) {
+    return { ok: false, message: "Agrega al menos una linea a la compra." };
   }
 
-  if (!supplier.is_active) {
-    return { ok: false, message: "El proveedor seleccionado esta inactivo." };
+  if (totals.normalizedItems.some((item) => item.product_id && !Number.isInteger(item.quantity))) {
+    return { ok: false, message: "La cantidad de un producto de inventario debe ser un numero entero." };
   }
 
-  const headerPayload = {
-    supplier_id: supplierId,
-    purchase_number: purchaseNumber,
-    purchase_date: purchaseDate,
-    subtotal: totals.subtotal,
-    tax_amount: totals.taxAmount,
-    discount_amount: totals.discountAmount,
-    shipping_amount: totals.shippingAmount,
-    total: totals.total,
-    currency,
-    notes: cleanText(input.notes),
-    updated_at: new Date().toISOString(),
-  };
-
-  if (input.id) {
-    const { data: existing, error: existingError } = await admin
-      .from("purchases")
-      .select("id, status")
-      .eq("id", input.id)
-      .maybeSingle<{ id: string; status: PurchaseStatus }>();
-
-    if (existingError || !existing) {
-      return { ok: false, message: "La compra no existe." };
-    }
-
-    if (existing.status !== "draft") {
-      return { ok: false, message: "Solo se pueden editar compras en borrador." };
-    }
-
-    const { data, error } = await admin
-      .from("purchases")
-      .update(headerPayload)
-      .eq("id", input.id)
-      .select("id, purchase_number, total, status")
-      .single();
-
-    if (error) {
-      return { ok: false, message: purchaseErrorMessage(error.message) };
-    }
-
-    const submittedItemIds = totals.normalizedItems.map((item) => item.id).filter((id): id is string => Boolean(id));
-    let deleteQuery = admin.from("purchase_items").delete().eq("purchase_id", input.id);
-    if (submittedItemIds.length > 0) {
-      deleteQuery = deleteQuery.not("id", "in", `(${submittedItemIds.join(",")})`);
-    }
-
-    const { error: deleteItemsError } = await deleteQuery;
-    if (deleteItemsError) {
-      return { ok: false, message: "No se pudieron quitar las líneas removidas de la compra." };
-    }
-
-    for (const item of totals.normalizedItems) {
-      if (item.id) {
-        const { error: itemError } = await admin
-          .from("purchase_items")
-          .update({
-            product_id: item.product_id,
-            description: item.description,
-            quantity: item.quantity,
-            unit_cost: item.unit_cost,
-            tax_amount: item.tax_amount,
-            discount_amount: item.discount_amount,
-            total_cost: item.total_cost,
-          })
-          .eq("id", item.id)
-          .eq("purchase_id", input.id);
-
-        if (itemError) return { ok: false, message: "No se pudo actualizar una línea de compra." };
-      } else {
-        const { error: itemError } = await admin.from("purchase_items").insert({
-          purchase_id: input.id,
-          product_id: item.product_id,
-          description: item.description,
-          quantity: item.quantity,
-          unit_cost: item.unit_cost,
-          tax_amount: item.tax_amount,
-          discount_amount: item.discount_amount,
-          total_cost: item.total_cost,
-        });
-
-        if (itemError) return { ok: false, message: "No se pudo agregar una línea de compra." };
-      }
-    }
-
-    await writeAuditLog({ tableName: "purchases", recordId: data.id, action: "purchases.update", newData: { purchase_number: data.purchase_number, total: data.total, status: data.status } });
-    revalidatePath("/admin/compras");
-    return { ok: true, message: "Compra actualizada." };
-  }
-
-  const { data, error } = await admin
-    .from("purchases")
-    .insert({ ...headerPayload, status: "draft", created_by: profile.id })
-    .select("id, purchase_number, total, status")
-    .single();
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("save_purchase_with_inventory", {
+    target_purchase_id: input.id ?? null,
+    purchase_data: {
+      supplier_id: supplierId,
+      purchase_number: purchaseNumber,
+      purchase_date: purchaseDate,
+      subtotal: totals.subtotal,
+      tax_amount: totals.taxAmount,
+      discount_amount: totals.discountAmount,
+      shipping_amount: totals.shippingAmount,
+      total: totals.total,
+      currency,
+      notes: cleanText(input.notes),
+    },
+    items_data: totals.normalizedItems,
+  });
 
   if (error) {
     return { ok: false, message: purchaseErrorMessage(error.message) };
   }
 
-  if (totals.normalizedItems.length > 0) {
-    const { error: itemsError } = await admin.from("purchase_items").insert(
-      totals.normalizedItems.map((item) => ({
-        purchase_id: data.id,
-        product_id: item.product_id,
-        description: item.description,
-        quantity: item.quantity,
-        unit_cost: item.unit_cost,
-        tax_amount: item.tax_amount,
-        discount_amount: item.discount_amount,
-        total_cost: item.total_cost,
-      })),
-    );
-
-    if (itemsError) {
-      return { ok: false, message: "La compra fue creada, pero no se pudieron guardar sus líneas. Revisa la compra antes de continuar." };
-    }
+  const row = (Array.isArray(data) ? data[0] : data) as PurchaseInventorySaveRow | null;
+  if (!row?.purchase_id) {
+    return { ok: false, message: "No se pudo confirmar la compra guardada." };
   }
 
-  await writeAuditLog({ tableName: "purchases", recordId: data.id, action: "purchases.create", newData: { purchase_number: data.purchase_number, total: data.total, status: data.status } });
-  revalidatePath("/admin/compras");
-  return { ok: true, message: "Compra registrada en borrador." };
+  revalidateProductAvailability({
+    adminPaths: ["/admin/compras", "/admin/inventario", "/admin/productos", "/admin/reportes", "/admin/contabilidad"],
+    productSlugs: (row.affected_products ?? []).map((product) => product.slug),
+  });
+
+  return {
+    ok: true,
+    message: row.was_created
+      ? "Compra registrada correctamente. El inventario fue actualizado."
+      : "Compra actualizada correctamente. El inventario fue ajustado.",
+  };
 }
 
 export async function confirmPurchaseAction(purchaseId: string): Promise<ActionResult> {
   const profile = await requirePermission("purchases:manage");
-  const admin = getSupabaseAdminClient();
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("confirm_purchase_locked", { target_purchase_id: purchaseId });
+  if (error) {
+    return { ok: false, message: purchaseTransitionErrorMessage(error.message, "No se pudo confirmar la compra.") };
+  }
 
-  const { data: purchase, error: purchaseError } = await admin
-    .from("purchases")
-    .select("id, purchase_number, status")
-    .eq("id", purchaseId)
-    .maybeSingle<{ id: string; purchase_number: string; status: PurchaseStatus }>();
+  const row = (Array.isArray(data) ? data[0] : data) as PurchaseTransitionRow | null;
+  if (!row?.purchase_id) return { ok: false, message: "No se pudo confirmar la compra." };
 
-  if (purchaseError || !purchase) return { ok: false, message: "La compra no existe." };
-  if (purchase.status !== "draft") return { ok: false, message: "Solo se pueden confirmar compras en borrador." };
-
-  const { count, error: countError } = await admin
-    .from("purchase_items")
-    .select("id", { count: "exact", head: true })
-    .eq("purchase_id", purchaseId);
-
-  if (countError) return { ok: false, message: "No se pudieron validar las líneas de compra." };
-  if (!count) return { ok: false, message: "Agrega al menos una línea antes de confirmar." };
-
-  const { error } = await admin
-    .from("purchases")
-    .update({ status: "confirmed", confirmed_by: profile.id, confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", purchaseId);
-
-  if (error) return { ok: false, message: "No se pudo confirmar la compra." };
-
-  await writeAuditLog({ tableName: "purchases", recordId: purchaseId, action: "purchases.confirm", newData: { purchase_number: purchase.purchase_number, status: "confirmed" } });
   await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_confirmed", triggeredBy: profile.id, route: "/admin/compras" });
   revalidatePath("/admin/compras");
   return { ok: true, message: "Compra confirmada." };
@@ -301,37 +248,20 @@ export async function confirmPurchaseAction(purchaseId: string): Promise<ActionR
 
 export async function cancelPurchaseAction(purchaseId: string): Promise<ActionResult> {
   const profile = await requirePermission("purchases:manage");
-  const admin = getSupabaseAdminClient();
-
-  const { data: purchase, error: purchaseError } = await admin
-    .from("purchases")
-    .select("id, purchase_number, status")
-    .eq("id", purchaseId)
-    .maybeSingle<{ id: string; purchase_number: string; status: PurchaseStatus }>();
-
-  if (purchaseError || !purchase) return { ok: false, message: "La compra no existe." };
-  if (!["draft", "confirmed"].includes(purchase.status)) return { ok: false, message: "Esta compra ya no se puede cancelar." };
-
-  const [{ count: invoiceCount, error: invoiceError }, { count: payableCount, error: payableError }] = await Promise.all([
-    admin.from("supplier_invoices").select("id", { count: "exact", head: true }).eq("purchase_id", purchaseId).neq("status", "cancelled"),
-    admin.from("accounts_payable").select("id", { count: "exact", head: true }).eq("purchase_id", purchaseId).neq("status", "cancelled"),
-  ]);
-
-  if (invoiceError || payableError) return { ok: false, message: "No se pudieron validar dependencias de la compra." };
-  if ((invoiceCount ?? 0) > 0 || (payableCount ?? 0) > 0) {
-    return { ok: false, message: "No se puede cancelar una compra con factura o cuenta por pagar activa." };
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("cancel_purchase_with_inventory", { target_purchase_id: purchaseId });
+  if (error) {
+    return { ok: false, message: purchaseTransitionErrorMessage(error.message, "No se pudo cancelar la compra.") };
   }
 
-  const { error } = await admin
-    .from("purchases")
-    .update({ status: "cancelled", cancelled_by: profile.id, cancelled_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("id", purchaseId);
+  const row = (Array.isArray(data) ? data[0] : data) as PurchaseCancellationRow | null;
+  if (!row?.purchase_id) return { ok: false, message: "No se pudo cancelar la compra." };
 
-  if (error) return { ok: false, message: "No se pudo cancelar la compra." };
-
-  await writeAuditLog({ tableName: "purchases", recordId: purchaseId, action: "purchases.cancel", newData: { purchase_number: purchase.purchase_number, status: "cancelled" } });
   await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_cancelled", triggeredBy: profile.id, route: "/admin/compras" });
-  revalidatePath("/admin/compras");
+  revalidateProductAvailability({
+    adminPaths: ["/admin/compras", "/admin/inventario", "/admin/productos", "/admin/reportes", "/admin/contabilidad"],
+    productSlugs: (row.affected_products ?? []).map((product) => product.slug),
+  });
   return { ok: true, message: "Compra cancelada." };
 }
 

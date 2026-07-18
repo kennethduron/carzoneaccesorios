@@ -1,11 +1,11 @@
 "use server";
 
-import { revalidatePath, revalidateTag, updateTag } from "next/cache";
 import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
+import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 import {
@@ -109,24 +109,10 @@ function positiveInteger(value: unknown, fallback = 0) {
 }
 
 function revalidateProductCatalog(slug?: string | null) {
-  revalidatePath("/admin/productos");
-  revalidatePath("/admin/inventario");
-  revalidatePath("/admin/reportes");
-  revalidatePath("/");
-  revalidatePath("/catalogo");
-  revalidatePath("/categorias");
-  revalidatePath("/sitemap.xml");
-  if (slug) {
-    revalidatePath(`/producto/${slug}`);
-  }
-  updateTag("products");
-  updateTag("featured-products");
-  updateTag("vehicle-filters");
-  updateTag("categories");
-  revalidateTag("products", "max");
-  revalidateTag("featured-products", "max");
-  revalidateTag("vehicle-filters", "max");
-  revalidateTag("categories", "max");
+  revalidateProductAvailability({
+    adminPaths: ["/admin/productos", "/admin/inventario", "/admin/reportes"],
+    productSlugs: [slug],
+  });
 }
 
 function friendlyProductError(message: string) {
@@ -508,13 +494,24 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
   await requireProductCapability("update");
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase
+  const { data: product, error } = await supabase
     .from("products")
     .update({
       active,
       status: active ? "active" : "inactive",
     })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id, slug, stock, reserved_stock, available_stock, active, status, auto_disabled_by_stock")
+    .single<{
+      id: string;
+      slug: string;
+      stock: number;
+      reserved_stock: number;
+      available_stock: number;
+      active: boolean;
+      status: string;
+      auto_disabled_by_stock: boolean;
+    }>();
 
   if (error) {
     return { ok: false, message: friendlyProductError(error.message) };
@@ -523,11 +520,27 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
   await writeAuditLog({
     tableName: "products",
     recordId: id,
-    action: active ? "product.activated" : "product.deactivated",
-    newData: { active },
+    action: active ? "product.manually_activated" : "product.manually_deactivated",
+    newData: {
+      requested_active: active,
+      active: product.active,
+      status: product.status,
+      stock: product.stock,
+      reserved_stock: product.reserved_stock,
+      available_stock: product.available_stock,
+      auto_disabled_by_stock: product.auto_disabled_by_stock,
+      origin: "product_admin",
+    },
   });
 
-  revalidateProductCatalog();
+  revalidateProductCatalog(product.slug);
+  if (active && !product.active && product.auto_disabled_by_stock) {
+    return {
+      ok: true,
+      message: "El producto no tiene inventario disponible y permanecera inactivo hasta que vuelva a tener existencias.",
+    };
+  }
+
   return { ok: true, message: active ? "Producto activado correctamente." : "Producto desactivado correctamente." };
 }
 
