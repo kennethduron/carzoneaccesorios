@@ -5,6 +5,7 @@ import { WholesaleRequirementSummary } from "@/components/store/wholesale-progra
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getCatalogProducts, getCategorySummaries } from "@/services/supabase/products.service";
 import { createPublicMetadata } from "@/lib/seo";
+import { normalizeProductCategorySlug } from "@/lib/product-categories";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const params = await searchParams;
   const categories = await getCategorySummaries();
-  const selectedCategory = categories.find((category) => category.slug === params.categoria);
+  const canonicalCategorySlug = normalizeProductCategorySlug(params.categoria);
+  const selectedCategory = categories.find((category) => category.slug === canonicalCategorySlug);
   const hasExtraFilters = Boolean(
     params.q ||
       (params.page && params.page !== "1") ||

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { ProductDetail } from "@/components/store/product-detail";
+import { getOfficialProductCategory } from "@/lib/product-categories";
 import { absoluteUrl, getProductImageAlt, serializeJsonLd, siteName, siteUrl } from "@/lib/seo";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getProductBySlug, getRelatedProducts } from "@/services/supabase/products.service";
@@ -23,7 +24,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const description = getProductMetaDescription(product);
   const image = absoluteUrl(product.image);
   const imageAlt = getProductImageAlt(product.name, product.images[0]?.alt);
-  const category = product.category !== "Sin categoría" ? product.category : null;
+  const category = getOfficialProductCategory(product.category)?.name ?? null;
   const title = category ? `${product.name} en ${category} | ${siteName}` : `${product.name} | ${siteName} Honduras`;
   const canonical = `${siteUrl}/producto/${product.slug}`;
 
@@ -64,6 +65,7 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
     getPublicCompanySettings(),
   ]);
   const canonical = `${siteUrl}/producto/${product.slug}`;
+  const category = getOfficialProductCategory(product.category)?.name ?? null;
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -78,7 +80,7 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
           },
         }
       : {}),
-    ...(product.category !== "Sin categoría" ? { category: product.category } : {}),
+    ...(category ? { category } : {}),
     description: getProductMetaDescription(product),
     image: product.images.length > 0 ? product.images.map((image) => absoluteUrl(image.url)) : [absoluteUrl(product.image)],
     url: canonical,

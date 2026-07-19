@@ -65,12 +65,13 @@ values (
 
 insert into public.categories (name, slug, sort_order)
 values
-  ('Iluminacion', 'iluminacion', 10),
-  ('Seguridad', 'seguridad', 20),
-  ('Interior', 'interior', 30),
-  ('Exterior', 'exterior', 40),
-  ('Tecnologia', 'tecnologia', 50),
-  ('Herramientas', 'herramientas', 60)
+  ('Exterior', 'exterior', 10),
+  ('Interior', 'interior', 20),
+  ('Iluminación', 'iluminacion', 30),
+  ('Polarizado y Herramientas', 'polarizado-y-herramientas', 40),
+  ('Carrocería', 'carroceria', 50),
+  ('Seguridad', 'seguridad', 60),
+  ('Audio y Sonido', 'audio-y-sonido', 70)
 on conflict (slug) do update
 set
   name = excluded.name,

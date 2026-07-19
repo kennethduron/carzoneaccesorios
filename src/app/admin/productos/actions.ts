@@ -6,6 +6,7 @@ import { getProductCapabilities, requireProductCapability } from "@/lib/auth/pro
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { revalidateProductAvailability } from "@/lib/product-availability-cache";
+import { isOfficialProductCategory } from "@/lib/product-categories";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
 import {
@@ -140,9 +141,18 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
   const name = input.name.trim();
   const status = input.active ? input.status : "inactive";
   const slug = cleanText(input.slug) ?? slugify(`${sku}-${name}`);
+  const categoryId = cleanText(input.category_id);
 
   if (!sku || !name || !input.brand.trim()) {
     throw new Error("SKU, nombre y marca son obligatorios.");
+  }
+
+  if (!categoryId) {
+    throw new Error("Selecciona una categoría para guardar el producto.");
+  }
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(categoryId)) {
+    throw new Error("Selecciona una categoría oficial para guardar el producto.");
   }
 
   if (input.wholesale_price > input.retail_price) {
@@ -155,7 +165,7 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
   }
 
   return {
-    category_id: input.category_id || null,
+    category_id: categoryId,
     sku,
     internal_code: cleanText(input.internal_code),
     slug,
@@ -427,6 +437,16 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
   try {
     const supabase = await getSupabaseServerClient();
     const payload = productPayload(input);
+    const { data: category, error: categoryError } = await supabase
+      .from("categories")
+      .select("name, slug, active")
+      .eq("id", payload.category_id)
+      .maybeSingle<{ name: string; slug: string; active: boolean }>();
+
+    if (categoryError || !isOfficialProductCategory(category)) {
+      throw new Error("Selecciona una categoría oficial para guardar el producto.");
+    }
+
     const { stock: targetStock, ...catalogPayload } = payload;
     const { data, error } = await supabase.rpc("save_product_catalog_locked", {
       target_product_id: input.id ?? null,

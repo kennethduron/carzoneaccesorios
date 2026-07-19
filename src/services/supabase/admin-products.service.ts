@@ -1,3 +1,9 @@
+import {
+  getOfficialProductCategory,
+  normalizeImportedProductCategoryName,
+  officialProductCategories,
+  sortOfficialProductCategories,
+} from "@/lib/product-categories";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { CategoryOption, ProductAdminRow } from "@/types/products";
 import { normalizeVehicleBrand, normalizeVehicleModel, suggestedVehicleBrands, uniqueVehicleValues } from "@/utils/vehicle-compatibility";
@@ -28,7 +34,7 @@ function normalizeProduct(row: ProductQueryRow): ProductAdminRow {
   return {
     id: row.id,
     category_id: row.category_id,
-    category_name: row.categories?.name ?? null,
+    category_name: normalizeImportedProductCategoryName(row.categories?.name),
     sku: row.sku,
     internal_code: row.internal_code,
     slug: row.slug,
@@ -83,6 +89,10 @@ function sanitizePostgrestSearch(value: string) {
   return value.replace(/[(),]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function normalizeComparable(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
 export async function getAdminProductCatalogPage(filters: AdminProductCatalogFilters = {}) {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(filters.page);
@@ -92,6 +102,18 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
   const query = filters.query?.trim() ?? "";
   const status = filters.status?.trim() ?? "all";
   const categoryId = filters.categoryId?.trim() ?? "all";
+  const { data: categoryRows, error: categoriesError } = await supabase
+    .from("categories")
+    .select("id, name, slug")
+    .eq("active", true)
+    .in("slug", officialProductCategories.map((category) => category.slug))
+    .returns<CategoryOption[]>();
+
+  if (categoriesError) {
+    throw new Error(categoriesError.message);
+  }
+
+  const categories = sortOfficialProductCategories(categoryRows ?? []);
 
   let productsQuery = supabase
     .from("products")
@@ -145,9 +167,35 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
   if (query) {
     const search = sanitizePostgrestSearch(query);
     if (search) {
-      productsQuery = productsQuery.or(
-        `sku.ilike.%${search}%,internal_code.ilike.%${search}%,name.ilike.%${search}%,brand.ilike.%${search}%,vehicle_brand.ilike.%${search}%,vehicle_model.ilike.%${search}%,short_description.ilike.%${search}%,description.ilike.%${search}%,features.ilike.%${search}%,specifications.ilike.%${search}%,compatibility_notes.ilike.%${search}%`,
-      );
+      const normalizedSearch = normalizeComparable(search);
+      const aliasedCategory = getOfficialProductCategory(search);
+      const matchingCategoryIds = categories
+        .filter(
+          (category) =>
+            normalizeComparable(category.name).includes(normalizedSearch) ||
+            normalizeComparable(category.slug).includes(normalizedSearch) ||
+            category.slug === aliasedCategory?.slug,
+        )
+        .map((category) => category.id);
+      const searchConditions = [
+        `sku.ilike.%${search}%`,
+        `internal_code.ilike.%${search}%`,
+        `name.ilike.%${search}%`,
+        `brand.ilike.%${search}%`,
+        `vehicle_brand.ilike.%${search}%`,
+        `vehicle_model.ilike.%${search}%`,
+        `short_description.ilike.%${search}%`,
+        `description.ilike.%${search}%`,
+        `features.ilike.%${search}%`,
+        `specifications.ilike.%${search}%`,
+        `compatibility_notes.ilike.%${search}%`,
+      ];
+
+      if (matchingCategoryIds.length > 0) {
+        searchConditions.push(`category_id.in.(${matchingCategoryIds.join(",")})`);
+      }
+
+      productsQuery = productsQuery.or(searchConditions.join(","));
     }
   }
 
@@ -166,16 +214,10 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
 
   const [
     { data: products, error: productsError, count },
-    { data: categories, error: categoriesError },
     { data: vehicleRows, error: vehicleRowsError },
   ] =
     await Promise.all([
       pagedProductsQuery,
-      supabase
-        .from("categories")
-        .select("id, name, slug")
-        .order("name", { ascending: true })
-        .returns<CategoryOption[]>(),
       supabase
         .from("products")
         .select("vehicle_brand, vehicle_model")
@@ -186,17 +228,13 @@ export async function getAdminProductCatalogPage(filters: AdminProductCatalogFil
     throw new Error(productsError.message);
   }
 
-  if (categoriesError) {
-    throw new Error(categoriesError.message);
-  }
-
   if (vehicleRowsError) {
     throw new Error(vehicleRowsError.message);
   }
 
   return {
     products: (products ?? []).map(normalizeProduct),
-    categories: categories ?? [],
+    categories,
     vehicleBrands: uniqueVehicleValues([...suggestedVehicleBrands, ...(vehicleRows ?? []).map((row) => row.vehicle_brand)], "brand"),
     vehicleModels: uniqueVehicleValues((vehicleRows ?? []).map((row) => row.vehicle_model), "model"),
     total: count ?? 0,

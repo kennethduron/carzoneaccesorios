@@ -34,6 +34,7 @@ import {
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { normalizeImportedProductCategoryName, officialProductCategories } from "@/lib/product-categories";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
 import {
@@ -470,6 +471,11 @@ function normalizeHeader(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function findImportedCategory(categories: CategoryOption[], value: string | null | undefined) {
+  const normalizedName = normalizeImportedProductCategoryName(value);
+  return normalizedName ? categories.find((category) => category.name === normalizedName) ?? null : null;
 }
 
 function readExcelCell(row: Record<string, unknown>, labels: string[]) {
@@ -946,6 +952,10 @@ export function ProductManager({
   }
 
   function validateProductBeforeSave(product: ProductFormInput) {
+    if (!product.category_id) {
+      return "Selecciona una categoría para guardar el producto.";
+    }
+
     if (!product.sku.trim()) {
       return "El SKU es requerido para inventario y búsquedas internas.";
     }
@@ -1090,7 +1100,7 @@ export function ProductManager({
       product.features,
       product.specifications,
       product.compatibility_notes,
-      product.category_name,
+      normalizeImportedProductCategoryName(product.category_name) ?? "",
       product.stock,
       product.min_stock,
       product.cost_price,
@@ -1185,7 +1195,8 @@ export function ProductManager({
       const imported = lines.map((line) => {
         const values = parseCsvLine(line);
         const row = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
-        const category = categories.find((item) => item.name === row.category || item.name === row.categoria || item.id === row.category_id);
+        const importedCategory = row.category || row.categoria;
+        const category = categories.find((item) => item.id === row.category_id) ?? findImportedCategory(categories, importedCategory);
 
         return {
           ...emptyProduct,
@@ -1244,7 +1255,7 @@ export function ProductManager({
       product.name,
       product.short_description ?? "",
       product.description ?? "",
-      product.category_name ?? "Sin categoría",
+      normalizeImportedProductCategoryName(product.category_name) ?? "",
       product.stock,
       product.min_stock,
       formatCurrency(product.cost_price),
@@ -1302,6 +1313,16 @@ export function ProductManager({
     worksheet.addRow(sampleRow);
     worksheet.columns = productExcelHeaders.map((header) => ({ width: Math.max(16, header.length + 4) }));
     worksheet.getRow(1).font = { bold: true };
+    for (let rowNumber = 2; rowNumber <= 5000; rowNumber += 1) {
+      worksheet.getCell(rowNumber, 6).dataValidation = {
+        type: "list",
+        allowBlank: false,
+        formulae: [`"${officialProductCategories.map((category) => category.name).join(",")}"`],
+        showErrorMessage: true,
+        errorTitle: "Categoría obligatoria",
+        error: "Selecciona una de las siete categorías oficiales.",
+      };
+    }
     const buffer = await workbook.xlsx.writeBuffer();
     downloadBlob(
       new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
@@ -1403,12 +1424,11 @@ export function ProductManager({
 
       const zipImages = await readZipImages(zipFile);
       const skuCounts = new Map<string, number>();
-      const categoryByName = new Map(categories.map((category) => [normalizeHeader(category.name), category]));
       const parsedRows = rows.map((row, index): ProductImportPreviewRow => {
         const sku = readExcelCell(row, ["SKU"]).toUpperCase();
         skuCounts.set(sku, (skuCounts.get(sku) ?? 0) + 1);
         const categoryName = readExcelCell(row, ["Categoría", "Categoria"]);
-        const category = categoryByName.get(normalizeHeader(categoryName));
+        const category = findImportedCategory(categories, categoryName);
         const imageName = readExcelCell(row, ["Nombre de imagen"]);
         const matchedImage = matchImageForRow(imageName, sku, zipImages.index);
         const statusValue = parseStatus(readExcelCell(row, ["Estado"]));
@@ -1808,7 +1828,7 @@ export function ProductManager({
                 <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-md bg-[#f8fafc] p-2">
                     <dt className="text-xs uppercase text-black/45">Categoria</dt>
-                    <dd className="mt-1 font-medium">{product.category_name ?? "Sin categoria"}</dd>
+                    <dd className="mt-1 font-medium">{product.category_name ?? "Categoría pendiente"}</dd>
                   </div>
                   <div className="rounded-md bg-[#f8fafc] p-2">
                     <dt className="text-xs uppercase text-black/45">Stock</dt>
@@ -1882,7 +1902,7 @@ export function ProductManager({
                       {product.sku} {product.internal_code ? `/ ${product.internal_code}` : ""}
                     </p>
                   </td>
-                  <td className="px-4 py-3">{product.category_name ?? "Sin categoría"}</td>
+                  <td className="px-4 py-3">{product.category_name ?? "Categoría pendiente"}</td>
                   <td className="px-4 py-3">
                     <span className={product.stock <= product.min_stock ? "font-semibold text-[#b91c25]" : ""}>
                       {product.stock}
@@ -2227,6 +2247,7 @@ function ProductEditor({
   const [vehicleUniversal, setVehicleUniversal] = useState(!vehicleHasData);
   const generatedSlug = slugifyProductUrl(product.name);
   const displayedSlug = product.slug || generatedSlug;
+  const categoryMissing = !product.category_id;
 
   function toggleUniversalVehicle(checked: boolean) {
     setVehicleUniversal(checked);
@@ -2334,7 +2355,12 @@ function ProductEditor({
                   <select
                     value={product.category_id ?? ""}
                     onChange={(event) => onField("category_id", event.target.value || null)}
-                    className="w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+                    required
+                    aria-invalid={categoryMissing}
+                    aria-describedby={categoryMissing ? "product-category-error" : undefined}
+                    className={`w-full rounded-md border bg-white px-3 py-2 text-sm outline-none ${
+                      categoryMissing ? "border-[#b91c25]" : "border-black/10"
+                    }`}
                   >
                     <option value="">Sin categoría</option>
                     {categories.map((category) => (
@@ -2343,6 +2369,11 @@ function ProductEditor({
                       </option>
                     ))}
                   </select>
+                  {categoryMissing ? (
+                    <p id="product-category-error" className="mt-1 text-xs font-medium text-[#b91c25]">
+                      Selecciona una categoría para guardar el producto.
+                    </p>
+                  ) : null}
                 </Field>
                 <Field label="Estado">
                   <select

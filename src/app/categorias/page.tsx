@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Car, Headphones, Lightbulb, PackageCheck, Sparkles, Wrench } from "lucide-react";
+import { Car, Headphones, Lightbulb, PackageCheck, ShieldCheck, Wrench } from "lucide-react";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
 import { createPublicMetadata } from "@/lib/seo";
 import { getCategorySummaries } from "@/services/supabase/products.service";
@@ -15,15 +15,13 @@ export const metadata: Metadata = createPublicMetadata({
 });
 
 const categoryPresentation = {
-  exterior: ["Carrocería, defensas, molduras y protección.", Wrench],
+  exterior: ["Estilo, protección y accesorios para el exterior.", PackageCheck],
   interior: ["Comodidad, organización y acabado de cabina.", Car],
   iluminacion: ["LED, focos, neblineras y señalización.", Lightbulb],
-  luces: ["LED, focos, neblineras y señalización.", Lightbulb],
-  audio: ["Radios, bocinas, pantallas y accesorios.", Headphones],
-  motos: ["Accesorios para motos y uso diario.", Sparkles],
-  "aros-y-llantas": ["Complementos para rueda y acabado exterior.", PackageCheck],
-  accesorios: ["Productos compatibles con múltiples vehículos.", PackageCheck],
-  "accesorios-universales": ["Productos compatibles con múltiples vehículos.", PackageCheck],
+  "polarizado-y-herramientas": ["Polarizado, instalación y equipo especializado.", Wrench],
+  carroceria: ["Piezas, molduras y elementos para la carrocería.", Car],
+  seguridad: ["Protección, visibilidad y control para tu vehículo.", ShieldCheck],
+  "audio-y-sonido": ["Radios, bocinas, pantallas y accesorios de sonido.", Headphones],
 } as const;
 
 export default async function CategoriasPage() {

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { normalizeProductCategorySlug } from "@/lib/product-categories";
 import type { AppRole } from "@/types/auth";
 
 const protectedRoutes = ["/cuenta", "/mis-pedidos", "/facturas"];
@@ -8,11 +9,22 @@ const adminAccessRoles: AppRole[] = ["technical_owner", "admin", "business_owner
 const securityAccessRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  if (request.method === "GET" && pathname === "/catalogo") {
+    const requestedCategory = request.nextUrl.searchParams.get("categoria");
+    const canonicalCategory = normalizeProductCategorySlug(requestedCategory);
+
+    if (requestedCategory && canonicalCategory && requestedCategory !== canonicalCategory) {
+      const canonicalUrl = request.nextUrl.clone();
+      canonicalUrl.searchParams.set("categoria", canonicalCategory);
+      return NextResponse.redirect(canonicalUrl, 308);
+    }
+  }
+
   const response = NextResponse.next({
     request,
   });
 
-  const pathname = request.nextUrl.pathname;
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
   const isAdminRoute = adminRoutes.some((route) => pathname.startsWith(route));
 
@@ -94,5 +106,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/cuenta/:path*", "/mis-pedidos/:path*", "/facturas/:path*", "/facturas"],
+  matcher: ["/catalogo", "/admin/:path*", "/cuenta/:path*", "/mis-pedidos/:path*", "/facturas/:path*", "/facturas"],
 };

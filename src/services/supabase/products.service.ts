@@ -1,5 +1,12 @@
 import { unstable_cache } from "next/cache";
 import { writeErrorLog } from "@/lib/error-logging";
+import {
+  getOfficialProductCategory,
+  normalizeImportedProductCategoryName,
+  normalizeProductCategorySlug,
+  officialProductCategories,
+  sortOfficialProductCategories,
+} from "@/lib/product-categories";
 import { defaultOgImagePath, getProductImageAlt } from "@/lib/seo";
 import { getSupabasePublicClient } from "@/lib/supabase";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
@@ -178,7 +185,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     name: row.name,
     slug: row.slug,
     category_id: row.category_id,
-    category: row.categories?.name ?? "Sin categoría",
+    category: normalizeImportedProductCategoryName(row.categories?.name) ?? "Categoría pendiente",
     brand: row.brand,
     vehicle_brand: normalizeVehicleBrand(row.vehicle_brand),
     vehicle_model: normalizeVehicleModel(row.vehicle_model),
@@ -341,15 +348,15 @@ const getCachedActiveCategories = unstable_cache(async () => {
     .from("categories")
     .select("id, name, slug")
     .eq("active", true)
-    .order("name", { ascending: true })
+    .in("slug", officialProductCategories.map((category) => category.slug))
     .returns<CategoryRow[]>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return data ?? [];
-}, ["catalog-active-categories"], { revalidate: 300, tags: ["catalog", "categories"] });
+  return sortOfficialProductCategories(data ?? []);
+}, ["catalog-active-categories-official-v2"], { revalidate: 300, tags: ["catalog", "categories"] });
 
 const getCachedProductFilterOptions = unstable_cache(async (outOfStockCatalogMode: "show" | "hide" = "show") => {
   const supabase = getSupabasePublicClient();
@@ -393,9 +400,9 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 
   try {
     const [outOfStockCatalogMode, categories] = await Promise.all([getOutOfStockCatalogMode(), getCachedActiveCategories()]);
-    const normalizedCategory = normalizeComparable(category);
-    const selectedCategory = category
-      ? categories.find((item) => item.slug === category || normalizeComparable(item.slug) === normalizedCategory || normalizeComparable(item.name) === normalizedCategory)
+    const canonicalCategorySlug = normalizeProductCategorySlug(category);
+    const selectedCategory = canonicalCategorySlug
+      ? categories.find((item) => item.slug === canonicalCategorySlug)
       : null;
     const supabase = getSupabasePublicClient();
     const productSelect = `
@@ -437,9 +444,15 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       if (query) {
         const search = sanitizePostgrestSearch(query);
         const normalizedSearch = normalizeComparable(search);
+        const aliasedSearchCategory = getOfficialProductCategory(search);
         const categoryMatches = normalizedSearch
           ? categories
-              .filter((item) => normalizeComparable(item.name).includes(normalizedSearch) || normalizeComparable(item.slug).includes(normalizedSearch))
+              .filter(
+                (item) =>
+                  normalizeComparable(item.name).includes(normalizedSearch) ||
+                  normalizeComparable(item.slug).includes(normalizedSearch) ||
+                  item.slug === aliasedSearchCategory?.slug,
+              )
               .map((item) => item.id)
           : [];
 

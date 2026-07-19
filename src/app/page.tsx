@@ -42,15 +42,12 @@ export const metadata: Metadata = createPublicMetadata({
 
 const categoryPresentation = {
   seguridad: ["Protección, visibilidad y control para manejar con confianza.", ShieldCheck],
-  tecnologia: ["Pantallas, sensores, cámaras y accesorios inteligentes.", Cpu],
-  herramientas: ["Equipo útil para mantenimiento, instalación y emergencia.", Wrench],
   iluminacion: ["LED, halógenos, neblineras y señalización.", Lightbulb],
-  luces: ["LED, halógenos, neblineras y señalización.", Lightbulb],
-  interior: ["Comodidad, organización y detalles para cabina.", Car],
+  interior: ["Comodidad, organización, tecnología y detalles para cabina.", Cpu],
   exterior: ["Estilo, protección y presencia para tu vehículo.", Gauge],
-  audio: ["Bocinas, radios, pantallas y cableado.", Headphones],
-  accesorios: ["Productos universales y complementos de uso diario.", PackageCheck],
-  "accesorios-universales": ["Productos universales y complementos de uso diario.", PackageCheck],
+  "polarizado-y-herramientas": ["Polarizado, instalación y equipo especializado.", Wrench],
+  carroceria: ["Piezas, molduras y elementos para la carrocería.", Car],
+  "audio-y-sonido": ["Bocinas, radios, pantallas y cableado.", Headphones],
 } as const;
 
 const fallbackCompatibilityBrands = ["Toyota", "Honda", "Nissan", "Mazda", "Mitsubishi", "Chevrolet", "Kia", "Volkswagen", "Hyundai"];

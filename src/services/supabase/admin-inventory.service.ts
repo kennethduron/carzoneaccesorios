@@ -1,3 +1,4 @@
+import { normalizeImportedProductCategoryName } from "@/lib/product-categories";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import type { InventoryMovementRow, InventoryProductOption } from "@/types/inventory";
@@ -73,7 +74,7 @@ function normalizeProductOption(product: InventoryProductOption | ProductOptionQ
     internal_code: product.internal_code ?? null,
     name: product.name,
     brand: product.brand ?? null,
-    category_name: categoryName,
+    category_name: normalizeImportedProductCategoryName(categoryName),
     stock: toNumber(product.stock),
     reserved_stock: toNumber(product.reserved_stock),
     available_stock: toNumber(product.available_stock ?? product.stock),
