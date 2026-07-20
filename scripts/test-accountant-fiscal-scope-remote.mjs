@@ -70,7 +70,10 @@ const expectedPermissions = [
   "accounting:create",
   "accounting:post",
   "accounting:manage",
+  "accounting:reverse",
+  "accounting:settings",
   "accounting:close_period",
+  "accounting:reopen_period",
   "accounting:view_reports",
   "accounting:export",
 ];
@@ -111,9 +114,6 @@ for (const forbidden of [
   "invoices:manage",
   "receivables:rollback",
   "payables:rollback",
-  "accounting:settings",
-  "accounting:reverse",
-  "accounting:reopen_period",
 ]) {
   assert.equal(accountantRole.permissions.includes(forbidden), false, `remote contadora must not have ${forbidden}`);
 }

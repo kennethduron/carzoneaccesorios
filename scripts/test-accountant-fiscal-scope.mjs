@@ -46,7 +46,10 @@ const allowedPermissions = new Set([
   "accounting:create",
   "accounting:post",
   "accounting:manage",
+  "accounting:reverse",
+  "accounting:settings",
   "accounting:close_period",
+  "accounting:reopen_period",
   "accounting:view_reports",
   "accounting:export",
 ]);
@@ -86,9 +89,6 @@ const forbiddenPermissions = [
   "invoices:manage",
   "receivables:rollback",
   "payables:rollback",
-  "accounting:settings",
-  "accounting:reverse",
-  "accounting:reopen_period",
 ];
 
 assert.deepEqual(new Set(rolePermissions.contadora), allowedPermissions, "contadora must match the approved fiscal/accounting/import/product scope");
