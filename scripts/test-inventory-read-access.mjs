@@ -26,7 +26,7 @@ for (const role of ["vendedor", "soporte", "cliente"]) {
   assert.equal(rolePermissions[role].includes("inventory:read"), false, `${role} must not read inventory`);
 }
 assert.equal(rolePermissions.contadora.includes("inventory:manage"), false);
-assert.equal(rolePermissions.contadora.includes("products:adjust_stock"), false);
+assert.equal(rolePermissions.contadora.includes("products:adjust_stock"), true);
 assert.equal(rolePermissions.contadora.includes("products:manage"), false);
 assert.equal(rolePermissions.contadora.includes("products:delete"), false);
 

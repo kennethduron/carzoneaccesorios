@@ -21,6 +21,7 @@ import {
   productImageTooManyPixelsMessage,
 } from "@/utils/product-image-rules";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
+import { parseRequiredStockInteger, type ProductImportSummaryCounters } from "@/utils/product-import-stock";
 
 type ProductMutationResult = {
   ok: boolean;
@@ -28,6 +29,31 @@ type ProductMutationResult = {
 };
 
 export type ProductImportMode = "create_and_update" | "create_only" | "update_only";
+
+export type ProductImportRowResult = {
+  rowNumber: number;
+  sku: string;
+  status: "created" | "updated" | "skipped" | "failed";
+  stockProcessed: boolean;
+  stockApplied: boolean;
+  stockUnchanged: boolean;
+  movementId: string | null;
+  stockBefore: number | null;
+  stockAfter: number | null;
+  quantity: number | null;
+  consumedAssetIds: string[];
+  error: string | null;
+};
+
+export type ProductImportSummary = ProductImportSummaryCounters;
+
+export type ProductImportResult = ProductMutationResult & {
+  summary: ProductImportSummary;
+  rows: ProductImportRowResult[];
+  pendingRows: Array<{ rowNumber: number; sku: string }>;
+  failedBatchNumber: number | null;
+  totalBatches: number;
+};
 
 export type ProductImportSkuStatusResult = ProductMutationResult & {
   existingSkus?: string[];
@@ -55,6 +81,19 @@ type ProductStockRpcResult = {
 type ProductCatalogSaveRpcResult = {
   product_id: string;
   removed_asset_ids: string[] | null;
+};
+
+type ProductImportRowRpcResult = {
+  product_id: string | null;
+  row_status: "created" | "updated" | "skipped";
+  stock_applied: boolean;
+  stock_unchanged: boolean;
+  movement_id: string | null;
+  stock_before: number | null;
+  stock_after: number | null;
+  quantity: number | null;
+  removed_asset_ids: string[] | null;
+  consumed_asset_ids: string[] | null;
 };
 
 type ProductDbPayload = {
@@ -107,6 +146,14 @@ function positiveNumber(value: unknown, fallback = 0) {
 
 function positiveInteger(value: unknown, fallback = 0) {
   return Math.floor(positiveNumber(value, fallback));
+}
+
+function stockIntegerForAdjustment(value: unknown) {
+  const parsed = parseRequiredStockInteger(value);
+  if (!parsed.ok) {
+    throw new Error(parsed.error);
+  }
+  return parsed.value;
 }
 
 function revalidateProductCatalog(slug?: string | null) {
@@ -214,7 +261,7 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
   const uniquePublicIds = Array.from(new Set(publicIds.map((value) => value.trim()).filter(Boolean)));
 
   if (uniquePublicIds.length === 0) {
-    return;
+    return [];
   }
   const supabase = await getSupabaseServerClient();
   const [publicIdReferences, storagePathReferences] = await Promise.all([
@@ -229,7 +276,7 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
       errorMessage: referenceError.message,
       metadata: context,
     });
-    return;
+    return [];
   }
 
   const referencedAssets = new Set(
@@ -239,7 +286,7 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
   );
   const deletablePublicIds = uniquePublicIds.filter((publicId) => !referencedAssets.has(publicId));
   if (deletablePublicIds.length === 0) {
-    return;
+    return [];
   }
 
   let cloudinary: ReturnType<typeof configureCloudinary>;
@@ -253,13 +300,14 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
       errorStack: error instanceof Error ? error.stack : null,
       metadata: context,
     });
-    return;
+    return [];
   }
 
-  await Promise.all(
+  const deletedAssets = await Promise.all(
     deletablePublicIds.map(async (publicId) => {
       try {
         await cloudinary.uploader.destroy(publicId, { resource_type: "image" });
+        return publicId;
       } catch (error) {
         await writeErrorLog({
           route: "/admin/productos",
@@ -268,9 +316,11 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
           errorStack: error instanceof Error ? error.stack : null,
           metadata: { ...context, public_id: publicId },
         });
+        return null;
       }
     }),
   );
+  return deletedAssets.filter((publicId): publicId is string => Boolean(publicId));
 }
 
 async function setProductStockLocked(productId: string, nextStock: number): Promise<ProductStockRpcResult | null> {
@@ -448,6 +498,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
     }
 
     const { stock: targetStock, ...catalogPayload } = payload;
+    const authorizedTargetStock = capabilities.adjustStock ? stockIntegerForAdjustment(input.stock) : targetStock;
     const { data, error } = await supabase.rpc("save_product_catalog_locked", {
       target_product_id: input.id ?? null,
       product_data: catalogPayload,
@@ -463,9 +514,9 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
       reason: "product_images_replaced",
     });
 
-    const stockMovement = capabilities.adjustStock ? await setProductStockLocked(saved.product_id, targetStock) : null;
+    const stockMovement = capabilities.adjustStock ? await setProductStockLocked(saved.product_id, authorizedTargetStock) : null;
     const effectiveStock = capabilities.adjustStock
-      ? stockMovement?.stock_after ?? targetStock
+      ? stockMovement?.stock_after ?? authorizedTargetStock
       : input.id
         ? "preserved"
         : 0;
@@ -705,23 +756,62 @@ export async function importProductsAction(
       missing: number;
       errors: number;
     };
+    rowNumbers?: number[];
   } = {},
-): Promise<ProductMutationResult> {
+): Promise<ProductImportResult> {
   const profile = await requireProductCapability("importProducts");
   const capabilities = getProductCapabilities(profile);
   const supabase = await getSupabaseServerClient();
   const mode = options.mode ?? "create_and_update";
+  const requestedRows = Array.isArray(products) ? products.length : 0;
+  const rows: ProductImportRowResult[] = [];
+  const summary: ProductImportSummary = {
+    requested: requestedRows,
+    totalRows: requestedRows,
+    sent: requestedRows,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    previewSkipped: 0,
+    serverSkipped: 0,
+    failed: 0,
+    pending: 0,
+    stockProcessed: 0,
+    movementsCreated: 0,
+    stockUnchanged: 0,
+    orphanAssetsCleaned: 0,
+  };
 
-  if (products.length === 0) {
-    return { ok: false, message: "El archivo no contiene productos para importar." };
+  if (!Array.isArray(products) || products.length === 0) {
+    return {
+      ok: false,
+      message: "El archivo no contiene productos para importar.",
+      summary,
+      rows,
+      pendingRows: [],
+      failedBatchNumber: null,
+      totalBatches: 1,
+    };
   }
 
-  let saved = 0;
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
-  const errors: Array<{ sku: string; message: string }> = [];
-  async function writeBulkImportAudit(status: "completed" | "failed") {
+  const uploadedAssetIds = Array.from(
+    new Set(
+      products.flatMap((product) =>
+        (Array.isArray(product?.images) ? product.images : [])
+          .map((image) => cleanText(image.public_id) ?? cleanText(image.storage_path))
+          .filter((assetId): assetId is string => Boolean(assetId)),
+      ),
+    ),
+  );
+  const consumedAssetIds = new Set<string>();
+  const replacedAssetIds = new Set<string>();
+  const skuCounts = products.reduce((counts, product) => {
+    const sku = typeof product?.sku === "string" ? product.sku.trim().toUpperCase() : "";
+    counts.set(sku, (counts.get(sku) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+
+  async function writeBulkImportAudit(status: "completed" | "completed_with_errors") {
     await writeAuditLog({
       tableName: "products",
       action: "products.bulk_import",
@@ -733,96 +823,175 @@ export async function importProductsAction(
         mode,
         file_name: cleanText(options.fileName),
         requested: products.length,
-        saved,
-        created,
-        updated,
-        skipped,
-        products_created: created,
-        products_updated: updated,
-        products_skipped: skipped,
-        errors_count: errors.length + (options.imageSummary?.errors ?? 0),
+        saved: summary.created + summary.updated,
+        created: summary.created,
+        updated: summary.updated,
+        skipped: summary.skipped,
+        failed: summary.failed,
+        products_created: summary.created,
+        products_updated: summary.updated,
+        products_skipped: summary.skipped,
+        products_failed: summary.failed,
+        stock_processed: summary.stockProcessed,
+        stock_movements_created: summary.movementsCreated,
+        stock_unchanged: summary.stockUnchanged,
+        orphan_assets_cleaned: summary.orphanAssetsCleaned,
+        errors_count: summary.failed + (options.imageSummary?.errors ?? 0),
         images_uploaded: options.imageSummary?.uploaded ?? 0,
         images_missing: options.imageSummary?.missing ?? 0,
         image_summary: options.imageSummary ?? null,
         stock_columns_ignored: !capabilities.adjustStock,
         stock_adjustment_authorized: capabilities.adjustStock,
-        errors,
-        skus: products.map((product) => product.sku.trim().toUpperCase()).filter(Boolean),
+        rows,
+        skus: products
+          .map((product) => typeof product?.sku === "string" ? product.sku.trim().toUpperCase() : "")
+          .filter(Boolean),
       },
     });
   }
 
-  for (const product of products) {
-    const sku = product.sku.trim().toUpperCase();
-    let productWithId = product;
-    let exists = false;
+  for (const [index, product] of products.entries()) {
+    const providedRowNumber = options.rowNumbers?.[index];
+    const rowNumber = Number.isInteger(providedRowNumber) && Number(providedRowNumber) >= 2
+      ? Number(providedRowNumber)
+      : index + 2;
+    const sku = typeof product?.sku === "string" ? product.sku.trim().toUpperCase() : "";
+    try {
+      if (!sku) {
+        throw new Error("El SKU es obligatorio.");
+      }
+      if ((skuCounts.get(sku) ?? 0) > 1) {
+        throw new Error("El SKU está repetido dentro de la misma importación.");
+      }
+      let targetStock: number | null = null;
+      if (capabilities.adjustStock) {
+        if (!Object.prototype.hasOwnProperty.call(product, "stock")) {
+          throw new Error("La propiedad Stock es obligatoria para usuarios autorizados.");
+        }
+        targetStock = stockIntegerForAdjustment(product.stock);
+      }
 
-    if (!product.id && sku) {
-      const { data, error } = await supabase
-        .from("products")
-        .select("id")
-        .eq("sku", sku)
-        .maybeSingle<{ id: string }>();
+      const payloadWithStock = productPayload(product);
+      const { stock: catalogStock, ...catalogData } = payloadWithStock;
+      void catalogStock;
+      const images = capabilities.manageImages && product.images.length > 0 ? imagePayload(product.images) : null;
+      const { data, error } = await supabase.rpc("import_product_row_atomic", {
+        product_data: catalogData,
+        images_data: images,
+        target_stock: targetStock,
+        import_mode: mode,
+      });
 
       if (error) {
-        const message = friendlyProductError(error.message);
-        errors.push({ sku: product.sku, message });
-        await writeBulkImportAudit("failed");
-        return { ok: false, message: `Importacion detenida en ${product.sku}: ${message}` };
+        throw new Error(error.message);
       }
 
-      if (data?.id) {
-        productWithId = { ...product, id: data.id };
-        exists = true;
-        if (product.images.length === 0) {
-          const { data: existingImages, error: imagesError } = await supabase
-            .from("product_images")
-            .select("id, public_url, storage_path, public_id, angle, alt_text, sort_order, is_primary")
-            .eq("product_id", data.id)
-            .order("sort_order", { ascending: true })
-            .returns<ProductImageInput[]>();
-
-          if (imagesError) {
-            const message = friendlyProductError(imagesError.message);
-            errors.push({ sku: product.sku, message });
-            await writeBulkImportAudit("failed");
-            return { ok: false, message: `Importacion detenida en ${product.sku}: ${message}` };
-          }
-
-          productWithId = { ...productWithId, images: existingImages ?? [] };
-        }
+      const rpcResult = (Array.isArray(data) ? data[0] : data) as ProductImportRowRpcResult | null;
+      if (!rpcResult) {
+        throw new Error("La base de datos no devolvió el resultado de la fila.");
       }
-    }
 
-    if (exists && mode === "create_only") {
-      skipped += 1;
-      continue;
-    }
+      for (const assetId of rpcResult.consumed_asset_ids ?? []) {
+        consumedAssetIds.add(assetId);
+      }
+      for (const assetId of rpcResult.removed_asset_ids ?? []) {
+        replacedAssetIds.add(assetId);
+      }
 
-    if (!exists && mode === "update_only") {
-      skipped += 1;
-      continue;
-    }
+      if (rpcResult.row_status === "created") {
+        summary.created += 1;
+      } else if (rpcResult.row_status === "updated") {
+        summary.updated += 1;
+      } else {
+        summary.skipped += 1;
+        summary.serverSkipped += 1;
+      }
+      if (rpcResult.stock_applied) {
+        summary.stockProcessed += 1;
+      }
+      if (rpcResult.movement_id) {
+        summary.movementsCreated += 1;
+      }
+      if (rpcResult.stock_unchanged) {
+        summary.stockUnchanged += 1;
+      }
 
-    const result = await saveProductAction(productWithId);
-    if (!result.ok) {
-      errors.push({ sku: product.sku, message: friendlyProductError(result.message) });
-      await writeBulkImportAudit("failed");
-      return { ok: false, message: `Importacion detenida en ${product.sku}: ${friendlyProductError(result.message)}` };
-    }
-    saved += 1;
-    if (exists) {
-      updated += 1;
-    } else {
-      created += 1;
+      rows.push({
+        rowNumber,
+        sku,
+        status: rpcResult.row_status,
+        stockProcessed: rpcResult.stock_applied,
+        stockApplied: rpcResult.stock_applied,
+        stockUnchanged: rpcResult.stock_unchanged,
+        movementId: rpcResult.movement_id,
+        stockBefore: rpcResult.stock_before,
+        stockAfter: rpcResult.stock_after,
+        quantity: rpcResult.quantity,
+        consumedAssetIds: rpcResult.consumed_asset_ids ?? [],
+        error: null,
+      });
+    } catch (error) {
+      const message = friendlyProductError(error instanceof Error ? error.message : "No se pudo importar la fila.");
+      summary.failed += 1;
+      rows.push({
+        rowNumber,
+        sku,
+        status: "failed",
+        stockProcessed: false,
+        stockApplied: false,
+        stockUnchanged: false,
+        movementId: null,
+        stockBefore: null,
+        stockAfter: null,
+        quantity: null,
+        consumedAssetIds: [],
+        error: message,
+      });
     }
   }
 
-  await writeBulkImportAudit("completed");
+  await removeCloudinaryImages(Array.from(replacedAssetIds), {
+    reason: "product_import_replaced_assets",
+    user_id: profile.id,
+  });
+  const orphanAssetIds = uploadedAssetIds.filter((assetId) => !consumedAssetIds.has(assetId));
+  const cleanedOrphanAssets = await removeCloudinaryImages(orphanAssetIds, {
+    reason: "product_import_orphan_assets",
+    user_id: profile.id,
+    failed_rows: summary.failed,
+  });
+  summary.orphanAssetsCleaned = cleanedOrphanAssets.length;
 
-  revalidateProductCatalog();
+  await writeBulkImportAudit(summary.failed > 0 ? "completed_with_errors" : "completed");
+
+  if (summary.created + summary.updated > 0) {
+    revalidateProductCatalog();
+  }
+  const stockNotice = capabilities.adjustStock
+    ? summary.stockProcessed +
+      " valores de stock procesados, " +
+      summary.movementsCreated +
+      " movimientos y " +
+      summary.stockUnchanged +
+      " sin cambio."
+    : "El stock del archivo fue ignorado porque el usuario no tiene permiso para ajustarlo.";
   return {
-    ok: true,
-    message: `Importacion completada. ${created} nuevos, ${updated} actualizados, ${skipped} omitidos.${capabilities.adjustStock ? "" : " El stock del archivo fue ignorado: los existentes conservaron su stock y los nuevos quedaron en 0."}`,
+    ok: summary.failed === 0,
+    message:
+      "Importación por filas completada: " +
+      summary.created +
+      " creados, " +
+      summary.updated +
+      " actualizados, " +
+      summary.skipped +
+      " omitidos y " +
+      summary.failed +
+      " con error. " +
+      stockNotice,
+    summary,
+    rows,
+    pendingRows: [],
+    failedBatchNumber: null,
+    totalBatches: 1,
   };
 }

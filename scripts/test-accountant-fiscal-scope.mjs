@@ -12,6 +12,7 @@ const allowedPermissions = new Set([
   "products:import",
   "products:images_manage",
   "products:export",
+  "products:adjust_stock",
   "inventory:read",
   "notifications:read",
   "invoices:read",

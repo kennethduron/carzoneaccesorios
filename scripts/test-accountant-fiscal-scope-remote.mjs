@@ -29,6 +29,15 @@ assert.ifError(roleError);
 
 const expectedPermissions = [
   "admin:access",
+  "customers:link_portal_account",
+  "products:read",
+  "products:create",
+  "products:update",
+  "products:import",
+  "products:images_manage",
+  "products:export",
+  "products:adjust_stock",
+  "inventory:read",
   "notifications:read",
   "invoices:read",
   "invoices:export",
@@ -40,6 +49,7 @@ const expectedPermissions = [
   "reports:fiscal_read",
   "reports:fiscal_export",
   "credit:read",
+  "credit:mark_paid",
   "receivables:read",
   "receivables:export",
   "receivables:import",

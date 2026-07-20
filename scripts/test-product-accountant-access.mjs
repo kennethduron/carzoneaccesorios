@@ -10,6 +10,8 @@ const adminPage = read("src/app/admin/page.tsx");
 const actions = read("src/app/admin/productos/actions.ts");
 const manager = read("src/components/admin/product-manager.tsx");
 const migration = read("supabase/migrations/202607150001_granular_product_permissions.sql");
+const stockGrantMigration = read("supabase/migrations/202607200001_grant_contadora_product_stock_adjustment.sql");
+const stockGrantStatements = stockGrantMigration.replace(/^--.*$/gm, "");
 const imageRules = read("src/utils/product-image-rules.ts");
 
 const allowed = [
@@ -19,10 +21,10 @@ const allowed = [
   "products:import",
   "products:images_manage",
   "products:export",
+  "products:adjust_stock",
 ];
 const forbidden = [
   "products:delete",
-  "products:adjust_stock",
   "products:manage",
   "inventory:manage",
   "technical:tools",
@@ -67,8 +69,13 @@ assert.match(manager, /spreadsheetSafeValue/);
 assert.doesNotMatch(manager, /contadora/i, "UI must render capabilities, not role names");
 
 const roleUpdate = migration.match(/update public\.roles(.*?)where name = 'contadora';/s)?.[0] ?? "";
-for (const permission of allowed) assert.match(roleUpdate, new RegExp(permission.replace(":", "\\:")));
+for (const permission of allowed.filter((permission) => permission !== "products:adjust_stock")) assert.match(roleUpdate, new RegExp(permission.replace(":", "\\:")));
 for (const permission of forbidden) assert.doesNotMatch(roleUpdate, new RegExp(permission.replace(":", "\\:")));
+assert.match(stockGrantMigration, /where name = 'contadora'/);
+assert.match(stockGrantMigration, /products:adjust_stock/);
+assert.doesNotMatch(stockGrantMigration, /inventory:manage/);
+assert.doesNotMatch(stockGrantMigration, /products:manage/);
+assert.doesNotMatch(stockGrantStatements, /products\.stock|inventory_movements|users/);
 
 const saveRpc = migration.match(/create or replace function public\.save_product_catalog_locked(.*?)revoke all on function public\.save_product_catalog_locked/s)?.[1] ?? "";
 assert.ok(saveRpc, "save_product_catalog_locked definition missing");

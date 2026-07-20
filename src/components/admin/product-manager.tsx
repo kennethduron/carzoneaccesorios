@@ -31,6 +31,7 @@ import {
   setProductActiveAction,
   uploadProductImageAction,
 } from "@/app/admin/productos/actions";
+import type { ProductImportResult, ProductImportSummary } from "@/app/admin/productos/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -45,6 +46,16 @@ import {
   type ProductImportImageCandidate,
   type ProductImportImageIndex,
 } from "@/utils/product-import-image-matching";
+import {
+  createProductImportSingleFlightGuard,
+  createProductImportSummary,
+  mergeProductImportBatchSummary,
+  parseRequiredStockInteger,
+  productImportBatchSize,
+  readProductImportWorksheet,
+  runProductImportBatches,
+  stockPreviewLabel,
+} from "@/utils/product-import-stock";
 import {
   formatMegapixels,
   isAllowedProductImageMimeType,
@@ -95,6 +106,7 @@ type ProductImportMode = "create_and_update" | "create_only" | "update_only";
 type ProductImportPreviewRow = {
   rowNumber: number;
   product: ProductFormInput;
+  categoryName: string;
   imageName: string;
   matchedImageName: string | null;
   matchedImagePath: string | null;
@@ -102,7 +114,7 @@ type ProductImportPreviewRow = {
   imageFile?: File;
   exists: boolean;
   duplicateSku: boolean;
-  action: "create" | "update" | "skip";
+  action: "create" | "update" | "skip" | "error";
   errors: string[];
   warnings: string[];
 };
@@ -111,6 +123,14 @@ type ProductImportPreview = {
   rows: ProductImportPreviewRow[];
   zipWarnings: string[];
   criticalErrors: string[];
+};
+
+type ProductImportProgress = {
+  batchNumber: number;
+  totalBatches: number;
+  processed: number;
+  totalRows: number;
+  summary: ProductImportSummary;
 };
 
 type EditableProductNumericField =
@@ -484,18 +504,6 @@ function readExcelCell(row: Record<string, unknown>, labels: string[]) {
   return String(entry?.[1] ?? "").trim();
 }
 
-function excelCellToText(value: unknown) {
-  if (value === null || value === undefined) return "";
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  if (typeof value === "object") {
-    const cellObject = value as { text?: unknown; result?: unknown; richText?: Array<{ text?: unknown }> };
-    if (cellObject.text !== undefined) return String(cellObject.text);
-    if (cellObject.result !== undefined) return String(cellObject.result);
-    if (Array.isArray(cellObject.richText)) return cellObject.richText.map((part) => String(part.text ?? "")).join("");
-  }
-  return String(value);
-}
-
 function yesNo(value: boolean) {
   return value ? "Sí" : "No";
 }
@@ -562,8 +570,12 @@ export function ProductManager({
   const [zipFile, setZipFile] = useState<File | null>(null);
   const [importMode, setImportMode] = useState<ProductImportMode>("create_and_update");
   const [importPreview, setImportPreview] = useState<ProductImportPreview | null>(null);
+  const [lastImportResult, setLastImportResult] = useState<ProductImportResult | null>(null);
+  const [pendingImportRows, setPendingImportRows] = useState<ProductImportPreviewRow[]>([]);
+  const [importProgress, setImportProgress] = useState<ProductImportProgress | null>(null);
   const [isPreparingImport, setIsPreparingImport] = useState(false);
   const [isImportingProducts, setIsImportingProducts] = useState(false);
+  const [importExecutionGuard] = useState(createProductImportSingleFlightGuard);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
@@ -1384,13 +1396,16 @@ export function ProductManager({
       showMessage("Selecciona la plantilla Excel antes de validar.", "error");
       return;
     }
-    if (!excelFile.name.toLowerCase().match(/\.(xlsx|xls)$/)) {
-      showMessage("Selecciona un archivo Excel .xlsx o .xls.", "error");
+    if (!excelFile.name.toLowerCase().endsWith(".xlsx")) {
+      showMessage("Selecciona un archivo Excel .xlsx. El formato .xls binario no es compatible.", "error");
       return;
     }
 
     setIsPreparingImport(true);
     setImportPreview(null);
+    setLastImportResult(null);
+    setPendingImportRows([]);
+    setImportProgress(null);
     showMessage("Validando Excel e imágenes...", "neutral");
 
     try {
@@ -1398,18 +1413,7 @@ export function ProductManager({
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(await excelFile.arrayBuffer());
       const worksheet = workbook.worksheets[0] ?? null;
-      const headerValues = worksheet
-        ? (worksheet.getRow(1).values as unknown[]).slice(1).map((value) => excelCellToText(value).trim())
-        : [];
-      const rows: Array<Record<string, unknown>> = [];
-      worksheet?.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const values = row.values as unknown[];
-        const rowObject = Object.fromEntries(headerValues.map((header, index) => [header, excelCellToText(values[index + 1]).trim()]));
-        if (Object.values(rowObject).some((value) => String(value).trim())) {
-          rows.push(rowObject);
-        }
-      });
+      const { rows } = readProductImportWorksheet(worksheet);
       if (rows.length === 0) {
         showMessage("El Excel está vacío o no tiene filas de productos.", "error");
         return;
@@ -1432,7 +1436,9 @@ export function ProductManager({
         const imageName = readExcelCell(row, ["Nombre de imagen"]);
         const matchedImage = matchImageForRow(imageName, sku, zipImages.index);
         const statusValue = parseStatus(readExcelCell(row, ["Estado"]));
-        const stock = numberValue(readExcelCell(row, ["Stock"]));
+        const stockText = readExcelCell(row, ["Stock"]);
+        const stockImport = parseRequiredStockInteger(stockText);
+        const stock = stockImport.ok ? stockImport.value : 0;
         const minStock = numberValue(readExcelCell(row, ["Stock mínimo", "Stock minimo"]));
         const retailPrice = numberValue(readExcelCell(row, ["Precio al detalle"]));
         const wholesalePrice = numberValue(readExcelCell(row, ["Precio mayorista"]));
@@ -1444,7 +1450,7 @@ export function ProductManager({
         if (!sku) errors.push("SKU obligatorio.");
         if (!name) errors.push("Nombre del producto obligatorio.");
         if (!category) errors.push(`Categoría inválida: ${categoryName || "vacía"}.`);
-        if (capabilities.adjustStock && stock < 0) errors.push("Stock no puede ser negativo.");
+        if (capabilities.adjustStock && !stockImport.ok) errors.push(stockImport.error);
         if (!capabilities.adjustStock) warnings.push("Stock ignorado: los productos existentes conservarán su stock y los nuevos se crearán con stock 0.");
         if (minStock < 0) errors.push("Stock mínimo no puede ser negativo.");
         if (retailPrice <= 0) errors.push("Precio al detalle debe ser mayor a 0.");
@@ -1457,6 +1463,7 @@ export function ProductManager({
 
         return {
           rowNumber: index + 2,
+          categoryName: category?.name ?? categoryName,
           product: {
             ...emptyProduct,
             sku,
@@ -1504,11 +1511,14 @@ export function ProductManager({
         const exists = existingSkus.has(row.product.sku);
         const duplicateSku = (skuCounts.get(row.product.sku) ?? 0) > 1;
         const errors = duplicateSku ? [...row.errors, "SKU duplicado en el Excel."] : row.errors;
-        const action: ProductImportPreviewRow["action"] = exists
-          ? (importMode === "create_only" ? "skip" : "update")
-          : importMode === "update_only"
-            ? "skip"
-            : "create";
+        const action: ProductImportPreviewRow["action"] =
+          errors.length > 0
+            ? "error"
+            : exists
+              ? (importMode === "create_only" ? "skip" : "update")
+              : importMode === "update_only"
+                ? "skip"
+                : "create";
         return { ...row, exists, duplicateSku, action, errors };
       });
 
@@ -1519,6 +1529,179 @@ export function ProductManager({
     } finally {
       setIsPreparingImport(false);
     }
+  }
+
+  async function runProductImportRows(
+    rowsToProcess: ProductImportPreviewRow[],
+    initialSummary: ProductImportSummary,
+    existingRows: ProductImportResult["rows"] = [],
+  ) {
+    const guard = importExecutionGuard;
+    if (!guard.tryStart()) {
+      showMessage("Ya existe una importación en curso.", "error");
+      return;
+    }
+
+    const totalBatches = Math.ceil(rowsToProcess.length / productImportBatchSize);
+    let summary = { ...initialSummary, pending: rowsToProcess.length };
+    let confirmedRows = [...existingRows];
+    setIsImportingProducts(true);
+    setPendingImportRows([]);
+    setImportProgress({
+      batchNumber: totalBatches > 0 ? 1 : 0,
+      totalBatches,
+      processed: summary.totalRows - summary.pending,
+      totalRows: summary.totalRows,
+      summary,
+    });
+
+    try {
+      const run = await runProductImportBatches(rowsToProcess, async (batch, context) => {
+        setImportProgress({
+          batchNumber: context.batchNumber,
+          totalBatches: context.totalBatches,
+          processed: summary.totalRows - summary.pending,
+          totalRows: summary.totalRows,
+          summary,
+        });
+        showMessage(
+          `Procesando lote ${context.batchNumber} de ${context.totalBatches}. ` +
+            `${summary.totalRows - summary.pending} de ${summary.totalRows} filas procesadas.`,
+          "neutral",
+        );
+
+        let uploaded = 0;
+        let missing = 0;
+        let imageErrors = 0;
+        const uploadedAssetIds: string[] = [];
+        try {
+          const productsToSave: ProductFormInput[] = [];
+          for (const row of batch) {
+            let product: ProductFormInput = { ...row.product, images: [] };
+            if (row.imageFile) {
+              const formData = new FormData();
+              formData.set("file", row.imageFile);
+              formData.set("productSlug", row.product.slug || row.product.sku || row.product.name);
+              formData.set("angle", "principal");
+              const upload = await uploadProductImageAction(formData);
+              if (!upload.ok || !upload.publicUrl) {
+                imageErrors += 1;
+                throw new Error("Fila " + row.rowNumber + " (" + row.product.sku + "): " + upload.message);
+              }
+              uploaded += 1;
+              const uploadedAssetId = upload.publicId ?? upload.storagePath;
+              if (uploadedAssetId) uploadedAssetIds.push(uploadedAssetId);
+              product = {
+                ...product,
+                images: [{
+                  ...emptyImage,
+                  public_url: upload.publicUrl,
+                  storage_path: upload.storagePath,
+                  public_id: upload.publicId ?? upload.storagePath,
+                  alt_text: row.product.name,
+                }],
+              };
+            } else if (row.imageName) {
+              missing += 1;
+            }
+            productsToSave.push(product);
+          }
+
+          const batchResult = await importProductsAction(productsToSave, {
+            mode: importMode,
+            fileName: excelFile?.name,
+            imageSummary: { uploaded, missing, errors: imageErrors },
+            rowNumbers: batch.map((row) => row.rowNumber),
+          });
+          summary = mergeProductImportBatchSummary(summary, batchResult.summary);
+          confirmedRows = [...confirmedRows, ...batchResult.rows];
+          setLastImportResult({
+            ok: false,
+            message: `Lote ${context.batchNumber} de ${context.totalBatches} confirmado.`,
+            summary,
+            rows: confirmedRows,
+            pendingRows: [],
+            failedBatchNumber: null,
+            totalBatches: context.totalBatches,
+          });
+          setImportProgress({
+            batchNumber: context.batchNumber,
+            totalBatches: context.totalBatches,
+            processed: summary.totalRows - summary.pending,
+            totalRows: summary.totalRows,
+            summary,
+          });
+          return batchResult;
+        } catch (error) {
+          await Promise.all(uploadedAssetIds.map((publicId) => deleteUploadedProductImageAction(publicId)));
+          throw error;
+        }
+      });
+
+      if (run.failedBatchNumber !== null) {
+        const pendingRows = run.pendingRows;
+        summary = { ...summary, pending: pendingRows.length };
+        const message =
+          `El lote ${run.failedBatchNumber} de ${totalBatches} no pudo confirmarse. ` +
+          `${summary.created + summary.updated + summary.serverSkipped} filas quedaron confirmadas y ` +
+          `${pendingRows.length} permanecen pendientes. ` +
+          (run.error instanceof Error ? run.error.message : "Error técnico de red o servidor.");
+        setPendingImportRows(pendingRows);
+        setLastImportResult({
+          ok: false,
+          message,
+          summary,
+          rows: confirmedRows,
+          pendingRows: pendingRows.map((row) => ({ rowNumber: row.rowNumber, sku: row.product.sku })),
+          failedBatchNumber: run.failedBatchNumber,
+          totalBatches,
+        });
+        showMessage(message, "error");
+        return;
+      }
+
+      summary = { ...summary, pending: 0 };
+      const ok = summary.failed === 0;
+      const message =
+        `Importación por lotes completada: ${summary.created} creados, ${summary.updated} actualizados, ` +
+        `${summary.skipped} omitidos y ${summary.failed} con error. ` +
+        `${summary.stockProcessed} valores de stock procesados.`;
+      setLastImportResult({
+        ok,
+        message,
+        summary,
+        rows: confirmedRows,
+        pendingRows: [],
+        failedBatchNumber: null,
+        totalBatches,
+      });
+      setPendingImportRows([]);
+      setImportProgress({
+        batchNumber: totalBatches,
+        totalBatches,
+        processed: summary.totalRows,
+        totalRows: summary.totalRows,
+        summary,
+      });
+      showMessage(message, ok ? "success" : "error");
+      if (ok) {
+        setImportPreview(null);
+        setExcelFile(null);
+        setZipFile(null);
+      }
+    } finally {
+      guard.finish();
+      setIsImportingProducts(false);
+    }
+  }
+
+  async function retryPendingProductImport() {
+    if (!lastImportResult || pendingImportRows.length === 0) return;
+    await runProductImportRows(
+      pendingImportRows,
+      { ...lastImportResult.summary, pending: pendingImportRows.length },
+      lastImportResult.rows,
+    );
   }
 
   async function confirmProductImport() {
@@ -1540,66 +1723,10 @@ export function ProductManager({
       return;
     }
 
-    setIsImportingProducts(true);
-    showMessage("Subiendo imágenes y guardando productos...", "neutral");
-    let uploaded = 0;
-    let missing = 0;
-    let imageErrors = 0;
-    const uploadedAssetIds: string[] = [];
-
-    try {
-      const productsToSave: ProductFormInput[] = [];
-      for (const row of rowsToImport) {
-        let product: ProductFormInput = { ...row.product, images: [] };
-        if (row.imageFile) {
-          const formData = new FormData();
-          formData.set("file", row.imageFile);
-          formData.set("productSlug", row.product.slug || row.product.sku || row.product.name);
-          formData.set("angle", "principal");
-          const upload = await uploadProductImageAction(formData);
-          if (upload.ok && upload.publicUrl) {
-            uploaded += 1;
-            const uploadedAssetId = upload.publicId ?? upload.storagePath;
-            if (uploadedAssetId) uploadedAssetIds.push(uploadedAssetId);
-            product = {
-              ...product,
-              images: [{
-                ...emptyImage,
-                public_url: upload.publicUrl,
-                storage_path: upload.storagePath,
-                public_id: upload.publicId ?? upload.storagePath,
-                alt_text: row.product.name,
-              }],
-            };
-          } else {
-            imageErrors += 1;
-          }
-        } else if (row.imageName) {
-          missing += 1;
-        }
-        productsToSave.push(product);
-      }
-
-      const result = await importProductsAction(productsToSave, {
-        mode: importMode,
-        fileName: excelFile?.name,
-        imageSummary: { uploaded, missing, errors: imageErrors },
-      });
-      showMessage(result.message, result.ok ? "success" : "error");
-      if (!result.ok) {
-        await Promise.all(uploadedAssetIds.map((publicId) => deleteUploadedProductImageAction(publicId)));
-      }
-      if (result.ok) {
-        setImportPreview(null);
-        setExcelFile(null);
-        setZipFile(null);
-      }
-    } catch (error) {
-      await Promise.all(uploadedAssetIds.map((publicId) => deleteUploadedProductImageAction(publicId)));
-      showMessage(error instanceof Error ? `No se pudo importar: ${error.message}` : "No se pudo importar.", "error");
-    } finally {
-      setIsImportingProducts(false);
-    }
+    setLastImportResult(null);
+    const previewSkipped = importPreview.rows.length - rowsToImport.length;
+    const summary = createProductImportSummary(importPreview.rows.length, previewSkipped);
+    await runProductImportRows(rowsToImport, summary);
   }
 
   return (
@@ -1703,16 +1830,19 @@ export function ProductManager({
             <p className="mt-1 text-sm text-black/55">Sube un Excel de productos y un ZIP opcional de imágenes.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button onClick={() => void downloadExcelImportTemplate()} variant="ghost" title="Descargar plantilla Excel para importar productos">
+            <Button onClick={() => void downloadExcelImportTemplate()} disabled={isImportingProducts} variant="ghost" title="Descargar plantilla Excel para importar productos">
               <FileSpreadsheet size={17} />
               Descargar plantilla
             </Button>
             <select
               aria-label="Modo de importación"
               value={importMode}
+              disabled={isImportingProducts}
               onChange={(event) => {
                 setImportMode(event.target.value as ProductImportMode);
                 setImportPreview(null);
+                setPendingImportRows([]);
+                setImportProgress(null);
               }}
               className="h-10 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
@@ -1732,32 +1862,40 @@ export function ProductManager({
             <span className="block text-sm font-semibold">Excel de productos</span>
             <input
               type="file"
-              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+              disabled={isImportingProducts}
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="mt-2 block w-full text-sm"
               onChange={(event) => {
                 setExcelFile(event.target.files?.[0] ?? null);
                 setImportPreview(null);
+                setLastImportResult(null);
+                setPendingImportRows([]);
+                setImportProgress(null);
               }}
             />
-            <span className="mt-1 block truncate text-xs text-black/55">{excelFile ? excelFile.name : "Selecciona un archivo .xlsx o .xls."}</span>
+            <span className="mt-1 block truncate text-xs text-black/55">{excelFile ? excelFile.name : "Selecciona un archivo .xlsx."}</span>
           </label>
 
           <label className="rounded-md border border-black/10 bg-[#f8fafc] px-3 py-2.5 text-sm">
             <span className="block text-sm font-semibold">ZIP de imágenes</span>
             <input
               type="file"
+              disabled={isImportingProducts}
               accept=".zip,application/zip"
               className="mt-2 block w-full text-sm"
               onChange={(event) => {
                 setZipFile(event.target.files?.[0] ?? null);
                 setImportPreview(null);
+                setLastImportResult(null);
+                setPendingImportRows([]);
+                setImportProgress(null);
               }}
             />
             <span className="mt-1 block truncate text-xs text-black/55">{zipFile ? zipFile.name : "Opcional."}</span>
           </label>
 
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || !excelFile} variant="dark" className="h-10 whitespace-nowrap">
+            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || isImportingProducts || !excelFile} variant="dark" className="h-10 whitespace-nowrap">
               {isPreparingImport ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
               Validar archivos
             </Button>
@@ -1782,10 +1920,35 @@ export function ProductManager({
           <ImportPreviewPanel
             preview={importPreview}
             mode={importMode}
+            canAdjustStock={capabilities.adjustStock}
             pending={isImportingProducts}
             onConfirm={() => void confirmProductImport()}
             onCancel={() => setImportPreview(null)}
           />
+        ) : null}
+        {importProgress && isImportingProducts ? <ImportProgressPanel progress={importProgress} /> : null}
+        {lastImportResult ? <ImportResultPanel result={lastImportResult} /> : null}
+        {lastImportResult && pendingImportRows.length > 0 ? (
+          <div className="mt-3 rounded-lg border border-[#fed7aa] bg-[#fff7ed] p-4">
+            <p className="text-sm font-semibold">
+              {pendingImportRows.length} filas pendientes de confirmación
+            </p>
+            <p className="mt-1 text-xs text-black/60">
+              No se reenviarán los lotes ya confirmados. El reintento comienza en la fila pendiente y el stock absoluto evita sumar cantidades dos veces.
+            </p>
+            <p className="mt-2 max-h-20 overflow-auto text-xs text-black/60">
+              {pendingImportRows.map((row) => `Fila ${row.rowNumber} · ${row.product.sku}`).join(", ")}
+            </p>
+            <Button
+              onClick={() => void retryPendingProductImport()}
+              disabled={isImportingProducts}
+              variant="dark"
+              className="mt-3"
+            >
+              {isImportingProducts ? <Loader2 size={17} className="animate-spin" /> : <RefreshCw size={17} />}
+              Reintentar filas pendientes
+            </Button>
+          </div>
         ) : null}
       </section>
       ) : null}
@@ -1982,12 +2145,14 @@ function Metric({ label, value }: { label: string; value: string }) {
 function ImportPreviewPanel({
   preview,
   mode,
+  canAdjustStock,
   pending,
   onConfirm,
   onCancel,
 }: {
   preview: ProductImportPreview;
   mode: ProductImportMode;
+  canAdjustStock: boolean;
   pending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -2054,10 +2219,28 @@ function ImportPreviewPanel({
                   <p className="mt-1 break-words text-black/50 [overflow-wrap:anywhere]">{row.product.sku || "-"}</p>
                 </div>
                 <span className="shrink-0 rounded-md bg-[#f4f4f5] px-2 py-1">
-                  {row.action === "create" ? "Crear" : row.action === "update" ? "Actualizar" : "Omitir"}
+                  {row.action === "create"
+                    ? "Crear"
+                    : row.action === "update"
+                      ? "Actualizar"
+                      : row.action === "error"
+                        ? "Error"
+                        : "Omitir"}
                 </span>
               </div>
-              <dl className="mt-3 grid gap-2">
+              <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Categoría</dt>
+                  <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{row.categoryName || "-"}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Precio</dt>
+                  <dd className="mt-1 font-medium">{formatCurrency(row.product.retail_price)}</dd>
+                </div>
+                <div className="rounded-md bg-[#f8fafc] p-2">
+                  <dt className="uppercase text-black/45">Stock</dt>
+                  <dd className="mt-1 font-medium">{stockPreviewLabel(row.product.stock, canAdjustStock)}</dd>
+                </div>
                 <div className="rounded-md bg-[#f8fafc] p-2">
                   <dt className="uppercase text-black/45">Imagen Excel</dt>
                   <dd className="mt-1 break-words font-medium [overflow-wrap:anywhere]">{row.imageName || "Sin nombre; se busco por SKU"}</dd>
@@ -2079,12 +2262,15 @@ function ImportPreviewPanel({
           ))}
         </div>
         <div className="hidden overflow-x-auto md:block">
-        <table className="w-full min-w-[1120px] text-left text-xs">
+        <table className="w-full min-w-[1420px] text-left text-xs">
           <thead className="bg-[#e7e5e4] uppercase text-black/55">
             <tr>
               <th className="px-3 py-2">Fila</th>
               <th className="px-3 py-2">SKU</th>
               <th className="px-3 py-2">Producto</th>
+              <th className="px-3 py-2">Categoría</th>
+              <th className="px-3 py-2">Precio</th>
+              <th className="px-3 py-2">Stock</th>
               <th className="px-3 py-2">Acción</th>
               <th className="px-3 py-2">Imagen Excel</th>
               <th className="px-3 py-2">Archivo encontrado</th>
@@ -2098,8 +2284,17 @@ function ImportPreviewPanel({
                 <td className="px-3 py-2">{row.rowNumber}</td>
                 <td className="px-3 py-2 font-semibold">{row.product.sku || "-"}</td>
                 <td className="px-3 py-2">{row.product.name || "-"}</td>
+                <td className="px-3 py-2">{row.categoryName || "-"}</td>
+                <td className="px-3 py-2">{formatCurrency(row.product.retail_price)}</td>
+                <td className="px-3 py-2 font-semibold">{stockPreviewLabel(row.product.stock, canAdjustStock)}</td>
                 <td className="px-3 py-2">
-                  {row.action === "create" ? "Crear" : row.action === "update" ? "Actualizar" : "Omitir"}
+                  {row.action === "create"
+                    ? "Crear"
+                    : row.action === "update"
+                      ? "Actualizar"
+                      : row.action === "error"
+                        ? "Error"
+                        : "Omitir"}
                 </td>
                 <td className="px-3 py-2">
                   {row.imageName || "Sin nombre; se buscó por SKU"}
@@ -2135,6 +2330,73 @@ function ImportPreviewPanel({
           {pending ? "Importando productos..." : "Importar productos"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ImportProgressPanel({ progress }: { progress: ProductImportProgress }) {
+  const percentage = progress.totalRows > 0
+    ? Math.min(100, Math.round((progress.processed / progress.totalRows) * 100))
+    : 100;
+  return (
+    <div className="mt-4 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] p-4" aria-live="polite">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p className="font-semibold">
+          Procesando lote {progress.batchNumber} de {progress.totalBatches}
+        </p>
+        <p>{progress.processed} de {progress.totalRows} filas procesadas · {percentage}%</p>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+        <div className="h-full rounded-full bg-[#2563eb] transition-all" style={{ width: `${percentage}%` }} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <span>Creados: {progress.summary.created}</span>
+        <span>Actualizados: {progress.summary.updated}</span>
+        <span>Omitidos: {progress.summary.skipped}</span>
+        <span>Fallidos: {progress.summary.failed}</span>
+      </div>
+    </div>
+  );
+}
+
+function ImportResultPanel({ result }: { result: ProductImportResult }) {
+  const failedRows = result.rows.filter((row) => row.status === "failed");
+  return (
+    <div
+      className={
+        "mt-4 rounded-lg border p-4 " +
+        (result.ok ? "border-[#bbf7d0] bg-[#f0fdf4]" : "border-[#fed7aa] bg-[#fff7ed]")
+      }
+    >
+      <p className="text-sm font-semibold">Resultado confirmado por el servidor</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <PreviewMetric label="Filas del archivo" value={result.summary.totalRows} />
+        <PreviewMetric label="Filas enviadas" value={result.summary.sent} />
+        <PreviewMetric label="Productos creados" value={result.summary.created} />
+        <PreviewMetric label="Productos actualizados" value={result.summary.updated} />
+        <PreviewMetric label="Productos omitidos" value={result.summary.skipped} />
+        <PreviewMetric label="Omitidos en preview" value={result.summary.previewSkipped} />
+        <PreviewMetric label="Omitidos por servidor" value={result.summary.serverSkipped} />
+        <PreviewMetric label="Filas con error" value={result.summary.failed} tone={result.summary.failed > 0 ? "danger" : "neutral"} />
+        <PreviewMetric label="Filas pendientes" value={result.summary.pending} tone={result.summary.pending > 0 ? "warning" : "neutral"} />
+        <PreviewMetric label="Stock procesado" value={result.summary.stockProcessed} />
+        <PreviewMetric label="Movimientos creados" value={result.summary.movementsCreated} />
+        <PreviewMetric label="Stock sin cambio" value={result.summary.stockUnchanged} />
+      </div>
+      <p className="mt-3 text-xs text-black/60">
+        Assets huérfanos eliminados con verificación de referencias: {result.summary.orphanAssetsCleaned.toLocaleString("es-HN")}.
+      </p>
+      {failedRows.length > 0 ? (
+        <div className="mt-3 rounded-md bg-white/80 px-3 py-2 text-xs text-[#9b341b]">
+          <p className="font-semibold">Filas no confirmadas</p>
+          {failedRows.slice(0, 20).map((row) => (
+            <p key={row.rowNumber + "-" + row.sku} className="mt-1">
+              Fila {row.rowNumber} · {row.sku || "Sin SKU"}: {row.error}
+            </p>
+          ))}
+          {failedRows.length > 20 ? <p className="mt-1">Hay {failedRows.length - 20} errores adicionales.</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
