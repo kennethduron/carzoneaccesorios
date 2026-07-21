@@ -31,6 +31,11 @@ export function NavigationLoadingOverlay() {
       }
     }
 
+    function finishNavigation() {
+      clearPendingOverlay();
+      setVisible(false);
+    }
+
     function handleClick(event: MouseEvent) {
       const target = event.target instanceof Element ? event.target.closest("a") : null;
       if (!(target instanceof HTMLAnchorElement)) {
@@ -46,8 +51,13 @@ export function NavigationLoadingOverlay() {
         return;
       }
 
+      const currentUrl = new URL(window.location.href);
       const nextUrl = new URL(target.href);
-      if (nextUrl.origin !== window.location.origin || nextUrl.href === window.location.href) {
+      if (nextUrl.origin !== currentUrl.origin || nextUrl.href === currentUrl.href) {
+        return;
+      }
+
+      if (nextUrl.pathname === currentUrl.pathname && nextUrl.search === currentUrl.search) {
         return;
       }
 
@@ -56,12 +66,25 @@ export function NavigationLoadingOverlay() {
       }
 
       clearPendingOverlay();
-      timeoutRef.current = setTimeout(() => setVisible(true), 220);
+      const sourceRouteKey = `${currentUrl.pathname}?${currentUrl.searchParams.toString()}`;
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null;
+        const browserUrl = new URL(window.location.href);
+        const browserRouteKey = `${browserUrl.pathname}?${browserUrl.searchParams.toString()}`;
+        if (browserRouteKey === sourceRouteKey) return;
+        setVisible(true);
+      }, 220);
     }
 
     document.addEventListener("click", handleClick, true);
+    window.addEventListener("hashchange", finishNavigation);
+    window.addEventListener("pageshow", finishNavigation);
+    window.addEventListener("popstate", finishNavigation);
     return () => {
       document.removeEventListener("click", handleClick, true);
+      window.removeEventListener("hashchange", finishNavigation);
+      window.removeEventListener("pageshow", finishNavigation);
+      window.removeEventListener("popstate", finishNavigation);
       clearPendingOverlay();
     };
   }, []);

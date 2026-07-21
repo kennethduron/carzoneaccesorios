@@ -132,6 +132,14 @@ export type JournalEntry = {
   total_credit: number;
 };
 
+export type JournalEntryViewerData = {
+  entry: JournalEntry;
+  creatorName: string;
+  postedByName: string | null;
+};
+
+export type JournalEntryViewerStatus = "idle" | "loaded" | "invalid" | "not_found" | "load_error";
+
 export type JournalEntryLineInput = {
   id?: string;
   account_id: string;

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { buildJournalEntryViewerHref } from "@/lib/accounting-navigation";
 import type {
   AccountingTraceabilityItem,
   AccountingTraceabilityStatus,
@@ -218,7 +219,7 @@ function hasMissingConfiguration(event: FinancialEventRow) {
 }
 
 function journalHref(entry: JournalEntryRow | null) {
-  return entry ? `/admin/contabilidad#partida-${encodeURIComponent(entry.id)}` : null;
+  return entry ? buildJournalEntryViewerHref(entry.id) : null;
 }
 
 export function resolveAccountingOriginHref(sourceType: string, sourceId?: string | null) {

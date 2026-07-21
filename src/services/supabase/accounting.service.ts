@@ -10,7 +10,9 @@ import type {
   JournalEntryEditData,
   JournalEntryLine,
   JournalEntrySourceContext,
+  JournalEntryViewerData,
 } from "@/types/accounting";
+import { uuidLike } from "@/utils/validation";
 
 type AccountingPageInput = {
   accountPage?: number;
@@ -27,6 +29,13 @@ type JournalLineRow = Omit<JournalEntryLine, "debit" | "credit" | "account"> & {
   debit: unknown;
   credit: unknown;
   accounting_accounts: JournalEntryLine["account"] | null;
+};
+
+type ViewerUserRow = {
+  id: string;
+  full_name: string | null;
+  username: string | null;
+  email: string | null;
 };
 
 function toNumber(value: unknown) {
@@ -223,6 +232,46 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     journalPage,
     journalPageSize,
     journalTotal: journalTotal ?? 0,
+  };
+}
+
+function viewerUserName(user: ViewerUserRow | undefined, fallback: string) {
+  return user?.full_name?.trim() || user?.username?.trim() || user?.email?.trim() || fallback;
+}
+
+export async function getJournalEntryByIdForViewer(journalEntryId: string): Promise<JournalEntryViewerData | null> {
+  const validatedId = uuidLike(journalEntryId, "ID de partida contable");
+  if (!validatedId.ok) return null;
+
+  const supabase = await getSupabaseServerClient();
+  const { data: entryRow, error: entryError } = await supabase
+    .from("journal_entries")
+    .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
+    .eq("id", validatedId.value)
+    .maybeSingle<JournalEntryRow>();
+
+  if (entryError) throw new Error(entryError.message);
+  if (!entryRow) return null;
+
+  const actorIds = [...new Set([entryRow.created_by, entryRow.posted_by].filter((id): id is string => Boolean(id)))];
+  const [linesByEntry, { data: users, error: usersError }] = await Promise.all([
+    getLinesByEntryIds([entryRow.id]),
+    supabase
+      .from("users")
+      .select("id, full_name, username, email")
+      .in("id", actorIds)
+      .returns<ViewerUserRow[]>(),
+  ]);
+
+  if (usersError) throw new Error(usersError.message);
+
+  const usersById = new Map((users ?? []).map((user) => [user.id, user]));
+  return {
+    entry: normalizeEntry(entryRow, linesByEntry.get(entryRow.id) ?? []),
+    creatorName: viewerUserName(usersById.get(entryRow.created_by), entryRow.created_by),
+    postedByName: entryRow.posted_by
+      ? viewerUserName(usersById.get(entryRow.posted_by), entryRow.posted_by)
+      : null,
   };
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState, useTransition } from "react";
-import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight, X } from "lucide-react";
 import {
   postJournalEntryAction,
   recalculateJournalDraftFromSourceAction,
@@ -24,6 +24,7 @@ import type {
   AccountingPageData,
   JournalEntry,
   JournalEntryLineInput,
+  JournalEntryViewerData,
 } from "@/types/accounting";
 import { formatHnDateTime } from "@/utils/format";
 
@@ -38,6 +39,9 @@ type AccountingManagerProps = {
   canReverse: boolean;
   canExport?: boolean;
   canCsvExport?: boolean;
+  focusedEntryData?: JournalEntryViewerData | null;
+  focusedEntryId?: string | null;
+  onCloseFocusedEntry?: () => void;
   visibleSections?: AccountingManagerSection[];
 };
 
@@ -129,7 +133,7 @@ function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntry
   }));
 }
 
-export function AccountingManager({ data, canManage, canCreate, canEdit, canPost, canReverse, canExport = false, canCsvExport = false, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
+export function AccountingManager({ data, canManage, canCreate, canEdit, canPost, canReverse, canExport = false, canCsvExport = false, focusedEntryData = null, focusedEntryId = null, onCloseFocusedEntry, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
   const [accountForm, setAccountForm] = useState<AccountingAccountInput>(emptyAccount);
   const [journalForm, setJournalForm] = useState({
     id: "",
@@ -148,6 +152,9 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
   const showAccounts = visibleSections.includes("accounts");
   const showJournal = visibleSections.includes("journal");
   const showEntries = visibleSections.includes("entries");
+  const focusedEntryInPage = Boolean(
+    focusedEntryData && data.journalEntries.some((entry) => entry.id === focusedEntryData.entry.id),
+  );
 
   const journalTotals = useMemo(() => {
     const debit = journalForm.lines.reduce((sum, line) => sum + parseAccountingAmount(line.debit), 0);
@@ -387,7 +394,7 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
               total={data.accountTotal}
               label="cuentas"
               pageParam="account_page"
-              params={{ journal_page: data.journalPage }}
+              params={{ tab: "accounts", journal_page: data.journalPage }}
             />
           </div>
         </div>
@@ -588,7 +595,32 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
             <p className="mt-1 text-sm text-black/55">Movimientos recientes del libro diario.</p>
           </div>
         </div>
-        <JournalEntries entries={data.journalEntries} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={postEntry} onRecalculate={recalculateEntry} onReverse={reverseEntry} isPending={isPending} />
+        {focusedEntryData && !focusedEntryInPage ? (
+          <FocusedJournalEntry
+            viewerData={focusedEntryData}
+            canEdit={canEdit}
+            canPost={canPost}
+            canReverse={canReverse}
+            onPost={postEntry}
+            onRecalculate={recalculateEntry}
+            onReverse={reverseEntry}
+            onClose={onCloseFocusedEntry}
+            isPending={isPending}
+          />
+        ) : null}
+        <JournalEntries
+          entries={data.journalEntries}
+          focusedEntryData={focusedEntryInPage ? focusedEntryData : null}
+          focusedEntryId={focusedEntryInPage ? focusedEntryId : null}
+          canEdit={canEdit}
+          canPost={canPost}
+          canReverse={canReverse}
+          onPost={postEntry}
+          onRecalculate={recalculateEntry}
+          onReverse={reverseEntry}
+          onCloseFocusedEntry={onCloseFocusedEntry}
+          isPending={isPending}
+        />
         <div className="mt-4">
           <PaginationControls
             basePath="/admin/contabilidad"
@@ -597,7 +629,7 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
             total={data.journalTotal}
             label="partidas"
             pageParam="journal_page"
-            params={{ account_page: data.accountPage }}
+            params={{ tab: "journal", partida: focusedEntryId, account_page: data.accountPage }}
           />
         </div>
       </section>
@@ -699,26 +731,167 @@ function AccountsTable({
   );
 }
 
-function JournalEntries({
-  entries,
+function FocusedJournalEntry({
+  viewerData,
   canEdit,
   canPost,
   canReverse,
   onPost,
   onRecalculate,
   onReverse,
+  onClose,
   isPending,
 }: {
-  entries: JournalEntry[];
+  viewerData: JournalEntryViewerData;
   canEdit: boolean;
   canPost: boolean;
   canReverse: boolean;
   onPost: (entryId: string, expectedVersion: number) => void;
   onRecalculate: (entryId: string, expectedVersion: number) => void;
   onReverse: (entryId: string) => void;
+  onClose?: () => void;
   isPending: boolean;
 }) {
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLElement>(null);
+  const entry = viewerData.entry;
+  const difference = Math.round(Math.abs(entry.total_debit - entry.total_credit) * 100) / 100;
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const element = containerRef.current;
+      if (!element) return;
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [entry.id]);
+
+  return (
+    <article
+      ref={containerRef}
+      id={`partida-selected-${entry.id}`}
+      tabIndex={-1}
+      aria-labelledby={`partida-selected-title-${entry.id}`}
+      className="mb-5 scroll-mt-24 rounded-xl border-2 border-[#e4252c]/35 bg-[#fffafa] p-4 outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] sm:p-5"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#b91c25]">Partida seleccionada</p>
+          <h3 id={`partida-selected-title-${entry.id}`} className="mt-1 break-words text-lg font-semibold">
+            {entry.entry_number} · {entry.description}
+          </h3>
+          <p className="mt-1 text-sm text-black/55">
+            {entry.entry_date} · {journalSourceLabel(entry.source_type)} · Creada por {viewerData.creatorName}
+          </p>
+          {entry.source_id ? <p className="mt-1 break-all text-xs text-black/45">Referencia de origen: {entry.source_id}</p> : null}
+          {entry.posted_at ? (
+            <p className="mt-1 text-xs text-black/45">
+              Publicada {formatHnDateTime(entry.posted_at)}{viewerData.postedByName ? ` por ${viewerData.postedByName}` : ""}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <EntryStatus status={entry.status} />
+          {onClose ? (
+            <Button type="button" variant="ghost" onClick={onClose} aria-label="Cerrar detalle de la partida seleccionada">
+              <X size={16} />
+              Cerrar detalle
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+        <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total débito: <strong>{formatCurrency(entry.total_debit)}</strong></span>
+        <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
+        <span className="rounded-md border border-black/10 bg-white px-3 py-2">Diferencia: <strong>{formatCurrency(difference)}</strong></span>
+      </div>
+      <JournalEntryLines entry={entry} className="mt-4" />
+      <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
+    </article>
+  );
+}
+
+function JournalEntryLines({ entry, className = "" }: { entry: JournalEntry; className?: string }) {
+  return (
+    <div className={`${className} overflow-x-auto rounded-lg border border-black/10 bg-white`}>
+      <table className="w-full min-w-[620px] text-left text-sm">
+        <thead className="text-xs uppercase text-black/45">
+          <tr>
+            <th className="px-3 py-2">Cuenta</th>
+            <th className="px-3 py-2 text-right">Débito</th>
+            <th className="px-3 py-2 text-right">Crédito</th>
+            <th className="px-3 py-2">Descripción</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-black/10">
+          {entry.lines.map((line) => (
+            <tr key={line.id}>
+              <td className="px-3 py-2">{line.account ? `${line.account.code} - ${line.account.name}` : "Cuenta"}</td>
+              <td className="px-3 py-2 text-right font-semibold">{line.debit > 0 ? formatCurrency(line.debit) : "-"}</td>
+              <td className="px-3 py-2 text-right font-semibold">{line.credit > 0 ? formatCurrency(line.credit) : "-"}</td>
+              <td className="px-3 py-2 text-black/55">{line.description ?? "-"}</td>
+            </tr>
+          ))}
+          {entry.lines.length === 0 ? (
+            <tr><td className="px-3 py-3 text-black/55" colSpan={4}>La partida no contiene líneas contables visibles.</td></tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function JournalEntries({
+  entries,
+  focusedEntryData,
+  focusedEntryId,
+  canEdit,
+  canPost,
+  canReverse,
+  onPost,
+  onRecalculate,
+  onReverse,
+  onCloseFocusedEntry,
+  isPending,
+}: {
+  entries: JournalEntry[];
+  focusedEntryData: JournalEntryViewerData | null;
+  focusedEntryId: string | null;
+  canEdit: boolean;
+  canPost: boolean;
+  canReverse: boolean;
+  onPost: (entryId: string, expectedVersion: number) => void;
+  onRecalculate: (entryId: string, expectedVersion: number) => void;
+  onReverse: (entryId: string) => void;
+  onCloseFocusedEntry?: () => void;
+  isPending: boolean;
+}) {
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(focusedEntryId);
+  const mobileFocusedRef = useRef<HTMLElement>(null);
+  const desktopFocusedRef = useRef<HTMLTableRowElement>(null);
+  const previousFocusedEntryId = useRef<string | null>(focusedEntryId);
+
+  useEffect(() => {
+    if (!focusedEntryId) {
+      const previousId = previousFocusedEntryId.current;
+      if (previousId) setExpandedEntryId((current) => current === previousId ? null : current);
+      previousFocusedEntryId.current = null;
+      return;
+    }
+    previousFocusedEntryId.current = focusedEntryId;
+    setExpandedEntryId(focusedEntryId);
+    const frame = window.requestAnimationFrame(() => {
+      const desktop = window.matchMedia("(min-width: 768px)").matches;
+      const element = desktop ? desktopFocusedRef.current : mobileFocusedRef.current;
+      if (!element) return;
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedEntryId]);
 
   if (entries.length === 0) {
     return (
@@ -732,19 +905,42 @@ function JournalEntries({
   return (
     <div>
       <div className="grid gap-3 md:hidden">
-        {entries.map((entry) => (
-          <article key={entry.id} id={`partida-${entry.id}`} className="rounded-xl border border-black/10 bg-white p-3">
+        {entries.map((entry) => {
+          const focused = focusedEntryId === entry.id;
+          return (
+          <article
+            key={entry.id}
+            ref={focused ? mobileFocusedRef : undefined}
+            id={`partida-mobile-${entry.id}`}
+            tabIndex={focused ? -1 : undefined}
+            className={`scroll-mt-24 rounded-xl border bg-white p-3 outline-none ${focused ? "border-[#e4252c]/40 ring-2 ring-[#e4252c]/15" : "border-black/10"}`}
+          >
+            {focused ? (
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-[#b91c25]">Partida seleccionada</span>
+                {onCloseFocusedEntry ? (
+                  <Button type="button" variant="ghost" onClick={onCloseFocusedEntry} aria-label="Cerrar detalle de la partida seleccionada">
+                    <X size={15} />
+                    Cerrar detalle
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase text-black/45">{entry.entry_date}</p>
                 <h3 className="mt-1 break-words font-semibold">{entry.description}</h3>
                 <p className="mt-1 text-xs text-black/45">{entry.entry_number} · {journalSourceLabel(entry.source_type)}</p>
+                {focused && focusedEntryData ? (
+                  <p className="mt-1 text-xs text-black/45">Creada por {focusedEntryData.creatorName}</p>
+                ) : null}
               </div>
               <EntryStatus status={entry.status} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
               <span className="rounded-md bg-[#f7f7f8] px-3 py-2">Débito: <strong>{formatCurrency(entry.total_debit)}</strong></span>
               <span className="rounded-md bg-[#f7f7f8] px-3 py-2">Crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
+              <span className="col-span-2 rounded-md bg-[#f7f7f8] px-3 py-2">Diferencia: <strong>{formatCurrency(Math.round(Math.abs(entry.total_debit - entry.total_credit) * 100) / 100)}</strong></span>
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-sm">
@@ -770,7 +966,8 @@ function JournalEntries({
             </div>
             <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
           </article>
-        ))}
+          );
+        })}
       </div>
 
       <div className="hidden overflow-x-auto rounded-xl border border-black/10 md:block">
@@ -789,14 +986,21 @@ function JournalEntries({
           <tbody className="divide-y divide-black/10">
             {entries.map((entry) => {
               const expanded = expandedEntryId === entry.id;
+              const focused = focusedEntryId === entry.id;
 
               return (
                 <Fragment key={entry.id}>
-                  <tr id={`partida-${entry.id}`} className="align-top">
+                  <tr
+                    ref={focused ? desktopFocusedRef : undefined}
+                    id={`partida-desktop-${entry.id}`}
+                    tabIndex={focused ? -1 : undefined}
+                    className={`scroll-mt-24 align-top outline-none ${focused ? "bg-[#fff1f2]/60 ring-2 ring-inset ring-[#e4252c]/20" : ""}`}
+                  >
                     <td className="px-3 py-3 font-medium">{entry.entry_date}</td>
                     <td className="px-3 py-3">
                       <p className="font-medium">{entry.description}</p>
                       <p className="mt-1 text-xs text-black/45">{entry.entry_number} · Creada: {formatHnDateTime(entry.created_at)}</p>
+                      {focused ? <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[#b91c25]">Partida seleccionada</p> : null}
                     </td>
                     <td className="px-3 py-3">{journalSourceLabel(entry.source_type)}</td>
                     <td className="px-3 py-3 text-right font-semibold">{formatCurrency(entry.total_debit)}</td>
@@ -804,9 +1008,17 @@ function JournalEntries({
                     <td className="px-3 py-3"><EntryStatus status={entry.status} /></td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button className="px-3 py-1.5" variant="ghost" onClick={() => setExpandedEntryId(expanded ? null : entry.id)} aria-expanded={expanded}>
-                          <Eye size={15} />
-                          Ver
+                        <Button
+                          className="px-3 py-1.5"
+                          variant="ghost"
+                          onClick={() => {
+                            if (focused && expanded && onCloseFocusedEntry) onCloseFocusedEntry();
+                            setExpandedEntryId(expanded ? null : entry.id);
+                          }}
+                          aria-expanded={expanded}
+                        >
+                          {focused && expanded ? <X size={15} /> : <Eye size={15} />}
+                          {focused && expanded ? "Cerrar detalle" : "Ver"}
                         </Button>
                         <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} compact />
                       </div>
@@ -815,27 +1027,19 @@ function JournalEntries({
                   {expanded ? (
                     <tr>
                       <td className="bg-[#fafafa] px-3 py-3" colSpan={7}>
-                        <div className="overflow-x-auto rounded-lg border border-black/10 bg-white">
-                          <table className="w-full min-w-[620px] text-left text-sm">
-                            <thead className="text-xs uppercase text-black/45">
-                              <tr>
-                                <th className="px-3 py-2">Cuenta</th>
-                                <th className="px-3 py-2 text-right">Débito</th>
-                                <th className="px-3 py-2 text-right">Crédito</th>
-                                <th className="px-3 py-2">Descripción</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-black/10">
-                              {entry.lines.map((line) => (
-                                <tr key={line.id}>
-                                  <td className="px-3 py-2">{line.account ? `${line.account.code} - ${line.account.name}` : "Cuenta"}</td>
-                                  <td className="px-3 py-2 text-right font-semibold">{line.debit > 0 ? formatCurrency(line.debit) : "-"}</td>
-                                  <td className="px-3 py-2 text-right font-semibold">{line.credit > 0 ? formatCurrency(line.credit) : "-"}</td>
-                                  <td className="px-3 py-2 text-black/55">{line.description ?? "-"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div className="space-y-3">
+                          {focused && focusedEntryData ? (
+                            <p className="text-xs text-black/55">
+                              Creada por {focusedEntryData.creatorName}
+                              {entry.posted_at ? ` · Publicada ${formatHnDateTime(entry.posted_at)}${focusedEntryData.postedByName ? ` por ${focusedEntryData.postedByName}` : ""}` : ""}
+                            </p>
+                          ) : null}
+                          <div className="grid gap-2 text-sm sm:grid-cols-3">
+                            <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total débito: <strong>{formatCurrency(entry.total_debit)}</strong></span>
+                            <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
+                            <span className="rounded-md border border-black/10 bg-white px-3 py-2">Diferencia: <strong>{formatCurrency(Math.round(Math.abs(entry.total_debit - entry.total_credit) * 100) / 100)}</strong></span>
+                          </div>
+                          <JournalEntryLines entry={entry} />
                         </div>
                       </td>
                     </tr>

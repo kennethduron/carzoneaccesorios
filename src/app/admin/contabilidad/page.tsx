@@ -1,28 +1,75 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { FinancialCenterManager } from "@/components/admin/financial-center-manager";
+import { normalizeFinancialCenterTab } from "@/lib/accounting-navigation";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { getAccountingPageData } from "@/services/supabase/accounting.service";
+import { writeErrorLog } from "@/lib/error-logging";
+import { getAccountingPageData, getJournalEntryByIdForViewer } from "@/services/supabase/accounting.service";
 import { getFinancialCenterData } from "@/services/supabase/financial-center.service";
+import type { JournalEntryViewerData, JournalEntryViewerStatus } from "@/types/accounting";
+import { uuidLike } from "@/utils/validation";
 
 export const dynamic = "force-dynamic";
+
+type AccountingSearchParams = {
+  account_page?: string | string[];
+  journal_page?: string | string[];
+  partida?: string | string[];
+  tab?: string | string[];
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function getFocusedJournalEntry(journalEntryId: string): Promise<{
+  data: JournalEntryViewerData | null;
+  status: JournalEntryViewerStatus;
+}> {
+  try {
+    const data = await getJournalEntryByIdForViewer(journalEntryId);
+    return { data, status: data ? "loaded" : "not_found" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo consultar la partida contable.";
+    await writeErrorLog({
+      route: "/admin/contabilidad",
+      module: "accounting",
+      action: "accounting.journal_entry_viewer_query_failed",
+      errorMessage: message,
+      customerMessage: "No fue posible cargar la partida contable. Intente nuevamente.",
+      metadata: { journal_entry_id: journalEntryId },
+    });
+    return { data: null, status: "load_error" };
+  }
+}
 
 export default async function AdminAccountingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account_page?: string; journal_page?: string }>;
+  searchParams: Promise<AccountingSearchParams>;
 }) {
   const profile = await requirePermission("accounting:read");
   const params = await searchParams;
-  const [accountingData, financialData] = await Promise.all([
+  const requestedEntryId = firstParam(params.partida)?.trim() || null;
+  const requestedTab = normalizeFinancialCenterTab(firstParam(params.tab));
+  const initialTab = requestedEntryId ? "journal" : requestedTab;
+  const validatedEntryId = requestedEntryId ? uuidLike(requestedEntryId, "ID de partida contable") : null;
+  const focusedEntryPromise = validatedEntryId
+    ? validatedEntryId.ok
+      ? getFocusedJournalEntry(validatedEntryId.value)
+      : Promise.resolve({ data: null, status: "invalid" as const })
+    : Promise.resolve({ data: null, status: "idle" as const });
+
+  const [accountingData, financialData, focusedEntry] = await Promise.all([
     getAccountingPageData({
-      accountPage: Number(params.account_page ?? 1),
+      accountPage: Number(firstParam(params.account_page) ?? 1),
       accountPageSize: 50,
-      journalPage: Number(params.journal_page ?? 1),
+      journalPage: Number(firstParam(params.journal_page) ?? 1),
       journalPageSize: 25,
     }),
     getFinancialCenterData(),
+    focusedEntryPromise,
   ]);
 
   const canManage = hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email);
@@ -62,6 +109,10 @@ export default async function AdminAccountingPage({
         <FinancialCenterManager
           accountingData={accountingData}
           financialData={financialData}
+          initialTab={initialTab}
+          focusedEntryData={focusedEntry.data}
+          focusedEntryId={requestedEntryId}
+          focusedEntryStatus={focusedEntry.status}
           canManage={canManage}
           canCreate={canCreate}
           canEditDrafts={canEditDrafts}

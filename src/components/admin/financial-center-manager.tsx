@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, ExternalLink, FilePlus2, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
 import {
@@ -12,13 +14,14 @@ import {
 import { AccountingManager } from "@/components/admin/accounting-manager";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
+import { buildJournalEntryViewerHref, normalizeFinancialCenterTab, type FinancialCenterTab } from "@/lib/accounting-navigation";
 import {
   accountingAutomationModeLabels,
   phase2AAutomationModes,
   accountingMappingTypeLabels,
   getAccountingMappingDisplayLabel,
 } from "@/services/supabase/accounting-config.service";
-import type { AccountingPageData } from "@/types/accounting";
+import type { AccountingPageData, JournalEntryViewerData, JournalEntryViewerStatus } from "@/types/accounting";
 import type {
   AccountingMapping,
   AutomationMode,
@@ -33,6 +36,10 @@ import { formatHnDateTime } from "@/utils/format";
 type FinancialCenterManagerProps = {
   accountingData: AccountingPageData;
   financialData: FinancialCenterData;
+  initialTab: FinancialCenterTab;
+  focusedEntryData: JournalEntryViewerData | null;
+  focusedEntryId: string | null;
+  focusedEntryStatus: JournalEntryViewerStatus;
   canManage: boolean;
   canCreate: boolean;
   canEditDrafts: boolean;
@@ -45,11 +52,9 @@ type FinancialCenterManagerProps = {
   canGenerateDrafts: boolean;
 };
 
-type TabKey = "summary" | "settings" | "events" | "journal" | "accounts";
-
-const tabs: Array<{ key: TabKey; label: string; icon: typeof LayoutDashboard }> = [
+const tabs: Array<{ key: FinancialCenterTab; label: string; icon: typeof LayoutDashboard }> = [
   { key: "summary", label: "Resumen financiero", icon: LayoutDashboard },
-  { key: "settings", label: "Configuración contable", icon: Settings2 },
+  { key: "mappings", label: "Configuración contable", icon: Settings2 },
   { key: "events", label: "Eventos financieros", icon: Activity },
   { key: "journal", label: "Libro diario", icon: BookOpen },
   { key: "accounts", label: "Catálogo de cuentas", icon: Landmark },
@@ -289,6 +294,10 @@ function canGenerateDraftForEvent(event: FinancialEvent) {
 export function FinancialCenterManager({
   accountingData,
   financialData,
+  initialTab,
+  focusedEntryData,
+  focusedEntryId,
+  focusedEntryStatus,
   canManage,
   canCreate,
   canEditDrafts,
@@ -300,7 +309,10 @@ export function FinancialCenterManager({
   canScanEvents,
   canGenerateDrafts,
 }: FinancialCenterManagerProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>("summary");
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [fallbackTab, setFallbackTab] = useState<FinancialCenterTab>(initialTab);
   const [eventFilter, setEventFilter] = useState<"all" | "pending">("all");
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account?.id ?? ""])),
@@ -309,6 +321,36 @@ export function FinancialCenterManager({
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
+  const selectedEntryId = searchParams.get("partida");
+  const hasFocusedRequest = Boolean(selectedEntryId && selectedEntryId === focusedEntryId);
+  const activeTab = selectedEntryId
+    ? "journal"
+    : searchParams.has("tab")
+      ? normalizeFinancialCenterTab(searchParams.get("tab"))
+      : fallbackTab;
+
+  function updateUrl(mutator: (params: URLSearchParams) => void) {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    mutator(nextParams);
+    const query = nextParams.toString();
+    window.history.pushState(null, "", query ? `${pathname}?${query}` : pathname);
+  }
+
+  function selectTab(tab: FinancialCenterTab) {
+    setFallbackTab(tab);
+    updateUrl((params) => {
+      params.set("tab", tab);
+      if (tab !== "journal") params.delete("partida");
+    });
+  }
+
+  function closeFocusedEntry() {
+    setFallbackTab("journal");
+    updateUrl((params) => {
+      params.set("tab", "journal");
+      params.delete("partida");
+    });
+  }
 
   const activeAccounts = accountingData.activeAccounts;
   const configuredLabel = `${formatNumber(financialData.summary.configuredMappings)} de ${formatNumber(financialData.readinessItems.length)}`;
@@ -384,7 +426,7 @@ export function FinancialCenterManager({
   }
 
   function reviewPendingEvents() {
-    setActiveTab("events");
+    selectTab("events");
     setEventFilter("pending");
   }
 
@@ -410,7 +452,7 @@ export function FinancialCenterManager({
             <button
               key={tab.key}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => selectTab(tab.key)}
               className={`inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
                 active ? "bg-[#080808] text-white" : "text-black/65 hover:bg-[#fff1f2] hover:text-[#b91c25]"
               }`}
@@ -480,7 +522,7 @@ export function FinancialCenterManager({
         </section>
       ) : null}
 
-      {activeTab === "settings" ? (
+      {activeTab === "mappings" ? (
         <section className="space-y-5">
           <div className="rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -651,10 +693,10 @@ export function FinancialCenterManager({
                           {linkedDraft ? (
                             <div>
                               <p className="font-medium">{linkedDraft.entry_number}</p>
-                              <a href={`/admin/contabilidad#partida-${linkedDraft.id}`} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
+                              <Link href={buildJournalEntryViewerHref(linkedDraft.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
                                 <ExternalLink size={13} />
                                 Ver partida contable
-                              </a>
+                              </Link>
                             </div>
                           ) : event.journal_entry_id ? (
                             <p className="font-medium">Partida vinculada</p>
@@ -706,17 +748,30 @@ export function FinancialCenterManager({
       ) : null}
 
       {activeTab === "journal" ? (
-        <AccountingManager
-          data={accountingData}
-          canManage={canManage}
-          canCreate={canCreate}
-          canEdit={canEditDrafts}
-          canPost={canPost}
-          canReverse={canReverse}
-          canExport={canExportAccounting}
-          canCsvExport={canExportTechnicalCsv}
-          visibleSections={["journal", "entries"]}
-        />
+        <div className="space-y-5">
+          {hasFocusedRequest && focusedEntryStatus !== "loaded" ? (
+            <FocusedEntryError
+              status={focusedEntryStatus}
+              onRetry={() => router.refresh()}
+              onBackToJournal={closeFocusedEntry}
+              onBackToCenter={() => selectTab("summary")}
+            />
+          ) : null}
+          <AccountingManager
+            data={accountingData}
+            canManage={canManage}
+            canCreate={canCreate}
+            canEdit={canEditDrafts}
+            canPost={canPost}
+            canReverse={canReverse}
+            canExport={canExportAccounting}
+            canCsvExport={canExportTechnicalCsv}
+            focusedEntryData={hasFocusedRequest && focusedEntryStatus === "loaded" ? focusedEntryData : null}
+            focusedEntryId={hasFocusedRequest ? focusedEntryId : null}
+            onCloseFocusedEntry={closeFocusedEntry}
+            visibleSections={["journal", "entries"]}
+          />
+        </div>
       ) : null}
 
       {activeTab === "accounts" ? (
@@ -735,6 +790,41 @@ export function FinancialCenterManager({
 
       {message ? <p className="rounded-lg border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
     </div>
+  );
+}
+
+function FocusedEntryError({
+  status,
+  onRetry,
+  onBackToJournal,
+  onBackToCenter,
+}: {
+  status: JournalEntryViewerStatus;
+  onRetry: () => void;
+  onBackToJournal: () => void;
+  onBackToCenter: () => void;
+}) {
+  const message = status === "invalid"
+    ? "Identificador de partida contable inválido."
+    : status === "not_found"
+      ? "No se encontró la partida contable solicitada."
+      : "No fue posible cargar la partida contable. Intente nuevamente.";
+
+  return (
+    <section role="alert" className="rounded-lg border border-[#e4252c]/25 bg-[#fff1f2] p-4 text-[#7f1d1d] shadow-sm sm:p-5">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 shrink-0" size={20} aria-hidden="true" />
+        <div>
+          <h2 className="font-semibold">No se pudo abrir la partida</h2>
+          <p className="mt-1 text-sm">{message}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {status !== "invalid" ? <Button type="button" variant="dark" onClick={onRetry}>Reintentar</Button> : null}
+        <Button type="button" variant="ghost" onClick={onBackToJournal}>Volver al Libro diario</Button>
+        <Button type="button" variant="ghost" onClick={onBackToCenter}>Volver al Centro Financiero</Button>
+      </div>
+    </section>
   );
 }
 
