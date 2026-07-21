@@ -5,6 +5,7 @@ const migration = readFileSync(
   "supabase/migrations/202607150003_manual_customer_auth_linking.sql",
   "utf8",
 );
+const currentSecurityMigration = readFileSync("supabase/migrations/202607200004_secure_customer_identity_management.sql", "utf8");
 const checkoutOverloadMigration = readFileSync(
   "supabase/migrations/202607150004_remove_obsolete_checkout_overload.sql",
   "utf8",
@@ -61,9 +62,12 @@ assert.doesNotMatch(wholesale, /user_id:\s*user\.id[\s\S]{0,220}from\("customers
 assert.doesNotMatch(wholesale, /00000000/);
 assert.match(wholesale, /user_id:\s*null/);
 assert.doesNotMatch(crmActions, /user_id:\s*userProfile/);
-assert.match(crmActions, /requirePermission\("customers:link_portal_account"\)/);
+assert.match(crmActions, /portalLinkRoles[^\n]*contadora/);
+assert.match(crmActions, /hasEffectivePermission\([^)]*customers:link_portal_account/);
 assert.match(crmActions, /link_customer_portal_account_manual/);
 assert.match(crmActions, /p_confirmed:\s*true/);
+assert.match(currentSecurityMigration, /portal_role_name is distinct from 'cliente'/);
+assert.match(currentSecurityMigration, /actor_role_name not in \('technical_owner', 'business_owner', 'admin', 'contadora'\)/);
 
 assert.doesNotMatch(profileSync, /\.from\("customers"\)/);
 assert.doesNotMatch(profileSync, /00000000/);

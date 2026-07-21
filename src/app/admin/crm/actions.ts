@@ -12,7 +12,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
 import type { AppRole, AuthProfile } from "@/types/auth";
-import type { CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
+import type { CrmCustomerIdentityInput, CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
 import type { WholesaleCustomerType } from "@/types/wholesale";
 import { isSafeTestAccountEmail, normalizeAccountEmail } from "@/utils/test-accounts";
 import {
@@ -30,9 +30,16 @@ type CrmMutationResult = {
   deletion_block?: DeletionBlock;
 };
 
+export type CustomerIdentityMutationResult = CrmMutationResult & {
+  status?: string;
+  fieldErrors?: Partial<Record<keyof CrmCustomerIdentityInput, string>>;
+  profile?: CrmCustomerProfile | null;
+};
+
 export type PortalAccountCandidate = {
   id: string;
   email: string | null;
+  phone: string | null;
   fullName: string | null;
   username: string | null;
   role: AppRole | null;
@@ -40,20 +47,25 @@ export type PortalAccountCandidate = {
   authExists: boolean;
   linkedToThisCustomer: boolean;
   linkedToAnotherCustomer: boolean;
+  createdAt: string;
+  emailConfirmedAt: string | null;
 };
 
 export type PortalLinkCustomerCandidate = {
   id: string;
   displayName: string;
   email: string | null;
+  contactName: string;
   phone: string | null;
   taxId: string | null;
   active: boolean;
+  city: string | null;
   status: string;
   linked: boolean;
   linkedAccountEmail: string | null;
   orderCount: number;
   receivableCount: number;
+  invoiceCount: number;
   hasCreditAccount: boolean;
 };
 
@@ -119,6 +131,8 @@ const commercialHistoryDeletionMessage = "No se puede eliminar esta cuenta porqu
 const wholesaleManagementPermissionMessage = "Solo usuarios autorizados pueden cambiar el estado mayorista.";
 const wholesaleManagementRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 
+const customerIdentityRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
+const portalLinkRoles: AppRole[] = ["technical_owner", "business_owner", "admin", "contadora"];
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -135,60 +149,65 @@ export async function searchPortalAccountCandidatesAction(
   customerId: string,
   query: string,
 ): Promise<{ ok: boolean; message: string; candidates: PortalAccountCandidate[] }> {
-  await requirePermission("customers:link_portal_account");
-  const customer = uuidLike(customerId, "Cliente");
-  const search = safePortalSearchValue(query);
-
-  if (!customer.ok) {
-    return { ok: false, message: customer.message, candidates: [] };
+  const profile = await requireSession();
+  if (
+    !portalLinkRoles.includes(profile.role) ||
+    !hasEffectivePermission(profile.role, profile.permissions, "customers:link_portal_account", profile.email)
+  ) {
+    return { ok: false, message: "No tienes permiso para vincular cuentas del portal.", candidates: [] };
   }
 
+  const customer = uuidLike(customerId, "Cliente");
+  const search = safePortalSearchValue(query);
+  if (!customer.ok) return { ok: false, message: customer.message, candidates: [] };
   if (search.length < 3) {
     return { ok: false, message: "Escribe al menos 3 caracteres para buscar una cuenta web.", candidates: [] };
   }
 
   const admin = getSupabaseAdminClient();
-  const pattern = "%" + search + "%";
-  const columns = "id, email, full_name, username, active, roles(name)";
-  const [byEmail, byName, byUsername] = await Promise.all([
-    admin.from("users").select(columns).ilike("email", pattern).limit(10),
-    admin.from("users").select(columns).ilike("full_name", pattern).limit(10),
-    admin.from("users").select(columns).ilike("username", pattern).limit(10),
+  const pattern = `%${search}%`;
+  const columns = "id, email, full_name, username, phone, active, created_at, roles(name)";
+  const [byEmail, byName, byUsername, byPhone] = await Promise.all([
+    admin.from("users").select(columns).eq("active", true).eq("roles.name", "cliente").ilike("email", pattern).limit(10),
+    admin.from("users").select(columns).eq("active", true).eq("roles.name", "cliente").ilike("full_name", pattern).limit(10),
+    admin.from("users").select(columns).eq("active", true).eq("roles.name", "cliente").ilike("username", pattern).limit(10),
+    admin.from("users").select(columns).eq("active", true).eq("roles.name", "cliente").ilike("phone", pattern).limit(10),
   ]);
 
-  const firstError = byEmail.error ?? byName.error ?? byUsername.error;
-  if (firstError) {
-    return { ok: false, message: "No fue posible buscar cuentas web.", candidates: [] };
-  }
+  const firstError = byEmail.error ?? byName.error ?? byUsername.error ?? byPhone.error;
+  if (firstError) return { ok: false, message: "No fue posible buscar cuentas web.", candidates: [] };
 
   type PortalUserRow = {
     id: string;
     email: string | null;
     full_name: string | null;
     username: string | null;
+    phone: string | null;
     active: boolean;
+    created_at: string;
     roles: Array<{ name: AppRole }> | { name: AppRole } | null;
   };
 
-  const candidatesById = new Map<string, PortalUserRow>();
-  for (const row of [...(byEmail.data ?? []), ...(byName.data ?? []), ...(byUsername.data ?? [])] as unknown as PortalUserRow[]) {
-    candidatesById.set(row.id, row);
+  const rowsById = new Map<string, PortalUserRow>();
+  for (const row of [
+    ...(byEmail.data ?? []),
+    ...(byName.data ?? []),
+    ...(byUsername.data ?? []),
+    ...(byPhone.data ?? []),
+  ] as unknown as PortalUserRow[]) {
+    const role = (Array.isArray(row.roles) ? row.roles[0]?.name : row.roles?.name) ?? null;
+    if (row.active && role === "cliente") rowsById.set(row.id, row);
   }
 
-  const rows = [...candidatesById.values()].slice(0, 10);
-  if (rows.length === 0) {
-    return { ok: true, message: "No se encontraron cuentas web.", candidates: [] };
-  }
+  const rows = [...rowsById.values()].slice(0, 10);
+  if (rows.length === 0) return { ok: true, message: "No se encontraron cuentas web elegibles.", candidates: [] };
 
   const ids = rows.map((row) => row.id);
   const [{ data: linkedCustomers, error: linkedError }, authChecks] = await Promise.all([
     admin.from("customers").select("id, user_id").in("user_id", ids),
     Promise.all(rows.map((row) => admin.auth.admin.getUserById(row.id))),
   ]);
-
-  if (linkedError) {
-    return { ok: false, message: "No fue posible validar el estado de vinculación.", candidates: [] };
-  }
+  if (linkedError) return { ok: false, message: "No fue posible validar el estado de vinculación.", candidates: [] };
 
   const links = new Map(
     ((linkedCustomers ?? []) as Array<{ id: string; user_id: string | null }>)
@@ -196,47 +215,60 @@ export async function searchPortalAccountCandidatesAction(
       .map((row) => [row.user_id as string, row.id]),
   );
 
-  return {
-    ok: true,
-    message: rows.length === 1 ? "Se encontró 1 cuenta web." : "Se encontraron cuentas web.",
-    candidates: rows.map((row, index) => ({
+  const candidates = rows.flatMap((row, index): PortalAccountCandidate[] => {
+    const authUser = authChecks[index].data.user;
+    const linkedCustomerId = links.get(row.id) ?? null;
+    if (authChecks[index].error || !authUser || (linkedCustomerId && linkedCustomerId !== customer.value)) return [];
+    return [{
       id: row.id,
       email: row.email,
+      phone: row.phone,
       fullName: row.full_name,
       username: row.username,
       role: (Array.isArray(row.roles) ? row.roles[0]?.name : row.roles?.name) ?? null,
       active: row.active,
-      authExists: !authChecks[index].error && Boolean(authChecks[index].data.user),
-      linkedToThisCustomer: links.get(row.id) === customer.value,
-      linkedToAnotherCustomer: Boolean(links.get(row.id) && links.get(row.id) !== customer.value),
-    })),
+      authExists: true,
+      linkedToThisCustomer: linkedCustomerId === customer.value,
+      linkedToAnotherCustomer: false,
+      createdAt: row.created_at,
+      emailConfirmedAt: authUser.email_confirmed_at ?? null,
+    }];
+  });
+
+  return {
+    ok: true,
+    message: candidates.length === 1 ? "Se encontró 1 cuenta web elegible." : `Se encontraron ${candidates.length} cuentas web elegibles.`,
+    candidates,
   };
 }
 
 export async function searchCustomersForPortalLinkAction(
   query: string,
 ): Promise<{ ok: boolean; message: string; customers: PortalLinkCustomerCandidate[] }> {
-  await requirePermission("customers:link_portal_account");
-  const search = safePortalSearchValue(query);
+  const profile = await requireSession();
+  if (
+    !portalLinkRoles.includes(profile.role) ||
+    !hasEffectivePermission(profile.role, profile.permissions, "customers:link_portal_account", profile.email)
+  ) {
+    return { ok: false, message: "No tienes permiso para vincular cuentas del portal.", customers: [] };
+  }
 
+  const search = safePortalSearchValue(query);
   if (search.length < 2) {
     return { ok: false, message: "Escribe al menos 2 caracteres para buscar un cliente.", customers: [] };
   }
 
   const admin = getSupabaseAdminClient();
-  const pattern = "%" + search + "%";
-  const columns = "id, business_name, company_name, contact_name, email, phone, tax_id, active, status, user_id";
+  const pattern = `%${search}%`;
+  const columns = "id, business_name, company_name, contact_name, email, phone, tax_id, city, active, status, user_id";
   const [byName, byBusiness, byEmail, byPhone] = await Promise.all([
     admin.from("customers").select(columns).ilike("contact_name", pattern).limit(10),
     admin.from("customers").select(columns).ilike("business_name", pattern).limit(10),
     admin.from("customers").select(columns).ilike("email", pattern).limit(10),
     admin.from("customers").select(columns).ilike("phone", pattern).limit(10),
   ]);
-
   const firstError = byName.error ?? byBusiness.error ?? byEmail.error ?? byPhone.error;
-  if (firstError) {
-    return { ok: false, message: "No fue posible buscar clientes operativos.", customers: [] };
-  }
+  if (firstError) return { ok: false, message: "No fue posible buscar clientes operativos.", customers: [] };
 
   type LinkCustomerRow = {
     id: string;
@@ -246,6 +278,7 @@ export async function searchCustomersForPortalLinkAction(
     email: string | null;
     phone: string | null;
     tax_id: string | null;
+    city: string | null;
     active: boolean;
     status: string;
     user_id: string | null;
@@ -257,30 +290,24 @@ export async function searchCustomersForPortalLinkAction(
     ...(byBusiness.data ?? []),
     ...(byEmail.data ?? []),
     ...(byPhone.data ?? []),
-  ] as LinkCustomerRow[]) {
-    customersById.set(row.id, row);
-  }
+  ] as LinkCustomerRow[]) customersById.set(row.id, row);
 
   const rows = [...customersById.values()].slice(0, 10);
-  if (rows.length === 0) {
-    return { ok: true, message: "No se encontraron clientes operativos.", customers: [] };
-  }
+  if (rows.length === 0) return { ok: true, message: "No se encontraron clientes operativos.", customers: [] };
 
   const customerIds = rows.map((row) => row.id);
   const linkedUserIds = rows.flatMap((row) => (row.user_id ? [row.user_id] : []));
-  const [orders, receivables, creditAccounts, linkedUsers] = await Promise.all([
+  const [orders, invoices, receivables, creditAccounts, linkedUsers] = await Promise.all([
     admin.from("orders").select("customer_id").in("customer_id", customerIds),
+    admin.from("invoices").select("customer_id").in("customer_id", customerIds),
     admin.from("accounts_receivable").select("customer_id").in("customer_id", customerIds),
     admin.from("customer_credit_accounts").select("customer_id").in("customer_id", customerIds),
     linkedUserIds.length
       ? admin.from("users").select("id, email").in("id", linkedUserIds)
       : Promise.resolve({ data: [] as Array<{ id: string; email: string | null }>, error: null }),
   ]);
-
-  const aggregateError = orders.error ?? receivables.error ?? creditAccounts.error ?? linkedUsers.error;
-  if (aggregateError) {
-    return { ok: false, message: "No fue posible validar el resumen operativo.", customers: [] };
-  }
+  const aggregateError = orders.error ?? invoices.error ?? receivables.error ?? creditAccounts.error ?? linkedUsers.error;
+  if (aggregateError) return { ok: false, message: "No fue posible validar el resumen operativo.", customers: [] };
 
   const countByCustomer = (values: Array<{ customer_id: string | null }>) =>
     values.reduce((counts, value) => {
@@ -288,6 +315,7 @@ export async function searchCustomersForPortalLinkAction(
       return counts;
     }, new Map<string, number>());
   const orderCounts = countByCustomer((orders.data ?? []) as Array<{ customer_id: string | null }>);
+  const invoiceCounts = countByCustomer((invoices.data ?? []) as Array<{ customer_id: string | null }>);
   const receivableCounts = countByCustomer((receivables.data ?? []) as Array<{ customer_id: string | null }>);
   const creditCustomerIds = new Set((creditAccounts.data ?? []).map((row) => row.customer_id));
   const linkedEmails = new Map((linkedUsers.data ?? []).map((row) => [row.id, row.email]));
@@ -298,14 +326,17 @@ export async function searchCustomersForPortalLinkAction(
     customers: rows.map((row) => ({
       id: row.id,
       displayName: row.business_name || row.company_name || row.contact_name,
+      contactName: row.contact_name,
       email: row.email,
       phone: row.phone,
       taxId: row.tax_id,
+      city: row.city,
       active: row.active,
       status: row.status,
       linked: Boolean(row.user_id),
       linkedAccountEmail: row.user_id ? linkedEmails.get(row.user_id) ?? null : null,
       orderCount: orderCounts.get(row.id) ?? 0,
+      invoiceCount: invoiceCounts.get(row.id) ?? 0,
       receivableCount: receivableCounts.get(row.id) ?? 0,
       hasCreditAccount: creditCustomerIds.has(row.id),
     })),
@@ -318,11 +349,15 @@ export async function linkCustomerPortalAccountAction(input: {
   reason: string;
   confirmed: boolean;
 }): Promise<CrmMutationResult & { status?: string }> {
-  await requirePermission("customers:link_portal_account");
+  const profile = await requireSession();
+  if (
+    !portalLinkRoles.includes(profile.role) ||
+    !hasEffectivePermission(profile.role, profile.permissions, "customers:link_portal_account", profile.email)
+  ) return { ok: false, message: "No tienes permiso para vincular cuentas del portal." };
+
   const customer = uuidLike(input.customerId, "Cliente");
   const user = uuidLike(input.userId, "Cuenta web");
   const reason = input.reason.trim();
-
   if (!customer.ok) return { ok: false, message: customer.message };
   if (!user.ok) return { ok: false, message: user.message };
   if (!input.confirmed) return { ok: false, message: "Confirma explícitamente la vinculación." };
@@ -337,7 +372,6 @@ export async function linkCustomerPortalAccountAction(input: {
     p_reason: reason,
     p_confirmed: true,
   });
-
   if (error) {
     await writeErrorLog({
       route: "/admin/vincular-cuenta-cliente",
@@ -349,20 +383,100 @@ export async function linkCustomerPortalAccountAction(input: {
   }
 
   const result = (data as Array<{ ok: boolean; status: string; message: string }> | null)?.[0];
-  if (!result) {
-    return { ok: false, message: "La vinculación no devolvió un resultado válido." };
-  }
-
+  if (!result) return { ok: false, message: "La vinculación no devolvió un resultado válido." };
   if (result.ok) {
     revalidatePath("/admin/crm");
     revalidatePath("/admin/clientes");
     revalidatePath("/admin/vincular-cuenta-cliente");
     revalidatePath("/cuenta");
   }
-
   return { ok: result.ok, status: result.status, message: result.message };
 }
 
+export async function updateCustomerIdentityAction(
+  input: CrmCustomerIdentityInput,
+): Promise<CustomerIdentityMutationResult> {
+  const profile = await requireSession();
+  if (
+    !customerIdentityRoles.includes(profile.role) ||
+    !hasEffectivePermission(profile.role, profile.permissions, "customers:update_identity", profile.email)
+  ) return { ok: false, status: "permission_denied", message: "No tienes permiso para editar la identidad comercial." };
+
+  const customer = uuidLike(input.customer_id, "Cliente");
+  if (!customer.ok) return { ok: false, message: customer.message, fieldErrors: { customer_id: customer.message } };
+
+  const contactName = requireText(input.contact_name, "Nombre de contacto", 180);
+  const businessName = optionalText(input.business_name);
+  const email = optionalText(input.email)?.toLowerCase() ?? null;
+  const rawPhone = optionalText(input.phone);
+  const phone = rawPhone ? validateHondurasPhone(rawPhone) : { ok: true as const, value: null };
+  const taxId = optionalText(input.tax_id);
+  const city = optionalText(input.city);
+  const expected = optionalDateTime(input.expected_updated_at);
+  const fieldErrors: CustomerIdentityMutationResult["fieldErrors"] = {};
+
+  if (!contactName.ok) fieldErrors.contact_name = contactName.message;
+  if (businessName && businessName.length > 180) fieldErrors.business_name = "Nombre comercial no puede superar 180 caracteres.";
+  if (email && (email.length > 320 || !validateEmail(email))) fieldErrors.email = "Ingresa un correo electrónico válido.";
+  if (!phone.ok) fieldErrors.phone = phone.message;
+  if (taxId && taxId.length > 80) fieldErrors.tax_id = "RTN no puede superar 80 caracteres.";
+  if (city && city.length > 180) fieldErrors.city = "Ciudad no puede superar 180 caracteres.";
+  if (!expected.ok) fieldErrors.expected_updated_at = expected.message;
+  if (Object.keys(fieldErrors).length > 0 || !contactName.ok || !phone.ok || !expected.ok) {
+    return { ok: false, status: "invalid_input", message: "Revisa los campos indicados.", fieldErrors };
+  }
+
+  const requestHeaders = await headers();
+  const actorIp = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || null;
+  const userAgent = requestHeaders.get("user-agent") || null;
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("update_customer_identity_manual", {
+    p_customer_id: customer.value,
+    p_business_name: businessName,
+    p_contact_name: contactName.value,
+    p_email: email,
+    p_phone: phone.value,
+    p_tax_id: taxId,
+    p_city: city,
+    p_expected_updated_at: expected.value,
+    p_actor_ip: actorIp,
+    p_actor_user_agent: userAgent,
+  });
+  if (error) {
+    await writeErrorLog({
+      route: "/admin/clientes",
+      action: "customer_identity.update_rpc_failed",
+      errorMessage: error.message,
+      metadata: { code: error.code ?? null, customerId: customer.value },
+    });
+    return { ok: false, message: "No fue posible guardar la información del cliente." };
+  }
+
+  const result = (data as Array<{
+    ok: boolean;
+    status: string;
+    message: string;
+    field_name: string | null;
+    customer_id: string;
+    updated_at: string;
+  }> | null)?.[0];
+  if (!result) return { ok: false, message: "La actualización no devolvió un resultado válido." };
+  if (!result.ok) {
+    const rpcFieldErrors = result.field_name
+      ? { [result.field_name]: result.message } as CustomerIdentityMutationResult["fieldErrors"]
+      : undefined;
+    return { ok: false, status: result.status, message: result.message, fieldErrors: rpcFieldErrors };
+  }
+
+  revalidatePath("/admin/clientes");
+  revalidatePath("/admin/crm");
+  return {
+    ok: true,
+    status: result.status,
+    message: result.message,
+    profile: await getAdminCustomerProfile(customer.value),
+  };
+}
 function localPhoneCandidate(normalizedPhone: string) {
   return normalizedPhone.startsWith("+504") ? normalizedPhone.slice(4) : normalizedPhone;
 }

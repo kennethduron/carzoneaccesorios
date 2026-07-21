@@ -52,6 +52,7 @@ import { registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actio
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { CustomerPortalLinkWorkspace } from "@/components/admin/customer-portal-link-workspace";
+import { CustomerIdentitySection } from "@/components/admin/customer-identity-section";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { Button, Input } from "@/components/ui";
@@ -87,6 +88,7 @@ type CrmManagerProps = {
   activeTask?: { id: string; label: string } | null;
   canManageCredit?: boolean;
   canLinkPortalAccount?: boolean;
+  canEditCustomerIdentity?: boolean;
 };
 
 type CustomerFilter = "clients" | "internal" | "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
@@ -298,6 +300,7 @@ export function CrmManager({
   activeTask = null,
   canManageCredit = false,
   canLinkPortalAccount = false,
+  canEditCustomerIdentity = false,
 }: CrmManagerProps) {
   const [query, setQuery] = useState("");
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
@@ -1207,6 +1210,7 @@ export function CrmManager({
             pending={isPending}
             canManageCredit={canManageCredit}
             canLinkPortalAccount={canLinkPortalAccount}
+            canEditCustomerIdentity={canEditCustomerIdentity}
             onProfileUpdated={setCustomerProfile}
             onClose={closeCustomerProfile}
             onApproveWholesale={approveWholesaleCustomer}
@@ -1384,6 +1388,7 @@ export function CrmManager({
           pending={isPending}
           canManageCredit={canManageCredit}
           canLinkPortalAccount={canLinkPortalAccount}
+          canEditCustomerIdentity={canEditCustomerIdentity}
           onProfileUpdated={setCustomerProfile}
           onClose={closeCustomerProfile}
           onApproveWholesale={approveWholesaleCustomer}
@@ -2132,6 +2137,7 @@ function CustomerProfileDrawer({
   pending,
   canManageCredit,
   canLinkPortalAccount,
+  canEditCustomerIdentity,
   onProfileUpdated,
   onClose,
   onApproveWholesale,
@@ -2155,6 +2161,7 @@ function CustomerProfileDrawer({
   pending: boolean;
   canManageCredit: boolean;
   canLinkPortalAccount: boolean;
+  canEditCustomerIdentity: boolean;
   onProfileUpdated: (profile: CrmCustomerProfile) => void;
   onClose: () => void;
   onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
@@ -2292,7 +2299,11 @@ function CustomerProfileDrawer({
           ) : customer && profile ? (
             <>
               {visibleActiveTab === "resumen" ? <CustomerProfileSummary profile={profile} /> : null}
-              {visibleActiveTab === "informacion" ? <CustomerProfileInfo customer={customer} /> : null}
+              {visibleActiveTab === "informacion" ? (
+                customer.profile_kind === "customer" ? (
+                  <CustomerIdentitySection customer={customer} canEdit={canEditCustomerIdentity} onProfileUpdated={onProfileUpdated} />
+                ) : <CustomerProfileInfo customer={customer} />
+              ) : null}
               {visibleActiveTab === "compras" ? <CustomerProfilePurchases orders={profile.orders} /> : null}
               {visibleActiveTab === "facturas" ? <CustomerProfileInvoices invoices={profile.invoices} /> : null}
               {customer.profile_kind === "customer" && visibleActiveTab === "crm" ? (
@@ -3321,13 +3332,16 @@ function CustomerProfileActions({
               id: customer.id,
               displayName: customerDisplayName(customer),
               email: customer.email,
+              contactName: customer.contact_name,
               phone: customer.phone,
               taxId: customer.tax_id,
+              city: customer.city,
               active: customer.active,
               status: customer.status,
               linked: Boolean(customer.user_id),
               linkedAccountEmail: customer.account_email,
               orderCount: customer.order_count,
+              invoiceCount: customer.invoice_count,
               receivableCount: profile?.receivables.length ?? 0,
               hasCreditAccount: Boolean(profile?.creditAccount),
             }}

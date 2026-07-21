@@ -15,6 +15,7 @@ insert into public.roles (id, name, permissions) values
 
 \ir ../supabase/migrations/202607150003_manual_customer_auth_linking.sql
 \ir ../supabase/migrations/202607150004_remove_obsolete_checkout_overload.sql
+\ir ../supabase/migrations/202607200004_secure_customer_identity_management.sql
 
 do $$
 begin

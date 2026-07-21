@@ -28,6 +28,10 @@ export default async function AdminCrmPage({
     "customers:link_portal_account",
     profile.email,
   );
+  const canEditCustomerIdentity =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "customers:update_identity", profile.email);
+
   const params = await searchParams;
   const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
   const crm = await getAdminCrm({
@@ -56,6 +60,7 @@ export default async function AdminCrmPage({
         activeTask={activeTask}
         canManageCredit={canManageCredit}
         canLinkPortalAccount={canLinkPortalAccount}
+        canEditCustomerIdentity={canEditCustomerIdentity}
       />
     </AdminShell>
   );

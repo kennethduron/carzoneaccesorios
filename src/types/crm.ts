@@ -20,7 +20,7 @@ export type CrmCustomerOption = {
   company_name: string | null;
   contact_name: string;
   email: string | null;
-  phone: string;
+  phone: string | null;
   tax_id: string | null;
   city: string | null;
   notes: string | null;
@@ -206,6 +206,17 @@ export type CrmCustomerProfile = {
   wholesaleHistory: CrmCustomerWholesaleHistoryRow[];
   creditAccount: import("@/types/credit").CustomerCreditAccount | null;
   receivables: import("@/types/credit").AccountsReceivableRow[];
+};
+
+export type CrmCustomerIdentityInput = {
+  customer_id: string;
+  business_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  tax_id: string;
+  city: string;
+  expected_updated_at: string;
 };
 
 export type CrmLeadInput = {

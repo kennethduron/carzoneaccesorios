@@ -40,6 +40,14 @@ set
   description = excluded.description,
   permissions = excluded.permissions;
 
+update public.roles
+set permissions = coalesce(permissions, '[]'::jsonb)
+  || '["customers:link_portal_account","customers:update_identity"]'::jsonb
+where name in ('technical_owner', 'business_owner', 'admin');
+
+update public.roles set permissions = permissions - 'customers:update_identity'
+where name in ('contadora', 'vendedor', 'bodega', 'soporte', 'cliente');
+
 insert into public.company_settings (
   company_name,
   tax_id,

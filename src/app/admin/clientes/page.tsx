@@ -28,6 +28,10 @@ export default async function AdminCustomersPage({
     "customers:link_portal_account",
     profile.email,
   );
+  const canEditCustomerIdentity =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "customers:update_identity", profile.email);
+
   const params = await searchParams;
   const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role });
 
@@ -48,6 +52,7 @@ export default async function AdminCustomersPage({
         focus="customers"
         canManageCredit={canManageCredit}
         canLinkPortalAccount={canLinkPortalAccount}
+        canEditCustomerIdentity={canEditCustomerIdentity}
       />
     </AdminShell>
   );

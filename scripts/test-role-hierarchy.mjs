@@ -30,6 +30,14 @@ assert.equal(rolePermissions.contadora.includes("payments:manage"), false);
 assert.equal(rolePermissions.contadora.includes("payments:confirm"), false);
 assert.equal(rolePermissions.contadora.includes("orders:read"), false);
 assert.equal(rolePermissions.contadora.includes("crm:manage"), false);
+assert.equal(rolePermissions.contadora.includes("customers:link_portal_account"), true);
+assert.equal(rolePermissions.contadora.includes("customers:update_identity"), false);
+for (const role of ["business_owner", "admin"]) {
+  assert.equal(rolePermissions[role].includes("customers:update_identity"), true, `${role} must edit customer identity`);
+}
+for (const role of ["vendedor", "bodega", "contadora", "soporte", "cliente"]) {
+  assert.equal(rolePermissions[role].includes("customers:update_identity"), false, `${role} must not edit customer identity`);
+}
 assert.equal(rolePermissions.contadora.includes("inventory:read"), true);
 assert.equal(rolePermissions.contadora.includes("inventory:manage"), false);
 assert.equal(rolePermissions.admin.includes("inventory:read"), true);
