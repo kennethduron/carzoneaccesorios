@@ -28,7 +28,7 @@ values
   (
     'contadora',
     'Revisa facturas fiscales, referencias bancarias, rangos fiscales, ISV y reportes contables.',
-    '["customers:link_portal_account","admin:access","products:read","products:create","products:update","products:import","products:images_manage","products:export","products:adjust_stock","inventory:read","notifications:read","invoices:read","invoices:export","fiscal:read","fiscal:reports","settings:fiscal","tax:read","tax:export","reports:fiscal_read","reports:fiscal_export","credit:read","credit:mark_paid","receivables:read","receivables:export","receivables:import","receivables:apply","receivables:assign","receivables:review","suppliers:read","suppliers:manage","purchases:read","purchases:manage","payables:read","payables:manage","payables:import","payables:apply","payables:assign","payables:review","accounting:read","accounting:create","accounting:post","accounting:manage","accounting:reverse","accounting:export","accounting:settings","accounting:close_period","accounting:reopen_period","accounting:view_reports"]'::jsonb
+    '["customers:link_portal_account","admin:access","products:read","products:create","products:update","products:import","products:images_manage","products:export","products:adjust_stock","inventory:read","notifications:read","invoices:read","invoices:export","fiscal:read","fiscal:reports","settings:fiscal","tax:read","tax:export","reports:fiscal_read","reports:fiscal_export","credit:read","credit:mark_paid","receivables:read","receivables:export","receivables:import","receivables:apply","receivables:assign","receivables:review","suppliers:read","suppliers:manage","purchases:read","purchases:manage","payables:read","payables:manage","payables:import","payables:apply","payables:assign","payables:review","accounting:read","accounting:create","accounting:edit_draft_entries","accounting:post","accounting:manage","accounting:reverse","accounting:export","accounting:settings","accounting:close_period","accounting:reopen_period","accounting:view_reports"]'::jsonb
   ),
   (
     'cliente',
@@ -47,6 +47,13 @@ where name in ('technical_owner', 'business_owner', 'admin');
 
 update public.roles set permissions = permissions - 'customers:update_identity'
 where name in ('contadora', 'vendedor', 'bodega', 'soporte', 'cliente');
+
+update public.roles
+set permissions = (
+  select jsonb_agg(distinct permission order by permission)
+  from jsonb_array_elements_text(coalesce(public.roles.permissions, '[]'::jsonb) || '["accounting:edit_draft_entries"]'::jsonb) permission(permission)
+)
+where name in ('technical_owner', 'business_owner', 'admin', 'contadora');
 
 insert into public.company_settings (
   company_name,

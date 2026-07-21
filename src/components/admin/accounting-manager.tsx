@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useMemo, useState, useTransition } from "react";
-import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Plus, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   postJournalEntryAction,
+  recalculateJournalDraftFromSourceAction,
   reverseJournalEntryAction,
   saveAccountingAccountAction,
   saveJournalDraftAction,
@@ -31,6 +33,7 @@ type AccountingManagerProps = {
   data: AccountingPageData;
   canManage: boolean;
   canCreate: boolean;
+  canEdit: boolean;
   canPost: boolean;
   canReverse: boolean;
   canExport?: boolean;
@@ -126,7 +129,7 @@ function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntry
   }));
 }
 
-export function AccountingManager({ data, canManage, canCreate, canPost, canReverse, canExport = false, canCsvExport = false, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
+export function AccountingManager({ data, canManage, canCreate, canEdit, canPost, canReverse, canExport = false, canCsvExport = false, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
   const [accountForm, setAccountForm] = useState<AccountingAccountInput>(emptyAccount);
   const [journalForm, setJournalForm] = useState({
     id: "",
@@ -228,9 +231,9 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
     });
   }
 
-  function postEntry(entryId: string) {
+  function postEntry(entryId: string, expectedVersion: number) {
     startTransition(async () => {
-      const result = await postJournalEntryAction(entryId);
+      const result = await postJournalEntryAction(entryId, expectedVersion);
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message);
@@ -249,6 +252,21 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
       } else {
         toast.error(result.message);
       }
+    });
+  }
+
+  function recalculateEntry(entryId: string, expectedVersion: number) {
+    const reason = window.prompt("Motivo del recálculo desde el documento origen (mínimo 10 caracteres):")?.trim() ?? "";
+    if (!reason) return;
+    if (reason.length < 10) {
+      toast.error("Ingresa un motivo de recálculo de al menos 10 caracteres.");
+      return;
+    }
+    startTransition(async () => {
+      const result = await recalculateJournalDraftFromSourceAction(entryId, expectedVersion, reason);
+      setMessage(result.message);
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
     });
   }
 
@@ -570,7 +588,7 @@ export function AccountingManager({ data, canManage, canCreate, canPost, canReve
             <p className="mt-1 text-sm text-black/55">Movimientos recientes del libro diario.</p>
           </div>
         </div>
-        <JournalEntries entries={data.journalEntries} canPost={canPost} canReverse={canReverse} onPost={postEntry} onReverse={reverseEntry} isPending={isPending} />
+        <JournalEntries entries={data.journalEntries} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={postEntry} onRecalculate={recalculateEntry} onReverse={reverseEntry} isPending={isPending} />
         <div className="mt-4">
           <PaginationControls
             basePath="/admin/contabilidad"
@@ -683,16 +701,20 @@ function AccountsTable({
 
 function JournalEntries({
   entries,
+  canEdit,
   canPost,
   canReverse,
   onPost,
+  onRecalculate,
   onReverse,
   isPending,
 }: {
   entries: JournalEntry[];
+  canEdit: boolean;
   canPost: boolean;
   canReverse: boolean;
-  onPost: (entryId: string) => void;
+  onPost: (entryId: string, expectedVersion: number) => void;
+  onRecalculate: (entryId: string, expectedVersion: number) => void;
   onReverse: (entryId: string) => void;
   isPending: boolean;
 }) {
@@ -746,7 +768,7 @@ function JournalEntries({
                 </tbody>
               </table>
             </div>
-            <EntryActions entry={entry} canPost={canPost} canReverse={canReverse} onPost={onPost} onReverse={onReverse} isPending={isPending} />
+            <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
           </article>
         ))}
       </div>
@@ -786,7 +808,7 @@ function JournalEntries({
                           <Eye size={15} />
                           Ver
                         </Button>
-                        <EntryActions entry={entry} canPost={canPost} canReverse={canReverse} onPost={onPost} onReverse={onReverse} isPending={isPending} compact />
+                        <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} compact />
                       </div>
                     </td>
                   </tr>
@@ -830,25 +852,44 @@ function JournalEntries({
 
 function EntryActions({
   entry,
+  canEdit,
   canPost,
   canReverse,
   onPost,
+  onRecalculate,
   onReverse,
   isPending,
   compact = false,
 }: {
   entry: JournalEntry;
+  canEdit: boolean;
   canPost: boolean;
   canReverse: boolean;
-  onPost: (entryId: string) => void;
+  onPost: (entryId: string, expectedVersion: number) => void;
+  onRecalculate: (entryId: string, expectedVersion: number) => void;
   onReverse: (entryId: string) => void;
   isPending: boolean;
   compact?: boolean;
 }) {
   return (
     <div className={`flex flex-wrap gap-2 ${compact ? "justify-end" : "mt-3"}`}>
+      {canEdit && entry.status === "borrador" ? (
+        <Link
+          className={`inline-flex items-center justify-center gap-2 rounded-lg border border-black/10 bg-white font-semibold text-black transition-colors hover:border-[#e4252c]/35 hover:bg-[#fff1f2] hover:text-[#b91c25] ${compact ? "px-3 py-1.5 text-sm" : "px-4 py-2"}`}
+          href={`/admin/contabilidad/partidas/${entry.id}/editar`}
+        >
+          <Pencil size={15} />
+          Editar
+        </Link>
+      ) : null}
+      {canEdit && entry.status === "borrador" && entry.source_type === "financial_event" && entry.source_id ? (
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onRecalculate(entry.id, entry.version)}>
+          <RefreshCw size={15} />
+          Recalcular desde origen
+        </Button>
+      ) : null}
       {canPost && entry.status === "borrador" ? (
-        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="dark" onClick={() => onPost(entry.id)}>
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="dark" onClick={() => onPost(entry.id, entry.version)}>
           <CheckCircle2 size={16} />
           Publicar
         </Button>

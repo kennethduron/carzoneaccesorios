@@ -1,7 +1,6 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { writeAuditLog } from "@/lib/audit";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
   type MappingRequirement,
@@ -9,6 +8,7 @@ import {
   type ResolvedAccountingAccount,
 } from "@/services/accounting/accounting-mapping-resolver";
 import type { AccountingMappingType, FinancialEventStatus } from "@/types/financial-center";
+import { buildPurchasePayableJournalLines } from "@/services/accounting/purchase-payable-journal-lines";
 
 export type JournalDraftGenerationResult = {
   ok: boolean;
@@ -156,6 +156,11 @@ const duplicateDraftMessage = "Este evento ya tiene una partida en borrador asoc
 const invalidEventAmountMessage = "No se puede generar la partida porque el monto del evento no es v\u00e1lido.";
 const missingPayableAccountMessage = "Falta la cuenta de proveedores por pagar.";
 const missingPurchaseMappingsMessage = "Faltan mapeos de compras.";
+const missingPurchaseTaxAccountMessage = "Falta la cuenta de impuesto para compras.";
+const missingPurchaseDiscountAccountMessage = "Falta la cuenta de descuentos de compras.";
+const missingPurchaseShippingAccountMessage = "Falta la cuenta de flete de compras.";
+const missingPayableFiscalBreakdownMessage = "La cuenta por pagar no tiene un desglose fiscal verificable. Revisa el documento origen antes de contabilizar.";
+const unsupportedPayableCurrencyMessage = "La moneda de la cuenta por pagar no coincide con la moneda contable HNL.";
 const missingSupplierPaymentAccountMessage = "Falta la cuenta para pagos a proveedores.";
 const inactiveConfiguredAccountMessage = "La cuenta contable configurada est\u00e1 inactiva.";
 const purchaseConfirmedControlMessage = "La compra fue confirmada, pero la partida contable se generar\u00e1 desde la cuenta por pagar o factura de proveedor para evitar duplicidad.";
@@ -204,19 +209,6 @@ function eventDate(value: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(date);
 }
 
-function nextEntryNumber() {
-  const dateKey = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Tegucigalpa",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(new Date())
-    .replaceAll("-", "");
-  const suffix = Date.now().toString().slice(-6);
-  return `PC-${dateKey}-${suffix}`;
-}
-
 function normalizePaymentMethod(value: unknown) {
   const method = cleanText(value).toLowerCase();
   if (method === "transferencia" || method === "transferencia_bancaria" || method === "bank") return "bank_transfer";
@@ -243,6 +235,10 @@ function snapshotTotalCostAmount(snapshot: Record<string, unknown>) {
 
 function snapshotTax(snapshot: Record<string, unknown>) {
   return toAmount(snapshot.tax ?? snapshot.tax_amount);
+}
+
+function snapshotSubtotal(snapshot: Record<string, unknown>) {
+  return toAmount(snapshot.subtotal);
 }
 
 function snapshotDiscount(snapshot: Record<string, unknown>) {
@@ -422,6 +418,7 @@ async function resolvePurchaseCostAccount(client?: SupabaseClient) {
 }
 function validateLines(lines: DraftLine[]) {
   const errors: string[] = [];
+  const signatures = new Set<string>();
   if (lines.length < 2) {
     errors.push("La partida debe tener al menos dos líneas contables.");
   }
@@ -430,6 +427,12 @@ function validateLines(lines: DraftLine[]) {
     if (!line.account_id) errors.push("Cada línea debe tener una cuenta contable activa.");
     if (line.debit > 0 && line.credit > 0) errors.push("Una línea no puede tener débito y crédito al mismo tiempo.");
     if (line.debit <= 0 && line.credit <= 0) errors.push("Cada línea debe tener débito o crédito mayor que cero.");
+  }
+
+  for (const line of lines) {
+    const signature = [line.account_id, toAmount(line.debit), toAmount(line.credit), cleanText(line.description)].join("|");
+    if (signatures.has(signature)) errors.push("La partida no puede contener lineas contables duplicadas.");
+    signatures.add(signature);
   }
 
   const totalDebit = toAmount(lines.reduce((sum, line) => sum + line.debit, 0));
@@ -722,6 +725,14 @@ async function buildAccountsPayableCreatedDraft(snapshot: Record<string, unknown
     return { ok: false, status: "failed", message: invalidEventAmountMessage, validationErrors: [invalidEventAmountMessage] };
   }
 
+  if (cleanText(snapshot.fiscal_breakdown_status) !== "complete") {
+    return { ok: false, status: "pending", message: missingPayableFiscalBreakdownMessage, validationErrors: [missingPayableFiscalBreakdownMessage] };
+  }
+
+  if (cleanText(snapshot.currency).toUpperCase() !== "HNL") {
+    return { ok: false, status: "pending", message: unsupportedPayableCurrencyMessage, validationErrors: [unsupportedPayableCurrencyMessage] };
+  }
+
   const [payable, purchaseCost, purchaseTax, purchaseDiscount, purchaseShipping] = await Promise.all([
     requirePurchaseApAccount(requirement("default_account", "accounts_payable", "Proveedores por pagar"), missingPayableAccountMessage, client),
     resolvePurchaseCostAccount(client),
@@ -737,22 +748,38 @@ async function buildAccountsPayableCreatedDraft(snapshot: Record<string, unknown
     return { ok: false, status: "pending", message: missingPurchaseMappingsMessage, validationErrors: [missingPurchaseMappingsMessage] };
   }
 
+  const purchaseBase = snapshotSubtotal(snapshot);
   const tax = snapshotTax(snapshot);
   const discount = snapshotDiscount(snapshot);
   const shipping = snapshotShipping(snapshot);
   const taxAccount = tax > 0 ? purchaseTax.account : null;
   const discountAccount = discount > 0 ? purchaseDiscount.account : null;
   const shippingAccount = shipping > 0 ? purchaseShipping.account : null;
-  const purchaseBase = toAmount(total - (taxAccount ? tax : 0) - (shippingAccount ? shipping : 0) + (discountAccount ? discount : 0));
-  const lines: DraftLine[] = [];
-
-  if (purchaseBase > 0) {
-    lines.push(accountLine(purchaseCost.account, purchaseBase, 0, "Compra o gasto registrado"));
+  const lineBuild = buildPurchasePayableJournalLines({
+    subtotal: purchaseBase,
+    taxAmount: tax,
+    discountAmount: discount,
+    shippingAmount: shipping,
+    totalAmount: total,
+    costAccountId: purchaseCost.account.id,
+    taxAccountId: taxAccount?.id ?? null,
+    discountAccountId: discountAccount?.id ?? null,
+    shippingAccountId: shippingAccount?.id ?? null,
+    payableAccountId: payable.account.id,
+  });
+  if (!lineBuild.ok) {
+    const message = lineBuild.error === "missing_tax_account"
+      ? missingPurchaseTaxAccountMessage
+      : lineBuild.error === "missing_discount_account"
+        ? missingPurchaseDiscountAccountMessage
+        : lineBuild.error === "missing_shipping_account"
+          ? missingPurchaseShippingAccountMessage
+          : lineBuild.error === "missing_cost_account"
+            ? missingPurchaseMappingsMessage
+            : missingPayableFiscalBreakdownMessage;
+    return { ok: false, status: "pending", message, validationErrors: [message] };
   }
-  if (taxAccount) lines.push(accountLine(taxAccount, tax, 0, "Impuesto de compras"));
-  if (shippingAccount) lines.push(accountLine(shippingAccount, shipping, 0, "Flete de compras"));
-  if (discountAccount) lines.push(accountLine(discountAccount, 0, discount, "Descuento de compras"));
-  lines.push(accountLine(payable.account, 0, total, "Cuenta por pagar a proveedor"));
+  const lines: DraftLine[] = lineBuild.lines;
 
   const lineErrors = validateLines(lines);
   if (lineErrors.length > 0) {
@@ -1248,75 +1275,27 @@ export async function generateJournalDraftFromFinancialEvent(
     return { ok: false, message: closedPeriodMutationMessage, status: "pending", validationErrors: [closedPeriodMutationMessage] };
   }
 
-  const { data: entry, error: entryError } = await supabase
-    .from("journal_entries")
-    .insert({
-      entry_number: nextEntryNumber(),
-      entry_date: draft.entryDate,
-      description: draft.description,
-      status: "borrador",
-      source_type: "financial_event",
-      source_id: event.id,
-      created_by: createdBy,
-    })
-    .select("id")
-    .single<{ id: string }>();
+  const { data: created, error: createError } = await supabase.rpc("create_journal_draft_from_financial_event", {
+    financial_event_id: event.id,
+    entry_date_value: draft.entryDate,
+    description_value: draft.description,
+    lines_data: draft.lines,
+    actor_ip: null,
+    actor_user_agent: null,
+  });
 
-  if (entryError) {
-    if (entryError.code === "23505") {
+  if (createError) {
+    if (createError.code === "23505" || createError.message.includes("ya tiene una partida")) {
       return { ok: false, message: duplicateDraftMessage };
     }
-
-    return { ok: false, message: entryError.message };
+    return { ok: false, message: createError.message };
   }
 
-  const { error: linesError } = await supabase.from("journal_entry_lines").insert(
-    draft.lines.map((line) => ({
-      journal_entry_id: entry.id,
-      ...line,
-    })),
-  );
-
-  if (linesError) {
-    await supabase.from("journal_entries").delete().eq("id", entry.id).eq("status", "borrador");
-    await updateFinancialEventStatus(event.id, "failed", [linesError.message], undefined, supabase);
-    return { ok: false, message: linesError.message, status: "failed", validationErrors: [linesError.message] };
-  }
-
-  await updateFinancialEventStatus(event.id, "draft_created", [], entry.id, supabase);
-
-  await writeAuditLog({
-    tableName: "journal_entries",
-    recordId: entry.id,
-    action: "accounting.journal_draft.generated_from_financial_event",
-    newData: {
-      financial_event_id: event.id,
-      source_type: event.source_type,
-      source_id: event.source_id,
-      event_purpose: event.event_purpose,
-      lines: draft.lines.length,
-      status: "borrador",
-    },
-  }, supabase);
-  await logAccountingEvent({
-    eventType: "journal_draft.generated_from_financial_event",
-    entityType: "journal_entries",
-    entityId: entry.id,
-    sourceType: "financial_event",
-    sourceId: event.id,
-    metadata: {
-      event_purpose: event.event_purpose,
-      posting_version: event.posting_version,
-      lines: draft.lines.length,
-      status: "borrador",
-    },
-    createdBy,
-  }, supabase);
-
+  const result = created as { journal_entry_id?: string } | null;
   return {
     ok: true,
     message: "Partida en borrador creada correctamente.",
-    journalEntryId: entry.id,
+    journalEntryId: result?.journal_entry_id,
     status: "draft_created",
   };
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
@@ -18,9 +19,9 @@ import {
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
 import type {
   AccountingAccountInput,
+  JournalDraftUpdateInput,
   JournalEntryInput,
   JournalEntryLineInput,
-  JournalEntryStatus,
 } from "@/types/accounting";
 import type { ChartOfAccountsImportActionState } from "@/types/accounting-catalog";
 import type { AccountingMappingInput, AutomationMode } from "@/types/financial-center";
@@ -28,6 +29,8 @@ import type { AccountingMappingInput, AutomationMode } from "@/types/financial-c
 type AccountingMutationResult = {
   ok: boolean;
   message: string;
+  version?: number;
+  journalEntryId?: string;
 };
 
 type FinancialEventScanActionResult = AccountingMutationResult & {
@@ -38,49 +41,25 @@ type JournalDraftGenerationActionResult = AccountingMutationResult & {
   journalEntryId?: string;
 };
 
-type EntryForMutation = {
-  id: string;
-  entry_number: string;
-  entry_date: string;
-  description: string;
-  status: JournalEntryStatus;
-  source_type: string | null;
-  source_id: string | null;
-  created_by: string;
-  posted_by: string | null;
-  posted_at: string | null;
-  reversed_entry_id: string | null;
-};
-
-type LineForMutation = {
-  id: string;
-  journal_entry_id: string;
-  account_id: string;
-  debit: unknown;
-  credit: unknown;
-  description: string | null;
-};
-
 const accountTypes = new Set(["asset", "liability", "equity", "revenue", "cost", "expense"]);
 const normalBalances = new Set(["debit", "credit"]);
-const closedPeriodMutationMessage = "No se puede registrar o modificar una partida dentro de un período contable cerrado.";
 
-async function isDateInClosedAccountingPeriod(entryDate: string) {
-  const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("accounting_periods")
-    .select("id")
-    .eq("status", "closed")
-    .lte("start_date", entryDate)
-    .gte("end_date", entryDate)
-    .limit(1);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (data?.length ?? 0) > 0;
+async function accountingRequestContext() {
+  const requestHeaders = await headers();
+  return {
+    actorIp: requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip") || null,
+    userAgent: requestHeaders.get("user-agent")?.slice(0, 500) || null,
+  };
 }
+
+function accountingRpcMessage(error: { message: string; code?: string } | null, fallback: string) {
+  if (!error) return fallback;
+  if (error.code === "40001" || error.message.includes("modificada por otro usuario")) {
+    return "La partida fue modificada por otro usuario. Recargue la informacion antes de continuar.";
+  }
+  return error.message || fallback;
+}
+
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
@@ -101,18 +80,6 @@ function toAmount(value: unknown) {
   return Math.round(amount * 100) / 100;
 }
 
-function nextEntryNumber() {
-  const dateKey = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Tegucigalpa",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(new Date())
-    .replaceAll("-", "");
-  const suffix = Date.now().toString().slice(-6);
-  return `PC-${dateKey}-${suffix}`;
-}
 
 async function logAccountingEvent(input: {
   eventType: string;
@@ -307,35 +274,6 @@ async function validateActiveAccounts(accountIds: string[]) {
   return { ok: true as const };
 }
 
-async function getEntryWithLines(entryId: string) {
-  const supabase = await getSupabaseServerClient();
-  const [{ data: entry, error: entryError }, { data: lines, error: linesError }] = await Promise.all([
-    supabase
-      .from("journal_entries")
-      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id")
-      .eq("id", entryId)
-      .maybeSingle<EntryForMutation>(),
-    supabase
-      .from("journal_entry_lines")
-      .select("id, journal_entry_id, account_id, debit, credit, description")
-      .eq("journal_entry_id", entryId)
-      .returns<LineForMutation[]>(),
-  ]);
-
-  if (entryError) {
-    return { ok: false as const, message: entryError.message };
-  }
-
-  if (linesError) {
-    return { ok: false as const, message: linesError.message };
-  }
-
-  if (!entry) {
-    return { ok: false as const, message: "La partida contable no existe." };
-  }
-
-  return { ok: true as const, entry, lines: lines ?? [] };
-}
 
 function lineTotals(lines: Array<{ debit: unknown; credit: unknown }>) {
   const debit = lines.reduce((sum, line) => sum + toAmount(line.debit), 0);
@@ -707,292 +645,163 @@ export async function toggleAccountingAccountAction(accountId: string, isActive:
 }
 
 export async function saveJournalDraftAction(input: JournalEntryInput): Promise<AccountingMutationResult> {
-  const profile = await requirePermission("accounting:create");
+  await requirePermission("accounting:create");
+  if (input.id) {
+    return { ok: false, message: "La edición de borradores debe usar el flujo transaccional autorizado." };
+  }
+
   const description = cleanText(input.description);
   const entryDate = cleanDate(input.entry_date);
-
   if (!entryDate || description.length < 3) {
     return { ok: false, message: "Ingresa fecha y descripción de la partida." };
   }
 
   const normalized = normalizeLines(input.lines);
-  if (!normalized.ok) {
-    return { ok: false, message: normalized.message };
-  }
-
+  if (!normalized.ok) return { ok: false, message: normalized.message };
   const accountsValidation = await validateActiveAccounts(normalized.lines.map((line) => line.account_id));
-  if (!accountsValidation.ok) {
-    return { ok: false, message: accountsValidation.message };
-  }
-
-  const supabase = await getSupabaseServerClient();
-  let entryId = input.id;
-
-  if (entryId) {
-    const existing = await getEntryWithLines(entryId);
-    if (!existing.ok) {
-      return { ok: false, message: existing.message };
-    }
-
-    if (existing.entry.status !== "borrador") {
-      return { ok: false, message: "Solo se pueden editar partidas en borrador." };
-    }
-
-    if (await isDateInClosedAccountingPeriod(existing.entry.entry_date) || await isDateInClosedAccountingPeriod(entryDate)) {
-      return { ok: false, message: closedPeriodMutationMessage };
-    }
-
-    const { error: entryError } = await supabase
-      .from("journal_entries")
-      .update({
-        entry_date: entryDate,
-        description,
-        source_type: cleanText(input.source_type) || null,
-        source_id: cleanText(input.source_id) || null,
-      })
-      .eq("id", entryId);
-
-    if (entryError) {
-      return { ok: false, message: entryError.message };
-    }
-
-    const { error: deleteError } = await supabase.from("journal_entry_lines").delete().eq("journal_entry_id", entryId);
-    if (deleteError) {
-      return { ok: false, message: deleteError.message };
-    }
-  } else {
-    if (await isDateInClosedAccountingPeriod(entryDate)) {
-      return { ok: false, message: closedPeriodMutationMessage };
-    }
-
-    const { data, error } = await supabase
-      .from("journal_entries")
-      .insert({
-        entry_number: nextEntryNumber(),
-        entry_date: entryDate,
-        description,
-        status: "borrador",
-        source_type: cleanText(input.source_type) || null,
-        source_id: cleanText(input.source_id) || null,
-        created_by: profile.id,
-      })
-      .select("id")
-      .single<{ id: string }>();
-
-    if (error) {
-      return { ok: false, message: error.message };
-    }
-
-    entryId = data.id;
-  }
-
-  const { error: lineError } = await supabase.from("journal_entry_lines").insert(
-    normalized.lines.map((line) => ({
-      journal_entry_id: entryId,
-      ...line,
-    })),
-  );
-
-  if (lineError) {
-    return { ok: false, message: lineError.message };
-  }
-
-  await writeAuditLog({
-    tableName: "journal_entries",
-    recordId: entryId,
-    action: input.id ? "accounting.journal_draft.updated" : "accounting.journal_draft.created",
-    newData: { entry_date: entryDate, description, lines: normalized.lines.length },
-  });
-  await logAccountingEvent({
-    eventType: input.id ? "journal_draft.updated" : "journal_draft.created",
-    entityType: "journal_entries",
-    entityId: entryId,
-    metadata: { entry_date: entryDate, description, lines: normalized.lines.length },
-    createdBy: profile.id,
-  });
-
-  revalidatePath("/admin/contabilidad");
-  return { ok: true, message: "Partida guardada como borrador." };
-}
-
-export async function postJournalEntryAction(entryId: string): Promise<AccountingMutationResult> {
-  const profile = await requirePermission("accounting:post");
-  const existing = await getEntryWithLines(entryId);
-  if (!existing.ok) {
-    return { ok: false, message: existing.message };
-  }
-
-  if (existing.entry.status !== "borrador") {
-    return { ok: false, message: "Solo se pueden publicar partidas en borrador." };
-  }
-
-  if (await isDateInClosedAccountingPeriod(existing.entry.entry_date)) {
-    return { ok: false, message: closedPeriodMutationMessage };
-  }
-
-  const normalized = normalizeLines(
-    existing.lines.map((line) => ({
-      account_id: line.account_id,
-      debit: toAmount(line.debit),
-      credit: toAmount(line.credit),
-      description: line.description,
-    })),
-  );
-  if (!normalized.ok) {
-    return { ok: false, message: normalized.message };
-  }
-
-  const accountsValidation = await validateActiveAccounts(normalized.lines.map((line) => line.account_id));
-  if (!accountsValidation.ok) {
-    return { ok: false, message: accountsValidation.message };
-  }
-
-  const totals = lineTotals(existing.lines);
-  if (totals.debit <= 0 || totals.credit <= 0 || totals.debit !== totals.credit) {
+  if (!accountsValidation.ok) return { ok: false, message: accountsValidation.message };
+  const totals = lineTotals(normalized.lines);
+  if (totals.debit <= 0 || totals.debit !== totals.credit) {
     return { ok: false, message: "La partida debe estar cuadrada: total débito igual a total crédito." };
   }
 
+  const requestContext = await accountingRequestContext();
   const supabase = await getSupabaseServerClient();
-  const postedAt = new Date().toISOString();
-  const { error } = await supabase
-    .from("journal_entries")
-    .update({ status: "publicada", posted_by: profile.id, posted_at: postedAt })
-    .eq("id", entryId);
+  const { data, error } = await supabase.rpc("create_manual_journal_draft", {
+    entry_date_value: entryDate,
+    description_value: description,
+    lines_data: normalized.lines,
+    actor_ip: requestContext.actorIp,
+    actor_user_agent: requestContext.userAgent,
+  });
+  if (error) return { ok: false, message: accountingRpcMessage(error, "No se pudo crear la partida.") };
+
+  const result = data as { journal_entry_id?: string; version?: number } | null;
+  revalidatePath("/admin/contabilidad");
+  return {
+    ok: true,
+    message: "Partida guardada como borrador.",
+    journalEntryId: result?.journal_entry_id,
+    version: result?.version,
+  };
+}
+
+export async function updateJournalDraftAction(input: JournalDraftUpdateInput): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:edit_draft_entries");
+  const description = cleanText(input.description);
+  const entryDate = cleanDate(input.entry_date);
+  const reason = cleanText(input.edit_reason);
+  if (!input.id || !Number.isInteger(input.expected_version) || input.expected_version < 1) {
+    return { ok: false, message: "La versión de la partida no es válida. Recarga la información." };
+  }
+  if (!entryDate || description.length < 3) return { ok: false, message: "Ingresa fecha y descripción de la partida." };
+  if (reason.length < 10 || reason.length > 1000) return { ok: false, message: "Ingresa un motivo de edición de al menos 10 caracteres." };
+  const normalized = normalizeLines(input.lines);
+  if (!normalized.ok) return { ok: false, message: normalized.message };
+  const totals = lineTotals(normalized.lines);
+  if (totals.debit <= 0 || totals.debit !== totals.credit) {
+    return { ok: false, message: "No puede guardar una partida desbalanceada." };
+  }
+  const accountsValidation = await validateActiveAccounts(normalized.lines.map((line) => line.account_id));
+  if (!accountsValidation.ok) return { ok: false, message: accountsValidation.message };
+
+  const requestContext = await accountingRequestContext();
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("update_journal_draft", {
+    target_entry_id: input.id,
+    expected_version: input.expected_version,
+    entry_date_value: entryDate,
+    description_value: description,
+    lines_data: normalized.lines,
+    edit_reason: reason,
+    actor_ip: requestContext.actorIp,
+    actor_user_agent: requestContext.userAgent,
+  });
+  if (error) {
+    if (error.code === "40001" || error.message.includes("modificada por otro usuario")) {
+      await writeAuditLog({
+        tableName: "journal_entries", recordId: input.id, action: "accounting_entry_update_conflict",
+        newData: { operation: "edit", expected_version: input.expected_version, actor_id: profile.id, actor_role: profile.role },
+        ipAddress: requestContext.actorIp, userAgent: requestContext.userAgent,
+      });
+    }
+    return { ok: false, message: accountingRpcMessage(error, "No se pudo editar la partida.") };
+  }
+  const result = data as { version?: number } | null;
+  revalidatePath("/admin/contabilidad");
+  revalidatePath(`/admin/contabilidad/partidas/${input.id}/editar`);
+  return { ok: true, message: "Partida actualizada. Continúa en borrador.", version: result?.version };
+}
+
+export async function recalculateJournalDraftFromSourceAction(
+  entryId: string,
+  expectedVersion: number,
+  reason: string,
+): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:edit_draft_entries");
+  const cleanReason = cleanText(reason);
+  if (cleanReason.length < 10 || cleanReason.length > 1000) return { ok: false, message: "Ingresa un motivo de recálculo de al menos 10 caracteres." };
+  const requestContext = await accountingRequestContext();
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("recalculate_journal_draft_from_source", {
+    target_entry_id: entryId,
+    expected_version: expectedVersion,
+    recalculate_reason: cleanReason,
+    actor_ip: requestContext.actorIp,
+    actor_user_agent: requestContext.userAgent,
+  });
+  if (error) {
+    if (error.code === "40001" || error.message.includes("modificada por otro usuario")) {
+      await writeAuditLog({
+        tableName: "journal_entries", recordId: entryId, action: "accounting_entry_update_conflict",
+        newData: { operation: "recalculate", expected_version: expectedVersion, actor_id: profile.id, actor_role: profile.role },
+        ipAddress: requestContext.actorIp, userAgent: requestContext.userAgent,
+      });
+    }
+    return { ok: false, message: accountingRpcMessage(error, "No se pudo recalcular la partida.") };
+  }
+  const result = data as { version?: number } | null;
+  revalidatePath("/admin/contabilidad");
+  revalidatePath(`/admin/contabilidad/partidas/${entryId}/editar`);
+  return { ok: true, message: "Partida recalculada desde el documento origen.", version: result?.version };
+}
+
+export async function postJournalEntryAction(entryId: string, expectedVersion: number): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:post");
+  const requestContext = await accountingRequestContext();
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("post_journal_entry", {
+    target_entry_id: entryId,
+    expected_version: expectedVersion,
+    actor_ip: requestContext.actorIp,
+    actor_user_agent: requestContext.userAgent,
+  });
 
   if (error) {
-    return { ok: false, message: error.message };
+    if (error.code === "40001" || error.message.includes("modificada por otro usuario")) {
+      await writeAuditLog({
+        tableName: "journal_entries",
+        recordId: entryId,
+        action: "accounting_entry_update_conflict",
+        newData: { operation: "publish", expected_version: expectedVersion, actor_id: profile.id, actor_role: profile.role },
+        ipAddress: requestContext.actorIp,
+        userAgent: requestContext.userAgent,
+      });
+    }
+    return { ok: false, message: accountingRpcMessage(error, "No se pudo publicar la partida.") };
   }
 
-  await writeAuditLog({
-    tableName: "journal_entries",
-    recordId: entryId,
-    action: "accounting.journal_entry.posted",
-    oldData: { status: existing.entry.status },
-    newData: { status: "publicada", total_debit: totals.debit, total_credit: totals.credit },
-  });
-  await logAccountingEvent({
-    eventType: "journal_entry.posted",
-    entityType: "journal_entries",
-    entityId: entryId,
-    metadata: { total_debit: totals.debit, total_credit: totals.credit },
-    createdBy: profile.id,
-  });
-
+  const result = data as { version?: number } | null;
   revalidatePath("/admin/contabilidad");
-  return { ok: true, message: "Partida publicada correctamente." };
+  revalidatePath(`/admin/contabilidad/partidas/${entryId}/editar`);
+  return { ok: true, message: "Partida publicada correctamente.", version: result?.version };
 }
 
 export async function reverseJournalEntryAction(entryId: string): Promise<AccountingMutationResult> {
-  const profile = await requirePermission("accounting:reverse");
-  const existing = await getEntryWithLines(entryId);
-  if (!existing.ok) {
-    return { ok: false, message: existing.message };
-  }
-
-  if (existing.entry.status !== "publicada") {
-    return { ok: false, message: "Solo se pueden reversar partidas publicadas." };
-  }
-
-  const totals = lineTotals(existing.lines);
-  if (totals.debit !== totals.credit || totals.debit <= 0) {
-    return { ok: false, message: "La partida original no está cuadrada y no puede reversarse automáticamente." };
-  }
-
+  await requirePermission("accounting:reverse");
   const supabase = await getSupabaseServerClient();
-  const now = new Date().toISOString();
-  const { data: reversal, error: reversalError } = await supabase
-    .from("journal_entries")
-    .insert({
-      entry_number: nextEntryNumber(),
-      entry_date: new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date()),
-      description: `Reverso de ${existing.entry.entry_number}: ${existing.entry.description}`,
-      status: "borrador",
-      source_type: "journal_reversal",
-      source_id: existing.entry.id,
-      created_by: profile.id,
-    })
-    .select("id")
-    .single<{ id: string }>();
-
-  if (reversalError) {
-    return { ok: false, message: reversalError.message };
-  }
-
-  const { error: linesError } = await supabase.from("journal_entry_lines").insert(
-    existing.lines.map((line) => ({
-      journal_entry_id: reversal.id,
-      account_id: line.account_id,
-      debit: toAmount(line.credit),
-      credit: toAmount(line.debit),
-      description: line.description ? `Reverso: ${line.description}` : `Reverso de ${existing.entry.entry_number}`,
-    })),
-  );
-
-  if (linesError) {
-    return { ok: false, message: linesError.message };
-  }
-
-  const { error: postError } = await supabase
-    .from("journal_entries")
-    .update({ status: "publicada", posted_by: profile.id, posted_at: now })
-    .eq("id", reversal.id);
-
-  if (postError) {
-    return { ok: false, message: postError.message };
-  }
-
-  const { error: originalError } = await supabase
-    .from("journal_entries")
-    .update({ status: "reversada", reversed_entry_id: reversal.id })
-    .eq("id", existing.entry.id);
-
-  if (originalError) {
-    return { ok: false, message: originalError.message };
-  }
-
-  await writeAuditLog({
-    tableName: "journal_entries",
-    recordId: reversal.id,
-    action: "accounting.journal_reversal.created",
-    newData: {
-      status: "publicada",
-      original_entry_id: existing.entry.id,
-      original_entry_number: existing.entry.entry_number,
-      total_debit: totals.debit,
-      total_credit: totals.credit,
-    },
-  });
-  await logAccountingEvent({
-    eventType: "journal_reversal.created",
-    entityType: "journal_entries",
-    entityId: reversal.id,
-    sourceType: "journal_reversal",
-    sourceId: existing.entry.id,
-    metadata: {
-      original_entry_id: existing.entry.id,
-      original_entry_number: existing.entry.entry_number,
-      total_debit: totals.debit,
-      total_credit: totals.credit,
-    },
-    createdBy: profile.id,
-  });
-
-  await writeAuditLog({
-    tableName: "journal_entries",
-    recordId: existing.entry.id,
-    action: "accounting.journal_entry.reversed",
-    oldData: { status: existing.entry.status },
-    newData: { status: "reversada", reversal_entry_id: reversal.id },
-  });
-  await logAccountingEvent({
-    eventType: "journal_entry.reversed",
-    entityType: "journal_entries",
-    entityId: existing.entry.id,
-    sourceType: "journal_reversal",
-    sourceId: reversal.id,
-    metadata: { original_entry_number: existing.entry.entry_number, reversal_entry_id: reversal.id },
-    createdBy: profile.id,
-  });
+  const { error } = await supabase.rpc("reverse_journal_entry", { target_entry_id: entryId });
+  if (error) return { ok: false, message: accountingRpcMessage(error, "No se pudo reversar la partida.") };
 
   revalidatePath("/admin/contabilidad");
   return { ok: true, message: "Partida reversada correctamente." };

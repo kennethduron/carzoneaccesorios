@@ -73,6 +73,7 @@ export type Permission =
   | "payables:review"
   | "accounting:read"
   | "accounting:create"
+  | "accounting:edit_draft_entries"
   | "accounting:post"
   | "accounting:manage"
   | "accounting:reverse"

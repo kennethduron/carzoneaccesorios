@@ -7,7 +7,9 @@ import type {
   AccountingDashboardSummary,
   AccountingPageData,
   JournalEntry,
+  JournalEntryEditData,
   JournalEntryLine,
+  JournalEntrySourceContext,
 } from "@/types/accounting";
 
 type AccountingPageInput = {
@@ -17,7 +19,9 @@ type AccountingPageInput = {
   journalPageSize?: number;
 };
 
-type JournalEntryRow = Omit<JournalEntry, "lines" | "total_debit" | "total_credit">;
+type JournalEntryRow = Omit<JournalEntry, "lines" | "total_debit" | "total_credit" | "metadata"> & {
+  metadata: unknown;
+};
 
 type JournalLineRow = Omit<JournalEntryLine, "debit" | "credit" | "account"> & {
   debit: unknown;
@@ -70,6 +74,7 @@ function normalizeEntry(row: JournalEntryRow, lines: JournalEntryLine[] = []): J
 
   return {
     ...row,
+    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {},
     lines,
     total_debit: Math.round(totalDebit * 100) / 100,
     total_credit: Math.round(totalCredit * 100) / 100,
@@ -120,7 +125,7 @@ async function getLatestEntry(): Promise<JournalEntry | null> {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase
     .from("journal_entries")
-    .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, created_at, updated_at")
+    .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
     .order("created_at", { ascending: false })
     .limit(1)
     .returns<JournalEntryRow[]>();
@@ -172,7 +177,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     getAccountingAccountHierarchyOptions(),
     supabase
       .from("journal_entries")
-      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, created_at, updated_at", { count: "exact" })
+      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at", { count: "exact" })
       .order("entry_date", { ascending: false })
       .order("created_at", { ascending: false })
       .range(journalFrom, journalFrom + journalPageSize - 1)
@@ -219,4 +224,127 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     journalPageSize,
     journalTotal: journalTotal ?? 0,
   };
+}
+
+export async function getJournalEntryEditData(entryId: string): Promise<JournalEntryEditData | null> {
+  const supabase = await getSupabaseServerClient();
+  const [{ data: entryRow, error: entryError }, { data: activeAccounts, error: accountsError }] = await Promise.all([
+    supabase
+      .from("journal_entries")
+      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
+      .eq("id", entryId)
+      .maybeSingle<JournalEntryRow>(),
+    supabase
+      .from("accounting_accounts")
+      .select("id, code, name, type, parent_id, normal_balance, is_active, description, created_by, created_at, updated_at")
+      .eq("is_active", true)
+      .order("code")
+      .limit(500)
+      .returns<AccountingAccount[]>(),
+  ]);
+
+  if (entryError) throw new Error(entryError.message);
+  if (accountsError) throw new Error(accountsError.message);
+  if (!entryRow) return null;
+
+  const linesByEntry = await getLinesByEntryIds([entryId]);
+  const entry = normalizeEntry(entryRow, linesByEntry.get(entryId) ?? []);
+  const { data: creator } = await supabase
+    .from("users")
+    .select("full_name, username, email")
+    .eq("id", entry.created_by)
+    .maybeSingle<{ full_name: string | null; username: string | null; email: string | null }>();
+  const creatorName = creator?.full_name?.trim() || creator?.username?.trim() || creator?.email?.trim() || entry.created_by;
+
+  let sourceContext: JournalEntrySourceContext | null = null;
+  if (entry.source_type === "financial_event" && entry.source_id) {
+    const { data: financialEvent, error: eventError } = await supabase
+      .from("financial_events")
+      .select("id, status, event_purpose, source_type, source_id, source_snapshot")
+      .eq("id", entry.source_id)
+      .maybeSingle<{
+        id: string;
+        status: string;
+        event_purpose: string;
+        source_type: string;
+        source_id: string;
+        source_snapshot: unknown;
+      }>();
+    if (eventError) throw new Error(eventError.message);
+
+    if (financialEvent) {
+      let accountsPayable: JournalEntrySourceContext["accounts_payable"] = null;
+      let purchase: JournalEntrySourceContext["purchase"] = null;
+      let supplierInvoice: JournalEntrySourceContext["supplier_invoice"] = null;
+      if (financialEvent.source_type === "accounts_payable") {
+        const { data: payable, error: payableError } = await supabase
+          .from("accounts_payable")
+          .select("id, purchase_id, supplier_invoice_id, total_amount, balance, currency, status, due_date")
+          .eq("id", financialEvent.source_id)
+          .maybeSingle<{
+            id: string;
+            purchase_id: string | null;
+            supplier_invoice_id: string | null;
+            total_amount: unknown;
+            balance: unknown;
+            currency: string;
+            status: string;
+            due_date: string | null;
+          }>();
+        if (payableError) throw new Error(payableError.message);
+        if (payable) {
+          accountsPayable = {
+            id: payable.id,
+            total_amount: toNumber(payable.total_amount),
+            balance: toNumber(payable.balance),
+            currency: payable.currency,
+            status: payable.status,
+            due_date: payable.due_date,
+          };
+          const [purchaseResult, invoiceResult] = await Promise.all([
+            payable.purchase_id
+              ? supabase.from("purchases").select("id, purchase_number, subtotal, tax_amount, discount_amount, shipping_amount, total, status").eq("id", payable.purchase_id).maybeSingle()
+              : Promise.resolve({ data: null, error: null }),
+            payable.supplier_invoice_id
+              ? supabase.from("supplier_invoices").select("id, invoice_number, subtotal, tax_amount, discount_amount, total, status").eq("id", payable.supplier_invoice_id).maybeSingle()
+              : Promise.resolve({ data: null, error: null }),
+          ]);
+          if (purchaseResult.error) throw new Error(purchaseResult.error.message);
+          if (invoiceResult.error) throw new Error(invoiceResult.error.message);
+          if (purchaseResult.data) {
+            const row = purchaseResult.data as Record<string, unknown>;
+            purchase = {
+              id: String(row.id), purchase_number: String(row.purchase_number),
+              subtotal: toNumber(row.subtotal), tax_amount: toNumber(row.tax_amount),
+              discount_amount: toNumber(row.discount_amount), shipping_amount: toNumber(row.shipping_amount),
+              total: toNumber(row.total), status: String(row.status),
+            };
+          }
+          if (invoiceResult.data) {
+            const row = invoiceResult.data as Record<string, unknown>;
+            supplierInvoice = {
+              id: String(row.id), invoice_number: String(row.invoice_number),
+              subtotal: toNumber(row.subtotal), tax_amount: toNumber(row.tax_amount),
+              discount_amount: toNumber(row.discount_amount), total: toNumber(row.total), status: String(row.status),
+            };
+          }
+        }
+      }
+      sourceContext = {
+        financial_event_id: financialEvent.id,
+        event_status: financialEvent.status,
+        event_purpose: financialEvent.event_purpose,
+        source_type: financialEvent.source_type,
+        source_id: financialEvent.source_id,
+        source_snapshot: financialEvent.source_snapshot && typeof financialEvent.source_snapshot === "object"
+          ? financialEvent.source_snapshot as Record<string, unknown>
+          : {},
+        accounts_payable: accountsPayable,
+        purchase,
+        supplier_invoice: supplierInvoice,
+      };
+    }
+  }
+
+  return { entry, activeAccounts: activeAccounts ?? [], creatorName, sourceContext };
 }

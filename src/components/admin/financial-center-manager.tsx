@@ -35,6 +35,7 @@ type FinancialCenterManagerProps = {
   financialData: FinancialCenterData;
   canManage: boolean;
   canCreate: boolean;
+  canEditDrafts: boolean;
   canPost: boolean;
   canReverse: boolean;
   canConfigureAccounting: boolean;
@@ -290,6 +291,7 @@ export function FinancialCenterManager({
   financialData,
   canManage,
   canCreate,
+  canEditDrafts,
   canPost,
   canReverse,
   canConfigureAccounting,
@@ -708,6 +710,7 @@ export function FinancialCenterManager({
           data={accountingData}
           canManage={canManage}
           canCreate={canCreate}
+          canEdit={canEditDrafts}
           canPost={canPost}
           canReverse={canReverse}
           canExport={canExportAccounting}
@@ -721,6 +724,7 @@ export function FinancialCenterManager({
           data={accountingData}
           canManage={canManage}
           canCreate={canCreate}
+          canEdit={canEditDrafts}
           canPost={canPost}
           canReverse={canReverse}
           canExport={canExportAccounting}

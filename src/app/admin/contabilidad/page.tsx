@@ -27,6 +27,7 @@ export default async function AdminAccountingPage({
 
   const canManage = hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email);
   const canCreate = hasEffectivePermission(profile.role, profile.permissions, "accounting:create", profile.email);
+  const canEditDrafts = hasEffectivePermission(profile.role, profile.permissions, "accounting:edit_draft_entries", profile.email);
   const canPost = hasEffectivePermission(profile.role, profile.permissions, "accounting:post", profile.email);
   const canReverse = hasEffectivePermission(profile.role, profile.permissions, "accounting:reverse", profile.email);
   const canConfigureAccounting = hasEffectivePermission(profile.role, profile.permissions, "accounting:settings", profile.email);
@@ -63,6 +64,7 @@ export default async function AdminAccountingPage({
           financialData={financialData}
           canManage={canManage}
           canCreate={canCreate}
+          canEditDrafts={canEditDrafts}
           canPost={canPost}
           canReverse={canReverse}
           canConfigureAccounting={canConfigureAccounting}

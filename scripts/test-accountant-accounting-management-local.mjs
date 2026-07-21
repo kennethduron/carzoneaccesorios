@@ -11,6 +11,7 @@ if (process.env.ALLOW_LOCAL_MUTATING_TESTS !== "true") {
 const accountingPermissions = [
   "accounting:read",
   "accounting:create",
+  "accounting:edit_draft_entries",
   "accounting:post",
   "accounting:manage",
   "accounting:reverse",

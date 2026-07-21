@@ -122,6 +122,9 @@ export type JournalEntry = {
   posted_by: string | null;
   posted_at: string | null;
   reversed_entry_id: string | null;
+  version: number;
+  updated_by: string | null;
+  metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   lines: JournalEntryLine[];
@@ -147,6 +150,58 @@ export type JournalEntryInput = {
   source_type?: string | null;
   source_id?: string | null;
   lines: JournalEntryLineInput[];
+};
+
+export type JournalDraftUpdateInput = {
+  id: string;
+  expected_version: number;
+  entry_date: string;
+  description: string;
+  edit_reason: string;
+  lines: JournalEntryLineInput[];
+};
+
+export type JournalEntrySourceContext = {
+  financial_event_id: string;
+  event_status: string;
+  event_purpose: string;
+  source_type: string;
+  source_id: string;
+  source_snapshot: Record<string, unknown>;
+  accounts_payable: {
+    id: string;
+    total_amount: number;
+    balance: number;
+    currency: string;
+    status: string;
+    due_date: string | null;
+  } | null;
+  purchase: {
+    id: string;
+    purchase_number: string;
+    subtotal: number;
+    tax_amount: number;
+    discount_amount: number;
+    shipping_amount: number;
+    total: number;
+    status: string;
+  } | null;
+  supplier_invoice: {
+    id: string;
+    invoice_number: string;
+    subtotal: number;
+    tax_amount: number;
+    discount_amount: number;
+    total: number;
+    status: string;
+  } | null;
+};
+
+export type JournalEntryEditData = {
+  entry: JournalEntry;
+  activeAccounts: AccountingAccount[];
+  creatorName: string;
+  sourceContext: JournalEntrySourceContext | null;
 };
 
 export type AccountingDashboardSummary = {

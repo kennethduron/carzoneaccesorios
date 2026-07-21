@@ -4,6 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { FinancialEventCandidate } from "@/services/accounting/financial-event-engine";
 
+import {
+  resolveAccountsPayableSnapshot,
+  type PayableSnapshotInvoice,
+  type PayableSnapshotItem,
+  type PayableSnapshotPurchase,
+} from '@/services/accounting/purchase-payable-snapshot';
+
 type SupplierRelation = { name: string | null } | null;
 
 type PurchaseEventRow = {
@@ -59,8 +66,8 @@ type AccountsPayableEventRow = {
   created_at: string;
   updated_at: string;
   suppliers: SupplierRelation;
-  purchases: { purchase_number: string | null } | null;
-  supplier_invoices: { invoice_number: string | null } | null;
+  purchases: PayableSnapshotPurchase;
+  supplier_invoices: PayableSnapshotInvoice;
 };
 
 type SupplierPaymentEventRow = {
@@ -188,24 +195,6 @@ function supplierInvoiceSnapshot(row: SupplierInvoiceEventRow) {
     currency: row.currency,
     status: row.status,
     invoice_date: row.invoice_date,
-    due_date: row.due_date,
-  };
-}
-
-function accountsPayableSnapshot(row: AccountsPayableEventRow) {
-  return {
-    supplier_id: row.supplier_id,
-    supplier_name: supplierName(row.suppliers),
-    purchase_id: row.purchase_id,
-    purchase_number: row.purchases?.purchase_number ?? null,
-    supplier_invoice_id: row.supplier_invoice_id,
-    invoice_number: row.supplier_invoices?.invoice_number ?? null,
-    accounts_payable_id: row.id,
-    total_amount: toNumber(row.total_amount),
-    paid_amount: toNumber(row.paid_amount),
-    balance: toNumber(row.balance),
-    currency: row.currency,
-    status: row.status,
     due_date: row.due_date,
   };
 }
@@ -341,7 +330,7 @@ async function getAccountsPayableCandidates(client?: SupabaseClient): Promise<Fi
   const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
     .from("accounts_payable")
-    .select("id, supplier_id, purchase_id, supplier_invoice_id, total_amount, paid_amount, balance, due_date, status, currency, created_at, updated_at, suppliers(name), purchases(purchase_number), supplier_invoices(invoice_number)")
+    .select("id, supplier_id, purchase_id, supplier_invoice_id, total_amount, paid_amount, balance, due_date, status, currency, created_at, updated_at, suppliers(name), purchases(id, supplier_id, purchase_number, purchase_date, status, subtotal, tax_amount, discount_amount, shipping_amount, total, currency), supplier_invoices(id, supplier_id, purchase_id, invoice_number, invoice_date, due_date, status, subtotal, tax_amount, discount_amount, total, currency)")
     .in("status", ["pending", "partial", "paid", "overdue"])
     .order("created_at", { ascending: false })
     .limit(500)
@@ -349,9 +338,43 @@ async function getAccountsPayableCandidates(client?: SupabaseClient): Promise<Fi
 
   if (error) throw new Error(error.message);
 
-  return (data ?? [])
-    .filter((row) => accountsPayableCreatedStatuses.has(row.status))
-    .map<FinancialEventCandidate>((row) => ({
+  const rows = (data ?? []).filter((row) => accountsPayableCreatedStatuses.has(row.status));
+  const purchaseIds = [...new Set(rows.map((row) => row.purchase_id).filter((id): id is string => Boolean(id)))];
+  const itemsByPurchase = new Map<string, PayableSnapshotItem[]>();
+
+  if (purchaseIds.length > 0) {
+    const { data: itemRows, error: itemsError } = await supabase
+      .from("purchase_items")
+      .select("purchase_id, quantity, unit_cost, tax_amount, discount_amount")
+      .in("purchase_id", purchaseIds)
+      .returns<Array<PayableSnapshotItem & { purchase_id: string }>>();
+
+    if (itemsError) throw new Error(itemsError.message);
+    for (const item of itemRows ?? []) {
+      itemsByPurchase.set(item.purchase_id, [...(itemsByPurchase.get(item.purchase_id) ?? []), item]);
+    }
+  }
+
+  return rows.map<FinancialEventCandidate>((row) => {
+    const resolved = resolveAccountsPayableSnapshot({
+      id: row.id,
+      supplier_id: row.supplier_id,
+      purchase_id: row.purchase_id,
+      supplier_invoice_id: row.supplier_invoice_id,
+      total_amount: row.total_amount,
+      paid_amount: row.paid_amount,
+      balance: row.balance,
+      due_date: row.due_date,
+      status: row.status,
+      currency: row.currency,
+      created_at: row.created_at,
+      supplier: row.suppliers,
+      purchase: row.purchases,
+      supplierInvoice: row.supplier_invoices,
+      purchaseItems: row.purchase_id ? itemsByPurchase.get(row.purchase_id) ?? [] : [],
+    });
+
+    return {
       eventType: "accounts_payable_created",
       source_type: "accounts_payable",
       source_id: row.id,
@@ -359,10 +382,13 @@ async function getAccountsPayableCandidates(client?: SupabaseClient): Promise<Fi
       posting_version: "v1",
       occurred_at: row.created_at,
       amount: toNumber(row.total_amount),
-      sourceNumber: row.supplier_invoices?.invoice_number ?? row.purchases?.purchase_number ?? row.id,
+      taxAmount: resolved.taxAmount,
+      sourceNumber: resolved.sourceNumber,
       eligible: true,
-      source_snapshot: accountsPayableSnapshot(row),
-    }));
+      source_snapshot: resolved.snapshot,
+      validation_errors: resolved.validationErrors,
+    };
+  });
 }
 
 async function getSupplierPaymentCandidates(client?: SupabaseClient): Promise<FinancialEventCandidate[]> {
