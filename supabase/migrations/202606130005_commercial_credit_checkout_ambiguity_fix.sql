@@ -20,7 +20,12 @@ begin
   );
 
   if patched_definition = function_definition then
-    raise exception 'Could not locate the ambiguous invoice draft predicate.';
+    if function_definition like '%where invoices.order_id = created_order.order_id
+      and invoices.status = ''draft'';%' then
+      return;
+    end if;
+
+    raise exception 'Could not locate either the ambiguous or corrected invoice draft predicate.';
   end if;
 
   execute patched_definition;

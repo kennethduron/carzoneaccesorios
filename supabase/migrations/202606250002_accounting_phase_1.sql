@@ -1,4 +1,4 @@
-﻿create table if not exists public.accounting_accounts (
+create table if not exists public.accounting_accounts (
   id uuid primary key default gen_random_uuid(),
   code text not null,
   name text not null,

@@ -165,12 +165,32 @@ declare
   function_definition text;
   old_block text;
   new_block text;
+  old_fragment text;
+  new_fragment text;
   customer_record record;
 begin
   select pg_get_functiondef(
     'public.create_checkout_order(text,text,text,text,text,public.order_price_mode,public.payment_method,text,jsonb,text,uuid,text,text,text,text,text)'::regprocedure
   )
   into function_definition;
+
+  old_fragment := $old_fragment$
+          and previous_orders.id <> created_order.id
+      )
+$old_fragment$;
+
+  new_fragment := $new_fragment$
+          and previous_orders.id <> created_order.id
+          and (
+            first_wholesale_minimum <= 0
+            or coalesce(previous_orders.total, previous_orders.subtotal, 0) >= first_wholesale_minimum
+          )
+      )
+$new_fragment$;
+
+  if function_definition not like '%coalesce(previous_orders.total, previous_orders.subtotal, 0) >= first_wholesale_minimum%' then
+    function_definition := replace(function_definition, old_fragment, new_fragment);
+  end if;
 
   old_block := $old$
   if requested_price_mode = 'wholesale' then

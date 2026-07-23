@@ -113,8 +113,21 @@ try {
   cleanup();
   psql(`
     insert into public.suppliers (id, name, is_active) values ('${ids.supplier}', '${prefix}', true);
-    insert into public.products (id, sku, slug, name, brand, stock, retail_price, wholesale_price, cost_price, active, status)
-    values ('${ids.product}', '${prefix}', '${prefix.toLowerCase()}', '${prefix}', 'TEST', 5, 100, 80, 10, true, 'active');
+    insert into public.products (id, category_id, sku, slug, name, brand, stock, retail_price, wholesale_price, cost_price, active, status)
+    values (
+      '${ids.product}',
+      (select id from public.categories where slug = 'iluminacion' limit 1),
+      '${prefix}',
+      '${prefix.toLowerCase()}',
+      '${prefix}',
+      'TEST',
+      5,
+      100,
+      80,
+      10,
+      true,
+      'active'
+    );
   `);
 
   psql(`update public.products set active=false where id='${ids.product}';`);

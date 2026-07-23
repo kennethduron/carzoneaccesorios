@@ -7,3 +7,4 @@ export * from "./invoices";
 export * from "./fiscal";
 export * from "./financial";
 export * from "./purchases";
+export * from "./point-of-sale";

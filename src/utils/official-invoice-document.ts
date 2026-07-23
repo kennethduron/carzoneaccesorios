@@ -611,7 +611,9 @@ export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
   const shippingFee = roundMoney(invoice.shippingFee ?? 0);
   const cashOnDeliveryFee = roundMoney(invoice.cashOnDeliveryFee ?? 0);
   const smallOrderFee = roundMoney(invoice.smallOrderFee ?? 0);
-  const taxableBase = roundMoney(Math.max(0, invoice.subtotal - discountTotal));
+  // subtotal is already the persisted taxable base after discounts. Reapplying
+  // discountTotal here would make the PDF diverge from the order and invoice.
+  const taxableBase = roundMoney(Math.max(0, invoice.subtotal));
 
   return {
     subtotal: invoice.subtotal,

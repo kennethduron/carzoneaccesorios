@@ -16,6 +16,24 @@ declare
   v_current_invoice_number text;
   movement_record record;
 begin
+  select id
+  into v_target_order_id
+  from public.orders
+  where order_number = v_target_order_number;
+
+  select id
+  into v_target_invoice_id
+  from public.invoices
+  where invoice_number = v_target_invoice_number;
+
+  if v_target_order_id is null and v_target_invoice_id is null then
+    return;
+  end if;
+
+  if v_target_order_id is null or v_target_invoice_id is null then
+    raise exception 'Cleanup aborted: target order or invoice was not found.';
+  end if;
+
   select count(*)
   into v_protected_count
   from auth.users au
@@ -57,20 +75,6 @@ begin
 
   if v_target_customer_count <> 0 then
     raise exception 'Cleanup aborted: target test customers still exist.';
-  end if;
-
-  select id
-  into v_target_order_id
-  from public.orders
-  where order_number = v_target_order_number;
-
-  select id
-  into v_target_invoice_id
-  from public.invoices
-  where invoice_number = v_target_invoice_number;
-
-  if v_target_order_id is null or v_target_invoice_id is null then
-    raise exception 'Cleanup aborted: target order or invoice was not found.';
   end if;
 
   if not exists (

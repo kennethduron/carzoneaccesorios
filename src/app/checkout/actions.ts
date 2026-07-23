@@ -15,9 +15,6 @@ import { getPublicCompanySettings } from "@/services/supabase/company-settings.s
 import { getActiveCreditAccountForUser, getOpenCreditBalance } from "@/services/supabase/credit.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
-import { calculateCheckoutFees } from "@/utils/commerce-settings";
-import { additionalFeesTotal } from "@/utils/financial-summary";
-import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
 import { getAuthorizedProductPrice, hasValidWholesalePrice } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
 
@@ -175,10 +172,6 @@ function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
   return "bank_transfer";
 }
 
-function roundMoney(value: number) {
-  return Math.round(Number(value || 0) * 100) / 100;
-}
-
 function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
   return {
     checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
@@ -211,78 +204,6 @@ function validateBankReference(value: string) {
   }
 
   return { ok: true as const, value: reference };
-}
-
-async function applyIncludedTaxFinancialsToOrder(orderId: string, taxRate: number, { cashOnDeliveryPending = false }: { cashOnDeliveryPending?: boolean } = {}) {
-  const admin = getSupabaseAdminClient();
-  const [{ data: order, error: orderError }, { data: items, error: itemsError }] = await Promise.all([
-    admin
-      .from("orders")
-      .select("shipping_fee, shipping_total, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees")
-      .eq("id", orderId)
-      .maybeSingle<{
-        shipping_fee: unknown;
-        shipping_total: unknown;
-        cash_on_delivery_fee: unknown;
-        small_order_fee: unknown;
-        discount_total: unknown;
-        additional_fees: unknown;
-      }>(),
-    admin.from("order_items").select("line_total").eq("order_id", orderId).returns<Array<{ line_total: unknown }>>(),
-  ]);
-
-  if (orderError || itemsError || !order) {
-    throw new Error(orderError?.message || itemsError?.message || "No se pudo leer el pedido para normalizar ISV incluido.");
-  }
-
-  const productsTotal = roundMoney((items ?? []).reduce((sum, item) => sum + Number(item.line_total ?? 0), 0));
-  const breakdown = calculateIncludedTaxBreakdown(productsTotal, taxRate);
-  const shippingFee = roundMoney(Number(order.shipping_fee ?? order.shipping_total ?? 0));
-  const cashOnDeliveryFee = cashOnDeliveryPending ? 0 : roundMoney(Number(order.cash_on_delivery_fee ?? 0));
-  const smallOrderFee = roundMoney(Number(order.small_order_fee ?? 0));
-  const discountTotal = roundMoney(Number(order.discount_total ?? 0));
-  const extraFees = additionalFeesTotal(order.additional_fees);
-  const total = roundMoney(productsTotal + shippingFee + cashOnDeliveryFee + smallOrderFee + extraFees - discountTotal);
-  const now = new Date().toISOString();
-
-  const orderUpdate = {
-    subtotal: breakdown.subtotalBeforeTax,
-    tax: breakdown.includedTax,
-    cash_on_delivery_fee: cashOnDeliveryFee,
-    total,
-    updated_at: now,
-  };
-
-  const [{ error: updateOrderError }, { error: updatePaymentError }, { error: updateInvoiceError }] = await Promise.all([
-    admin.from("orders").update(orderUpdate).eq("id", orderId),
-    admin.from("payments").update({ amount: total, updated_at: now }).eq("order_id", orderId),
-    admin
-      .from("invoices")
-      .update({
-        subtotal: breakdown.subtotalBeforeTax,
-        tax: breakdown.includedTax,
-        shipping_fee: shippingFee,
-        cash_on_delivery_fee: cashOnDeliveryFee,
-        small_order_fee: smallOrderFee,
-        discount_total: discountTotal,
-        additional_fees: order.additional_fees ?? [],
-        total,
-        updated_at: now,
-      })
-      .eq("order_id", orderId)
-      .eq("status", "draft"),
-  ]);
-
-  if (updateOrderError || updatePaymentError || updateInvoiceError) {
-    throw new Error(updateOrderError?.message || updatePaymentError?.message || updateInvoiceError?.message || "No se pudo normalizar ISV incluido.");
-  }
-
-  return {
-    subtotal: breakdown.subtotalBeforeTax,
-    tax: breakdown.includedTax,
-    productsTotal,
-    total,
-  };
 }
 
 export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
@@ -687,9 +608,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
           (total, item) => total + (authorizedPriceByProductId.get(item.productId) ?? 0) * item.quantity,
           0,
         );
-        const checkoutFees = calculateCheckoutFees({ subtotal: wholesaleProductsTotal, paymentMethod, paymentTiming, settings });
-        const wholesaleFinalTotal = roundMoney(wholesaleProductsTotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee);
-        const missing = Math.max(0, roundMoney(settings.first_wholesale_minimum - wholesaleFinalTotal));
+        const missing = Math.max(0, Math.round((settings.first_wholesale_minimum - wholesaleProductsTotal) * 100) / 100);
 
         if (missing > 0) {
           return {
@@ -783,38 +702,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const admin = getSupabaseAdminClient();
-  try {
-    const normalizedFinancials = await applyIncludedTaxFinancialsToOrder(createdOrder.order_id, Number(settings.tax_rate ?? 0.15), {
-      cashOnDeliveryPending: requiresCashOnDeliveryReview,
-    });
-
-    if (paymentMethod === "commercial_credit") {
-      const { error: receivableSyncError } = await admin
-        .from("accounts_receivable")
-        .update({
-          original_amount: normalizedFinancials.total,
-          balance_due: normalizedFinancials.total,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("order_id", createdOrder.order_id)
-        .in("status", ["open", "overdue"]);
-
-      if (receivableSyncError) {
-        throw new Error(receivableSyncError.message);
-      }
-    }
-  } catch (financialError) {
-    await writeErrorLog({
-      route: "/checkout",
-      action: "checkout.included_tax_normalization_failed",
-      errorMessage: financialError instanceof Error ? financialError.message : "No se pudo normalizar ISV incluido.",
-      errorStack: financialError instanceof Error ? financialError.stack : null,
-      metadata: {
-        order_id: createdOrder.order_id,
-        order_number: createdOrder.order_number,
-      },
-    });
-  }
 
   const accountingResult =
     paymentMethod === "commercial_credit"

@@ -55,6 +55,20 @@ set permissions = (
 )
 where name in ('technical_owner', 'business_owner', 'admin', 'contadora');
 
+update public.roles
+set permissions = (
+  select jsonb_agg(distinct permission order by permission)
+  from jsonb_array_elements_text(
+    coalesce(public.roles.permissions, '[]'::jsonb)
+    || jsonb_build_array('pos:create_sale', 'pos:apply_discount')
+  ) permission(permission)
+)
+where name in ('technical_owner', 'business_owner', 'admin');
+
+update public.roles
+set permissions = (coalesce(permissions, '[]'::jsonb) - 'pos:create_sale') - 'pos:apply_discount'
+where name in ('contadora', 'vendedor', 'bodega', 'soporte', 'cliente');
+
 insert into public.company_settings (
   company_name,
   tax_id,
@@ -101,6 +115,7 @@ insert into public.customers (
   city,
   is_wholesale,
   wholesale_status,
+  status,
   active
 )
 select
@@ -112,6 +127,7 @@ select
   'Tegucigalpa',
   true,
   'approved',
+  'pending_account',
   true
 where not exists (
   select 1

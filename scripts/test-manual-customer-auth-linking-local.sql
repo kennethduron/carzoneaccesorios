@@ -126,12 +126,16 @@ insert into public.customers (id, contact_name, email, phone, active, status) va
   ('30000000-0000-4000-8000-000000000006', 'TEST Admin Link', null, null, true, 'active'),
   ('30000000-0000-4000-8000-000000000007', 'TEST Accountant Link', null, null, true, 'active');
 
+insert into public.categories (id, name, slug, active, sort_order)
+values ('40000000-0000-4000-8000-000000000099', 'Interior', 'interior', true, 20);
+
 insert into public.products (
   id,
   sku,
   slug,
   name,
   brand,
+  category_id,
   stock,
   retail_price,
   wholesale_price,
@@ -145,6 +149,7 @@ values (
   'test-identity-checkout',
   'TEST Identity Checkout Product',
   'TEST',
+  '40000000-0000-4000-8000-000000000099',
   10,
   100,
   80,

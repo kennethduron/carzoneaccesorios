@@ -26,6 +26,8 @@ export type Permission =
   | "orders:read"
   | "orders:manage"
   | "orders:manage_logistics"
+  | "pos:create_sale"
+  | "pos:apply_discount"
   | "customers:read"
   | "customers:manage"
   | "wholesale:manage"

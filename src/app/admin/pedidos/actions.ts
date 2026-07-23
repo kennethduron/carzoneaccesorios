@@ -19,7 +19,6 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
-import { additionalFeesTotal } from "@/utils/financial-summary";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 
 type PaymentStatus = "approved" | "rejected";
@@ -766,58 +765,17 @@ export async function updateCashOnDeliveryFeeAction(orderId: string, rawFee: num
     return { ok: false, message: "El cargo contra entrega no puede modificarse porque la factura fiscal ya fue emitida." };
   }
 
-  const previousFee = Math.round(Number(order.cash_on_delivery_fee ?? 0) * 100) / 100;
-  const subtotal = Math.round(Number(order.subtotal ?? 0) * 100) / 100;
-  const tax = Math.round(Number(order.tax ?? 0) * 100) / 100;
-  const shippingFee = Math.round(Number(order.shipping_fee ?? order.shipping_total ?? 0) * 100) / 100;
-  const smallOrderFee = Math.round(Number(order.small_order_fee ?? 0) * 100) / 100;
-  const discountTotal = Math.round(Number(order.discount_total ?? 0) * 100) / 100;
-  const extras = additionalFeesTotal(order.additional_fees);
-  const total = Math.round((subtotal + tax + shippingFee + fee + smallOrderFee + extras - discountTotal) * 100) / 100;
-  const now = new Date().toISOString();
+  const { data: financials, error: updateError } = await supabase.rpc("update_checkout_cash_on_delivery_fee_v1", {
+    target_order_id: orderId,
+    requested_fee: fee,
+  });
 
-  const [{ error: orderUpdateError }, { error: paymentUpdateError }, { error: invoiceUpdateError }] = await Promise.all([
-    supabase
-      .from("orders")
-      .update({
-        cash_on_delivery_fee: fee,
-        total,
-        updated_at: now,
-      })
-      .eq("id", orderId),
-    supabase.from("payments").update({ amount: total, updated_at: now }).eq("order_id", orderId),
-    supabase
-      .from("invoices")
-      .update({
-        cash_on_delivery_fee: fee,
-        total,
-        updated_at: now,
-      })
-      .eq("order_id", orderId)
-      .eq("status", "draft"),
-  ]);
-
-  if (orderUpdateError || paymentUpdateError || invoiceUpdateError) {
+  if (updateError || !financials || typeof financials !== "object") {
     return {
       ok: false,
-      message: safeAdminOrderMessage(orderUpdateError?.message || paymentUpdateError?.message || invoiceUpdateError?.message || "No se pudo actualizar el cargo contra entrega."),
+      message: safeAdminOrderMessage(updateError?.message || "No se pudo actualizar el cargo contra entrega."),
     };
   }
-
-  await writeAuditLog({
-    tableName: "orders",
-    recordId: orderId,
-    action: "order.cash_on_delivery_fee_updated",
-    oldData: {
-      order_number: order.order_number,
-      cash_on_delivery_fee: previousFee,
-    },
-    newData: {
-      order_number: order.order_number,
-      cash_on_delivery_fee: fee,
-      total,
-    },
-  });
 
   revalidateOperationalPaths();
 

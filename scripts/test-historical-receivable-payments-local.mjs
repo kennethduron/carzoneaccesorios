@@ -23,7 +23,7 @@ function refuse(message) {
 if (process.env.ALLOW_LOCAL_MUTATING_TESTS !== "true") refuse("ALLOW_LOCAL_MUTATING_TESTS=true is required.");
 if (!["127.0.0.1", "localhost"].includes(dbHost)) refuse("Only localhost/127.0.0.1 is allowed.");
 if ([dbHost, dbName, dbUser, container].some((value) => value.includes(".supabase.co"))) refuse("Remote Supabase target detected.");
-if (!["car-zone-schema-validation-local", "car-zone-phase-a-postgres"].includes(container)) refuse("Unexpected Docker container for local mutating test.");
+if (!["car-zone-schema-validation-local", "car-zone-phase-a-postgres", "supabase_db_car-zone-accesorios"].includes(container)) refuse("Unexpected Docker container for local mutating test.");
 if (!dbPassword || dbPassword.includes("supabase.co")) refuse("A temporary local DB password is required.");
 
 const ids = {
@@ -159,13 +159,16 @@ try {
       ('${ids.adminRole}', 'admin', '${PREFIX}', '["credit:mark_paid"]'::jsonb),
       ('${ids.deniedRole}', 'vendedor', '${PREFIX}', '[]'::jsonb);
 
-    insert into auth.users (id, aud, role, email, confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at) values
+    insert into auth.users (id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at) values
       ('${ids.actor}', 'authenticated', 'authenticated', '${PREFIX.toLowerCase()}-admin@example.invalid', now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
       ('${ids.deniedActor}', 'authenticated', 'authenticated', '${PREFIX.toLowerCase()}-denied@example.invalid', now(), '{}'::jsonb, '{}'::jsonb, now(), now());
 
-    insert into public.users (id, role_id, full_name, email, active) values
-      ('${ids.actor}', '${ids.adminRole}', '${PREFIX} Admin', '${PREFIX.toLowerCase()}-admin@example.invalid', true),
-      ('${ids.deniedActor}', '${ids.deniedRole}', '${PREFIX} Denied', '${PREFIX.toLowerCase()}-denied@example.invalid', true);
+    update public.users
+    set role_id = '${ids.adminRole}', full_name = '${PREFIX} Admin', active = true
+    where id = '${ids.actor}';
+    update public.users
+    set role_id = '${ids.deniedRole}', full_name = '${PREFIX} Denied', active = true
+    where id = '${ids.deniedActor}';
 
     insert into public.customers (id, contact_name, business_name, email, phone, active, user_id) values
       ('${ids.normalCustomer}', '${PREFIX} Normal', '${PREFIX} Normal Business', null, '22220000', true, null),
