@@ -1213,6 +1213,132 @@ grant execute on function public.post_journal_entry(
   text
 ) to authenticated;
 
+-- Preserve controlled rollback of imported receivables without leaving orphan
+-- accounting facts. Once any imported payment has a journal entry, rollback is
+-- no longer deletion-safe and must use the formal accounting flow instead.
+create or replace function public.rollback_historical_accounts_receivable_import(
+  target_batch_id uuid,
+  rollback_reason text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  deleted_payments integer := 0;
+  deleted_receivables integer := 0;
+begin
+  if not public.has_import_foundation_permission('accounts_receivable', 'rollback') then
+    raise exception 'Solo technical_owner o business_owner pueden revertir un lote aplicado.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.import_batches
+    where id = target_batch_id
+      and module = 'accounts_receivable'
+      and status = 'applied'
+  ) then
+    raise exception 'Solo se puede revertir un lote aplicado de cuentas por cobrar.';
+  end if;
+
+  if exists (
+    select 1
+    from public.accounts_receivable_payments payment_row
+    join public.accounts_receivable receivable on receivable.id = payment_row.receivable_id
+    join public.financial_events event
+      on event.source_type = 'receivable_payment'
+     and event.source_id = payment_row.id::text
+     and event.event_purpose = 'receivable_payment'
+     and event.posting_version = 'v1'
+    where receivable.imported_from_batch_id = target_batch_id
+      and event.journal_entry_id is not null
+  ) then
+    raise exception 'El lote tiene abonos con partidas contables. Utiliza el flujo formal de revision o reversion.';
+  end if;
+
+  delete from public.accounting_outbox box
+  using public.accounts_receivable_payments payment_row,
+        public.accounts_receivable receivable
+  where box.source_type = 'receivable_payment'
+    and box.source_id = payment_row.id
+    and payment_row.receivable_id = receivable.id
+    and receivable.imported_from_batch_id = target_batch_id;
+
+  delete from public.financial_events event
+  using public.accounts_receivable_payments payment_row,
+        public.accounts_receivable receivable
+  where event.source_type = 'receivable_payment'
+    and event.source_id = payment_row.id::text
+    and event.event_purpose = 'receivable_payment'
+    and event.posting_version = 'v1'
+    and event.journal_entry_id is null
+    and payment_row.receivable_id = receivable.id
+    and receivable.imported_from_batch_id = target_batch_id;
+
+  delete from public.accounts_receivable_payments payment_row
+  using public.accounts_receivable receivable
+  where payment_row.receivable_id = receivable.id
+    and receivable.imported_from_batch_id = target_batch_id;
+  get diagnostics deleted_payments = row_count;
+
+  delete from public.accounts_receivable
+  where imported_from_batch_id = target_batch_id;
+  get diagnostics deleted_receivables = row_count;
+
+  update public.import_rows
+  set apply_status = 'rolled_back',
+      updated_at = now()
+  where batch_id = target_batch_id
+    and apply_status = 'applied';
+
+  update public.import_batches
+  set status = 'rolled_back',
+      rollback_reason = nullif(trim(coalesce(rollback_historical_accounts_receivable_import.rollback_reason, '')), ''),
+      rolled_back_at = now(),
+      completed_at = now(),
+      updated_at = now()
+  where id = target_batch_id;
+
+  insert into public.import_audit_events (batch_id, module, event_type, metadata, created_by)
+  values (
+    target_batch_id,
+    'accounts_receivable',
+    'batch_rolled_back',
+    jsonb_build_object(
+      'receivables', deleted_receivables,
+      'payments', deleted_payments,
+      'reason', rollback_reason,
+      'accounting_trace_removed', true
+    ),
+    auth.uid()
+  );
+
+  insert into public.audit_logs (user_id, actor_role, table_name, record_id, action, new_data)
+  values (
+    auth.uid(),
+    public.current_actor_role(),
+    'accounts_receivable',
+    target_batch_id,
+    'historical_receivable_import.rolled_back',
+    jsonb_build_object(
+      'receivables', deleted_receivables,
+      'payments', deleted_payments,
+      'reason', rollback_reason,
+      'accounting_trace_removed', true
+    )
+  );
+
+  return jsonb_build_object('receivables', deleted_receivables, 'payments', deleted_payments);
+end;
+$$;
+
+revoke all on function public.rollback_historical_accounts_receivable_import(uuid, text)
+  from public, anon;
+grant execute on function public.rollback_historical_accounts_receivable_import(uuid, text)
+  to authenticated;
+
 comment on function public.process_receivable_payment_accounting_outbox_v1(
   uuid,
   text,

@@ -103,6 +103,8 @@ Un abono anulado no crea un nuevo borrador normal y bloquea la publicación del 
 
 Los reportes definitivos y estados financieros continúan usando partidas publicadas. El borrador es visible en Libro Diario para revisión, pero no se trata como contabilizado definitivamente.
 
+La reversión controlada de un lote histórico puede retirar outbox y eventos sin partida antes de eliminar sus abonos importados. Si cualquier abono del lote ya tiene una partida, la reversión del lote se bloquea y exige el flujo contable formal.
+
 ## Evento final de control
 
 Al quedar la CxC en cero también se registra:

@@ -186,6 +186,121 @@ begin
   if (select status from public.journal_entries where id = (select (result->>'journal_entry_id')::uuid from rp_drafts where label = 'technical_owner')) <> 'publicada' then raise exception 'Manual publication failed'; end if;
 end $$;
 
-select jsonb_build_object('authorized_roles', 4, 'payments', (select count(*) from rp_results), 'outboxes', (select count(*) from public.accounting_outbox where source_id in (select payment_id from rp_results)), 'events', (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id in (select payment_id::text from rp_results)), 'drafts', (select count(*) from rp_drafts), 'published', (select count(*) from public.journal_entries where id in (select (result->>'journal_entry_id')::uuid from rp_drafts) and status = 'publicada'), 'global_mode', (select value from public.accounting_automation_settings where key = 'automation_mode'), 'global_mode_unchanged', (select value from public.accounting_automation_settings where key = 'automation_mode') is not distinct from (select value from rp_initial_mode));
+select set_config('request.jwt.claims', jsonb_build_object('sub', '94100000-0000-4000-8000-000000000001', 'role', 'authenticated')::text, true);
+insert into public.import_batches (id, module, status, created_by, total_rows, applied_rows)
+values
+  ('94700000-0000-4000-8000-000000000001', 'accounts_receivable', 'applied', '94100000-0000-4000-8000-000000000001', 1, 1),
+  ('94700000-0000-4000-8000-000000000002', 'accounts_receivable', 'applied', '94100000-0000-4000-8000-000000000001', 1, 1);
+
+insert into public.import_rows (id, batch_id, module, row_number, validation_status, apply_status)
+values
+  ('94800000-0000-4000-8000-000000000001', '94700000-0000-4000-8000-000000000001', 'accounts_receivable', 1, 'valid', 'applied'),
+  ('94800000-0000-4000-8000-000000000002', '94700000-0000-4000-8000-000000000002', 'accounts_receivable', 1, 'valid', 'applied');
+
+insert into public.accounts_receivable (
+  id, customer_id, original_amount, balance_due, due_date, status,
+  historical_invoice_number, imported_from_batch_id
+)
+values (
+  '94300000-0000-4000-8000-000000000008',
+  '94200000-0000-4000-8000-000000000001',
+  125,
+  125,
+  '2026-07-31',
+  'open',
+  'RP-ROLLBACK',
+  '94700000-0000-4000-8000-000000000001'
+);
+
+create temporary table rp_rollback_payment on commit drop as
+select *
+from public.register_credit_receivable_payment(
+  '94300000-0000-4000-8000-000000000008',
+  25,
+  'cash',
+  'RP-ROLLBACK',
+  '2026-07-15 15:00:00-06',
+  'RP rollback local',
+  null,
+  null,
+  'rp-key-rollback'
+);
+
+select public.process_receivable_payment_accounting_outbox_v1(
+  (select outbox_id from rp_rollback_payment),
+  'rp-worker-rollback',
+  false
+);
+
+do $$
+declare
+  rollback_result jsonb;
+begin
+  rollback_result := public.rollback_historical_accounts_receivable_import(
+    '94700000-0000-4000-8000-000000000001',
+    'RP local rollback'
+  );
+
+  if rollback_result <> jsonb_build_object('receivables', 1, 'payments', 1) then
+    raise exception 'Historical rollback returned unexpected counts: %', rollback_result;
+  end if;
+  if exists (select 1 from public.accounts_receivable where id = '94300000-0000-4000-8000-000000000008') then
+    raise exception 'Historical rollback kept the imported receivable';
+  end if;
+  if exists (select 1 from public.accounts_receivable_payments where id = (select payment_id from rp_rollback_payment)) then
+    raise exception 'Historical rollback kept the imported payment';
+  end if;
+  if exists (select 1 from public.accounting_outbox where source_id = (select payment_id from rp_rollback_payment)) then
+    raise exception 'Historical rollback kept the accounting outbox';
+  end if;
+  if exists (select 1 from public.financial_events where source_type = 'receivable_payment' and source_id = (select payment_id::text from rp_rollback_payment)) then
+    raise exception 'Historical rollback kept the unlinked financial event';
+  end if;
+  if (select status from public.import_batches where id = '94700000-0000-4000-8000-000000000001') <> 'rolled_back'
+    or (select apply_status from public.import_rows where id = '94800000-0000-4000-8000-000000000001') <> 'rolled_back'
+  then
+    raise exception 'Historical rollback did not update the import state';
+  end if;
+  if not exists (
+    select 1
+    from public.import_audit_events
+    where batch_id = '94700000-0000-4000-8000-000000000001'
+      and event_type = 'batch_rolled_back'
+      and metadata->>'accounting_trace_removed' = 'true'
+  ) then
+    raise exception 'Historical rollback did not record accounting trace removal';
+  end if;
+end $$;
+
+update public.accounts_receivable
+set imported_from_batch_id = '94700000-0000-4000-8000-000000000002'
+where id = '94300000-0000-4000-8000-000000000001';
+
+do $$
+begin
+  begin
+    perform public.rollback_historical_accounts_receivable_import(
+      '94700000-0000-4000-8000-000000000002',
+      'Must be blocked'
+    );
+    raise exception 'Historical rollback deleted a payment with a journal entry';
+  exception
+    when others then
+      if sqlerrm = 'Historical rollback deleted a payment with a journal entry' then
+        raise;
+      end if;
+      if sqlerrm not like 'El lote tiene abonos con partidas contables.%' then
+        raise;
+      end if;
+  end;
+
+  if (select status from public.import_batches where id = '94700000-0000-4000-8000-000000000002') <> 'applied'
+    or not exists (select 1 from public.accounts_receivable_payments where id = (select payment_id from rp_results where label = 'technical_owner'))
+  then
+    raise exception 'Blocked historical rollback changed protected data';
+  end if;
+end $$;
+
+select jsonb_build_object('authorized_roles', 4, 'payments', (select count(*) from rp_results), 'outboxes', (select count(*) from public.accounting_outbox where source_id in (select payment_id from rp_results)), 'events', (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id in (select payment_id::text from rp_results)), 'drafts', (select count(*) from rp_drafts), 'published', (select count(*) from public.journal_entries where id in (select (result->>'journal_entry_id')::uuid from rp_drafts) and status = 'publicada'), 'historical_rollback', true, 'journal_protected_rollback', true, 'global_mode', (select value from public.accounting_automation_settings where key = 'automation_mode'), 'global_mode_unchanged', (select value from public.accounting_automation_settings where key = 'automation_mode') is not distinct from (select value from rp_initial_mode));
 
 rollback;

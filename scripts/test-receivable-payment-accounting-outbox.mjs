@@ -33,6 +33,8 @@ assert.match(source.migration, /payment\.received_at at time zone 'America\/Tegu
 assert.match(source.migration, /round\(payment\.amount, 2\)/i);
 assert.match(source.migration, /payment_method', payment\.payment_method/i);
 assert.match(source.migration, /event_purpose = 'receivable_paid'[\s\S]*control no monetario/i);
+assert.match(source.migration, /rollback_historical_accounts_receivable_import[\s\S]*accounting_trace_removed/i);
+assert.match(source.migration, /El lote tiene abonos con partidas contables/i);
 assert.match(source.migration, /revoke insert, update, delete on public\.financial_events from authenticated/i);
 assert.match(source.migration, /revoke insert, update, delete on public\.accounting_outbox from authenticated/i);
 assert.doesNotMatch(source.migration, /update public\.accounting_automation_settings/i);
