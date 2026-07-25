@@ -67,8 +67,9 @@ assert.match(migration, /'receivable_kind', receivable_kind/);
 assert.match(migration, /'source', 'admin_accounts_receivable'/);
 
 assert.match(orderActions, /rpc\("register_credit_receivable_payment"/);
-assert.match(orderActions, /sourceType: "receivable_payment"/);
-assert.match(orderActions, /eventPurpose: "receivable_payment"/);
+assert.match(orderActions, /findLatestReceivablePaymentOutboxId/);
+assert.match(orderActions, /processReceivablePaymentAccountingOutbox/);
+assert.match(orderActions, /sourceType: "accounts_receivable"/);
 assert.match(orderActions, /eventPurpose: "receivable_paid"/);
 
 assert.match(receivablesManager, /row\.status !== "paid" && row\.status !== "cancelled" && row\.balance_due > 0/);

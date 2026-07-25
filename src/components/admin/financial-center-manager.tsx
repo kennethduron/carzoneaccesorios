@@ -197,6 +197,13 @@ function eventAmount(event: FinancialEvent) {
 }
 
 function eventDetail(event: FinancialEvent) {
+  if (event.source_type === "accounts_receivable" && event.event_purpose === "receivable_paid") {
+    return {
+      title: "Evento de control",
+      helper: "El movimiento contable se registra mediante cada abono recibido.",
+    };
+  }
+
   if (event.source_type === "receivable_payment" && event.event_purpose === "receivable_payment") {
     const customer = snapshotText(event.source_snapshot, ["customer_name"]) ?? "Cliente";
     const method = snapshotText(event.source_snapshot, ["payment_method"]) ?? "sin método";
@@ -286,6 +293,10 @@ function resolveAccountingOriginHref(sourceType: string, sourceId?: string | nul
 }
 
 function eventStatusText(event: FinancialEvent) {
+  if (event.event_purpose === "receivable_paid" && event.status === "skipped") {
+    return "Omitido (control)";
+  }
+
   if (inventoryEventPurposes.has(event.event_purpose)) {
     if (event.status === "pending") return "Movimiento pendiente";
     if (event.status === "ready") return "Movimiento listo";
@@ -701,6 +712,13 @@ export function FinancialCenterManager({
             </Button>
           </form>
 
+          <div className="mb-4 rounded-md border border-[#bfdbfe] bg-[#eff6ff] p-3 text-sm text-[#1e3a8a]">
+            <p className="font-semibold">Cuenta por cobrar pagada</p>
+            <p className="mt-1">
+              La cuenta por cobrar pagada es un evento de control. El movimiento contable se registra mediante cada abono recibido.
+            </p>
+          </div>
+
           <div className="mb-3 flex gap-2">
             <button
               type="button"
@@ -766,7 +784,7 @@ export function FinancialCenterManager({
                           <p className="font-medium">{sourceTypeLabels[event.source_type] ?? "Origen operativo"}</p>
                           <p className="text-xs text-black/45">{shortReference(sourceNumber) ?? "Referencia operativa"}</p>
                           {originHref ? (
-                            <a href={originHref} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
+                            <a href={originHref} className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
                               <ExternalLink size={13} />
                               Ver origen
                             </a>
@@ -782,7 +800,7 @@ export function FinancialCenterManager({
                           {linkedDraft ? (
                             <div>
                               <p className="font-medium">{linkedDraft.entry_number}</p>
-                              <Link href={buildJournalEntryViewerHref(linkedDraft.id)} className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
+                              <Link href={buildJournalEntryViewerHref(linkedDraft.id)} className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
                                 <ExternalLink size={13} />
                                 Ver partida contable
                               </Link>

@@ -178,7 +178,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => dismiss(toast.id)}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-black/45 hover:bg-black/5"
+                className="grid size-11 shrink-0 place-items-center rounded-md text-black/45 hover:bg-black/5"
                 aria-label="Cerrar notificación"
               >
                 <X size={15} />

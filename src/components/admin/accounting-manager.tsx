@@ -239,6 +239,11 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
   }
 
   function postEntry(entryId: string, expectedVersion: number) {
+    const confirmed = window.confirm(
+      "¿Confirmas que deseas publicar esta partida? Después de publicarla ya no podrá editarse.",
+    );
+    if (!confirmed) return;
+
     startTransition(async () => {
       const result = await postJournalEntryAction(entryId, expectedVersion);
       setMessage(result.message);

@@ -301,6 +301,141 @@ begin
   end if;
 end $$;
 
-select jsonb_build_object('authorized_roles', 4, 'payments', (select count(*) from rp_results), 'outboxes', (select count(*) from public.accounting_outbox where source_id in (select payment_id from rp_results)), 'events', (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id in (select payment_id::text from rp_results)), 'drafts', (select count(*) from rp_drafts), 'published', (select count(*) from public.journal_entries where id in (select (result->>'journal_entry_id')::uuid from rp_drafts) and status = 'publicada'), 'historical_rollback', true, 'journal_protected_rollback', true, 'global_mode', (select value from public.accounting_automation_settings where key = 'automation_mode'), 'global_mode_unchanged', (select value from public.accounting_automation_settings where key = 'automation_mode') is not distinct from (select value from rp_initial_mode));
+insert into public.accounts_receivable (
+  id, customer_id, original_amount, balance_due, due_date, status, historical_invoice_number
+)
+values (
+  '94300000-0000-4000-8000-000000000009',
+  '94200000-0000-4000-8000-000000000001',
+  150,
+  150,
+  '2026-07-31',
+  'open',
+  'RP-EXISTING-EVENT'
+);
+
+create temporary table rp_existing_event_payment on commit drop as
+select *
+from public.register_credit_receivable_payment(
+  '94300000-0000-4000-8000-000000000009',
+  75,
+  'cash',
+  'RP-EXISTING-EVENT',
+  '2026-07-16 09:45:00-06',
+  'RP existing event without outbox',
+  null,
+  null,
+  'rp-key-existing-event'
+);
+
+create temporary table rp_existing_event_first on commit drop as
+select public.process_receivable_payment_accounting_outbox_v1(
+  (select outbox_id from rp_existing_event_payment),
+  'rp-worker-existing-first',
+  false
+) as result;
+
+select public.complete_receivable_payment_accounting_outbox_v1(
+  (select outbox_id from rp_existing_event_payment),
+  'rp-worker-existing-first',
+  (select (result->>'event_id')::uuid from rp_existing_event_first),
+  null
+);
+
+delete from public.accounting_outbox
+where id = (select outbox_id from rp_existing_event_payment);
+
+do $$
+begin
+  if (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id = (select payment_id::text from rp_existing_event_payment) and event_purpose = 'receivable_payment' and posting_version = 'v1') <> 1 then
+    raise exception 'Existing-event fixture did not retain exactly one event';
+  end if;
+  if exists (select 1 from public.accounting_outbox where source_id = (select payment_id from rp_existing_event_payment)) then
+    raise exception 'Existing-event fixture still has an outbox';
+  end if;
+  if exists (select 1 from public.financial_events where source_id = (select payment_id::text from rp_existing_event_payment) and journal_entry_id is not null) then
+    raise exception 'Existing-event fixture unexpectedly has a journal entry';
+  end if;
+end $$;
+
+create temporary table rp_existing_event_outbox (id uuid) on commit drop;
+
+with inserted_outbox as (
+  insert into public.accounting_outbox (
+  source_type, source_id, event_purpose, posting_version, status
+)
+values (
+  'receivable_payment',
+  (select payment_id from rp_existing_event_payment),
+  'receivable_payment',
+  'v1',
+  'queued'
+)
+  returning id
+)
+insert into rp_existing_event_outbox (id)
+select id from inserted_outbox;
+
+create temporary table rp_existing_event_second on commit drop as
+select public.process_receivable_payment_accounting_outbox_v1(
+  (select id from rp_existing_event_outbox),
+  'rp-worker-existing-second',
+  true
+) as result;
+
+do $$
+begin
+  if (select result->>'claimed' from rp_existing_event_second) <> 'true' then
+    raise exception 'Reconciled outbox was not claimed';
+  end if;
+  if (select (result->>'event_id')::uuid from rp_existing_event_second)
+    <> (select (result->>'event_id')::uuid from rp_existing_event_first)
+  then
+    raise exception 'Repair duplicated the existing financial event';
+  end if;
+  if (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id = (select payment_id::text from rp_existing_event_payment) and event_purpose = 'receivable_payment' and posting_version = 'v1') <> 1 then
+    raise exception 'Repair left more than one exact financial event';
+  end if;
+end $$;
+
+create temporary table rp_existing_event_draft on commit drop as
+select public.create_journal_draft_from_financial_event(
+  (select (result->>'event_id')::uuid from rp_existing_event_second),
+  '2000-01-01',
+  'Historical repair existing event',
+  '[]'::jsonb,
+  null,
+  'rp-existing-event-repair'
+) as result;
+
+select public.complete_receivable_payment_accounting_outbox_v1(
+  (select id from rp_existing_event_outbox),
+  'rp-worker-existing-second',
+  (select (result->>'event_id')::uuid from rp_existing_event_second),
+  (select (result->>'journal_entry_id')::uuid from rp_existing_event_draft)
+);
+
+do $$
+begin
+  if (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id = (select payment_id::text from rp_existing_event_payment) and event_purpose = 'receivable_payment' and posting_version = 'v1') <> 1 then
+    raise exception 'Historical repair created a duplicate event';
+  end if;
+  if (select status from public.journal_entries where id = (select (result->>'journal_entry_id')::uuid from rp_existing_event_draft)) <> 'borrador' then
+    raise exception 'Historical repair did not leave exactly one draft';
+  end if;
+  if (select entry_date from public.journal_entries where id = (select (result->>'journal_entry_id')::uuid from rp_existing_event_draft)) <> '2026-07-16'::date then
+    raise exception 'Historical repair changed the payment date';
+  end if;
+  if (select sum(debit) from public.journal_entry_lines where journal_entry_id = (select (result->>'journal_entry_id')::uuid from rp_existing_event_draft)) <> 75
+    or (select sum(credit) from public.journal_entry_lines where journal_entry_id = (select (result->>'journal_entry_id')::uuid from rp_existing_event_draft)) <> 75
+  then
+    raise exception 'Historical repair changed the payment amount';
+  end if;
+  if exists (select 1 from public.financial_events where event_purpose = 'receivable_paid' and source_id = '94300000-0000-4000-8000-000000000009' and journal_entry_id is not null) then
+    raise exception 'Historical repair created a journal entry for receivable_paid';
+  end if;
+end $$;
+
+select jsonb_build_object('authorized_roles', 4, 'payments', (select count(*) from rp_results), 'outboxes', (select count(*) from public.accounting_outbox where source_id in (select payment_id from rp_results)), 'events', (select count(*) from public.financial_events where source_type = 'receivable_payment' and source_id in (select payment_id::text from rp_results)), 'drafts', (select count(*) from rp_drafts), 'published', (select count(*) from public.journal_entries where id in (select (result->>'journal_entry_id')::uuid from rp_drafts) and status = 'publicada'), 'historical_rollback', true, 'journal_protected_rollback', true, 'existing_event_reused', true, 'historical_repair_draft_only', true, 'global_mode', (select value from public.accounting_automation_settings where key = 'automation_mode'), 'global_mode_unchanged', (select value from public.accounting_automation_settings where key = 'automation_mode') is not distinct from (select value from rp_initial_mode));
 
 rollback;

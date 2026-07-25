@@ -8,6 +8,8 @@ const files = {
   engine: "src/services/accounting/financial-event-engine.ts",
   outbox: "src/services/accounting/receivable-payment-outbox.ts",
   journal: "src/services/accounting/journal-draft-generator.ts",
+  accountingUi: "src/components/admin/accounting-manager.tsx",
+  creditService: "src/services/supabase/credit.service.ts",
   ui: "src/components/admin/accounts-receivable-manager.tsx",
   eventsUi: "src/components/admin/financial-center-manager.tsx",
   docs: "docs/accounting/receivable-payment-accounting.md",
@@ -62,6 +64,11 @@ assert.doesNotMatch(
   "Una respuesta incierta no debe rotar la clave de idempotencia.",
 );
 assert.match(source.eventsUi, /Reintentar procesamiento/);
+assert.match(source.eventsUi, /La cuenta por cobrar pagada es un evento de control/);
+assert.match(source.eventsUi, /Omitido \(control\)/);
+assert.match(source.accountingUi, /window\.confirm\(/);
+assert.match(source.creditService, /getCustomerReceivables[\s\S]*financial_events[\s\S]*accounting_outbox/);
+assert.match(source.creditService, /getCustomerReceivables[\s\S]*accounting_trace/);
 assert.match(source.eventsUi, /no es un dry run/i);
 assert.match(source.docs, /nunca se publica automáticamente/i);
 assert.match(source.docs, /receivable_paid/);

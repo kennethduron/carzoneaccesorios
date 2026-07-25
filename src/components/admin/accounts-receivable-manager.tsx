@@ -530,7 +530,7 @@ export function AccountsReceivableManager({
                 type="button"
                 onClick={closePaymentModal}
                 disabled={isPending || isSubmittingPayment}
-                className="rounded-md border border-black/10 p-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-11 min-w-11 rounded-md border border-black/10 p-2 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Cerrar"
               >
                 <X size={18} />
@@ -615,10 +615,10 @@ export function AccountsReceivableManager({
             </div>
 
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" onClick={closePaymentModal} variant="ghost" disabled={isPending || isSubmittingPayment}>
+              <Button type="button" onClick={closePaymentModal} variant="ghost" disabled={isPending || isSubmittingPayment} className="min-h-11">
                 Cancelar
               </Button>
-              <Button type="button" onClick={registerPayment} variant="primary" disabled={isPending || isSubmittingPayment}>
+              <Button type="button" onClick={registerPayment} variant="primary" disabled={isPending || isSubmittingPayment} className="min-h-11">
                 <ReceiptText size={16} />
                 {isPending || isSubmittingPayment ? "Registrando..." : "Registrar abono"}
               </Button>

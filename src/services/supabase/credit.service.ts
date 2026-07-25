@@ -253,7 +253,7 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
       created_at,
       updated_at,
       orders(order_number),
-      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email))
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, balance_before, balance_after, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email))
     `)
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
@@ -264,7 +264,54 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map(normalizeReceivable);
+  const rows = (data ?? []).map(normalizeReceivable);
+  const paymentIds = rows.flatMap((row) => row.payments.map((payment) => payment.id));
+  const [{ data: eventRows, error: eventsError }, { data: outboxRows, error: outboxError }] = paymentIds.length > 0
+    ? await Promise.all([
+        admin
+          .from("financial_events")
+          .select("id, source_id, status, journal_entry_id, journal_entries(id, entry_number, status)")
+          .eq("source_type", "receivable_payment")
+          .eq("event_purpose", "receivable_payment")
+          .eq("posting_version", "v1")
+          .in("source_id", paymentIds),
+        admin
+          .from("accounting_outbox")
+          .select("id, source_id, status, attempts")
+          .eq("source_type", "receivable_payment")
+          .eq("event_purpose", "receivable_payment")
+          .eq("posting_version", "v1")
+          .in("source_id", paymentIds),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+
+  if (eventsError) throw new Error(eventsError.message);
+  if (outboxError) throw new Error(outboxError.message);
+
+  const eventByPayment = new Map((eventRows ?? []).map((event) => [event.source_id, event]));
+  const outboxByPayment = new Map((outboxRows ?? []).map((outbox) => [outbox.source_id, outbox]));
+
+  return rows.map((row) => ({
+    ...row,
+    payments: row.payments.map((payment) => {
+      const event = eventByPayment.get(payment.id);
+      const outbox = outboxByPayment.get(payment.id);
+      const journal = Array.isArray(event?.journal_entries) ? event.journal_entries[0] : event?.journal_entries;
+      return {
+        ...payment,
+        accounting_trace: {
+          outbox_id: outbox?.id ?? null,
+          outbox_status: outbox?.status ?? null,
+          attempts: Number(outbox?.attempts ?? 0),
+          event_id: event?.id ?? null,
+          event_status: event?.status ?? null,
+          journal_entry_id: event?.journal_entry_id ?? null,
+          journal_entry_number: journal?.entry_number ?? null,
+          journal_entry_status: journal?.status ?? null,
+        },
+      };
+    }),
+  }));
 }
 
 export async function getAdminAccountsReceivable(): Promise<{
