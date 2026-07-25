@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
   type MappingRequirement,
@@ -1109,7 +1110,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
     requirements.push(requirement("receivable", "accounts_receivable", "Cuenta por cobrar"));
   }
 
-  const resolved = await resolveAccountingMappings(requirements, client);
+  const resolved = await resolveAccountingMappings(requirements, client, entryDate);
   if (resolved.missing.length > 0) {
     return {
       ok: false,
@@ -1199,8 +1200,9 @@ export async function generateJournalDraftFromFinancialEvent(
   createdBy: string | null,
   client?: SupabaseClient,
 ): Promise<JournalDraftGenerationResult> {
-  const supabase = client ?? (await getSupabaseServerClient());
-  const { data: event, error } = await supabase
+  const rpcClient = client ?? (await getSupabaseServerClient());
+  const dataClient = getSupabaseAdminClient();
+  const { data: event, error } = await dataClient
     .from("financial_events")
     .select("id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id")
     .eq("id", eventId)
@@ -1218,10 +1220,10 @@ export async function generateJournalDraftFromFinancialEvent(
     return { ok: false, message: "Este tipo de evento financiero no está soportado para generar borradores." };
   }
 
-  const existingDraft = await findExistingDraft(event, supabase);
+  const existingDraft = await findExistingDraft(event, dataClient);
   if (existingDraft) {
     if (!event.journal_entry_id) {
-      await updateFinancialEventStatus(event.id, existingDraft.status === "borrador" ? "draft_created" : event.status, [], existingDraft.id, supabase);
+      await updateFinancialEventStatus(event.id, existingDraft.status === "borrador" ? "draft_created" : event.status, [], existingDraft.id, dataClient);
     }
 
     return {
@@ -1232,9 +1234,9 @@ export async function generateJournalDraftFromFinancialEvent(
     };
   }
 
-  const draft = await buildDraft(event, supabase);
+  const draft = await buildDraft(event, dataClient);
   if (!draft.ok) {
-    await updateFinancialEventStatus(event.id, draft.status, draft.validationErrors, undefined, supabase);
+    await updateFinancialEventStatus(event.id, draft.status, draft.validationErrors, undefined, dataClient);
     await logAccountingEvent({
       eventType: "financial_event.draft_validation",
       entityType: "financial_events",
@@ -1247,7 +1249,7 @@ export async function generateJournalDraftFromFinancialEvent(
         validation_errors: draft.validationErrors,
       },
       createdBy,
-    }, supabase);
+    }, dataClient);
 
     return {
       ok: false,
@@ -1257,8 +1259,8 @@ export async function generateJournalDraftFromFinancialEvent(
     };
   }
 
-  if (await isDateInClosedAccountingPeriod(draft.entryDate, supabase)) {
-    await updateFinancialEventStatus(event.id, "pending", [closedPeriodMutationMessage], undefined, supabase);
+  if (await isDateInClosedAccountingPeriod(draft.entryDate, dataClient)) {
+    await updateFinancialEventStatus(event.id, "pending", [closedPeriodMutationMessage], undefined, dataClient);
     await logAccountingEvent({
       eventType: "financial_event.draft_closed_period",
       entityType: "financial_events",
@@ -1270,12 +1272,12 @@ export async function generateJournalDraftFromFinancialEvent(
         message: closedPeriodMutationMessage,
       },
       createdBy,
-    }, supabase);
+    }, dataClient);
 
     return { ok: false, message: closedPeriodMutationMessage, status: "pending", validationErrors: [closedPeriodMutationMessage] };
   }
 
-  const { data: created, error: createError } = await supabase.rpc("create_journal_draft_from_financial_event", {
+  const { data: created, error: createError } = await rpcClient.rpc("create_journal_draft_from_financial_event", {
     financial_event_id: event.id,
     entry_date_value: draft.entryDate,
     description_value: draft.description,

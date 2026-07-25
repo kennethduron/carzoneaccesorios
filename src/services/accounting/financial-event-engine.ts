@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getInvoiceFinancialEventCandidates } from "@/services/accounting/adapters/invoice-financial-events";
 import { getInventoryFinancialEventCandidates } from "@/services/accounting/adapters/inventory-financial-events";
@@ -433,7 +434,7 @@ async function collectCandidates() {
 }
 
 export async function registerFinancialEventCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string | null, client?: SupabaseClient) {
-  const supabase = client ?? (await getSupabaseServerClient());
+  const supabase = client ?? getSupabaseAdminClient();
   const postingVersion = candidate.posting_version ?? "v1";
   const statusResult = resolveCandidateStatus(candidate, mappings, automationMode);
   const snapshot = buildRegisteredSnapshot(candidate);

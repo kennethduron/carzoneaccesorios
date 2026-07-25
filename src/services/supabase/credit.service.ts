@@ -20,6 +20,10 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
+function toNullableNumber(value: unknown) {
+  return value === null || value === undefined ? null : toNumber(value);
+}
+
 function tegucigalpaDate(value = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Tegucigalpa",
@@ -42,8 +46,10 @@ type ReceivableQueryRow = Omit<AccountsReceivableRow, "original_amount" | "total
   accounts_receivable_payments?: PaymentQueryRow[] | null;
 };
 
-type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount" | "recorded_by_name" | "recorded_by_email"> & {
+type PaymentQueryRow = Omit<AccountsReceivablePaymentRow, "amount" | "balance_before" | "balance_after" | "recorded_by_name" | "recorded_by_email"> & {
   amount: unknown;
+  balance_before?: unknown;
+  balance_after?: unknown;
   recorded_by_user?: {
     full_name: string | null;
     email: string | null;
@@ -99,8 +105,11 @@ export function normalizeReceivablePayment(row: PaymentQueryRow): AccountsReceiv
   return {
     ...payment,
     amount: toNumber(payment.amount),
+    balance_before: toNullableNumber(payment.balance_before),
+    balance_after: toNullableNumber(payment.balance_after),
     recorded_by_name: recorder?.full_name ?? null,
     recorded_by_email: recorder?.email ?? null,
+    accounting_trace: payment.accounting_trace ?? null,
   };
 }
 
@@ -283,7 +292,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       historical_invoice_number,
       created_at,
       updated_at,
-      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email)),
+      accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, balance_before, balance_after, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email)),
       customers(contact_name, business_name, email, phone),
       orders(order_number),
       invoices(invoice_number)
@@ -298,7 +307,7 @@ export async function getAdminAccountsReceivable(): Promise<{
     throw new Error(error.message);
   }
 
-  const rows = (data ?? []).map((row) => {
+  const baseRows = (data ?? []).map((row) => {
     const base = normalizeReceivable(row);
     return {
       ...base,
@@ -309,6 +318,52 @@ export async function getAdminAccountsReceivable(): Promise<{
       invoice_number: row.invoices?.invoice_number ?? row.historical_invoice_number ?? null,
     };
   });
+  const paymentIds = baseRows.flatMap((row) => row.payments.map((payment) => payment.id));
+  const [{ data: eventRows, error: eventsError }, { data: outboxRows, error: outboxError }] = paymentIds.length > 0
+    ? await Promise.all([
+        admin
+          .from("financial_events")
+          .select("id, source_id, status, journal_entry_id, journal_entries(id, entry_number, status)")
+          .eq("source_type", "receivable_payment")
+          .eq("event_purpose", "receivable_payment")
+          .eq("posting_version", "v1")
+          .in("source_id", paymentIds),
+        admin
+          .from("accounting_outbox")
+          .select("id, source_id, status, attempts")
+          .eq("source_type", "receivable_payment")
+          .eq("event_purpose", "receivable_payment")
+          .eq("posting_version", "v1")
+          .in("source_id", paymentIds),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+
+  if (eventsError) throw new Error(eventsError.message);
+  if (outboxError) throw new Error(outboxError.message);
+
+  const eventByPayment = new Map((eventRows ?? []).map((event) => [event.source_id, event]));
+  const outboxByPayment = new Map((outboxRows ?? []).map((outbox) => [outbox.source_id, outbox]));
+  const rows = baseRows.map((row) => ({
+    ...row,
+    payments: row.payments.map((payment) => {
+      const event = eventByPayment.get(payment.id);
+      const outbox = outboxByPayment.get(payment.id);
+      const journal = Array.isArray(event?.journal_entries) ? event.journal_entries[0] : event?.journal_entries;
+      return {
+        ...payment,
+        accounting_trace: {
+          outbox_id: outbox?.id ?? null,
+          outbox_status: outbox?.status ?? null,
+          attempts: Number(outbox?.attempts ?? 0),
+          event_id: event?.id ?? null,
+          event_status: event?.status ?? null,
+          journal_entry_id: event?.journal_entry_id ?? null,
+          journal_entry_number: journal?.entry_number ?? null,
+          journal_entry_status: journal?.status ?? null,
+        },
+      };
+    }),
+  }));
   const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0);
   const uniqueCustomers = new Set(pendingRows.map((row) => row.customer_id));
   const today = tegucigalpaDate();

@@ -15,6 +15,10 @@ export const dynamic = "force-dynamic";
 type AccountingSearchParams = {
   account_page?: string | string[];
   journal_page?: string | string[];
+  event_page?: string | string[];
+  event_search?: string | string[];
+  event_status?: string | string[];
+  event_purpose?: string | string[];
   partida?: string | string[];
   tab?: string | string[];
 };
@@ -68,7 +72,13 @@ export default async function AdminAccountingPage({
       journalPage: Number(firstParam(params.journal_page) ?? 1),
       journalPageSize: 25,
     }),
-    getFinancialCenterData(),
+    getFinancialCenterData({
+      eventPage: Number(firstParam(params.event_page) ?? 1),
+      eventPageSize: 25,
+      eventSearch: firstParam(params.event_search),
+      eventStatus: firstParam(params.event_status),
+      eventPurpose: firstParam(params.event_purpose),
+    }),
     focusedEntryPromise,
   ]);
 
@@ -123,6 +133,7 @@ export default async function AdminAccountingPage({
           canExportTechnicalCsv={canExportTechnicalCsv}
           canScanEvents={canManage}
           canGenerateDrafts={canManage}
+          canRetryPaymentEvents={canManage}
         />
       </div>
     </main>

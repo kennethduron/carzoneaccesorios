@@ -25,6 +25,10 @@ type FinancialEventRow = Omit<FinancialEvent, "source_snapshot" | "validation_er
   journal_entries: { id: string; entry_number: string; status: string } | null;
 };
 
+type AccountingOutboxRow = NonNullable<FinancialEvent["outbox"]> & {
+  source_id: string;
+};
+
 const automationModes = new Set<AutomationMode>(["disabled", "dry_run", "draft_only", "auto_post"]);
 
 export const requiredAccountingMappings: RequiredMappingDefinition[] = [
@@ -161,12 +165,41 @@ function getReadinessStatus(
   return "ready";
 }
 
-export async function getFinancialCenterData(): Promise<FinancialCenterData> {
+export async function getFinancialCenterData(input: {
+  eventPage?: number;
+  eventPageSize?: number;
+  eventSearch?: string;
+  eventStatus?: string;
+  eventPurpose?: string;
+} = {}): Promise<FinancialCenterData> {
   const supabase = await getSupabaseServerClient();
+  const eventPageSize = Math.min(Math.max(Math.trunc(input.eventPageSize ?? 25), 10), 100);
+  const eventPage = Math.max(Math.trunc(input.eventPage ?? 1), 1);
+  const eventSearch = (input.eventSearch ?? "").trim().slice(0, 80).replace(/[%_,()]/g, "");
+  const eventStatus = (input.eventStatus ?? "").trim();
+  const eventPurpose = (input.eventPurpose ?? "").trim();
+  let eventsQuery = supabase
+    .from("financial_events")
+    .select(
+      "id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at, journal_entries(id, entry_number, status)",
+      { count: "exact" },
+    );
+
+  if (eventStatus) eventsQuery = eventsQuery.eq("status", eventStatus);
+  if (eventPurpose) eventsQuery = eventsQuery.eq("event_purpose", eventPurpose);
+  if (eventSearch) {
+    const pattern = `%${eventSearch}%`;
+    eventsQuery = eventsQuery.or(
+      `source_id.ilike.${pattern},source_snapshot->>receivable_id.ilike.${pattern},source_snapshot->>customer_name.ilike.${pattern}`,
+    );
+  }
+  eventsQuery = eventsQuery
+    .order("occurred_at", { ascending: false })
+    .range((eventPage - 1) * eventPageSize, eventPage * eventPageSize - 1);
 
   const [
     { data: mappingRows, error: mappingsError },
-    { data: eventRows, error: eventsError },
+    { data: eventRows, error: eventsError, count: eventCount },
     { data: automationSetting, error: settingError },
     { count: pendingEvents, error: pendingEventsError },
     { count: openPeriods, error: openPeriodsError },
@@ -195,14 +228,7 @@ export async function getFinancialCenterData(): Promise<FinancialCenterData> {
       .order("source_key", { ascending: true })
       .order("priority", { ascending: true })
       .returns<AccountingMappingRow[]>(),
-    supabase
-      .from("financial_events")
-      .select(
-        "id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at, journal_entries(id, entry_number, status)",
-      )
-      .order("occurred_at", { ascending: false })
-      .limit(50)
-      .returns<FinancialEventRow[]>(),
+    eventsQuery.returns<FinancialEventRow[]>(),
     supabase
       .from("accounting_automation_settings")
       .select("id, key, value, description, updated_by, created_at, updated_at")
@@ -229,7 +255,28 @@ export async function getFinancialCenterData(): Promise<FinancialCenterData> {
   if (totalPeriodsError) throw new Error(totalPeriodsError.message);
 
   const mappings = (mappingRows ?? []).map(normalizeMapping);
-  const events = (eventRows ?? []).map(normalizeFinancialEvent);
+  const normalizedEvents = (eventRows ?? []).map(normalizeFinancialEvent);
+  const receivablePaymentIds = normalizedEvents
+    .filter((event) => event.source_type === "receivable_payment" && event.event_purpose === "receivable_payment")
+    .map((event) => event.source_id);
+  const { data: outboxRows, error: outboxError } = receivablePaymentIds.length > 0
+    ? await supabase
+        .from("accounting_outbox")
+        .select("id, source_id, status, attempts, last_error, available_at, processed_at")
+        .eq("source_type", "receivable_payment")
+        .eq("event_purpose", "receivable_payment")
+        .eq("posting_version", "v1")
+        .in("source_id", receivablePaymentIds)
+        .returns<AccountingOutboxRow[]>()
+    : { data: [], error: null };
+  if (outboxError) throw new Error(outboxError.message);
+  const outboxByPayment = new Map((outboxRows ?? []).map((row) => [row.source_id, row]));
+  const events = normalizedEvents.map((event) => ({
+    ...event,
+    outbox: event.source_type === "receivable_payment"
+      ? outboxByPayment.get(event.source_id) ?? null
+      : null,
+  }));
   const readinessItems = buildReadinessItems(mappings);
   const activeDefinitionCounts = new Map<string, number>();
   for (const mapping of mappings) {
@@ -257,5 +304,16 @@ export async function getFinancialCenterData(): Promise<FinancialCenterData> {
     readinessItems,
     automationSetting: automationSetting ?? null,
     periodReadiness,
+    eventQuery: {
+      search: eventSearch,
+      status: eventStatus,
+      purpose: eventPurpose,
+    },
+    eventPagination: {
+      page: eventPage,
+      pageSize: eventPageSize,
+      total: eventCount ?? 0,
+      totalPages: Math.max(Math.ceil((eventCount ?? 0) / eventPageSize), 1),
+    },
   };
 }

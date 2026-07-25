@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
 import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
+import { processReceivablePaymentAccountingOutbox } from "@/services/accounting/receivable-payment-outbox";
 import {
   applyChartOfAccountsImport,
   logAccountingCatalogEvent,
@@ -25,6 +26,7 @@ import type {
 } from "@/types/accounting";
 import type { ChartOfAccountsImportActionState } from "@/types/accounting-catalog";
 import type { AccountingMappingInput, AutomationMode } from "@/types/financial-center";
+import { uuidLike } from "@/utils/validation";
 
 type AccountingMutationResult = {
   ok: boolean;
@@ -534,6 +536,41 @@ export async function generateJournalDraftFromFinancialEventAction(eventId: stri
     ok: result.ok,
     message: result.message,
     journalEntryId: result.journalEntryId,
+  };
+}
+
+export async function retryReceivablePaymentAccountingAction(outboxId: string): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:manage");
+  const validatedId = uuidLike(outboxId, "ID de outbox contable");
+  if (!validatedId.ok) return { ok: false, message: validatedId.message };
+
+  const result = await processReceivablePaymentAccountingOutbox({
+    outboxId: validatedId.value,
+    actorId: profile.id,
+    forceRetry: true,
+  });
+
+  revalidatePath("/admin/contabilidad");
+  revalidatePath("/admin/cuentas-por-cobrar");
+  revalidatePath("/admin/crm");
+
+  if (result.draftStatus === "borrador") {
+    return { ok: true, message: "La partida contable fue creada en borrador." };
+  }
+  if (result.reason === "mapping_missing") {
+    return { ok: true, message: "El evento continúa pendiente porque falta un mapeo contable." };
+  }
+  if (result.reason === "period_closed") {
+    return { ok: true, message: "El evento continúa pendiente porque el período contable está cerrado." };
+  }
+  if (result.reason === "payment_voided") {
+    return { ok: false, message: "Un abono anulado no puede volver a procesarse como movimiento normal." };
+  }
+  return {
+    ok: result.ok,
+    message: result.ok
+      ? "El evento contable fue reconciliado sin duplicados."
+      : "El procesamiento contable continúa pendiente; puede reintentarse de forma segura.",
   };
 }
 

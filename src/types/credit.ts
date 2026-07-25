@@ -2,12 +2,25 @@ export type CommercialCreditStatus = "active" | "suspended";
 export type AccountsReceivableStatus = "open" | "partial" | "paid" | "overdue" | "cancelled";
 export type CommercialCreditPaymentReceivedMethod = "bank_transfer" | "card" | "cash";
 
+export type ReceivablePaymentAccountingTrace = {
+  outbox_id: string | null;
+  outbox_status: "queued" | "processing" | "completed" | "failed" | null;
+  attempts: number;
+  event_id: string | null;
+  event_status: string | null;
+  journal_entry_id: string | null;
+  journal_entry_number: string | null;
+  journal_entry_status: string | null;
+};
+
 export type AccountsReceivablePaymentRow = {
   id: string;
   receivable_id: string;
   customer_id: string;
   order_id: string | null;
   amount: number;
+  balance_before: number | null;
+  balance_after: number | null;
   payment_method: CommercialCreditPaymentReceivedMethod;
   reference: string | null;
   received_at: string;
@@ -20,6 +33,7 @@ export type AccountsReceivablePaymentRow = {
   voided_at: string | null;
   voided_by: string | null;
   void_reason: string | null;
+  accounting_trace?: ReceivablePaymentAccountingTrace | null;
   created_at: string;
 };
 

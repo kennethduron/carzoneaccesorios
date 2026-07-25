@@ -54,7 +54,11 @@ function isEffective(row: MappingRow, today: string) {
   return true;
 }
 
-export async function resolveAccountingMappings(requirements: MappingRequirement[], client?: SupabaseClient): Promise<MappingResolution> {
+export async function resolveAccountingMappings(
+  requirements: MappingRequirement[],
+  client?: SupabaseClient,
+  effectiveDate = todayKey(),
+): Promise<MappingResolution> {
   const uniqueRequirements = [...new Map(requirements.map((requirement) => [mappingKey(requirement.mappingType, requirement.sourceKey), requirement])).values()];
   const accounts = new Map<string, ResolvedAccountingAccount>();
   const missing: string[] = [];
@@ -94,7 +98,6 @@ export async function resolveAccountingMappings(requirements: MappingRequirement
     throw new Error(error.message);
   }
 
-  const today = todayKey();
   const rows = data ?? [];
 
   for (const requirement of uniqueRequirements) {
@@ -102,7 +105,7 @@ export async function resolveAccountingMappings(requirements: MappingRequirement
     const row = rows.find(
       (candidate) =>
         mappingKey(candidate.mapping_type, candidate.source_key) === key &&
-        isEffective(candidate, today) &&
+        isEffective(candidate, effectiveDate) &&
         candidate.accounting_accounts?.is_active,
     );
 

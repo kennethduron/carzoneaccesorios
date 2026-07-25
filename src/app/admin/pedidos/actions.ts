@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
-import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { effectiveRole, hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { notifyCustomerOfOrderChange } from "@/lib/notifications/order-email";
@@ -11,9 +11,12 @@ import { revalidateProductAvailability } from "@/lib/product-availability-cache"
 import {
   dispatchAccountingEvent,
   dispatchCommercialCreditCancellationAccountingEventForOrder,
-  dispatchLatestReceivablePaymentAccountingEvent,
   dispatchPaymentReceivedAccountingEventForOrder,
 } from "@/services/accounting/accounting-event-dispatcher";
+import {
+  findLatestReceivablePaymentOutboxId,
+  processReceivablePaymentAccountingOutbox,
+} from "@/services/accounting/receivable-payment-outbox";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
@@ -114,7 +117,9 @@ function revalidateOperationalPaths() {
 }
 
 function canManageCommercialCredit(role: AppRole, permissions: Permission[], email: string | null) {
-  return hasEffectivePermission(role, permissions, "credit:mark_paid", email);
+  const authorizedRoles = new Set<AppRole>(["technical_owner", "business_owner", "admin", "contadora"]);
+  return authorizedRoles.has(effectiveRole(role, email))
+    && hasEffectivePermission(role, permissions, "credit:mark_paid", email);
 }
 
 function normalizeCreditPaymentMethod(value: unknown): CreditPaymentReceivedMethod | null {
@@ -216,7 +221,7 @@ export async function markCreditReceivablePaidAction(input: {
   paymentMethod: CreditPaymentReceivedMethod;
   paymentReference?: string;
 }) {
-  const profile = await requirePermission("admin:access");
+  const profile = await requirePermission("credit:mark_paid");
   const receivableId = input.receivableId.trim();
   const paymentMethod = normalizeCreditPaymentMethod(input.paymentMethod);
   const paymentReference = (input.paymentReference ?? "").trim();
@@ -254,7 +259,10 @@ export async function markCreditReceivablePaidAction(input: {
   }
 
   await processCreditPaymentEmails(receivableId);
-  const accountingResult = await dispatchLatestReceivablePaymentAccountingEvent({ receivableId, triggeredBy: profile.id, route: "/admin/cuentas-por-cobrar" });
+  const outboxId = await findLatestReceivablePaymentOutboxId(receivableId).catch(() => null);
+  const accountingResult = outboxId
+    ? await processReceivablePaymentAccountingOutbox({ outboxId, actorId: profile.id })
+    : null;
   const receivablePaidResult = await dispatchAccountingEvent({
     sourceType: "accounts_receivable",
     sourceId: receivableId,
@@ -264,7 +272,7 @@ export async function markCreditReceivablePaidAction(input: {
   });
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
-  const accountingWarning = accountingResult.ok && receivablePaidResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingWarning = accountingResult?.ok && receivablePaidResult.ok ? "" : " El procesamiento contable quedó pendiente y puede reintentarse.";
   return { ok: true, message: "Crédito marcado como pagado correctamente." + accountingWarning };
 }
 
@@ -279,7 +287,7 @@ export async function registerCreditReceivablePaymentAction(input: {
   receiptPublicId?: string;
   idempotencyKey?: string;
 }) {
-  const profile = await requirePermission("admin:access");
+  const profile = await requirePermission("credit:mark_paid");
   const receivableId = input.receivableId.trim();
   const amount = normalizePositiveMoney(input.amount);
   const paymentMethod = normalizeCreditPaymentMethod(input.paymentMethod);
@@ -341,7 +349,18 @@ export async function registerCreditReceivablePaymentAction(input: {
       payment_receipt_public_id: receiptPublicId || null,
       request_key: idempotencyKey || null,
     })
-    .returns<Array<{ payment_id: string; receivable_status: string; balance_due: unknown; total_paid: unknown; queued_email_id: string | null }>>();
+    .returns<Array<{
+      payment_id: string;
+      receivable_id: string;
+      previous_balance: unknown;
+      balance_due: unknown;
+      total_paid: unknown;
+      receivable_status: string;
+      queued_email_id: string | null;
+      outbox_id: string;
+      outbox_created: boolean;
+      idempotent_replay: boolean;
+    }>>();
 
   if (error || !Array.isArray(data) || data.length === 0) {
     return { ok: false, message: safeAdminOrderMessage(error?.message || "No se pudo registrar el abono.") };
@@ -349,12 +368,9 @@ export async function registerCreditReceivablePaymentAction(input: {
 
   const result = data[0];
   await processCreditPaymentEmails(receivableId, [result.queued_email_id]);
-  const accountingResult = await dispatchAccountingEvent({
-    sourceType: "receivable_payment",
-    sourceId: result.payment_id,
-    eventPurpose: "receivable_payment",
-    triggeredBy: profile.id,
-    route: "/admin/cuentas-por-cobrar",
+  const accountingResult = await processReceivablePaymentAccountingOutbox({
+    outboxId: result.outbox_id,
+    actorId: profile.id,
   });
   const receivablePaidResult =
     Number(result.balance_due ?? 0) <= 0
@@ -369,10 +385,36 @@ export async function registerCreditReceivablePaymentAction(input: {
   revalidateOperationalPaths();
   revalidatePath("/admin/contabilidad");
 
-  const accountingWarning = accountingResult.ok && receivablePaidResult?.ok !== false ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingMessage =
+    accountingResult.draftStatus === "borrador"
+      ? " La partida contable fue creada en borrador y está pendiente de revisión."
+      : accountingResult.reason === "mapping_missing"
+        ? " El evento contable quedó pendiente porque falta configurar una cuenta contable para este método de pago."
+        : accountingResult.reason === "period_closed"
+          ? " El evento contable quedó pendiente porque la fecha del abono pertenece a un período cerrado."
+          : " El abono fue registrado correctamente, pero el procesamiento contable quedó pendiente. Puede reintentarse sin duplicar el abono.";
+  const controlWarning = receivablePaidResult?.ok === false
+    ? " No se pudo actualizar el evento final de control."
+    : "";
   return {
     ok: true,
-    message: (Number(result.balance_due ?? 0) <= 0 ? "Abono registrado. El crédito quedó pagado completamente." : "Abono registrado correctamente.") + accountingWarning,
+    message: (Number(result.balance_due ?? 0) <= 0 ? "Abono registrado correctamente. El crédito quedó pagado completamente." : "Abono registrado correctamente.") + accountingMessage + controlWarning,
+    payment: {
+      ok: true as const,
+      paymentId: result.payment_id,
+      previousBalance: Number(result.previous_balance ?? 0),
+      newBalance: Number(result.balance_due ?? 0),
+      receivableStatus: result.receivable_status,
+      idempotentReplay: result.idempotent_replay,
+    },
+    accounting: {
+      eventStatus: accountingResult.eventStatus,
+      eventId: accountingResult.eventId,
+      draftStatus: accountingResult.draftStatus,
+      draftId: accountingResult.draftId,
+      reason: accountingResult.reason,
+      outboxId: accountingResult.outboxId,
+    },
   };
 }
 

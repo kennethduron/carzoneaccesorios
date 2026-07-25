@@ -95,6 +95,15 @@ function newIdempotencyKey(rowId: string) {
   return `credit-payment:${rowId}:${randomValue}`;
 }
 
+function pendingIdempotencyStorageKey(rowId: string) {
+  return `credit-payment:pending:${rowId}`;
+}
+
+function recoverIdempotencyKey(rowId: string) {
+  if (typeof sessionStorage === "undefined") return newIdempotencyKey(rowId);
+  return sessionStorage.getItem(pendingIdempotencyStorageKey(rowId)) ?? newIdempotencyKey(rowId);
+}
+
 export function AccountsReceivableManager({
   rows,
   summary,
@@ -154,7 +163,7 @@ export function AccountsReceivableManager({
       receivedAt: todayInputValue(),
       note: "",
       receiptUrl: "",
-      idempotencyKey: newIdempotencyKey(row.id),
+      idempotencyKey: recoverIdempotencyKey(row.id),
     });
   }
 
@@ -188,6 +197,7 @@ export function AccountsReceivableManager({
 
     isSubmittingPaymentRef.current = true;
     setIsSubmittingPayment(true);
+    sessionStorage.setItem(pendingIdempotencyStorageKey(selectedRow.id), modalDraft.idempotencyKey);
 
     startTransition(async () => {
       const result = await registerCreditReceivablePaymentAction({
@@ -206,9 +216,9 @@ export function AccountsReceivableManager({
 
       if (result.ok) {
         toast.success(result.message);
+        sessionStorage.removeItem(pendingIdempotencyStorageKey(selectedRow.id));
         isSubmittingPaymentRef.current = false;
         setIsSubmittingPayment(false);
-        setModalDraft((current) => (current ? { ...current, idempotencyKey: newIdempotencyKey(selectedRow.id) } : current));
         saveReceivablesScroll();
         setSelectedRow(null);
         setModalDraft(null);
@@ -216,7 +226,6 @@ export function AccountsReceivableManager({
       } else {
         isSubmittingPaymentRef.current = false;
         setIsSubmittingPayment(false);
-        setModalDraft((current) => (current ? { ...current, idempotencyKey: newIdempotencyKey(selectedRow.id) } : current));
         toast.error(result.message);
       }
     });

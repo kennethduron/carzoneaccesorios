@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { History, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { AccountsReceivablePaymentRow } from "@/types/credit";
@@ -42,6 +43,16 @@ function recorderLabel(payment: Pick<AccountsReceivablePaymentRow, "recorded_by_
 
 function paymentTime(payment: Pick<AccountsReceivablePaymentRow, "received_at" | "created_at">) {
   return new Date(payment.received_at ?? payment.created_at).getTime();
+}
+
+function accountingStatusLabel(payment: AccountsReceivablePaymentRow) {
+  const trace = payment.accounting_trace;
+  if (!trace?.event_id) return "Evento pendiente";
+  if (trace.journal_entry_status === "publicada" || trace.event_status === "posted") return "Partida publicada";
+  if (trace.journal_entry_id || trace.event_status === "draft_created") return "Partida en borrador";
+  if (trace.outbox_status === "failed" || trace.event_status === "failed") return "Procesamiento fallido";
+  const issues = trace.event_status === "pending" ? "Evento pendiente" : "Evento registrado";
+  return issues;
 }
 
 export function CreditPaymentHistory({
@@ -130,6 +141,35 @@ export function CreditPaymentHistory({
                   {showRecordedBy ? <p className="mt-2 text-sm text-black/55">Registrado por: {recorderLabel(payment)}</p> : null}
                   {payment.reference ? <p className="mt-1 text-sm text-black/55">Referencia: {payment.reference}</p> : null}
                   {showNotes && payment.note ? <p className="mt-1 whitespace-pre-line text-sm text-black/55">Nota: {payment.note}</p> : null}
+                  {showRecordedBy && payment.balance_before !== null && payment.balance_after !== null ? (
+                    <p className="mt-1 text-sm text-black/55">
+                      Saldo: {formatCurrency(payment.balance_before)} → {formatCurrency(payment.balance_after)}
+                    </p>
+                  ) : null}
+                  {showRecordedBy && payment.accounting_trace ? (
+                    <div className="mt-3 rounded-md border border-black/10 bg-[#fafafa] p-3 text-xs">
+                      <p className="font-semibold">{accountingStatusLabel(payment)}</p>
+                      <p className="mt-1 text-black/50">Intentos: {payment.accounting_trace.attempts}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {payment.accounting_trace.event_id ? (
+                          <Link
+                            href={`/admin/contabilidad?tab=events&event_search=${encodeURIComponent(payment.id)}`}
+                            className="font-semibold text-[#b91c25] underline-offset-2 hover:underline"
+                          >
+                            Ver evento
+                          </Link>
+                        ) : null}
+                        {payment.accounting_trace.journal_entry_id ? (
+                          <Link
+                            href={`/admin/contabilidad?tab=journal&partida=${payment.accounting_trace.journal_entry_id}`}
+                            className="font-semibold text-[#b91c25] underline-offset-2 hover:underline"
+                          >
+                            Ver partida {payment.accounting_trace.journal_entry_number ?? ""}
+                          </Link>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>

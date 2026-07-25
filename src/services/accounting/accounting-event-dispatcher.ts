@@ -531,7 +531,10 @@ export async function dispatchAccountingEvent(input: DispatchAccountingEventInpu
 
     const admin = getSupabaseAdminClient();
     const automationMode = await getAccountingAutomationMode(admin);
-    if (automationMode === "disabled") {
+    const isReceivablePaidControl =
+      input.sourceType === "accounts_receivable" &&
+      input.eventPurpose === "receivable_paid";
+    if (automationMode === "disabled" && !isReceivablePaidControl) {
       return { ok: true, skipped: true, message: "Automatización contable desactivada." };
     }
 
@@ -544,7 +547,7 @@ export async function dispatchAccountingEvent(input: DispatchAccountingEventInpu
     const eventId = registered.eventId ?? (await findRegisteredEventId(input));
 
     if (automationMode === "draft_only" && eventId && registered.status === "ready" && draftEligiblePurposes.has(input.eventPurpose)) {
-      const draft = await generateJournalDraftFromFinancialEvent(eventId, input.triggeredBy ?? null, admin);
+      const draft = await generateJournalDraftFromFinancialEvent(eventId, input.triggeredBy ?? null);
       return {
         ok: true,
         skipped: false,

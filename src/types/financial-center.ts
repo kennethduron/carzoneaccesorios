@@ -69,6 +69,14 @@ export type FinancialEvent = {
     entry_number: string;
     status: string;
   } | null;
+  outbox?: {
+    id: string;
+    status: "queued" | "processing" | "completed" | "failed";
+    attempts: number;
+    last_error: string | null;
+    available_at: string;
+    processed_at: string | null;
+  } | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -124,4 +132,15 @@ export type FinancialCenterData = {
   readinessItems: MappingReadinessItem[];
   automationSetting: AccountingAutomationSetting | null;
   periodReadiness: PeriodReadiness;
+  eventQuery: {
+    search: string;
+    status: string;
+    purpose: string;
+  };
+  eventPagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
 };
