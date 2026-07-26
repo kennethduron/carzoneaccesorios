@@ -1,11 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
-  collectReceivablePaymentAccountingPreview,
-  publicPreviewReport,
-} from "./preview-missing-receivable-payment-events.mjs";
+  assertPostRepair,
+  collectScopedReceivablePaymentPreview,
+  parseRepairArgs,
+  scopedPublicReport,
+  validateApplyPreflight,
+} from "./scoped-receivable-payment-repair.mjs";
 
-const applyRequested = process.argv.includes("--apply");
 const requiredConfirmation = "APPLY_RECEIVABLE_PAYMENT_REPAIR";
 
 function requiredEnv(name) {
@@ -14,17 +18,20 @@ function requiredEnv(name) {
   return value;
 }
 
-function clients() {
+function serviceClient() {
   const url = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const service = createClient(url, requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+  return createClient(url, requiredEnv("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+function actorClient() {
+  const url = requiredEnv("NEXT_PUBLIC_SUPABASE_URL");
   const actorToken = requiredEnv("SUPABASE_REPAIR_ACTOR_ACCESS_TOKEN");
-  const actor = createClient(url, requiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
+  return createClient(url, requiredEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
     auth: { persistSession: false, autoRefreshToken: false },
     global: { headers: { Authorization: `Bearer ${actorToken}` } },
   });
-  return { service, actor };
 }
 
 async function ensureOutbox(service, paymentId) {
@@ -35,9 +42,10 @@ async function ensureOutbox(service, paymentId) {
     .eq("source_id", paymentId)
     .eq("event_purpose", "receivable_payment")
     .eq("posting_version", "v1")
-    .maybeSingle();
+    .limit(2);
   if (existingError) throw new Error(existingError.message);
-  if (existing) return existing.id;
+  if ((existing ?? []).length > 1) throw new Error("Existen multiples outboxes exactas.");
+  if (existing?.[0]) return existing[0].id;
 
   const { data, error } = await service
     .from("accounting_outbox")
@@ -73,7 +81,7 @@ async function fail(actor, input) {
   });
 }
 
-async function repairOne(service, actor, payment) {
+async function repairOne(service, actor, payment, expectedEventId) {
   const outboxId = await ensureOutbox(service, payment.id);
   const worker = `repair:${randomUUID()}`;
   const { data: processResult, error: processError } = await actor.rpc(
@@ -87,23 +95,26 @@ async function repairOne(service, actor, payment) {
   if (processError) throw new Error(processError.message);
   if (!processResult?.ok) throw new Error(processResult?.error || "No se pudo procesar la outbox.");
   if (!processResult.claimed) {
-    return {
-      result: "reused",
-      eventStatus: processResult.event_status ?? null,
-      draftCreated: Boolean(processResult.journal_entry_id),
-    };
+    throw new Error(`La outbox no fue reclamada: ${processResult.reason ?? "estado desconocido"}.`);
   }
 
   const eventId = processResult.event_id;
-  if (!eventId) throw new Error("La outbox no devolvió un evento.");
+  if (!eventId) throw new Error("La outbox no devolvio un evento.");
+  if (eventId !== expectedEventId) {
+    await fail(actor, {
+      outboxId,
+      worker,
+      message: "El procesador devolvio un evento distinto del autorizado.",
+    });
+    throw new Error("El procesador devolvio un evento distinto del autorizado.");
+  }
   if (processResult.event_status !== "ready") {
-    await complete(actor, { outboxId, worker, eventId, journalEntryId: null });
-    return {
-      result: "pending",
-      eventStatus: processResult.event_status,
-      draftCreated: false,
-      reason: processResult.reason ?? null,
-    };
+    await fail(actor, {
+      outboxId,
+      worker,
+      message: `El evento no quedo listo: ${processResult.reason ?? processResult.event_status}.`,
+    });
+    throw new Error(`El evento no quedo listo: ${processResult.reason ?? processResult.event_status}.`);
   }
 
   const { data: draft, error: draftError } = await actor.rpc(
@@ -111,36 +122,41 @@ async function repairOne(service, actor, payment) {
     {
       financial_event_id: eventId,
       entry_date_value: "2000-01-01",
-      description_value: "Reparación histórica controlada",
+      description_value: "Reparacion historica controlada",
       lines_data: [],
       actor_ip: null,
-      actor_user_agent: "receivable-payment-repair-v1",
+      actor_user_agent: "receivable-payment-repair-v2-scoped",
     },
   );
   if (draftError) {
     await fail(actor, { outboxId, worker, message: draftError.message });
     throw new Error(draftError.message);
   }
+  if (!draft?.journal_entry_id) {
+    await fail(actor, { outboxId, worker, message: "La RPC no devolvio la partida creada." });
+    throw new Error("La RPC no devolvio la partida creada.");
+  }
 
   await complete(actor, {
     outboxId,
     worker,
     eventId,
-    journalEntryId: draft?.journal_entry_id ?? null,
+    journalEntryId: draft.journal_entry_id,
   });
-  return {
-    result: "draft_created",
-    eventStatus: "draft_created",
-    draftCreated: true,
-  };
+  return { result: "draft_created", journalEntryId: draft.journal_entry_id };
 }
 
 async function main() {
-  const preview = await collectReceivablePaymentAccountingPreview();
-  console.log(JSON.stringify(publicPreviewReport(preview), null, 2));
+  const options = parseRepairArgs(process.argv.slice(2));
+  const service = serviceClient();
+  const preview = await collectScopedReceivablePaymentPreview(service, options.paymentId);
+  console.log(JSON.stringify(scopedPublicReport(preview), null, 2));
 
-  if (!applyRequested) {
-    console.log("Modo preview: no se modificó ningún dato. Usa --apply solo después de aprobar este resultado.");
+  if (!options.apply) {
+    if (preview.payments.length === 0) console.log("Abono no encontrado. Cero modificaciones.");
+    else if (preview.payments.length !== 1) {
+      console.log("Resultado ambiguo. Reparacion bloqueada. Cero modificaciones.");
+    } else console.log("Modo preview dirigido: no se modifico ningun dato.");
     return;
   }
 
@@ -150,46 +166,46 @@ async function main() {
     );
   }
 
-  const candidates = preview.recoverablePayments.filter(
-    (payment) => !preview.possibleManualByPayment.has(payment.id),
-  );
-  const excludedManual = preview.recoverablePayments.length - candidates.length;
-  const { service, actor } = clients();
+  const actor = actorClient();
+  validateApplyPreflight(preview, options);
   const { data: actorUser, error: actorError } = await actor.auth.getUser();
   if (actorError || !actorUser.user) {
-    throw new Error("El token del actor de reparación no es válido.");
+    throw new Error("El token del actor de reparacion no es valido.");
   }
 
-  const summary = {
-    candidates: candidates.length,
-    excluded_possible_manual: excludedManual,
-    draft_created: 0,
-    pending: 0,
-    reused: 0,
-    failed: 0,
-  };
-
-  for (const payment of candidates) {
-    try {
-      const result = await repairOne(service, actor, payment);
-      if (result.result === "draft_created") summary.draft_created += 1;
-      else if (result.result === "pending") summary.pending += 1;
-      else summary.reused += 1;
-    } catch {
-      summary.failed += 1;
-    }
-  }
-
+  const immediatePreflight = await collectScopedReceivablePaymentPreview(service, options.paymentId);
+  const authorized = validateApplyPreflight(immediatePreflight, options);
   console.log(JSON.stringify({
-    mode: "APPLY",
-    ...summary,
-    published_entries: 0,
+    mode: "APPLY_PREFLIGHT",
+    selected_records: 1,
+    payment_id: `${options.paymentId.slice(0, 8)}...`,
+    event_id: `${authorized.event.id.slice(0, 8)}...`,
+    action: "reconcile_outbox_and_create_draft",
+    publication: false,
   }, null, 2));
 
-  if (summary.failed > 0) process.exitCode = 1;
+  const result = await repairOne(service, actor, authorized.payment, authorized.event.id);
+  const after = await collectScopedReceivablePaymentPreview(service, options.paymentId);
+  const postRepair = assertPostRepair(immediatePreflight, after);
+  console.log(JSON.stringify({
+    mode: "APPLY",
+    selected_records: 1,
+    result: result.result,
+    existing_event_reused: postRepair.existing_event_reused,
+    outbox_completed: postRepair.outbox_completed,
+    journal_entry_id: `${postRepair.journal_entry_id.slice(0, 8)}...`,
+    journal_status: postRepair.journal_status,
+    published_entries: 0,
+    payment_rows_changed: 0,
+    financial_events_inserted: 0,
+    other_payments_changed: 0,
+  }, null, 2));
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (invokedPath && fileURLToPath(import.meta.url) === invokedPath) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

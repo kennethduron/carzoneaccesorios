@@ -169,7 +169,8 @@ La herramienta muestra cantidades, montos, métodos, períodos, mapeos faltantes
 La reparación:
 
 ```bash
-node --env-file=.env.local scripts/accounting/repair-missing-receivable-payment-events.mjs
+node --env-file=.env.local scripts/accounting/repair-missing-receivable-payment-events.mjs \
+  --payment-id=<UUID>
 ```
 
 también ejecuta preview por defecto. Aplicar exige simultáneamente:

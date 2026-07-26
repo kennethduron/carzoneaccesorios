@@ -72,9 +72,19 @@ assert.match(source.creditService, /getCustomerReceivables[\s\S]*accounting_trac
 assert.match(source.eventsUi, /no es un dry run/i);
 assert.match(source.docs, /nunca se publica automáticamente/i);
 assert.match(source.docs, /receivable_paid/);
-assert.match(
-  await readFile("scripts/accounting/repair-missing-receivable-payment-events.mjs", "utf8"),
-  /preview\.recoverablePayments/,
+
+const repairSource = await readFile(
+  "scripts/accounting/repair-missing-receivable-payment-events.mjs",
+  "utf8",
 );
+const scopeSource = await readFile(
+  "scripts/accounting/scoped-receivable-payment-repair.mjs",
+  "utf8",
+);
+assert.match(repairSource, /collectScopedReceivablePaymentPreview/);
+assert.match(scopeSource, /\.from\("accounts_receivable_payments"\)[\s\S]*\.eq\("id", paymentId\)/);
+assert.doesNotMatch(repairSource, /preview\.recoverablePayments|for\s*\(const payment of/);
+assert.doesNotMatch(scopeSource, /readAll|recoverablePayments/);
+assert.doesNotMatch(repairSource, /post_journal_entry/);
 
 console.log("Receivable-payment accounting outbox structural checks passed.");
