@@ -15,8 +15,10 @@ const allowedPermissions = new Set([
   "products:adjust_stock",
   "inventory:read",
   "notifications:read",
+  "orders:read",
   "invoices:read",
   "invoices:export",
+  "invoices:create",
   "fiscal:read",
   "fiscal:reports",
   "settings:fiscal",
@@ -56,7 +58,6 @@ const allowedPermissions = new Set([
 ]);
 
 const forbiddenPermissions = [
-  "orders:read",
   "orders:manage",
   "orders:manage_logistics",
   "customers:read",
@@ -85,7 +86,6 @@ const forbiddenPermissions = [
   "commercial_settings:manage",
   "reports:read",
   "reports:export",
-  "invoices:create",
   "invoices:correct",
   "invoices:manage",
   "receivables:rollback",

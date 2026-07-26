@@ -110,6 +110,7 @@ type ReportInvoiceSummaryQuery = {
   id: string;
   invoice_number: string;
   issued_at: string | null;
+  invoice_date: string | null;
   status: string | null;
   cancelled_at: string | null;
 };
@@ -423,7 +424,7 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      invoices(id, invoice_number, issued_at, status, cancelled_at),
+      invoices(id, invoice_number, invoice_date, issued_at, status, cancelled_at),
       payments(payment_status, status),
       customers(tax_id, business_name, email, is_wholesale)
       `,
@@ -483,6 +484,7 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
       discount_total,
       additional_fees,
       total,
+      invoice_date,
       issued_at,
       cancelled_at,
       created_at,
@@ -505,11 +507,15 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     );
 
   if (filters.startDate) {
-    invoicesQuery = invoicesQuery.gte("created_at", dateStart(filters.startDate));
+    invoicesQuery = invoicesQuery.or(
+      `invoice_date.gte.${filters.startDate},and(invoice_date.is.null,issued_at.gte.${dateStart(filters.startDate)}),and(invoice_date.is.null,issued_at.is.null,created_at.gte.${dateStart(filters.startDate)})`,
+    );
   }
 
   if (filters.endDate) {
-    invoicesQuery = invoicesQuery.lte("created_at", dateEnd(filters.endDate));
+    invoicesQuery = invoicesQuery.or(
+      `invoice_date.lte.${filters.endDate},and(invoice_date.is.null,issued_at.lte.${dateEnd(filters.endDate)}),and(invoice_date.is.null,issued_at.is.null,created_at.lte.${dateEnd(filters.endDate)})`,
+    );
   }
 
   if (filters.invoice) {
@@ -631,7 +637,10 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     { data: receivablePayments, error: receivablePaymentsError, count: receivablePaymentsTotal },
   ] = await Promise.all([
     ordersQuery.order("created_at", { ascending: false }).range(from, to).returns<OrderQueryRow[]>(),
-    invoicesQuery.order("created_at", { ascending: false }).range(from, to).returns<InvoiceQueryRow[]>(),
+    invoicesQuery
+      .order("invoice_date", { ascending: false, nullsFirst: false })
+      .order("issued_at", { ascending: false, nullsFirst: false })
+      .range(from, to).returns<InvoiceQueryRow[]>(),
     productsQuery.order("name", { ascending: true }).range(from, to).returns<ProductQueryRow[]>(),
     customersQuery.order("created_at", { ascending: false }).range(from, to).returns<ReportCustomer[]>(),
     paymentsQuery.order("created_at", { ascending: false }).range(from, to).returns<PaymentQueryRow[]>(),
@@ -739,6 +748,7 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
       discount_total,
       additional_fees,
       total,
+      invoice_date,
       issued_at,
       cancelled_at,
       created_at,
@@ -761,11 +771,15 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
     );
 
   if (filters.startDate) {
-    invoicesQuery = invoicesQuery.gte("created_at", dateStart(filters.startDate));
+    invoicesQuery = invoicesQuery.or(
+      `invoice_date.gte.${filters.startDate},and(invoice_date.is.null,issued_at.gte.${dateStart(filters.startDate)}),and(invoice_date.is.null,issued_at.is.null,created_at.gte.${dateStart(filters.startDate)})`,
+    );
   }
 
   if (filters.endDate) {
-    invoicesQuery = invoicesQuery.lte("created_at", dateEnd(filters.endDate));
+    invoicesQuery = invoicesQuery.or(
+      `invoice_date.lte.${filters.endDate},and(invoice_date.is.null,issued_at.lte.${dateEnd(filters.endDate)}),and(invoice_date.is.null,issued_at.is.null,created_at.lte.${dateEnd(filters.endDate)})`,
+    );
   }
 
   if (filters.invoice) {
@@ -786,7 +800,8 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
   }
 
   const { data: invoices, error: invoicesError, count } = await invoicesQuery
-    .order("created_at", { ascending: false })
+    .order("invoice_date", { ascending: false, nullsFirst: false })
+    .order("issued_at", { ascending: false, nullsFirst: false })
     .range(from, to)
     .returns<InvoiceQueryRow[]>();
 

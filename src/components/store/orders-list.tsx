@@ -145,6 +145,7 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     paymentReference: order.bank_reference_number,
     status: invoice.status,
     issuedAt: invoice.issued_at ?? order.created_at,
+    invoiceDate: invoice.invoice_date,
     cancelledAt: invoice.cancelled_at,
   };
 }

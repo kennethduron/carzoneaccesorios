@@ -1,3 +1,5 @@
+import { formatSqlDateHn, isSqlDate } from "@/utils/honduras-date";
+
 const hondurasTimeZone = "America/Tegucigalpa";
 const monthNames = [
   "enero",
@@ -45,6 +47,10 @@ function getDateParts(value: string) {
 export function formatHnDate(value: string | null) {
   if (!value) {
     return "-";
+  }
+
+  if (isSqlDate(value)) {
+    return formatSqlDateHn(value).replace(/^0/, "").replace("/0", "/");
   }
 
   const parts = getDateParts(value);

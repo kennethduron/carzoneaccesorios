@@ -21,6 +21,8 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";
+import type { AdjustSaleTermsInput, SaleFinancialSnapshot } from "@/types/orders";
+import { isSqlDate } from "@/utils/honduras-date";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
 
@@ -623,6 +625,96 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
 
   const accountingWarning = accountingResult?.ok === false ? " Advertencia: no se pudo registrar el evento contable." : "";
   return { ok: true, message: "Estado del pedido actualizado." + accountingWarning };
+}
+
+type AdjustSaleTermsRpcResult = {
+  order_id: string;
+  commercial_terms_version: number;
+  requested_invoice_date: string;
+  delivery_mode: AdjustSaleTermsInput["deliveryMode"];
+  external_delivery_provider: string | null;
+  financials: SaleFinancialSnapshot;
+};
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validMoney(value: number) {
+  return Number.isFinite(value) && value >= 0 && Math.round(value * 100) === value * 100;
+}
+
+export async function adjustSaleTermsAction(input: AdjustSaleTermsInput) {
+  const profile = await requirePermission("admin:access");
+  const canAdjust = ([
+    "sales:set_invoice_date",
+    "sales:override_price",
+    "sales:override_delivery",
+  ] as Permission[]).some((permission) =>
+    hasEffectivePermission(profile.role, profile.permissions, permission, profile.email),
+  );
+
+  if (!canAdjust) {
+    return { ok: false as const, message: "No tienes permiso para ajustar los términos comerciales." };
+  }
+  if (!uuidPattern.test(input.orderId) || !uuidPattern.test(input.idempotencyKey)) {
+    return { ok: false as const, message: "El pedido o la clave de guardado no es válida." };
+  }
+  if (!isSqlDate(input.requestedInvoiceDate)) {
+    return { ok: false as const, message: "Selecciona una fecha de factura válida." };
+  }
+  if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 0) {
+    return { ok: false as const, message: "La versión de los términos no es válida. Recarga el pedido." };
+  }
+  if (!validMoney(input.requestedShippingFee)) {
+    return { ok: false as const, message: "Ingresa un cargo de entrega no negativo con máximo dos decimales." };
+  }
+  if (!Array.isArray(input.linePriceOverrides) || input.linePriceOverrides.length === 0) {
+    return { ok: false as const, message: "El pedido debe incluir al menos una línea." };
+  }
+
+  const itemIds = new Set<string>();
+  for (const line of input.linePriceOverrides) {
+    if (!uuidPattern.test(line.orderItemId) || !validMoney(line.finalUnitPrice) || line.finalUnitPrice <= 0) {
+      return { ok: false as const, message: "Revisa los precios finales del pedido." };
+    }
+    if (itemIds.has(line.orderItemId)) {
+      return { ok: false as const, message: "Cada línea del pedido debe enviarse una sola vez." };
+    }
+    itemIds.add(line.orderItemId);
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("adjust_sale_terms_v1", {
+    p_order_id: input.orderId,
+    p_requested_invoice_date: input.requestedInvoiceDate,
+    p_line_price_overrides: input.linePriceOverrides.map((line) => ({
+      order_item_id: line.orderItemId,
+      final_unit_price: line.finalUnitPrice,
+    })),
+    p_requested_shipping_fee: input.requestedShippingFee,
+    p_delivery_mode: input.deliveryMode ?? null,
+    p_external_delivery_provider: input.externalDeliveryProvider?.trim() || null,
+    p_price_reason: input.priceReason?.trim() || null,
+    p_delivery_reason: input.deliveryReason?.trim() || null,
+    p_expected_version: input.expectedVersion,
+    p_idempotency_key: input.idempotencyKey,
+  });
+
+  if (error) {
+    return { ok: false as const, message: error.message || "No se pudieron guardar los términos comerciales." };
+  }
+
+  const snapshot = data as AdjustSaleTermsRpcResult | null;
+  if (!snapshot?.financials || !Number.isInteger(snapshot.commercial_terms_version)) {
+    return { ok: false as const, message: "El servidor no devolvió el snapshot monetario confirmado." };
+  }
+
+  revalidateOperationalPaths();
+  revalidatePath("/admin/reportes");
+  return {
+    ok: true as const,
+    message: "Términos guardados y recalculados correctamente.",
+    snapshot,
+  };
 }
 
 export async function generateInvoiceFromOrderAction(orderId: string) {

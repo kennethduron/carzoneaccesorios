@@ -25,6 +25,7 @@ export type ReportInvoiceSummary = {
   id: string;
   invoice_number: string;
   issued_at: string | null;
+  invoice_date: string | null;
   status: InvoiceStatus | string | null;
   cancelled_at: string | null;
 };
@@ -113,6 +114,7 @@ export type ReportInvoice = {
   additional_fees: AdditionalFee[];
   total: number;
   issued_at: string | null;
+  invoice_date: string | null;
   cancelled_at: string | null;
   created_at: string;
   invoice_items: ReportInvoiceItem[];

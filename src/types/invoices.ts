@@ -40,6 +40,7 @@ export type StoreInvoice = {
   paymentReference: string | null;
   status: InvoiceStatus;
   issuedAt: string;
+  invoiceDate: string | null;
   cancelledAt: string | null;
 };
 
@@ -88,6 +89,7 @@ export type AdminInvoiceRow = {
   additional_fees: AdditionalFee[];
   total: number;
   issued_at: string | null;
+  invoice_date: string | null;
   cancelled_at: string | null;
   cancelled_by: string | null;
   cancellation_reason: string | null;

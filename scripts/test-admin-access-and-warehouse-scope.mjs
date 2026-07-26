@@ -38,15 +38,15 @@ assert.match(ordersPage, /if \(!canReadOrders\) \{[\s\S]*redirect\("\/sin-permis
 assert.equal(rolePermissions.contadora.includes("admin:access"), true);
 assert.equal(rolePermissions.contadora.includes("inventory:read"), true);
 assert.equal(rolePermissions.contadora.includes("products:adjust_stock"), true);
+assert.equal(rolePermissions.contadora.includes("orders:read"), true);
+assert.equal(rolePermissions.contadora.includes("invoices:create"), true);
 for (const permission of [
-  "orders:read",
   "inventory:manage",
   "products:manage",
   "products:delete",
   "orders:manage_logistics",
   "payments:confirm",
   "payments:reject",
-  "invoices:create",
   "invoices:manage",
   "crm:manage",
   "wholesale:manage",

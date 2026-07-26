@@ -16,6 +16,7 @@ import {
 } from "@/app/admin/pedidos/actions";
 import { AccountingTraceabilityCard } from "@/components/admin/accounting-traceability-card";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
+import { OrderCommercialTerms } from "@/components/admin/order-commercial-terms";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
 import { OfficialInvoiceDocument } from "@/components/invoices/official-invoice-document";
@@ -54,6 +55,7 @@ type AdminOrdersManagerProps = {
   canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
+  canAdjustSaleTerms: boolean;
   canMarkCreditPaid: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
@@ -213,6 +215,7 @@ export function AdminOrdersManager({
   canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
+  canAdjustSaleTerms,
   canMarkCreditPaid,
   canCancelInvoices,
   canCorrectInvoices,
@@ -532,6 +535,7 @@ export function AdminOrdersManager({
             canCancelOrders={canCancelOrders}
             canManageLogistics={canManageLogistics}
             canGenerateInvoices={canGenerateInvoices}
+            canAdjustSaleTerms={canAdjustSaleTerms}
             canMarkCreditPaid={canMarkCreditPaid}
             canCancelInvoices={canCancelInvoices}
             canCorrectInvoices={canCorrectInvoices}
@@ -695,6 +699,7 @@ function OrderDetail({
   canCancelOrders,
   canManageLogistics,
   canGenerateInvoices,
+  canAdjustSaleTerms,
   canMarkCreditPaid,
   canCancelInvoices,
   canCorrectInvoices,
@@ -723,6 +728,7 @@ function OrderDetail({
   canCancelOrders: boolean;
   canManageLogistics: boolean;
   canGenerateInvoices: boolean;
+  canAdjustSaleTerms: boolean;
   canMarkCreditPaid: boolean;
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
@@ -747,6 +753,7 @@ function OrderDetail({
   const isCash = order.payment_method === "cash";
   const isCard = order.payment_method === "card";
   const isCredit = order.payment_method === "commercial_credit";
+  const [commercialTermsDirty, setCommercialTermsDirty] = useState(false);
   const [creditPaymentMethod, setCreditPaymentMethod] = useState<CommercialCreditPaymentReceivedMethod | "">(order.receivable_payment_received_method ?? "");
   const [creditPaymentReference, setCreditPaymentReference] = useState(order.receivable_payment_received_reference ?? "");
   const allowedStatuses = getAllowedOrderStatusOptions(order);
@@ -852,6 +859,14 @@ function OrderDetail({
           <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
         </div>
 
+        {canViewFinancialData ? (
+          <OrderCommercialTerms
+            order={order}
+            canEdit={canAdjustSaleTerms}
+            onDirtyChange={setCommercialTermsDirty}
+          />
+        ) : null}
+
         {isCredit && order.receivable_id ? (
           <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm">
             <p className="font-semibold">Pago recibido del crédito</p>
@@ -953,7 +968,7 @@ function OrderDetail({
             </Button>
           ) : null}
           {canGenerateInvoices && !order.invoice_number ? (
-            <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued} variant="dark" className="w-full sm:w-auto">
+            <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued || commercialTermsDirty} variant="dark" className="min-h-11 w-full sm:w-auto">
               <FileText size={17} />
               {isPending ? "Generando..." : "Generar factura"}
             </Button>

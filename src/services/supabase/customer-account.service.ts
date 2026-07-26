@@ -24,6 +24,7 @@ export type CustomerOrderInvoice = {
   fiscal_range_end: string | null;
   cai_authorization_date: string | null;
   due_at: string | null;
+  invoice_date: string | null;
   subtotal: number;
   tax: number;
   shipping_fee: number;
@@ -50,6 +51,12 @@ export type CustomerOrderRow = Omit<
   | "invoice_id"
   | "invoice_number"
   | "invoice_issued_at"
+  | "invoice_date"
+  | "requested_invoice_date"
+  | "shipping_fee_suggested"
+  | "commercial_terms_version"
+  | "delivery_mode"
+  | "external_delivery_provider"
   | "invoice_status"
   | "invoice_cancelled_at"
   | "invoice_cancellation_reason"
@@ -161,6 +168,7 @@ type CustomerInvoiceQueryRow = {
   fiscal_range_end: string | null;
   cai_authorization_date: string | null;
   due_at: string | null;
+  invoice_date: string | null;
   shipping_fee: unknown;
   cash_on_delivery_fee: unknown;
   small_order_fee: unknown;
@@ -338,6 +346,7 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     paymentReference: payment?.bank_reference_number ?? payment?.reference ?? null,
     status: row.status,
     issuedAt: row.issued_at ?? row.created_at,
+    invoiceDate: row.invoice_date,
     cancelledAt: row.cancelled_at,
   };
 }
@@ -495,6 +504,7 @@ export async function getCustomerOrdersPage(
         fiscal_range_end,
         cai_authorization_date,
         due_at,
+        invoice_date,
         subtotal,
         tax,
         shipping_fee,
@@ -587,6 +597,7 @@ export async function getCustomerIssuedInvoicesPage(
       fiscal_range_end,
       cai_authorization_date,
       due_at,
+      invoice_date,
       status,
       price_mode,
       subtotal,
@@ -670,6 +681,7 @@ export async function getCustomerInvoiceDetail(userId: string, invoiceId: string
       fiscal_range_end,
       cai_authorization_date,
       due_at,
+      invoice_date,
       status,
       price_mode,
       subtotal,

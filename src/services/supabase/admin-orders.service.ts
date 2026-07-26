@@ -50,6 +50,7 @@ type OrderQueryRow = Omit<
   | "invoice_id"
   | "invoice_number"
   | "invoice_issued_at"
+  | "invoice_date"
   | "invoice_status"
   | "invoice_cancelled_at"
   | "invoice_cancellation_reason"
@@ -94,6 +95,7 @@ type OrderQueryRow = Omit<
     id: string;
     invoice_number: string;
     issued_at: string | null;
+    invoice_date: string | null;
     status: string | null;
     cancelled_at: string | null;
     cancellation_reason: string | null;
@@ -106,6 +108,7 @@ type OrderQueryRow = Omit<
     id: string;
     invoice_number: string;
     issued_at: string | null;
+    invoice_date: string | null;
     status: string | null;
     cancelled_at: string | null;
     cancellation_reason: string | null;
@@ -173,6 +176,7 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     invoice_id: invoice?.id ?? null,
     invoice_number: invoice?.invoice_number ?? null,
     invoice_issued_at: invoice?.issued_at ?? null,
+    invoice_date: invoice?.invoice_date ?? null,
     invoice_status: invoice?.status ?? null,
     invoice_cancelled_at: invoice?.cancelled_at ?? null,
     invoice_cancellation_reason: invoice?.cancellation_reason ?? null,
@@ -271,6 +275,11 @@ export async function getAdminOrdersPage({
       reservation_review_required,
       reservation_review_detected_at,
       created_at,
+      requested_invoice_date,
+      shipping_fee_suggested,
+      commercial_terms_version,
+      delivery_mode,
+      external_delivery_provider,
       order_items(
         id,
         product_id,
@@ -281,11 +290,15 @@ export async function getAdminOrdersPage({
         unit_price,
         line_total,
         retail_price_snapshot,
-        wholesale_price_snapshot
+        wholesale_price_snapshot,
+        unit_cost_snapshot,
+        total_cost_snapshot,
+        cost_source,
+        cost_captured_at
       ),
       ${paymentRelation}(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
       order_internal_notes(id, note, actor_role, created_at),
-      invoices(id, invoice_number, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
+      invoices(id, invoice_number, invoice_date, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
       accounts_receivable(id, status, due_date, balance_due, paid_at, payment_received_method, payment_received_reference, payment_recorded_by),
       customers(tax_id)
     `,

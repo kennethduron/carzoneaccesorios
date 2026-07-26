@@ -79,6 +79,7 @@ export type FinancialEventCandidate = {
   event_purpose: FinancialEventPurpose;
   posting_version?: string;
   occurred_at: string;
+  accounting_date?: string | null;
   amount: number | null;
   taxAmount?: number | null;
   paymentMethod?: string | null;
@@ -459,6 +460,7 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
     posting_version: postingVersion,
     status: statusResult.status,
     occurred_at: candidate.occurred_at,
+    accounting_date: candidate.accounting_date ?? null,
     source_snapshot: snapshot,
     validation_errors: statusResult.validationErrors,
     journal_entry_id: null,
@@ -472,6 +474,7 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
         .update({
           status: payload.status,
           occurred_at: payload.occurred_at,
+          accounting_date: payload.accounting_date,
           source_snapshot: payload.source_snapshot,
           validation_errors: payload.validation_errors,
         })

@@ -412,7 +412,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
 
     const invoiceDetailRows = data.invoices.map((invoice) => ({
       Factura: invoice.invoice_number,
-      Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
+      Fecha: formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at),
       Cliente: invoice.customer_name ?? "-",
       RTN: invoice.customer_rtn ?? invoice.rtn ?? "-",
       Pedido: invoice.order_number ?? "-",
@@ -432,7 +432,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         .filter((invoice) => invoice.status === targetStatus)
         .map((invoice) => ({
           Factura: invoice.invoice_number,
-          Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
+          Fecha: formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at),
           Cliente: invoice.customer_name ?? "-",
           RTN: invoice.customer_rtn ?? invoice.rtn ?? "-",
           Pedido: invoice.order_number ?? "-",
@@ -600,7 +600,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           .map((invoice) => ({
             Correlativo: invoiceNumberValue(invoice.invoice_number) ?? "-",
             Factura: invoice.invoice_number,
-            Fecha: formatDate(invoice.issued_at ?? invoice.created_at),
+            Fecha: formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at),
             CAI: invoice.cai ?? fiscalSettings?.cai ?? "-",
             Estado: invoiceStatusLabels[invoice.status] ?? invoice.status,
             ISV: formatCurrency(invoice.tax),

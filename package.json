@@ -16,6 +16,8 @@
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
     "test:receivable-payment-accounting": "node scripts/test-receivable-payment-accounting-outbox.mjs",
     "test:receivable-payment-accounting:local": "node scripts/test-receivable-payment-accounting-local.mjs",
+    "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",
+    "test:order-commercial-terms:local": "node scripts/test-order-commercial-terms-local.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
     "test:product-accountant-access": "node scripts/test-product-accountant-access.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",

@@ -42,7 +42,8 @@ assert.equal(rolesByName.get("contadora")?.includes("reports:fiscal_read"), true
 assert.equal(rolesByName.get("contadora")?.includes("invoices:read"), true);
 assert.equal(rolesByName.get("contadora")?.includes("payments:manage"), false);
 assert.equal(rolesByName.get("contadora")?.includes("payments:confirm"), false);
-assert.equal(rolesByName.get("contadora")?.includes("orders:read"), false);
+assert.equal(rolesByName.get("contadora")?.includes("orders:read"), true);
+assert.equal(rolesByName.get("contadora")?.includes("invoices:create"), true);
 assert.equal(rolesByName.get("contadora")?.includes("crm:manage"), false);
 assert.equal(rolesByName.get("contadora")?.includes("inventory:manage"), false);
 

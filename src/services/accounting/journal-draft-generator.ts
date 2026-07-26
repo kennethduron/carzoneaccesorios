@@ -51,6 +51,7 @@ type FinancialEventForDraft = {
   posting_version: string;
   status: FinancialEventStatus;
   occurred_at: string;
+  accounting_date: string | null;
   source_snapshot: unknown;
   validation_errors: unknown;
   journal_entry_id: string | null;
@@ -202,6 +203,10 @@ async function isDateInClosedAccountingPeriod(entryDate: string, client?: Supaba
 }
 
 function eventDate(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date());
@@ -990,7 +995,7 @@ async function buildDraft(event: FinancialEventForDraft, client?: SupabaseClient
   const revenue = toAmount(amount - tax);
   const paymentMethod = normalizePaymentMethod(snapshot.payment_method);
   const number = sourceNumber(snapshot, event);
-  const entryDate = eventDate(event.occurred_at);
+  const entryDate = eventDate(event.accounting_date ?? event.occurred_at);
 
   if (
     purpose === "inventory_cogs" ||
@@ -1204,7 +1209,7 @@ export async function generateJournalDraftFromFinancialEvent(
   const dataClient = getSupabaseAdminClient();
   const { data: event, error } = await dataClient
     .from("financial_events")
-    .select("id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id")
+    .select("id, source_type, source_id, event_purpose, posting_version, status, occurred_at, accounting_date, source_snapshot, validation_errors, journal_entry_id")
     .eq("id", eventId)
     .maybeSingle<FinancialEventForDraft>();
 

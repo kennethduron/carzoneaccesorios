@@ -84,6 +84,40 @@ export type AdminOrderItem = {
   cost_captured_at?: string | null;
 };
 
+export type DeliveryMode = "car_zone" | "external_company" | "store_pickup" | "customer_arranged" | "other";
+
+export type SaleLinePriceOverride = {
+  orderItemId: string;
+  finalUnitPrice: number;
+};
+
+export type AdjustSaleTermsInput = {
+  orderId: string;
+  requestedInvoiceDate: string;
+  linePriceOverrides: SaleLinePriceOverride[];
+  requestedShippingFee: number;
+  deliveryMode?: DeliveryMode | null;
+  externalDeliveryProvider?: string | null;
+  priceReason?: string | null;
+  deliveryReason?: string | null;
+  expectedVersion: number;
+  idempotencyKey: string;
+};
+
+export type SaleFinancialSnapshot = {
+  merchandise_gross_subtotal: number;
+  merchandise_final: number;
+  fiscal_subtotal: number;
+  included_tax_total: number;
+  suggested_delivery_charge: number;
+  delivery_charge: number;
+  cash_on_delivery_charge: number;
+  minimum_order_charge: number;
+  additional_charges_total: number;
+  discount_total: number;
+  total_final: number;
+};
+
 export type AdminOrderRow = {
   id: string;
   order_number: string;
@@ -124,6 +158,11 @@ export type AdminOrderRow = {
   reservation_review_required: boolean;
   reservation_review_detected_at: string | null;
   created_at: string;
+  requested_invoice_date: string | null;
+  shipping_fee_suggested: number | null;
+  commercial_terms_version: number;
+  delivery_mode: DeliveryMode | null;
+  external_delivery_provider: string | null;
   order_items: AdminOrderItem[];
   payment_id: string | null;
   payment_status: "pending" | "approved" | "confirmed" | "paid" | "rejected" | "refunded" | null;
@@ -139,6 +178,7 @@ export type AdminOrderRow = {
   invoice_id: string | null;
   invoice_number: string | null;
   invoice_issued_at: string | null;
+  invoice_date: string | null;
   invoice_status: string | null;
   invoice_cancelled_at: string | null;
   invoice_cancellation_reason: string | null;

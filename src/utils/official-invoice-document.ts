@@ -17,6 +17,7 @@ export type OfficialInvoiceInput = {
   orderNumber: string;
   status: string;
   issuedAt: string | null;
+  invoiceDate: string | null;
   dueAt: string | null;
   createdAt: string | null;
   companyLegalName: string | null;
@@ -598,7 +599,7 @@ function formatOfficialDate(value: string | null | undefined) {
 
 export function getOfficialInvoiceDates(invoice: OfficialInvoiceInput) {
   return {
-    issuedDate: formatOfficialDate(invoice.caiAuthorizationDate ?? invoice.issuedAt ?? invoice.createdAt),
+    issuedDate: formatOfficialDate(invoice.invoiceDate ?? invoice.issuedAt ?? invoice.createdAt),
     dueDate: formatOfficialDate(invoice.dueAt ?? invoice.fiscalDeadline),
     caiAuthorizationDate: formatOfficialDate(invoice.caiAuthorizationDate),
     fiscalDeadline: formatOfficialDate(invoice.fiscalDeadline ?? invoice.dueAt),
@@ -673,8 +674,10 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
             <p class="cz-official-invoice-number">${escapeHtml(invoice.invoiceNumber)}</p>
             <p class="cz-official-date-label">Fecha de emisión</p>
             <p class="cz-official-date-value">${escapeHtml(dates.issuedDate)}</p>
-            <p class="cz-official-date-label">Fecha de vencimiento</p>
-            <p class="cz-official-date-value">${escapeHtml(dates.dueDate)}</p>
+            <p class="cz-official-date-label">Fecha de autorización del CAI</p>
+            <p class="cz-official-date-value">${escapeHtml(dates.caiAuthorizationDate)}</p>
+            <p class="cz-official-date-label">Fecha límite de emisión</p>
+            <p class="cz-official-date-value">${escapeHtml(dates.fiscalDeadline)}</p>
           </aside>
         </header>
 

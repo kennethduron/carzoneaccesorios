@@ -223,7 +223,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
           <Field label="CAI">
             <Input disabled={!canEdit} value={form.cai} onChange={(event) => updateField("cai", event.target.value)} />
           </Field>
-          <Field label="Fecha de emisión">
+          <Field label="Fecha de autorización del CAI">
             <Input
               type="date"
               disabled={!canEdit}
@@ -231,7 +231,7 @@ export function FiscalSettingsForm({ settings, alerts, canEdit }: FiscalSettings
               onChange={(event) => updateField("cai_authorization_date", event.target.value || null)}
             />
           </Field>
-          <Field label="Fecha de vencimiento">
+          <Field label="Fecha límite de emisión">
             <Input
               type="date"
               disabled={!canEdit}

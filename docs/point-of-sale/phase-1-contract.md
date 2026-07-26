@@ -5,6 +5,9 @@ Fecha: 2026-07-21
 Estado: contrato de diseño; no habilita ventas POS
 Ámbito: `create_internal_sale_v1`, a implementarse y probarse en la Etapa 3
 
+Dependencia compartida ya disponible: el futuro POS debe reutilizar
+`adjust_sale_terms_v1` y `calculate_sale_financials_v1`, sin duplicar sus reglas.
+
 ## 1. Límites y principios
 
 Esta fase documenta el comportamiento futuro y agrega únicamente metadata, permisos, tipos e idempotencia. No existe todavía una pantalla POS, ni una operación que cree ventas POS. El checkout web, sus pedidos y `create_checkout_order_v2` siguen sin cambios.

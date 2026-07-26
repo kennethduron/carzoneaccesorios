@@ -155,11 +155,15 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
   doc.setFont("helvetica", "bold");
   doc.text("Fecha de emisión", 130, 39);
   doc.setFont("helvetica", "normal");
-  doc.text(dates.issuedDate, 130, 46);
+  doc.text(dates.issuedDate, 130, 44);
   doc.setFont("helvetica", "bold");
-  doc.text("Fecha de vencimiento", 130, 54);
+  doc.text("Fecha de autorización del CAI", 130, 51);
   doc.setFont("helvetica", "normal");
-  doc.text(dates.dueDate, 130, 61);
+  doc.text(dates.caiAuthorizationDate, 130, 56);
+  doc.setFont("helvetica", "bold");
+  doc.text("Fecha límite de emisión", 130, 63);
+  doc.setFont("helvetica", "normal");
+  doc.text(dates.fiscalDeadline, 130, 68);
 }
 
 function drawCustomer(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number) {

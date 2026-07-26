@@ -36,6 +36,10 @@ Después de que existan pedidos POS, las columnas no deben eliminarse; el rollba
 
 ## Etapa 3 recomendada — no iniciar automáticamente
 
+La Etapa 3 continúa pausada. Cuando se inicie, `create_internal_sale_v1` debe
+reutilizar `adjust_sale_terms_v1` para fecha/precios/entrega y
+`calculate_sale_financials_v1` como única fuente monetaria.
+
 Implementar `create_internal_sale_v1` como único RPC `SECURITY DEFINER`, `search_path=public`, sin ejecución pública y con grant solo `authenticated`. Orden exacto recomendado:
 
 1. verificar `auth.uid()`, rol y `pos:create_sale`;

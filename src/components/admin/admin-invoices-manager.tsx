@@ -194,7 +194,7 @@ export function AdminInvoicesManager({
       invoice.invoice_number,
       invoice.customer_name,
       invoice.customer_rtn ?? "-",
-      formatDate(invoice.issued_at ?? invoice.created_at),
+      formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at),
       paymentMethodLabel(invoice.payment_method, { detailedCard: true }),
       invoice.bank_reference_number ?? "-",
       formatCurrency(invoice.subtotal),
@@ -454,7 +454,7 @@ export function AdminInvoicesManager({
                 <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-md bg-[#f8fafc] p-2">
                     <dt className="text-xs uppercase text-black/45">Fecha</dt>
-                    <dd className="mt-1 font-medium">{formatDate(invoice.issued_at ?? invoice.created_at)}</dd>
+                    <dd className="mt-1 font-medium">{formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at)}</dd>
                   </div>
                   <div className="rounded-md bg-[#f8fafc] p-2">
                     <dt className="text-xs uppercase text-black/45">Total</dt>
@@ -533,7 +533,7 @@ export function AdminInvoicesManager({
                     <td className="px-4 py-3 font-semibold">{invoice.invoice_number}</td>
                     <td className="px-4 py-3">{invoice.customer_name}</td>
                     <td className="px-4 py-3">{invoice.customer_rtn ?? "-"}</td>
-                    <td className="px-4 py-3">{formatDate(invoice.issued_at ?? invoice.created_at)}</td>
+                    <td className="px-4 py-3">{formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at)}</td>
                     <td className="px-4 py-3">{paymentMethodLabel(invoice.payment_method, { detailedCard: true })}</td>
                     <td className="px-4 py-3">{invoice.bank_reference_number ?? "-"}</td>
                     <td className="px-4 py-3">{formatCurrency(invoice.subtotal)}</td>
@@ -691,9 +691,10 @@ function InvoiceModal({
           <Info label="CAI" value={invoice.cai ?? "-"} />
           <Info label="Rango autorizado desde" value={invoice.fiscal_range_start ?? "-"} />
           <Info label="Rango autorizado hasta" value={invoice.fiscal_range_end ?? "-"} />
-          <Info label="Fecha de emisión" value={formatDate(invoice.cai_authorization_date)} />
-          <Info label="Fecha de vencimiento" value={formatDate(invoice.due_at)} />
-          <Info label="Fecha registrada" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
+          <Info label="Fecha de emisión" value={formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at)} />
+          <Info label="Fecha de autorización del CAI" value={formatDate(invoice.cai_authorization_date)} />
+          <Info label="Fecha límite de emisión" value={formatDate(invoice.due_at)} />
+          <Info label="Generada técnicamente" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
           <Info label="Cliente" value={invoice.customer_name} />
           <Info label="RTN del cliente" value={invoice.customer_rtn ?? "-"} />
           <Info label="Correo electrónico" value={invoice.customer_email ?? "-"} />
@@ -719,7 +720,7 @@ function InvoiceModal({
             )}
           </div>
           <Info label="Estado" value={statusLabels[invoice.status]} />
-          <Info label="Fecha" value={formatDate(invoice.issued_at ?? invoice.created_at)} />
+          <Info label="Fecha" value={formatDate(invoice.invoice_date ?? invoice.issued_at ?? invoice.created_at)} />
         </div>
 
         <div className="mt-5">
