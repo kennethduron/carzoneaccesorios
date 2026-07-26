@@ -438,9 +438,6 @@ export function validateApplyPreflight(preview, options) {
   if (!preview.debitMapping) blocked(`Falta el mapeo payment_method:${payment.payment_method}.`);
   if (!preview.creditMapping) blocked("Falta el mapeo receivable:accounts_receivable.");
   if (preview.closedPeriod) blocked("El periodo contable esta cerrado.");
-  if (preview.periods.length !== 1 || preview.periods[0].status !== "open") {
-    blocked("No existe un unico periodo contable abierto para la fecha.");
-  }
   if (preview.outbox.length > 1) blocked("Existen multiples outboxes exactas.");
   if (preview.outbox[0]?.status === "processing") blocked("La outbox esta siendo procesada.");
   if (preview.controlEvents.some((control) => (

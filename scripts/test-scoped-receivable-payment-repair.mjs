@@ -168,6 +168,10 @@ rejects(
 rejects(() => validateApplyPreflight(preview({ debitMapping: null }), options()), /payment_method/i);
 rejects(() => validateApplyPreflight(preview({ creditMapping: null }), options()), /receivable/i);
 rejects(() => validateApplyPreflight(preview({ closedPeriod: true }), options()), /cerrado/i);
+assert.doesNotThrow(
+  () => validateApplyPreflight(preview({ periods: [], closedPeriod: false }), options()),
+  "La ausencia de una fila de periodo no debe bloquear si la fecha no esta cerrada",
+);
 rejects(
   () => validateApplyPreflight(preview({
     controlEvents: [{

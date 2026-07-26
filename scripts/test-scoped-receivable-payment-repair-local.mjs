@@ -132,9 +132,6 @@ insert into public.accounting_accounts (id,code,name,type,normal_balance,is_acti
 insert into public.accounting_mappings (id,mapping_type,source_key,account_id,priority,is_active) values
   ('${id.debitMap}','payment_method','bank_transfer','${id.debit}',1,true),
   ('${id.creditMap}','receivable','accounts_receivable','${id.credit}',1,true);
-insert into public.accounting_periods (
-  id,name,start_date,end_date,status,period_type,fiscal_year
-) values ('${id.period}','RP Scope July','2026-07-01','2026-07-31','open','monthly',2026);
 insert into public.accounts_receivable_payments (
   id,receivable_id,customer_id,amount,payment_method,received_at,recorded_by
 ) values
