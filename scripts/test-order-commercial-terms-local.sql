@@ -1,6 +1,27 @@
 \set ON_ERROR_STOP on
 begin;
 
+create or replace function pg_temp.order_terms_failpoint()
+returns trigger
+language plpgsql
+as $$
+begin
+  if current_setting('order_terms.test_failpoint', true) = tg_table_name then
+    raise exception 'ORDER_TERMS_FAILPOINT_%', upper(tg_table_name);
+  end if;
+  return new;
+end;
+$$;
+
+create trigger order_terms_test_fail_orders before update on public.orders
+for each row execute function pg_temp.order_terms_failpoint();
+create trigger order_terms_test_fail_payments before update on public.payments
+for each row execute function pg_temp.order_terms_failpoint();
+create trigger order_terms_test_fail_audit before insert on public.audit_logs
+for each row execute function pg_temp.order_terms_failpoint();
+create trigger order_terms_test_fail_invoice_items before insert on public.invoice_items
+for each row execute function pg_temp.order_terms_failpoint();
+
 do $$
 <<fixture>>
 declare
@@ -109,6 +130,118 @@ begin
     raise exception 'Initial/replay snapshot mismatch: %', result;
   end if;
 
+  -- Explicit delivery vectors all use the same authoritative nonnegative path.
+  for result in
+    select jsonb_build_object('fee', fee, 'mode', mode, 'provider', provider)
+    from (values
+      (0.00::numeric, 'store_pickup'::text, null::text),
+      (100.00::numeric, 'car_zone'::text, null::text),
+      (150.00::numeric, 'external_company'::text, 'ORDER_TERMS_CARRIER_150'::text),
+      (200.00::numeric, 'customer_arranged'::text, null::text),
+      (80.25::numeric, 'other'::text, null::text)
+    ) vectors(fee, mode, provider)
+  loop
+    begin
+      perform public.adjust_sale_terms_v1(
+        order_id, current_date - 3,
+        jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 850)),
+        (result->>'fee')::numeric, result->>'mode', result->>'provider', '', '', 1,
+        gen_random_uuid());
+      if (select shipping_fee from public.orders where id = fixture.order_id)
+          <> (result->>'fee')::numeric
+        or (select delivery_mode from public.orders where id = fixture.order_id)
+          is distinct from result->>'mode' then
+        raise exception 'DELIVERY_VECTOR_MISMATCH_%', result;
+      end if;
+      raise exception 'ROLLBACK_DELIVERY_VECTOR';
+    exception when others then
+      if sqlerrm <> 'ROLLBACK_DELIVERY_VECTOR' then raise; end if;
+    end;
+  end loop;
+
+  begin
+    perform public.adjust_sale_terms_v1(
+      order_id, current_date - 3,
+      jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 850)),
+      -0.01, null, null, null, null, 1, gen_random_uuid());
+    raise exception 'EXPECTED_NEGATIVE_DELIVERY';
+  exception when others then
+    if sqlerrm = 'EXPECTED_NEGATIVE_DELIVERY' or sqlerrm not ilike '%cargo de entrega no negativo%' then raise; end if;
+  end;
+
+  -- Explicit price vectors: cost, one cent over cost, increase and unchanged.
+  for result in
+    select jsonb_build_object('price', price)
+    from (values (500.00::numeric), (500.01::numeric), (1250.00::numeric), (850.00::numeric)) vectors(price)
+  loop
+    begin
+      perform public.adjust_sale_terms_v1(
+        order_id, current_date - 3,
+        jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', (result->>'price')::numeric)),
+        80, 'external_company', 'ORDER_TERMS_CARRIER', '', '', 1, gen_random_uuid());
+      if (select unit_price from public.order_items where id = fixture.item_id)
+          <> (result->>'price')::numeric then
+        raise exception 'PRICE_VECTOR_MISMATCH_%', result;
+      end if;
+      raise exception 'ROLLBACK_PRICE_VECTOR';
+    exception when others then
+      if sqlerrm <> 'ROLLBACK_PRICE_VECTOR' then raise; end if;
+    end;
+  end loop;
+
+  begin
+    update public.order_items set unit_cost_snapshot = 0 where id = fixture.item_id;
+    perform public.adjust_sale_terms_v1(
+      order_id, current_date - 3,
+      jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 840)),
+      80, null, null, null, null, 1, gen_random_uuid());
+    raise exception 'EXPECTED_ZERO_COST';
+  exception when others then
+    if sqlerrm = 'EXPECTED_ZERO_COST' or sqlerrm not ilike '%costo valido%' then raise; end if;
+  end;
+  begin
+    update public.order_items set unit_cost_snapshot = null where id = fixture.item_id;
+    perform public.adjust_sale_terms_v1(
+      order_id, current_date - 3,
+      jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 840)),
+      80, null, null, null, null, 1, gen_random_uuid());
+    raise exception 'EXPECTED_NULL_COST';
+  exception when others then
+    if sqlerrm = 'EXPECTED_NULL_COST' or sqlerrm not ilike '%costo valido%' then raise; end if;
+  end;
+
+  -- Controlled failpoints prove rollback after line writes, after order writes,
+  -- and before audit persistence. The same version remains reusable each time.
+  foreach result in array array[
+    jsonb_build_object('table', 'orders'),
+    jsonb_build_object('table', 'payments'),
+    jsonb_build_object('table', 'audit_logs')
+  ]
+  loop
+    perform set_config('order_terms.test_failpoint', result->>'table', true);
+    begin
+      perform public.adjust_sale_terms_v1(
+        order_id, current_date - 3,
+        jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 900)),
+        150, 'car_zone', null, 'FAILPOINT_PRICE', 'FAILPOINT_DELIVERY', 1, gen_random_uuid());
+      raise exception 'EXPECTED_FAILPOINT_%', result->>'table';
+    exception when others then
+      if sqlerrm not ilike 'ORDER_TERMS_FAILPOINT_%' then raise; end if;
+    end;
+    perform set_config('order_terms.test_failpoint', '', true);
+    select * into order_row from public.orders where id = fixture.order_id;
+    if order_row.commercial_terms_version <> 1 or order_row.shipping_fee <> 80
+      or (select unit_price from public.order_items where id = fixture.item_id) <> 850
+      or (select payment.amount from public.payments payment where payment.order_id = fixture.order_id) <> order_row.total
+      or exists (
+        select 1 from public.audit_logs
+        where record_id = fixture.order_id
+          and new_data->>'price_reason' = 'FAILPOINT_PRICE'
+      ) then
+      raise exception 'FAILPOINT_LEFT_PARTIAL_STATE_%', result;
+    end if;
+  end loop;
+
   begin
     perform public.adjust_sale_terms_v1(
       order_id, current_date - 3,
@@ -198,6 +331,21 @@ begin
     jsonb_build_array(jsonb_build_object('order_item_id', item_id, 'final_unit_price', 850)),
     80, 'external_company', 'ORDER_TERMS_CARRIER', null, null, 3,
     '95200000-0000-4000-8000-000000000018');
+
+  -- A fiscal failure after invoice insert must roll back invoice, items and correlativo.
+  perform set_config('order_terms.test_failpoint', 'invoice_items', true);
+  begin
+    perform public.generate_fiscal_invoice_from_order(order_id);
+    raise exception 'EXPECTED_FISCAL_FAILPOINT';
+  exception when others then
+    if sqlerrm not ilike 'ORDER_TERMS_FAILPOINT_INVOICE_ITEMS%' then raise; end if;
+  end;
+  perform set_config('order_terms.test_failpoint', '', true);
+  if exists (select 1 from public.invoices invoice where invoice.order_id = fixture.order_id)
+    or (select current_invoice_number from public.fiscal_settings where id = true)
+      <> '000-001-01-00000001' then
+    raise exception 'FISCAL_FAILPOINT_LEFT_PARTIAL_STATE';
+  end if;
 
   select * into generated from public.generate_fiscal_invoice_from_order(order_id);
   select * into invoice_row from public.invoices where id = generated.invoice_id;
