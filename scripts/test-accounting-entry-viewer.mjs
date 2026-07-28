@@ -36,7 +36,10 @@ const viewerService = service.slice(
   service.indexOf("export async function getJournalEntryEditData"),
 );
 assert.match(viewerService, /from\("journal_entries"\)/);
-assert.match(viewerService, /getLinesByEntryIds\(\[entryRow\.id\]\)/);
+assert.match(viewerService, /relatedEntryId = entryRow\.reversed_entry_id/);
+assert.match(viewerService, /getLinesByEntryIds\(\[entryRow\.id, \.\.\.\(relatedEntryRow/);
+assert.match(viewerService, /reversalRelation: relatedEntry/);
+assert.match(viewerService, /reversal_reason/);
 assert.match(viewerService, /maybeSingle<JournalEntryRow>/);
 assert.match(viewerService, /normalizeEntry\(entryRow/);
 assert.doesNotMatch(viewerService, /\.(?:insert|update|delete|upsert)\(/);
@@ -61,6 +64,13 @@ assert.match(manager, /id=\{`partida-desktop-\$\{entry\.id\}`\}/);
 assert.doesNotMatch(manager, /id=\{`partida-\$\{entry\.id\}`\}/);
 assert.match(manager, /params=\{\{ tab: "journal", partida: focusedEntryId/);
 assert.match(manager, /Cerrar detalle/);
+assert.match(manager, /buildJournalEntryViewerHref\(viewerData\.reversalRelation\.entryId\)/);
+assert.doesNotMatch(manager, /journal_entry_id=/);
+assert.equal(
+  manager.match(/focused && focusedEntryData\?\.reversalRelation/g)?.length,
+  2,
+  "The reversal relation must render in focused mobile and desktop details.",
+);
 
 assert.match(overlay, /nextUrl\.pathname === currentUrl\.pathname && nextUrl\.search === currentUrl\.search/);
 assert.match(overlay, /window\.addEventListener\("hashchange", finishNavigation\)/);

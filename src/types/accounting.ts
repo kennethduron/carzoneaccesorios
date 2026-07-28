@@ -136,6 +136,16 @@ export type JournalEntryViewerData = {
   entry: JournalEntry;
   creatorName: string;
   postedByName: string | null;
+  reversalRelation: {
+    direction: "reversal_of" | "reversed_by";
+    entryId: string;
+    entryNumber: string;
+    entryDate: string;
+    status: JournalEntryStatus;
+    reason: string | null;
+    actorName: string | null;
+    amount: number;
+  } | null;
 };
 
 export type JournalEntryViewerStatus = "idle" | "loaded" | "invalid" | "not_found" | "load_error";
@@ -207,7 +217,6 @@ export type JournalEntrySourceContext = {
 
 export type JournalEntryEditData = {
   entry: JournalEntry;
-  activeAccounts: AccountingAccount[];
   creatorName: string;
   sourceContext: JournalEntrySourceContext | null;
 };
@@ -223,7 +232,6 @@ export type AccountingDashboardSummary = {
 export type AccountingPageData = {
   summary: AccountingDashboardSummary;
   accounts: AccountingAccount[];
-  activeAccounts: AccountingAccount[];
   accountHierarchyOptions: AccountingAccountHierarchyOption[];
   journalEntries: JournalEntry[];
   accountPage: number;

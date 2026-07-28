@@ -187,7 +187,7 @@ export function trialBalanceExcelRows(data: TrialBalanceReportData) {
 function sectionPdfRows(section: FinancialStatementSection, extraRows: Array<{ label: string; amount: number }> = []) {
   const rows = section.rows.map((row) => [section.title, row.account.code, row.account.name, formatCurrency(row.amount)]);
   if (section.rows.length === 0 && extraRows.length === 0) {
-    rows.push([section.title, "", "Sin movimientos publicados", formatCurrency(0)]);
+    rows.push([section.title, "", "Sin movimientos contabilizados", formatCurrency(0)]);
   }
   for (const row of extraRows) {
     rows.push([section.title, "", row.label, formatCurrency(row.amount)]);
@@ -199,7 +199,7 @@ function sectionPdfRows(section: FinancialStatementSection, extraRows: Array<{ l
 function sectionExcelRows(section: FinancialStatementSection, extraRows: Array<{ label: string; amount: number }> = []) {
   const rows: Array<Array<string | number>> = section.rows.map((row) => [section.title, row.account.code, row.account.name, row.amount]);
   if (section.rows.length === 0 && extraRows.length === 0) {
-    rows.push([section.title, "", "Sin movimientos publicados", 0]);
+    rows.push([section.title, "", "Sin movimientos contabilizados", 0]);
   }
   for (const row of extraRows) {
     rows.push([section.title, "", row.label, row.amount]);

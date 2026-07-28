@@ -834,12 +834,36 @@ export async function postJournalEntryAction(entryId: string, expectedVersion: n
   return { ok: true, message: "Partida publicada correctamente.", version: result?.version };
 }
 
-export async function reverseJournalEntryAction(entryId: string): Promise<AccountingMutationResult> {
-  await requirePermission("accounting:reverse");
+export async function reverseJournalEntryAction(entryId: string, reason: string): Promise<AccountingMutationResult> {
+  const profile = await requirePermission("accounting:reverse");
+  const normalizedReason = cleanText(reason).replace(/\s+/g, " ").slice(0, 501);
+  if (normalizedReason.length < 10 || normalizedReason.length > 500) {
+    return { ok: false, message: "El motivo de la reversión debe tener entre 10 y 500 caracteres." };
+  }
+  const requestContext = await accountingRequestContext();
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("reverse_journal_entry", { target_entry_id: entryId });
+  const { error } = await supabase.rpc("reverse_journal_entry", {
+    target_entry_id: entryId,
+    p_reversal_reason: normalizedReason,
+    actor_ip: requestContext.actorIp,
+    actor_user_agent: requestContext.userAgent,
+  });
+  if (error) {
+    await writeAuditLog({
+      tableName: "journal_entries",
+      recordId: entryId,
+      action: "accounting_journal_reversal_rejected",
+      newData: { actor_id: profile.id, actor_role: profile.role, reason: normalizedReason, error_code: error.code ?? null },
+      ipAddress: requestContext.actorIp,
+      userAgent: requestContext.userAgent,
+    });
+  }
   if (error) return { ok: false, message: accountingRpcMessage(error, "No se pudo reversar la partida.") };
 
   revalidatePath("/admin/contabilidad");
+  revalidatePath("/admin/libro-mayor");
+  revalidatePath("/admin/balance-comprobacion");
+  revalidatePath("/admin/balance-general");
+  revalidatePath("/admin/estado-resultados");
   return { ok: true, message: "Partida reversada correctamente." };
 }

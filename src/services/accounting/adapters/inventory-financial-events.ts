@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { FinancialEventCandidate } from "@/services/accounting/financial-event-engine";
 
 type InventoryMovementEventRow = {
@@ -134,7 +134,7 @@ function inventorySnapshot(row: InventoryMovementEventRow, cost: ReturnType<type
 }
 
 export async function getInventoryFinancialEventCandidates(): Promise<FinancialEventCandidate[]> {
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase
     .from("inventory_movements")
     .select(

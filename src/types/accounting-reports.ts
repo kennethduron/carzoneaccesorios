@@ -1,6 +1,6 @@
 import type { AccountingAccount, AccountingAccountType, AccountingNormalBalance, AccountingPeriodStatus } from "./accounting";
 
-export type AccountingReportStatus = "publicada";
+export type AccountingReportStatus = "contabilizada";
 
 export type AccountingPeriodOption = {
   id: string;
@@ -31,6 +31,8 @@ export type AccountingReportOptions = {
 
 export type GeneralLedgerMovement = {
   id: string;
+  journalEntryId: string;
+  journalStatus: "publicada" | "reversada";
   date: string;
   journalNumber: string;
   reference: string;
@@ -111,7 +113,7 @@ export type BalanceSheetReportData = {
   totalLiabilitiesAndEquity: number;
   difference: number;
   balanced: boolean;
-  hasPublishedEntries: boolean;
+  hasAccountedEntries: boolean;
 };
 
 export type IncomeStatementReportData = {
@@ -129,5 +131,5 @@ export type IncomeStatementReportData = {
   grossProfit: number;
   netIncome: number;
   resultLabel: "Utilidad neta" | "Pérdida neta";
-  hasPublishedEntries: boolean;
+  hasAccountedEntries: boolean;
 };

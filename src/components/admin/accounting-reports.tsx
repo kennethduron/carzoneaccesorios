@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, FileSpreadsheet, FileText, Printer, Search } from "lucide-react";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+import { AccountingReportAccountFilter } from "@/components/admin/accounting-report-account-filter";
 import { Input } from "@/components/ui";
 import { buildAccountingReportParams } from "@/services/supabase/accounting-reports.service";
 import type { AccountingAccountType } from "@/types/accounting";
@@ -65,7 +66,7 @@ function ReportHeader({ eyebrow, title, description }: { eyebrow: string; title:
         <p className="mt-2 max-w-3xl text-sm leading-6 text-black/55">{description}</p>
       </div>
       <div className="rounded-lg border border-black/10 bg-[#fafafa] px-4 py-3 text-sm text-black/60">
-        <span className="font-semibold text-black">Base:</span> partidas publicadas
+        <span className="font-semibold text-black">Base:</span> partidas contabilizadas (publicadas y reversadas)
       </div>
     </header>
   );
@@ -101,17 +102,10 @@ function ReportFilters({ data, basePath }: { data: Pick<GeneralLedgerReportData 
             ))}
           </select>
         </Field>
-        <Field label="Cuenta">
-          <select name="account" defaultValue={filters.accountId} className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15">
-            <option value="">Primera cuenta disponible</option>
-            {options.accounts.map((account) => (
-              <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
-            ))}
-          </select>
-        </Field>
+        <AccountingReportAccountFilter account={options.accounts.find((account) => account.id === filters.accountId) ?? null} />
         <Field label="Estado">
-          <select name="status" defaultValue="publicada" disabled className="h-10 w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 text-sm text-black/60 outline-none">
-            <option value="publicada">Solo publicadas</option>
+          <select name="status" defaultValue="contabilizada" disabled className="h-10 w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 text-sm text-black/60 outline-none">
+            <option value="contabilizada">Publicadas y reversadas</option>
           </select>
         </Field>
         <Field label="Búsqueda">
@@ -137,7 +131,7 @@ function ExportPanel({ canExport, pdfHref, excelHref }: { canExport: boolean; pd
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="font-semibold">Exportaciones</p>
-          <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde los mismos datos contables publicados del reporte filtrado. La exportación CSV no está disponible para este reporte.</p>
+          <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde las mismas partidas contabilizadas del reporte filtrado, incluidas originales reversadas y sus contrapartidas. La exportación CSV no está disponible para este reporte.</p>
         </div>
         <div className="grid gap-2 sm:flex sm:flex-wrap">
           <a href={excelHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${canExport ? "border-black/10 bg-white text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]" : "pointer-events-none border-black/10 bg-[#f4f4f5] text-black/35"}`}>
@@ -161,7 +155,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <ReportHeader eyebrow="Finanzas" title="Libro Mayor" description="Consulta read-only de movimientos contables por cuenta, calculada exclusivamente desde partidas publicadas y sus líneas contables." />
+        <ReportHeader eyebrow="Finanzas" title="Libro Mayor" description="Consulta de movimientos contables por cuenta. Incluye partidas publicadas y originales reversadas para conservar el historial y su efecto neto." />
         <ReportFilters data={data} basePath="/admin/libro-mayor" />
         <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/libro-mayor", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/libro-mayor", data.filters, "excel")} />
 
@@ -194,7 +188,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
                 <article key={movement.id} className="rounded-md border border-black/10 bg-white p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold">{movement.journalNumber}</p>
+                      <Link href={`/admin/contabilidad?journal_entry_id=${movement.journalEntryId}`} className="font-semibold text-[#991b1b] hover:underline">{movement.journalNumber}</Link>
                       <p className="text-xs text-black/50">{formatHnDate(movement.date)} · {movement.reference}</p>
                     </div>
                     <span className="shrink-0 rounded-full bg-[#f4f4f5] px-2 py-1 text-xs font-semibold">{formatCurrency(movement.runningBalance)}</span>
@@ -206,7 +200,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
                   </dl>
                 </article>
               ))}
-              {section.movements.length === 0 ? <EmptyState text="No hay movimientos publicados para este filtro." /> : null}
+              {section.movements.length === 0 ? <EmptyState text="No hay movimientos contabilizados para este filtro." /> : null}
             </div>
 
             <div className="hidden max-w-full overflow-x-auto md:block">
@@ -226,7 +220,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
                   {section.movements.map((movement) => (
                     <tr key={movement.id}>
                       <td className="px-3 py-3">{formatHnDate(movement.date)}</td>
-                      <td className="px-3 py-3 font-semibold">{movement.journalNumber}</td>
+                      <td className="px-3 py-3 font-semibold"><Link href={`/admin/contabilidad?journal_entry_id=${movement.journalEntryId}`} className="text-[#991b1b] hover:underline">{movement.journalNumber}</Link></td>
                       <td className="px-3 py-3">{movement.reference}</td>
                       <td className="px-3 py-3">{movement.description}</td>
                       <td className="px-3 py-3 text-right tabular-nums">{formatCurrency(movement.debit)}</td>
@@ -235,7 +229,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
                     </tr>
                   ))}
                   {section.movements.length === 0 ? (
-                    <tr><td colSpan={7} className="px-3 py-6 text-center text-black/55">No hay movimientos publicados para este filtro.</td></tr>
+                    <tr><td colSpan={7} className="px-3 py-6 text-center text-black/55">No hay movimientos contabilizados para este filtro.</td></tr>
                   ) : null}
                 </tbody>
                 <tfoot className="border-t border-black/10 bg-[#fafafa] font-semibold">
@@ -251,7 +245,7 @@ export function GeneralLedgerReport({ data, canExport }: { data: GeneralLedgerRe
           </section>
         ) : <EmptyState text="No hay cuentas contables disponibles para los filtros seleccionados." />}
 
-        <PaginationControls basePath="/admin/libro-mayor" page={data.page} pageSize={data.pageSize} total={data.totalMovements} label="movimientos publicados" params={filterParams(data.filters)} />
+        <PaginationControls basePath="/admin/libro-mayor" page={data.page} pageSize={data.pageSize} total={data.totalMovements} label="movimientos contabilizados" params={filterParams(data.filters)} />
         <p className="text-center text-xs text-black/45">Página {data.page.toLocaleString("es-HN")} de {totalPages.toLocaleString("es-HN")}. Vista de borradores deshabilitada.</p>
       </div>
     </main>
@@ -262,7 +256,7 @@ export function TrialBalanceReport({ data, canExport }: { data: TrialBalanceRepo
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <ReportHeader eyebrow="Finanzas" title="Balance de Comprobación" description="Resumen read-only de débitos, créditos y saldos finales por cuenta, calculado exclusivamente desde partidas publicadas." />
+        <ReportHeader eyebrow="Finanzas" title="Balance de Comprobación" description="Resumen de débitos, créditos y saldos finales calculado desde partidas publicadas y originales reversadas." />
         <ReportFilters data={data} basePath="/admin/balance-comprobacion" />
         <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/balance-comprobacion", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/balance-comprobacion", data.filters, "excel")} />
 
@@ -368,8 +362,8 @@ function StatementFilters({ data, basePath }: { data: Pick<BalanceSheetReportDat
           <Input name="endDate" type="date" defaultValue={filters.endDate} />
         </Field>
         <Field label="Estado">
-          <select name="status" defaultValue="publicada" disabled className="h-10 w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 text-sm text-black/60 outline-none">
-            <option value="publicada">Solo publicadas</option>
+          <select name="status" defaultValue="contabilizada" disabled className="h-10 w-full rounded-md border border-black/10 bg-[#f4f4f5] px-3 text-sm text-black/60 outline-none">
+            <option value="contabilizada">Publicadas y reversadas</option>
           </select>
         </Field>
         <div className="grid gap-2 sm:flex sm:items-end xl:col-span-2">
@@ -407,7 +401,7 @@ function StatementSectionTable({ section, extraRows = [] }: { section: Financial
             <p className="mt-2 text-lg font-semibold tabular-nums">{formatCurrency(row.amount)}</p>
           </article>
         ))}
-        {rows.length === 0 && extraRows.length === 0 ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+        {rows.length === 0 && extraRows.length === 0 ? <EmptyState text="No hay partidas contabilizadas para el período seleccionado." /> : null}
         <div className="rounded-md bg-[#080808] p-3 text-white">
           <p className="text-xs uppercase text-white/65">Subtotal</p>
           <p className="mt-1 text-xl font-semibold tabular-nums">{formatCurrency(section.total)}</p>
@@ -438,7 +432,7 @@ function StatementSectionTable({ section, extraRows = [] }: { section: Financial
                 <td className="px-3 py-3 text-right font-semibold tabular-nums">{formatCurrency(row.amount)}</td>
               </tr>
             ))}
-            {rows.length === 0 && extraRows.length === 0 ? <tr><td colSpan={3} className="px-3 py-6 text-center text-black/55">No hay partidas publicadas para el período seleccionado.</td></tr> : null}
+            {rows.length === 0 && extraRows.length === 0 ? <tr><td colSpan={3} className="px-3 py-6 text-center text-black/55">No hay partidas contabilizadas para el período seleccionado.</td></tr> : null}
           </tbody>
           <tfoot className="border-t border-black/10 bg-[#fafafa] font-semibold">
             <tr>
@@ -456,7 +450,7 @@ export function BalanceSheetReport({ data, canExport }: { data: BalanceSheetRepo
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <ReportHeader eyebrow="Finanzas" title="Balance General" description="Estado financiero read-only calculado exclusivamente desde partidas contables publicadas y sus líneas." />
+        <ReportHeader eyebrow="Finanzas" title="Balance General" description="Estado financiero calculado desde partidas publicadas y originales reversadas, conservando el efecto contable completo." />
         <StatementFilters data={data} basePath="/admin/balance-general" />
         <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/balance-general", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/balance-general", data.filters, "excel")} />
 
@@ -473,7 +467,7 @@ export function BalanceSheetReport({ data, canExport }: { data: BalanceSheetRepo
           </div>
         </section>
 
-        {!data.hasPublishedEntries && data.totalAssets === 0 && data.totalLiabilitiesAndEquity === 0 ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+        {!data.hasAccountedEntries && data.totalAssets === 0 && data.totalLiabilitiesAndEquity === 0 ? <EmptyState text="No hay partidas contabilizadas para el período seleccionado." /> : null}
 
         <StatementSectionTable section={data.assets} />
         <StatementSectionTable section={data.liabilities} />
@@ -493,7 +487,7 @@ export function IncomeStatementReport({ data, canExport }: { data: IncomeStateme
   return (
     <main className="min-h-screen bg-[#f7f7f8] px-4 py-5 text-[#080808] sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <ReportHeader eyebrow="Finanzas" title="Estado de Resultados" description="Ingresos, costos y gastos read-only calculados exclusivamente desde partidas contables publicadas." />
+        <ReportHeader eyebrow="Finanzas" title="Estado de Resultados" description="Ingresos, costos y gastos calculados desde partidas publicadas y originales reversadas." />
         <StatementFilters data={data} basePath="/admin/estado-resultados" />
         <ExportPanel canExport={canExport} pdfHref={exportHref("/api/admin/contabilidad/estado-resultados", data.filters, "pdf")} excelHref={exportHref("/api/admin/contabilidad/estado-resultados", data.filters, "excel")} />
 
@@ -510,7 +504,7 @@ export function IncomeStatementReport({ data, canExport }: { data: IncomeStateme
           </div>
         </section>
 
-        {!data.hasPublishedEntries ? <EmptyState text="No hay partidas publicadas para el período seleccionado." /> : null}
+        {!data.hasAccountedEntries ? <EmptyState text="No hay partidas contabilizadas para el período seleccionado." /> : null}
 
         <StatementSectionTable section={data.revenues} />
         <StatementSectionTable section={data.costs} />

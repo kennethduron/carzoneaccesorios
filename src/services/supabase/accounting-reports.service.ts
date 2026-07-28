@@ -19,6 +19,7 @@ const hondurasTimeZone = "America/Tegucigalpa";
 const defaultPageSize = 50;
 const maxPageSize = 100;
 export const accountingReportExportLimit = 5000;
+const accountedJournalEntryStatuses = ["publicada", "reversada"] as const;
 
 const accountTypeValues = new Set<AccountingAccountType>(["asset", "liability", "equity", "revenue", "cost", "expense"]);
 
@@ -186,7 +187,7 @@ function normalizeFilters(params: SearchParamsLike, periods: AccountingPeriodOpt
     endDate: endDate >= startDate ? endDate : startDate,
     accountId: cleanText(paramValue(params, "account")),
     accountType: normalizeAccountType(paramValue(params, "accountType")),
-    status: "publicada",
+    status: "contabilizada",
     search: normalizeSearch(paramValue(params, "search")),
     page: normalizePage(paramValue(params, "page")),
     pageSize: normalizePageSize(paramValue(params, "pageSize")),
@@ -353,7 +354,7 @@ export async function getGeneralLedgerReport(params: SearchParamsLike, options: 
       { count: "exact" },
     )
     .eq("account_id", selectedAccount.id)
-    .eq("journal_entries.status", "publicada")
+    .in("journal_entries.status", [...accountedJournalEntryStatuses])
     .gte("journal_entries.entry_date", filters.startDate)
     .lte("journal_entries.entry_date", filters.endDate)
     .order("entry_date", { referencedTable: "journal_entries", ascending: true })
@@ -379,6 +380,8 @@ export async function getGeneralLedgerReport(params: SearchParamsLike, options: 
     runningBalance = roundMoney(runningBalance + balanceDelta(selectedAccount, debit, credit));
     allFetchedMovements.push({
       id: row.id,
+      journalEntryId: row.journal_entry_id,
+      journalStatus: entry?.status === "reversada" ? "reversada" : "publicada",
       date: entry?.entry_date ?? "",
       journalNumber: entry?.entry_number ?? "-",
       reference: referenceLabel(entry),
@@ -514,12 +517,12 @@ async function getStatementAggregate(filters: AccountingReportFilters, mode: Sta
   });
 }
 
-async function hasPublishedEntriesForStatement(filters: AccountingReportFilters, mode: StatementDateMode) {
+async function hasAccountedEntriesForStatement(filters: AccountingReportFilters, mode: StatementDateMode) {
   const supabase = await getSupabaseServerClient();
   let query = supabase
     .from("journal_entries")
     .select("id", { count: "exact", head: true })
-    .eq("status", "publicada");
+    .in("status", [...accountedJournalEntryStatuses]);
 
   if (mode === "asOfEnd") {
     query = query.lte("entry_date", filters.endDate);
@@ -545,10 +548,10 @@ export async function getBalanceSheetReport(params: SearchParamsLike): Promise<B
   const filters = normalizeFilters(params, initialOptions.periods);
   const balanceAccountIds = accountIdsForTypes(initialOptions.accounts, balanceSheetAccountTypes);
   const incomeAccountIds = accountIdsForTypes(initialOptions.accounts, incomeStatementAccountTypes);
-  const [balanceRows, periodRows, hasPublishedEntries] = await Promise.all([
+  const [balanceRows, periodRows, hasAccountedEntries] = await Promise.all([
     getStatementAggregate(filters, "asOfEnd", balanceAccountIds),
     getStatementAggregate(filters, "period", incomeAccountIds),
-    hasPublishedEntriesForStatement(filters, "period"),
+    hasAccountedEntriesForStatement(filters, "period"),
   ]);
 
   const allBalanceRows = statementRows(balanceRows, initialOptions.accounts, balanceSheetAccountTypes);
@@ -583,7 +586,7 @@ export async function getBalanceSheetReport(params: SearchParamsLike): Promise<B
     totalLiabilitiesAndEquity,
     difference,
     balanced: Math.abs(difference) < 0.01,
-    hasPublishedEntries,
+    hasAccountedEntries,
   };
 }
 
@@ -591,9 +594,9 @@ export async function getIncomeStatementReport(params: SearchParamsLike): Promis
   const initialOptions = await getAccountingReportOptions();
   const filters = normalizeFilters(params, initialOptions.periods);
   const incomeAccountIds = accountIdsForTypes(initialOptions.accounts, incomeStatementAccountTypes);
-  const [aggregateRows, hasPublishedEntries] = await Promise.all([
+  const [aggregateRows, hasAccountedEntries] = await Promise.all([
     getStatementAggregate(filters, "period", incomeAccountIds),
-    hasPublishedEntriesForStatement(filters, "period"),
+    hasAccountedEntriesForStatement(filters, "period"),
   ]);
 
   const rows = statementRows(aggregateRows, initialOptions.accounts, incomeStatementAccountTypes);
@@ -621,6 +624,6 @@ export async function getIncomeStatementReport(params: SearchParamsLike): Promis
     grossProfit,
     netIncome,
     resultLabel: netIncome >= 0 ? "Utilidad neta" : "Pérdida neta",
-    hasPublishedEntries,
+    hasAccountedEntries,
   };
 }

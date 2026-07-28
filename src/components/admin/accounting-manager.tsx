@@ -12,10 +12,12 @@ import {
   toggleAccountingAccountAction,
 } from "@/app/admin/contabilidad/actions";
 import { ChartOfAccountsTools } from "@/components/admin/chart-of-accounts-tools";
+import { AccountingAccountCombobox } from "@/components/admin/accounting-account-combobox";
 import { ParentAccountCombobox } from "@/components/admin/parent-account-combobox";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
+import { buildJournalEntryViewerHref } from "@/lib/accounting-navigation";
 import type {
   AccountingAccount,
   AccountingAccountInput,
@@ -26,6 +28,7 @@ import type {
   JournalEntryLineInput,
   JournalEntryViewerData,
 } from "@/types/accounting";
+import type { AccountingAccountSearchResult } from "@/types/admin-search";
 import { formatHnDateTime } from "@/utils/format";
 
 type AccountingManagerSection = "summary" | "accounts" | "journal" | "entries";
@@ -48,6 +51,7 @@ type AccountingManagerProps = {
 type JournalEntryLineFormInput = Omit<JournalEntryLineInput, "debit" | "credit"> & {
   debit: number | string;
   credit: number | string;
+  account?: AccountingAccountSearchResult | null;
 };
 
 const accountTypeLabels: Record<AccountingAccountType, string> = {
@@ -127,10 +131,19 @@ function amountInputValue(value: string | number | null | undefined) {
 
 function normalizeJournalLines(lines: JournalEntryLineFormInput[]): JournalEntryLineInput[] {
   return lines.map((line) => ({
-    ...line,
+    id: line.id,
+    account_id: line.account_id,
     debit: parseAccountingAmount(line.debit),
     credit: parseAccountingAmount(line.credit),
+    description: line.description,
+    customer_id: line.customer_id,
+    vendor_id: line.vendor_id,
+    product_id: line.product_id,
   }));
+}
+
+function isReversalEntry(entry: JournalEntry) {
+  return entry.source_type === "journal_reversal" || entry.metadata?.entry_kind === "reversal";
 }
 
 export function AccountingManager({ data, canManage, canCreate, canEdit, canPost, canReverse, canExport = false, canCsvExport = false, focusedEntryData = null, focusedEntryId = null, onCloseFocusedEntry, visibleSections = ["summary", "accounts", "journal", "entries"] }: AccountingManagerProps) {
@@ -144,6 +157,8 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
     lines: [emptyLine(), emptyLine()],
   });
   const [message, setMessage] = useState("");
+  const [reversalTargetId, setReversalTargetId] = useState<string | null>(null);
+  const [reversalReason, setReversalReason] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const canWriteAccounts = canManage || canCreate;
@@ -256,11 +271,24 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
   }
 
   function reverseEntry(entryId: string) {
+    setReversalTargetId(entryId);
+    setReversalReason("");
+  }
+
+  function confirmReversal() {
+    if (!reversalTargetId) return;
+    const normalizedReason = reversalReason.trim().replace(/\s+/g, " ");
+    if (normalizedReason.length < 10 || normalizedReason.length > 500) {
+      toast.error("El motivo de la reversión debe tener entre 10 y 500 caracteres.");
+      return;
+    }
     startTransition(async () => {
-      const result = await reverseJournalEntryAction(entryId);
+      const result = await reverseJournalEntryAction(reversalTargetId, normalizedReason);
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message);
+        setReversalTargetId(null);
+        setReversalReason("");
       } else {
         toast.error(result.message);
       }
@@ -455,24 +483,18 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
                 <div className="divide-y divide-black/10">
                   {journalForm.lines.map((line, index) => (
                     <div key={index} className="grid gap-3 p-3 lg:grid-cols-[minmax(190px,1.2fr)_minmax(150px,1fr)_112px_112px_56px] lg:items-center">
-                      <label className="block">
-                        <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Cuenta</span>
-                        <select
-                          value={line.account_id}
-                          onChange={(event) =>
-                            setJournalForm((current) => ({
-                              ...current,
-                              lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, account_id: event.target.value } : item),
-                            }))
-                          }
-                          className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
-                        >
-                          <option value="">Seleccionar cuenta</option>
-                          {data.activeAccounts.map((account) => (
-                            <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
-                          ))}
-                        </select>
-                      </label>
+                      <AccountingAccountCombobox
+                        value={line.account_id}
+                        selectedOption={line.account ?? null}
+                        label="Cuenta"
+                        disabled={isPending}
+                        onChange={(account) =>
+                          setJournalForm((current) => ({
+                            ...current,
+                            lines: current.lines.map((item, itemIndex) => itemIndex === index ? { ...item, account_id: account?.id ?? "", account } : item),
+                          }))
+                        }
+                      />
                       <label className="block">
                         <span className="mb-1 block text-xs font-medium uppercase text-black/50 lg:hidden">Descripción</span>
                         <Input
@@ -641,6 +663,29 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
       ) : null}
 
       {message ? <p className="rounded-xl border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
+      {reversalTargetId ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 px-4 py-6" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="reversal-dialog-title" className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase text-[#b91c25]">Acción contable irreversible</p>
+                <h2 id="reversal-dialog-title" className="mt-1 text-xl font-semibold">Reversar partida publicada</h2>
+              </div>
+              <button type="button" aria-label="Cerrar" disabled={isPending} onClick={() => setReversalTargetId(null)} className="grid size-11 place-items-center rounded-md border border-black/10"><X size={18} /></button>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-black/60">Se creará una nueva partida con débitos y créditos invertidos. La original permanecerá visible como reversada.</p>
+            <label className="mt-4 block text-sm font-semibold">
+              Motivo de la reversión
+              <textarea autoFocus rows={4} maxLength={500} value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} className="mt-1 w-full rounded-lg border border-black/15 px-3 py-2 font-normal outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15" placeholder="Explique por qué debe reversarse esta partida (mínimo 10 caracteres)." />
+            </label>
+            <p className="mt-1 text-xs text-black/45">{reversalReason.trim().length}/500 caracteres</p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={isPending} onClick={() => setReversalTargetId(null)}>Cancelar</Button>
+              <Button type="button" variant="dark" disabled={isPending || reversalReason.trim().length < 10} onClick={confirmReversal}><RotateCcw size={16} />{isPending ? "Reversando…" : "Confirmar reversión"}</Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -812,6 +857,17 @@ function FocusedJournalEntry({
         <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
         <span className="rounded-md border border-black/10 bg-white px-3 py-2">Diferencia: <strong>{formatCurrency(difference)}</strong></span>
       </div>
+      {viewerData.reversalRelation ? (
+        <aside className="mt-4 rounded-lg border border-[#3730a3]/20 bg-[#eef2ff] p-4 text-sm text-[#312e81]">
+          <p className="font-semibold">{viewerData.reversalRelation.direction === "reversed_by" ? "Reversada mediante" : "Reversa de"}</p>
+          <Link href={buildJournalEntryViewerHref(viewerData.reversalRelation.entryId)} className="mt-1 inline-block font-semibold underline underline-offset-2">
+            {viewerData.reversalRelation.entryNumber}
+          </Link>
+          <p className="mt-1">Fecha {viewerData.reversalRelation.entryDate} · Importe {formatCurrency(viewerData.reversalRelation.amount)}</p>
+          {viewerData.reversalRelation.reason ? <p className="mt-2"><strong>Motivo:</strong> {viewerData.reversalRelation.reason}</p> : null}
+          {viewerData.reversalRelation.actorName ? <p className="mt-1"><strong>Actor:</strong> {viewerData.reversalRelation.actorName}</p> : null}
+        </aside>
+      ) : null}
       <JournalEntryLines entry={entry} className="mt-4" />
       <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
     </article>
@@ -947,6 +1003,15 @@ function JournalEntries({
               <span className="rounded-md bg-[#f7f7f8] px-3 py-2">Crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
               <span className="col-span-2 rounded-md bg-[#f7f7f8] px-3 py-2">Diferencia: <strong>{formatCurrency(Math.round(Math.abs(entry.total_debit - entry.total_credit) * 100) / 100)}</strong></span>
             </div>
+            {focused && focusedEntryData?.reversalRelation ? (
+              <aside className="mt-4 rounded-lg border border-[#3730a3]/20 bg-[#eef2ff] p-4 text-sm text-[#312e81]">
+                <p className="font-semibold">{focusedEntryData.reversalRelation.direction === "reversed_by" ? "Reversada mediante" : "Reversa de"}</p>
+                <Link href={buildJournalEntryViewerHref(focusedEntryData.reversalRelation.entryId)} className="mt-1 inline-block font-semibold underline underline-offset-2">{focusedEntryData.reversalRelation.entryNumber}</Link>
+                <p className="mt-1">Fecha {focusedEntryData.reversalRelation.entryDate} - Importe {formatCurrency(focusedEntryData.reversalRelation.amount)}</p>
+                {focusedEntryData.reversalRelation.reason ? <p className="mt-2"><strong>Motivo:</strong> {focusedEntryData.reversalRelation.reason}</p> : null}
+                {focusedEntryData.reversalRelation.actorName ? <p className="mt-1"><strong>Actor:</strong> {focusedEntryData.reversalRelation.actorName}</p> : null}
+              </aside>
+            ) : null}
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead className="text-xs uppercase text-black/45">
@@ -1044,6 +1109,15 @@ function JournalEntries({
                             <span className="rounded-md border border-black/10 bg-white px-3 py-2">Total crédito: <strong>{formatCurrency(entry.total_credit)}</strong></span>
                             <span className="rounded-md border border-black/10 bg-white px-3 py-2">Diferencia: <strong>{formatCurrency(Math.round(Math.abs(entry.total_debit - entry.total_credit) * 100) / 100)}</strong></span>
                           </div>
+                          {focused && focusedEntryData?.reversalRelation ? (
+                            <aside className="rounded-lg border border-[#3730a3]/20 bg-[#eef2ff] p-4 text-sm text-[#312e81]">
+                              <p className="font-semibold">{focusedEntryData.reversalRelation.direction === "reversed_by" ? "Reversada mediante" : "Reversa de"}</p>
+                              <Link href={buildJournalEntryViewerHref(focusedEntryData.reversalRelation.entryId)} className="mt-1 inline-block font-semibold underline underline-offset-2">{focusedEntryData.reversalRelation.entryNumber}</Link>
+                              <p className="mt-1">Fecha {focusedEntryData.reversalRelation.entryDate} - Importe {formatCurrency(focusedEntryData.reversalRelation.amount)}</p>
+                              {focusedEntryData.reversalRelation.reason ? <p className="mt-2"><strong>Motivo:</strong> {focusedEntryData.reversalRelation.reason}</p> : null}
+                              {focusedEntryData.reversalRelation.actorName ? <p className="mt-1"><strong>Actor:</strong> {focusedEntryData.reversalRelation.actorName}</p> : null}
+                            </aside>
+                          ) : null}
                           <JournalEntryLines entry={entry} />
                         </div>
                       </td>
@@ -1103,7 +1177,7 @@ function EntryActions({
           Publicar
         </Button>
       ) : null}
-      {canReverse && entry.status === "publicada" ? (
+      {canReverse && entry.status === "publicada" && !isReversalEntry(entry) && !entry.reversed_entry_id ? (
         <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onReverse(entry.id)}>
           <RotateCcw size={16} />
           Reversar

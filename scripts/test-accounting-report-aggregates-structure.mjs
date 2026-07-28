@@ -10,8 +10,9 @@ const reportNames = [
   ["estado-resultados", "getIncomeStatementReport"],
 ];
 
-const [migration, service, errorBoundary, ...routeSources] = await Promise.all([
+const [migration, accountedMigration, service, errorBoundary, ...routeSources] = await Promise.all([
   read("supabase/migrations/202607150002_accounting_report_aggregates_rpc.sql"),
+  read("supabase/migrations/202607270001_accounting_reversals_and_admin_search.sql"),
   read("src/services/supabase/accounting-reports.service.ts"),
   read("src/app/admin/error.tsx"),
   ...reportNames.flatMap(([route]) => [
@@ -37,6 +38,8 @@ assert.match(migration, /p_account_ids is null or lines\.account_id = any\(p_acc
 assert.match(migration, /revoke all on function[\s\S]*from public/);
 assert.match(migration, /revoke all on function[\s\S]*from anon/);
 assert.match(migration, /grant execute on function[\s\S]*to authenticated/);
+assert.match(accountedMigration, /create or replace function public\.get_accounting_report_aggregates/);
+assert.match(accountedMigration, /entries\.status in \('publicada', 'reversada'\)/);
 
 const functionBody = migration.slice(migration.indexOf("as $function$"), migration.indexOf("$function$;", migration.indexOf("as $function$")));
 assert.doesNotMatch(functionBody, /\b(insert|update|delete|truncate)\b/i);
@@ -45,7 +48,8 @@ assert.match(service, /\.rpc\("get_accounting_report_aggregates"/);
 assert.match(service, /mode: "opening"/);
 assert.match(service, /mode: "both"/);
 assert.match(service, /mode: mode === "asOfEnd" \? "as_of" : "period"/);
-assert.match(service, /journal_entries\.status", "publicada"/);
+assert.match(service, /accountedJournalEntryStatuses = \["publicada", "reversada"\]/);
+assert.match(service, /\.in\("journal_entries\.status", \[\.\.\.accountedJournalEntryStatuses\]\)/);
 assert.doesNotMatch(service, /debit\.sum\(\)|credit\.sum\(\)/);
 assert.match(service, /\[accounting-report-data-error\]/);
 assert.match(service, /No fue posible cargar el reporte contable/);
@@ -66,7 +70,7 @@ for (let index = 0; index < reportNames.length; index += 1) {
 console.log("Accounting report aggregate structure checks passed.", {
   rpcReadOnly: true,
   securityInvoker: true,
-  publishedOnly: true,
+  accountedStatuses: ["publicada", "reversada"],
   postgrestAggregatesRemoved: true,
   pages: reportNames.length,
   exporters: reportNames.length * 2,

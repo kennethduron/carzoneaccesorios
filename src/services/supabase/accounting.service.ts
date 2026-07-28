@@ -163,7 +163,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
 
   const [
     { data: accounts, error: accountsError, count: accountTotal },
-    { data: activeAccounts, error: activeAccountsError, count: activeAccountsTotal },
+    { count: activeAccountsTotal, error: activeAccountsError },
     accountHierarchyOptions,
     { data: journalRows, error: journalError, count: journalTotal },
     { count: journalEntriesThisMonth, error: monthError },
@@ -178,11 +178,8 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
       .returns<AccountingAccount[]>(),
     supabase
       .from("accounting_accounts")
-      .select("id, code, name, type, parent_id, normal_balance, is_active, description, created_by, created_at, updated_at", { count: "exact" })
-      .eq("is_active", true)
-      .order("code", { ascending: true })
-      .limit(500)
-      .returns<AccountingAccount[]>(),
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true),
     getAccountingAccountHierarchyOptions(),
     supabase
       .from("journal_entries")
@@ -214,7 +211,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
 
   const summary: AccountingDashboardSummary = {
     totalAccounts: accountTotal ?? 0,
-    activeAccounts: activeAccountsTotal ?? activeAccounts?.length ?? 0,
+    activeAccounts: activeAccountsTotal ?? 0,
     journalEntriesThisMonth: journalEntriesThisMonth ?? 0,
     draftEntries: draftEntries ?? 0,
     latestEntry,
@@ -223,7 +220,6 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
   return {
     summary,
     accounts: accounts ?? [],
-    activeAccounts: activeAccounts ?? [],
     accountHierarchyOptions,
     journalEntries,
     accountPage,
@@ -253,9 +249,27 @@ export async function getJournalEntryByIdForViewer(journalEntryId: string): Prom
   if (entryError) throw new Error(entryError.message);
   if (!entryRow) return null;
 
-  const actorIds = [...new Set([entryRow.created_by, entryRow.posted_by].filter((id): id is string => Boolean(id)))];
+  const sourceEntryId = entryRow.source_type === "journal_reversal" && entryRow.source_id
+    ? uuidLike(entryRow.source_id, "ID de partida original")
+    : null;
+  const relatedEntryId = entryRow.reversed_entry_id ?? (sourceEntryId?.ok ? sourceEntryId.value : null);
+  const { data: relatedEntryRow, error: relatedEntryError } = relatedEntryId
+    ? await supabase
+      .from("journal_entries")
+      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
+      .eq("id", relatedEntryId)
+      .maybeSingle<JournalEntryRow>()
+    : { data: null, error: null };
+  if (relatedEntryError) throw new Error(relatedEntryError.message);
+
+  const reversalMetadata = entryRow.status === "reversada" ? entryRow.metadata : relatedEntryRow?.metadata;
+  const metadataObject = reversalMetadata && typeof reversalMetadata === "object" && !Array.isArray(reversalMetadata)
+    ? reversalMetadata as Record<string, unknown>
+    : {};
+  const reversalActorId = typeof metadataObject.reversal_actor_id === "string" ? metadataObject.reversal_actor_id : null;
+  const actorIds = [...new Set([entryRow.created_by, entryRow.posted_by, reversalActorId].filter((id): id is string => Boolean(id)))];
   const [linesByEntry, { data: users, error: usersError }] = await Promise.all([
-    getLinesByEntryIds([entryRow.id]),
+    getLinesByEntryIds([entryRow.id, ...(relatedEntryRow ? [relatedEntryRow.id] : [])]),
     supabase
       .from("users")
       .select("id, full_name, username, email")
@@ -266,34 +280,37 @@ export async function getJournalEntryByIdForViewer(journalEntryId: string): Prom
   if (usersError) throw new Error(usersError.message);
 
   const usersById = new Map((users ?? []).map((user) => [user.id, user]));
+  const relatedEntry = relatedEntryRow ? normalizeEntry(relatedEntryRow, linesByEntry.get(relatedEntryRow.id) ?? []) : null;
   return {
     entry: normalizeEntry(entryRow, linesByEntry.get(entryRow.id) ?? []),
     creatorName: viewerUserName(usersById.get(entryRow.created_by), entryRow.created_by),
     postedByName: entryRow.posted_by
       ? viewerUserName(usersById.get(entryRow.posted_by), entryRow.posted_by)
       : null,
+    reversalRelation: relatedEntry
+      ? {
+        direction: entryRow.status === "reversada" ? "reversed_by" : "reversal_of",
+        entryId: relatedEntry.id,
+        entryNumber: relatedEntry.entry_number,
+        entryDate: relatedEntry.entry_date,
+        status: relatedEntry.status,
+        reason: typeof metadataObject.reversal_reason === "string" ? metadataObject.reversal_reason : null,
+        actorName: reversalActorId ? viewerUserName(usersById.get(reversalActorId), reversalActorId) : null,
+        amount: relatedEntry.total_debit,
+      }
+      : null,
   };
 }
 
 export async function getJournalEntryEditData(entryId: string): Promise<JournalEntryEditData | null> {
   const supabase = await getSupabaseServerClient();
-  const [{ data: entryRow, error: entryError }, { data: activeAccounts, error: accountsError }] = await Promise.all([
-    supabase
-      .from("journal_entries")
-      .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
-      .eq("id", entryId)
-      .maybeSingle<JournalEntryRow>(),
-    supabase
-      .from("accounting_accounts")
-      .select("id, code, name, type, parent_id, normal_balance, is_active, description, created_by, created_at, updated_at")
-      .eq("is_active", true)
-      .order("code")
-      .limit(500)
-      .returns<AccountingAccount[]>(),
-  ]);
+  const { data: entryRow, error: entryError } = await supabase
+    .from("journal_entries")
+    .select("id, entry_number, entry_date, description, status, source_type, source_id, created_by, posted_by, posted_at, reversed_entry_id, version, updated_by, metadata, created_at, updated_at")
+    .eq("id", entryId)
+    .maybeSingle<JournalEntryRow>();
 
   if (entryError) throw new Error(entryError.message);
-  if (accountsError) throw new Error(accountsError.message);
   if (!entryRow) return null;
 
   const linesByEntry = await getLinesByEntryIds([entryId]);
@@ -395,5 +412,5 @@ export async function getJournalEntryEditData(entryId: string): Promise<JournalE
     }
   }
 
-  return { entry, activeAccounts: activeAccounts ?? [], creatorName, sourceContext };
+  return { entry, creatorName, sourceContext };
 }
