@@ -85,16 +85,14 @@ type CatalogProductRow = {
   features: string | null;
   specifications: string | null;
   compatibility_notes: string | null;
-  stock: number;
+  stock?: number | null;
   available_stock?: number | null;
   retail_price: unknown;
   wholesale_price: unknown;
   wholesale_min_quantity: unknown;
   is_new?: boolean | null;
-  categories: {
-    name: string;
-    slug: string;
-  } | null;
+  category_name: string | null;
+  category_slug: string | null;
   product_images?: ProductImageRow[] | null;
 };
 
@@ -116,13 +114,9 @@ type CatalogSettingsRow = {
 };
 
 type SitemapProductRow = {
+  id: string;
   slug: string;
   updated_at: string;
-  product_images?: Array<{
-    public_url: string | null;
-    is_primary: boolean;
-    sort_order: number;
-  }> | null;
 };
 
 function toNumber(value: unknown) {
@@ -185,7 +179,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     name: row.name,
     slug: row.slug,
     category_id: row.category_id,
-    category: normalizeImportedProductCategoryName(row.categories?.name) ?? "Categoría pendiente",
+    category: normalizeImportedProductCategoryName(row.category_name) ?? "Categoría pendiente",
     brand: row.brand,
     vehicle_brand: normalizeVehicleBrand(row.vehicle_brand),
     vehicle_model: normalizeVehicleModel(row.vehicle_model),
@@ -193,7 +187,7 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     vehicle_year_end: row.vehicle_year_end,
     image: normalizedImages[0]?.url ?? defaultOgImagePath,
     images: normalizedImages,
-    stock: toNumber(row.available_stock ?? row.stock),
+    stock: toNumber(row.available_stock ?? row.stock ?? 0),
     retail_price: toNumber(row.retail_price),
     wholesale_price: toNumber(row.wholesale_price),
     wholesale_min_quantity: Math.max(1, Math.trunc(toNumber(row.wholesale_min_quantity) || 1)),
@@ -228,19 +222,19 @@ async function logProductServiceError(action: string, error: unknown, metadata?:
   }
 }
 
-async function getPrimaryImagesForProducts(productIds: string[]) {
+async function getImagesForProducts(productIds: string[], primaryOnly = true) {
   if (productIds.length === 0) {
     return new Map<string, ProductImageRow[]>();
   }
 
   const supabase = getSupabasePublicClient();
-  const { data, error } = await supabase
-    .from("product_images")
+  let query = supabase
+    .from("public_catalog_product_images_v1")
     .select("id, product_id, public_url, angle, alt_text, sort_order, is_primary")
     .in("product_id", productIds)
-    .eq("is_primary", true)
-    .order("sort_order", { ascending: true })
-    .returns<ProductImageRow[]>();
+    .order("sort_order", { ascending: true });
+  if (primaryOnly) query = query.eq("is_primary", true);
+  const { data, error } = await query.returns<ProductImageRow[]>();
 
   if (error) {
     throw new Error(error.message);
@@ -248,9 +242,7 @@ async function getPrimaryImagesForProducts(productIds: string[]) {
 
   const imageByProduct = new Map<string, ProductImageRow[]>();
   (data ?? []).forEach((image) => {
-    if (!imageByProduct.has(image.product_id)) {
-      imageByProduct.set(image.product_id, [image]);
-    }
+    imageByProduct.set(image.product_id, [...(imageByProduct.get(image.product_id) ?? []), image]);
   });
 
   return imageByProduct;
@@ -361,9 +353,8 @@ const getCachedActiveCategories = unstable_cache(async () => {
 const getCachedProductFilterOptions = unstable_cache(async (outOfStockCatalogMode: "show" | "hide" = "show") => {
   const supabase = getSupabasePublicClient();
   let query = supabase
-    .from("products")
-    .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end")
-    .eq("active", true);
+    .from("public_catalog_products_v1")
+    .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end");
 
   if (outOfStockCatalogMode === "hide") {
     query = query.gt("available_stock", 0);
@@ -422,20 +413,19 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         features,
         specifications,
         compatibility_notes,
-        stock,
         available_stock,
         retail_price,
         wholesale_price,
         wholesale_min_quantity,
         is_new,
-        categories(name, slug)
+        category_name,
+        category_slug
       `;
 
     function buildProductsQuery(selectColumns: string, options?: { count?: "exact"; head?: boolean }) {
       let productsQuery = supabase
-        .from("products")
-        .select(selectColumns, options)
-        .eq("active", true);
+        .from("public_catalog_products_v1")
+        .select(selectColumns, options);
 
       if (outOfStockCatalogMode === "hide") {
         productsQuery = productsQuery.gt("available_stock", 0);
@@ -559,7 +549,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
       throw new Error(error.message);
     }
 
-    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
+    const imageByProduct = await getImagesForProducts((data ?? []).map((product) => product.id));
     const vehicleOptions = buildVehicleOptions(filterRows);
 
     return {
@@ -598,7 +588,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
     const outOfStockCatalogMode = await getOutOfStockCatalogMode();
     const supabase = getSupabasePublicClient();
     let query = supabase
-      .from("products")
+      .from("public_catalog_products_v1")
       .select(
         `
         id,
@@ -616,16 +606,16 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         features,
         specifications,
         compatibility_notes,
-        stock,
         available_stock,
         retail_price,
         wholesale_price,
         wholesale_min_quantity,
         is_new,
-        categories(name, slug)
+        category_name,
+        category_slug,
+        updated_at
       `,
-      )
-      .eq("active", true);
+      );
 
     if (outOfStockCatalogMode === "hide") {
       query = query.gt("available_stock", 0);
@@ -637,7 +627,7 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
       throw new Error(error.message);
     }
 
-    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((product) => product.id));
+    const imageByProduct = await getImagesForProducts((data ?? []).map((product) => product.id));
     return (data ?? []).map((product) => normalizeProduct(product, imageByProduct.get(product.id)));
   } catch (error) {
     await logProductServiceError("catalog.featured_products.load_failed", error, { limit });
@@ -649,7 +639,7 @@ export async function getProductBySlug(slug: string) {
   try {
     const supabase = getSupabasePublicClient();
     const { data, error } = await supabase
-      .from("products")
+      .from("public_catalog_products_v1")
       .select(
         `
         id,
@@ -667,24 +657,15 @@ export async function getProductBySlug(slug: string) {
         features,
         specifications,
         compatibility_notes,
-        stock,
         available_stock,
         retail_price,
         wholesale_price,
         wholesale_min_quantity,
         is_new,
-        categories(name, slug),
-        product_images(
-          id,
-          public_url,
-          angle,
-          alt_text,
-          sort_order,
-          is_primary
-        )
+        category_name,
+        category_slug
       `,
       )
-      .eq("active", true)
       .eq("slug", slug)
       .maybeSingle<CatalogProductRow>();
 
@@ -692,7 +673,9 @@ export async function getProductBySlug(slug: string) {
       throw new Error(error.message);
     }
 
-    return data ? normalizeProduct(data) : null;
+    if (!data) return null;
+    const images = await getImagesForProducts([data.id], false);
+    return normalizeProduct(data, images.get(data.id));
   } catch (error) {
     await logProductServiceError("catalog.product_detail.load_failed", error, { slug });
     return null;
@@ -710,7 +693,7 @@ export async function getRelatedProducts(product: Product, limit = 4) {
     ].filter(Boolean);
 
     let query = supabase
-      .from("products")
+      .from("public_catalog_products_v1")
       .select(
         `
         id,
@@ -728,16 +711,16 @@ export async function getRelatedProducts(product: Product, limit = 4) {
         features,
         specifications,
         compatibility_notes,
-        stock,
         available_stock,
        retail_price,
        wholesale_price,
         wholesale_min_quantity,
        is_new,
-        categories(name, slug)
+        category_name,
+        category_slug,
+        updated_at
       `,
       )
-      .eq("active", true)
       .neq("id", product.id)
       .gt("available_stock", 0);
 
@@ -751,7 +734,7 @@ export async function getRelatedProducts(product: Product, limit = 4) {
       throw new Error(error.message);
     }
 
-    const imageByProduct = await getPrimaryImagesForProducts((data ?? []).map((item) => item.id));
+    const imageByProduct = await getImagesForProducts((data ?? []).map((item) => item.id));
     return (data ?? []).map((item) => normalizeProduct(item, imageByProduct.get(item.id)));
   } catch (error) {
     await logProductServiceError("catalog.related_products.load_failed", error, { productId: product.id });
@@ -777,19 +760,14 @@ export async function getSitemapProducts() {
 
     for (let from = 0; ; from += pageSize) {
       let query = supabase
-        .from("products")
+        .from("public_catalog_products_v1")
         .select(
           `
+          id,
           slug,
-          updated_at,
-          product_images(
-            public_url,
-            is_primary,
-            sort_order
-          )
+          updated_at
         `,
         )
-        .eq("active", true)
         .order("updated_at", { ascending: false })
         .range(from, from + pageSize - 1);
 
@@ -803,14 +781,10 @@ export async function getSitemapProducts() {
       }
 
       const rows = data ?? [];
+      const imageByProduct = await getImagesForProducts(rows.map((product) => product.id));
       products.push(
         ...rows.map((product) => {
-          const image =
-            [...(product.product_images ?? [])]
-              .filter((item) => item.public_url)
-              .sort((left, right) => Number(right.is_primary) - Number(left.is_primary) || left.sort_order - right.sort_order)[0]
-              ?.public_url ?? null;
-
+          const image = imageByProduct.get(product.id)?.[0]?.public_url ?? null;
           return {
             slug: product.slug,
             updatedAt: product.updated_at,

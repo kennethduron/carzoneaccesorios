@@ -20,13 +20,14 @@ export default async function AdminProductsPage({
   const profile = await requireProductCapability("read");
   const capabilities = getProductCapabilities(profile);
   const params = await searchParams;
-  const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
+  const { products: loadedProducts, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
     query: params.q,
     status: params.status,
     categoryId: params.category,
     page: Number(params.page ?? 1),
     pageSize: 50,
   });
+  const products = capabilities.viewCost ? loadedProducts : loadedProducts.map((product) => ({ ...product, cost_price: 0 }));
 
   return (
     <AdminShell title="Productos">

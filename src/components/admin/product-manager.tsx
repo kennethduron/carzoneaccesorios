@@ -1734,7 +1734,7 @@ export function ProductManager({
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Productos activos" value={activeCount.toLocaleString("es-HN")} />
         <Metric label="Stock bajo" value={lowStockCount.toLocaleString("es-HN")} />
-        <Metric label="Costo en inventario" value={formatCurrency(inventoryValue)} />
+        {capabilities.viewCost ? <Metric label="Costo en inventario" value={formatCurrency(inventoryValue)} /> : <Metric label="Costo interno" value="Restringido" />}
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
@@ -2038,7 +2038,7 @@ export function ProductManager({
                 <th className="px-4 py-3">Producto</th>
                 <th className="px-4 py-3">Categoría</th>
                 <th className="px-4 py-3">Stock</th>
-                <th className="px-4 py-3">Costo</th>
+                {capabilities.viewCost ? <th className="px-4 py-3">Costo</th> : null}
                 <th className="px-4 py-3">Precio al detalle</th>
                 <th className="px-4 py-3">Precio mayorista</th>
                 <th className="px-4 py-3">Etiqueta</th>
@@ -2072,7 +2072,7 @@ export function ProductManager({
                     </span>
                     <span className="text-black/45"> / mínimo {product.min_stock}</span>
                   </td>
-                  <td className="px-4 py-3">{formatCurrency(product.cost_price)}</td>
+                  {capabilities.viewCost ? <td className="px-4 py-3">{formatCurrency(product.cost_price)}</td> : null}
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.retail_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.wholesale_price)}</td>
                   <td className="px-4 py-3">

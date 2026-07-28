@@ -13,9 +13,10 @@ export type ProductCapabilities = {
   deleteProducts: boolean;
   adjustStock: boolean;
   technicalExports: boolean;
+  viewCost: boolean;
 };
 
-type ProductCapability = Exclude<keyof ProductCapabilities, "technicalExports">;
+type ProductCapability = Exclude<keyof ProductCapabilities, "technicalExports" | "viewCost">;
 
 const productCapabilityPermission: Record<ProductCapability, Permission> = {
   read: "products:read",
@@ -50,6 +51,13 @@ export function getProductCapabilities(profile: AuthProfile): ProductCapabilitie
     technicalExports:
       profile.role === "technical_owner" ||
       hasPermission(profile, "technical:tools"),
+    viewCost:
+      profile.role === "technical_owner" ||
+      hasLegacyManage ||
+      hasPermission(profile, "products:create") ||
+      hasPermission(profile, "products:update") ||
+      hasPermission(profile, "purchases:read") ||
+      hasPermission(profile, "purchases:manage"),
   };
 }
 

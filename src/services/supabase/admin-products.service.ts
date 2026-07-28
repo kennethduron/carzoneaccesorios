@@ -4,7 +4,7 @@ import {
   officialProductCategories,
   sortOfficialProductCategories,
 } from "@/lib/product-categories";
-import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type { CategoryOption, ProductAdminRow } from "@/types/products";
 import { normalizeVehicleBrand, normalizeVehicleModel, suggestedVehicleBrands, uniqueVehicleValues } from "@/utils/vehicle-compatibility";
 
@@ -94,7 +94,7 @@ function normalizeComparable(value: string) {
 }
 
 export async function getAdminProductCatalogPage(filters: AdminProductCatalogFilters = {}) {
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   const page = normalizePage(filters.page);
   const pageSize = normalizePageSize(filters.pageSize);
   const from = (page - 1) * pageSize;

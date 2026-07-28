@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type {
   AdminReportsData,
   ReportCustomer,
@@ -361,7 +362,7 @@ function intersectOrderIds(left: string[] | null, right: string[] | null) {
 }
 
 export async function getAdminReports(input: ReportFilters = {}): Promise<AdminReportsData> {
-  const supabase = await getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
   const page = normalizePage(input.page);
   const pageSize = normalizePageSize(input.pageSize);
   const filters = normalizeFilters(input);

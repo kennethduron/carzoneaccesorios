@@ -489,11 +489,9 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
   const { data: availableProducts, error: productsError } = await supabase
-    .from("products")
+    .from("public_catalog_products_v1")
     .select("id, name, retail_price, wholesale_price, wholesale_min_quantity")
     .in("id", productIds)
-    .eq("active", true)
-    .eq("status", "active")
     .returns<CheckoutProductPriceRow[]>();
 
   if (productsError) {
