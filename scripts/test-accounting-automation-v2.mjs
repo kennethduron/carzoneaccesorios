@@ -19,6 +19,7 @@ const [
   vercelConfig,
   cronRoute,
   cronJob,
+  cronOperations,
 ] = await Promise.all([
   read("supabase/migrations/202607280002_accounting_outbox_v2.sql"),
   read("supabase/migrations/202607280003_sales_cogs_accounting_v2.sql"),
@@ -34,6 +35,7 @@ const [
   read("vercel.json"),
   read("src/app/api/cron/process-accounting-outbox-v2/route.ts"),
   read("src/lib/accounting/cron-jobs.ts"),
+  read("docs/NOTIFICATIONS_CRON_EMAILS.md"),
 ]);
 
 const mustContain = (text, values, contract) => {
@@ -166,8 +168,13 @@ mustContain(centerUi, [
   "Corte:",
 ], "financial center UI");
 
-mustContain(vercelConfig, ["/api/cron/process-accounting-outbox-v2", "*/5 * * * *"], "V2 recovery schedule");
+assert.ok(!vercelConfig.includes("/api/cron/process-accounting-outbox-v2"), "Vercel Hobby must not schedule the high-frequency V2 recovery route.");
 mustContain(cronRoute, ["runProtectedCronJob", "processAccountingOutboxV2Job"], "protected V2 cron route");
 mustContain(cronJob, ["processDueAccountingOutboxesV2(20)", "pendingMapping", "pendingData"], "bounded V2 cron worker");
+mustContain(cronOperations, [
+  "/api/cron/process-accounting-outbox-v2",
+  "Cada 5 minutos",
+  "Authorization: Bearer <CRON_SECRET>",
+], "external V2 recovery schedule");
 
 console.log("Accounting automation V2 structural contracts: OK");
