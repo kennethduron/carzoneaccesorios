@@ -1,9 +1,9 @@
 # Plan de implementación POS
 
-Versión: 1.1
-Fecha: 2026-07-21
+Versión: 1.2
+Fecha: 2026-07-28
 
-## Etapa 1 — contrato (esta intervención)
+## Etapa 1 — contrato (completada)
 
 - Contrato funcional, contable y de estados versionado.
 - Divergencias de ISV y mínimo mayorista registradas.
@@ -34,9 +34,20 @@ No se aplicará la migración a producción en esta intervención sin una base l
 
 Después de que existan pedidos POS, las columnas no deben eliminarse; el rollback será deshabilitar entrada POS y conservar metadata/auditoría.
 
-## Etapa 3 recomendada — no iniciar automáticamente
+## Etapa 3 — clientes y reglas comerciales (completada)
 
-La Etapa 3 continúa pausada. Cuando se inicie, `create_internal_sale_v1` debe
+- Espacio `/admin/pos` limitado a clientes; no crea ventas.
+- Búsqueda paginada y enmascarada por identidad comercial.
+- Contexto separado de precio, mayoreo, portal y crédito de solo lectura.
+- Creación idempotente con prevención concurrente de duplicados.
+- Edición con `commercial_version` y control optimista.
+- Precio mayorista resuelto por DB y elegibilidad sobre mercadería final.
+- Acceso exclusivo de `technical_owner`, `business_owner` y `admin`.
+- Contrato y pruebas: `docs/point-of-sale/stage-3-customers.md`.
+
+## Etapa 4 recomendada — pausada
+
+La Etapa 4 continúa pausada. Cuando se inicie, `create_internal_sale_v1` debe
 reutilizar `adjust_sale_terms_v1` para fecha/precios/entrega y
 `calculate_sale_financials_v1` como única fuente monetaria.
 
@@ -69,7 +80,7 @@ Respuesta: `request_key`, resultado, replay, `order_id/number`, `payment_id/stat
 
 Errores seguros: permiso, cliente inexistente/duplicado, crédito inactivo/vencido/insuficiente, stock insuficiente, precio cambió, CAI inválido, pago pendiente, conflicto idempotente y fallo post-commit recuperable. No se exponen nombres de tablas, SQLSTATE internos, stack ni payload sensible.
 
-## Pruebas de Etapa 3
+## Pruebas de Etapa 4
 
 - roles permitidos/denegados en frontend, Server Component, Action y RPC;
 - pedidos web invitados/autenticados/minoristas/mayoristas sin cambios;
@@ -90,7 +101,7 @@ Errores seguros: permiso, cliente inexistente/duplicado, crédito inactivo/venci
 4. Entrega y contraentrega: campos separados, editables y trazables; ambos suman al total, pero no alteran umbrales, condición mayorista ni costo de inventario.
 5. Fiscal: se conserva el tratamiento efectivo actual — ISV incluido sobre mercadería y cargos separados fuera de esa base — sin habilitar automatización contable.
 
-## Bloqueos previos a Etapa 3 o despliegue POS
+## Bloqueos previos a Etapa 4 o despliegue de venta POS
 
 - Unificar en una sola transacción el cálculo SQL/TypeScript de ISV incluido del checkout; hoy existe una divergencia y la normalización posterior no es bloqueante.
 - Definir cuentas contables específicas para entrega y contraentrega y probar sus borradores; hasta entonces todo evento POS con cargos permanece `pending`.

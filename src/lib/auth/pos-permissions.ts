@@ -1,7 +1,15 @@
 import { effectiveRole } from "@/lib/auth/permissions";
 import type { AppRole } from "@/types/auth";
 
-export type PosPermission = "pos:create_sale" | "pos:apply_discount";
+export type PosPermission =
+  | "pos:create_sale"
+  | "pos:apply_discount"
+  | "pos:access"
+  | "pos:customers:search"
+  | "pos:customers:create"
+  | "pos:customers:update"
+  | "customers:read_commercial"
+  | "customers:read_credit";
 
 export const posAuthorizedRoles = ["technical_owner", "business_owner", "admin"] as const satisfies readonly AppRole[];
 

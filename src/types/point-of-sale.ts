@@ -141,3 +141,99 @@ export type PosSafeErrorCode =
   | "POS_PAYMENT_PENDING"
   | "POS_IDEMPOTENCY_CONFLICT"
   | "POS_POST_COMMIT_RECOVERABLE_FAILURE";
+
+export type PosCustomerType = "retail" | "wholesale";
+export type PosWholesaleStatus = "none" | "pending" | "approved" | "rejected" | "suspended";
+export type PosCustomerStatus = "active" | "inactive";
+export type PosCustomerCreditStatus = "not_enabled" | "active" | "on_hold" | "suspended";
+
+export type PosCustomerSearchResult = {
+  customerId: string;
+  displayName: string;
+  businessName: string | null;
+  phoneMasked: string | null;
+  emailMasked: string | null;
+  customerType: PosCustomerType;
+  wholesaleStatus: PosWholesaleStatus;
+  hasPortalAccount: boolean;
+  isBlocked: boolean;
+  customerStatus: PosCustomerStatus;
+  commercialVersion: number;
+};
+
+export type PosCustomerSearchPage = {
+  results: PosCustomerSearchResult[];
+  total: number;
+  nextOffset: number | null;
+};
+
+export type PosCustomerCreditSummary = {
+  status: PosCustomerCreditStatus;
+  enabled: boolean;
+  creditLimit: number;
+  openBalance: number;
+  availableCredit: number;
+  overdueBalance: number;
+  receivableCount: number;
+  canUseCredit: boolean;
+  reason: string;
+  readOnly: true;
+};
+
+export type PosCustomerContext = {
+  customerId: string;
+  displayName: string;
+  businessName: string | null;
+  phone: string;
+  email: string | null;
+  taxId: string | null;
+  address: string | null;
+  city: string | null;
+  commercialNotes: string | null;
+  customerType: PosCustomerType;
+  wholesaleStatus: PosWholesaleStatus;
+  pricingMode: "retail" | "wholesale";
+  pricingReason: string;
+  commercialVersion: number;
+  hasPortalAccount: boolean;
+  customerStatus: PosCustomerStatus;
+  credit: PosCustomerCreditSummary;
+  summary: { orderCount: number; invoiceCount: number; totalBilled: number };
+};
+
+export type PosWholesaleEligibility = {
+  eligible: boolean;
+  thresholdAmount: number;
+  evaluatedAmount: number;
+  missingAmount: number;
+  currentStatus: PosWholesaleStatus;
+  pricingMode: "retail" | "wholesale";
+  recommendedAction: string;
+  commercialVersion: number;
+};
+
+export type PosCustomerWriteInput = {
+  requestKey: string;
+  contactName: string;
+  phone: string;
+  email: string | null;
+  businessName: string | null;
+  taxId: string | null;
+  address: string | null;
+  city: string | null;
+  commercialNotes: string | null;
+};
+
+export type PosCustomerUpdateInput = PosCustomerWriteInput & {
+  customerId: string;
+  expectedCommercialVersion: number;
+};
+
+export type PosCustomerWriteResult = {
+  ok: boolean;
+  status: "created" | "updated" | "duplicate" | "version_conflict";
+  message: string;
+  customerId: string;
+  commercialVersion: number;
+  idempotentReplay: boolean;
+};
