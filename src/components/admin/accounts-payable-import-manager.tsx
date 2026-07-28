@@ -38,7 +38,7 @@ type ConfirmationDraft = {
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant="dark" disabled={pending} className="w-full sm:w-auto">
+    <Button type="submit" variant="dark" disabled={pending} className="min-h-11 w-full sm:w-auto">
       <Upload size={16} />
       {pending ? "Importando" : "Importar Excel"}
     </Button>

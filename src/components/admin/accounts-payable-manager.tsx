@@ -222,7 +222,7 @@ export function AccountsPayableManager({
   }
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-5 [&_button]:min-h-11">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Saldo pendiente" value={formatCurrency(summary.totalPending)} />
         <Metric label="Saldo vencido" value={formatCurrency(summary.totalOverdue)} />

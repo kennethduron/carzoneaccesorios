@@ -255,7 +255,7 @@ function eventDetail(event: FinancialEvent) {
     return {
       title: supplier,
       helper: [
-        documentNumber ? `Documento ${documentNumber}` : null,
+        documentNumber ? `Documento ${shortReference(documentNumber)}` : null,
         paymentMethod ? `M\u00e9todo ${paymentMethod}` : null,
         amount != null ? `Monto ${formatCurrency(amount)}` : null,
         total != null ? `Total ${formatCurrency(total)}` : null,
@@ -355,6 +355,9 @@ export function FinancialCenterManager({
   const searchParams = useSearchParams();
   const [fallbackTab, setFallbackTab] = useState<FinancialCenterTab>(initialTab);
   const [eventFilter, setEventFilter] = useState<"all" | "pending" | "sales_v2" | "cogs_v2" | "supplier_v2" | "drafts">("all");
+  const [outboxStatusFilter, setOutboxStatusFilter] = useState<
+    "all" | NonNullable<FinancialEvent["outbox"]>["status"]
+  >("all");
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account?.id ?? ""])),
   );
@@ -407,6 +410,7 @@ export function FinancialCenterManager({
 
   const configuredLabel = `${formatNumber(financialData.summary.configuredMappings)} de ${formatNumber(financialData.readinessItems.length)}`;
   const visibleEvents = financialData.events.filter((event) => {
+    if (outboxStatusFilter !== "all" && event.outbox?.status !== outboxStatusFilter) return false;
     if (eventFilter === "pending") return ["pending", "failed"].includes(event.status) || ["pending_mapping", "pending_data", "failed"].includes(event.outbox?.status ?? "");
     if (eventFilter === "sales_v2") return event.event_purpose === "sale_recognized" && event.posting_version === "v2";
     if (eventFilter === "cogs_v2") return event.event_purpose === "inventory_cogs" && event.posting_version === "v2";
@@ -765,10 +769,12 @@ export function FinancialCenterManager({
             </p>
           </div>
 
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Filtrar eventos por módulo">
             <button
               type="button"
               onClick={() => setEventFilter("all")}
+              aria-pressed={eventFilter === "all"}
               className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "all" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}
             >
               Todos
@@ -776,14 +782,34 @@ export function FinancialCenterManager({
             <button
               type="button"
               onClick={() => setEventFilter("pending")}
+              aria-pressed={eventFilter === "pending"}
               className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "pending" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}
             >
               Pendientes
             </button>
-            <button type="button" onClick={() => setEventFilter("sales_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "sales_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Ventas V2</button>
-            <button type="button" onClick={() => setEventFilter("cogs_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "cogs_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>COGS V2</button>
-            <button type="button" onClick={() => setEventFilter("supplier_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "supplier_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Proveedores V2</button>
-            <button type="button" onClick={() => setEventFilter("drafts")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "drafts" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Borradores</button>
+            <button type="button" onClick={() => setEventFilter("sales_v2")} aria-pressed={eventFilter === "sales_v2"} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "sales_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Ventas V2</button>
+            <button type="button" onClick={() => setEventFilter("cogs_v2")} aria-pressed={eventFilter === "cogs_v2"} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "cogs_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>COGS V2</button>
+            <button type="button" onClick={() => setEventFilter("supplier_v2")} aria-pressed={eventFilter === "supplier_v2"} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "supplier_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Proveedores V2</button>
+            <button type="button" onClick={() => setEventFilter("drafts")} aria-pressed={eventFilter === "drafts"} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "drafts" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Borradores</button>
+            </div>
+            <label className="grid min-w-0 gap-1 text-xs font-semibold text-black/55 sm:min-w-56">
+              Estado outbox V2
+              <select
+                value={outboxStatusFilter}
+                onChange={(event) => setOutboxStatusFilter(event.target.value as typeof outboxStatusFilter)}
+                className="h-11 min-w-0 rounded-md border border-black/15 bg-white px-3 text-sm text-black"
+              >
+                <option value="all">Todos los estados</option>
+                <option value="queued">En cola</option>
+                <option value="processing">Procesando</option>
+                <option value="pending_mapping">Mapping pendiente</option>
+                <option value="pending_data">Dato pendiente</option>
+                <option value="failed">Fallido</option>
+                <option value="completed">Completado</option>
+                <option value="shadow_validated">Shadow validado</option>
+                <option value="cancelled">Cancelado</option>
+              </select>
+            </label>
           </div>
 
           {hasEvents ? (
@@ -898,7 +924,7 @@ export function FinancialCenterManager({
                         </td>
                                                 <td className="px-3 py-3">{formatHnDateTime(event.created_at)}</td>
                         {canGenerateDrafts || canRetryPaymentEvents ? (
-                          <td className="px-3 py-3">
+                          <td className="min-w-40 px-3 py-3">
                             <div className="flex flex-col gap-2">
                             {canRetryPayment && event.outbox ? (
                               <Button variant="ghost" disabled={isPending} onClick={() => retryPaymentEvent(event.outbox!.id)}>
@@ -907,7 +933,7 @@ export function FinancialCenterManager({
                               </Button>
                             ) : null}
                             {canRetryV2 && event.outbox ? (
-                              <Button variant="ghost" disabled={isPending} onClick={() => retryV2Event(event.outbox!.id)}>
+                              <Button className="min-h-11 whitespace-nowrap [overflow-wrap:normal]" variant="ghost" disabled={isPending} onClick={() => retryV2Event(event.outbox!.id)}>
                                 <RefreshCw size={16} />
                                 Reintentar V2
                               </Button>
