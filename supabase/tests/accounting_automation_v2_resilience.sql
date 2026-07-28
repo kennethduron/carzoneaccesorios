@@ -116,8 +116,9 @@ begin
 end;
 $$;
 
--- Directed repair fixture: null obligation remains pending_dependency; a
--- published L 73,200 liability allows exactly one unpublished L 9,800 draft.
+-- Historical supplier-payment fixture used only to exercise the V2 worker's
+-- sanitized technical-failure/backoff contract. The exact directed repair has
+-- its own opening-balance reconciliation suite.
 update public.accounting_feature_flags
 set state = 'enabled', cutover_at = '2026-07-01 00:00:00-06',
     updated_by = '91000000-0000-4000-8000-000000000001'
@@ -195,85 +196,9 @@ end;
 $$;
 rollback to savepoint technical_failure_contract;
 
-do $$
-declare result jsonb;
-begin
-  result := public.repair_existing_supplier_card_payment_v1(
-    '94000000-0000-4000-8000-000000000003',
-    '94000000-0000-4000-8000-000000000005', null,
-    '91000000-0000-4000-8000-000000000001'
-  );
-  if result->>'status' <> 'pending_dependency'
-    or exists (select 1 from public.journal_entries where source_id = '94000000-0000-4000-8000-000000000005')
-  then raise exception 'Missing original liability did not block the repair: %', result; end if;
-end;
-$$;
-
-insert into public.journal_entries (
-  id, entry_number, entry_date, description, status, source_type, source_id,
-  created_by, updated_by, posted_by, posted_at, metadata
-) values (
-  '94000000-0000-4000-8000-000000000006', 'V2-OBL-73200', date '2026-07-01',
-  'Obligacion original fixture', 'borrador', 'fixture',
-  '94000000-0000-4000-8000-000000000002',
-  '91000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001',
-  null, null, '{}'::jsonb
-);
-insert into public.journal_entry_lines (
-  journal_entry_id, account_id, debit, credit, description, vendor_id
-) values
-  ('94000000-0000-4000-8000-000000000006', '92000000-0000-4000-8000-000000000003', 73200, 0, 'Compra fixture', '94000000-0000-4000-8000-000000000001'),
-  ('94000000-0000-4000-8000-000000000006', '92000000-0000-4000-8000-000000000001', 0, 73200, 'Proveedor fixture', '94000000-0000-4000-8000-000000000001');
-update public.journal_entries
-set status = 'publicada',
-    posted_by = '91000000-0000-4000-8000-000000000001',
-    posted_at = now()
-where id = '94000000-0000-4000-8000-000000000006';
-
-do $$
-declare
-  first_result jsonb;
-  replay_result jsonb;
-  first_entry uuid;
-begin
-  first_result := public.repair_existing_supplier_card_payment_v1(
-    '94000000-0000-4000-8000-000000000003',
-    '94000000-0000-4000-8000-000000000005',
-    '94000000-0000-4000-8000-000000000006',
-    '91000000-0000-4000-8000-000000000001'
-  );
-  replay_result := public.repair_existing_supplier_card_payment_v1(
-    '94000000-0000-4000-8000-000000000003',
-    '94000000-0000-4000-8000-000000000005',
-    '94000000-0000-4000-8000-000000000006',
-    '91000000-0000-4000-8000-000000000001'
-  );
-  first_entry := (first_result->>'journal_entry_id')::uuid;
-
-  if first_result->>'status' <> 'repaired'
-    or replay_result->>'status' <> 'already_repaired'
-    or (replay_result->>'journal_entry_id')::uuid <> first_entry
-    or (select count(*) from public.journal_entries where source_id = '94000000-0000-4000-8000-000000000005') <> 1
-    or (select status from public.journal_entries where id = first_entry) <> 'borrador'
-    or (select entry_date from public.journal_entries where id = first_entry) <> date '2026-07-12'
-    or (select paid_amount from public.accounts_payable where id = '94000000-0000-4000-8000-000000000002') <> 9800
-    or (select status from public.supplier_payments where id = '94000000-0000-4000-8000-000000000003') <> 'paid'
-  then raise exception 'Directed repair was not exact and idempotent: %, %', first_result, replay_result; end if;
-
-  if not exists (
-    select 1 from public.journal_entry_lines
-    where journal_entry_id = first_entry
-      and account_id = '92000000-0000-4000-8000-000000000001'
-      and debit = 9800 and credit = 0
-  ) or not exists (
-    select 1 from public.journal_entry_lines
-    where journal_entry_id = first_entry
-      and account_id = '92000000-0000-4000-8000-000000000002'
-      and debit = 0 and credit = 9800
-  ) then raise exception 'Directed repair used incorrect accounts or amount.'; end if;
-end;
-$$;
+-- The production-specific exact repair is covered by
+-- supplier_payment_opening_balance_repair_hardening.sql.
 
 rollback;
 
-\echo 'Accounting automation V2 resilience and directed-repair contract: OK'
+\echo 'Accounting automation V2 resilience contract: OK'
