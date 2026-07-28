@@ -11,8 +11,8 @@ import { revalidateProductAvailability } from "@/lib/product-availability-cache"
 import {
   dispatchAccountingEvent,
   dispatchCommercialCreditCancellationAccountingEventForOrder,
-  dispatchPaymentReceivedAccountingEventForOrder,
 } from "@/services/accounting/accounting-event-dispatcher";
+import { processAccountingOutboxesForOrderV2 } from "@/services/accounting/accounting-outbox-v2";
 import {
   findLatestReceivablePaymentOutboxId,
   processReceivablePaymentAccountingOutbox,
@@ -192,16 +192,20 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
     force: status === "rejected",
   });
 
-  const accountingResult =
+  const accountingResults =
     status === "approved"
-      ? await dispatchPaymentReceivedAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" })
-      : await dispatchAccountingEvent({
+      ? await processAccountingOutboxesForOrderV2(orderId)
+      : [];
+  const cancellationResult =
+    status === "rejected"
+      ? await dispatchAccountingEvent({
           sourceType: "order",
           sourceId: orderId,
           eventPurpose: "order_cancellation",
           triggeredBy: profile.id,
           route: "/admin/pedidos",
-        });
+        })
+      : null;
   const creditCancellationResult =
     status === "rejected"
       ? await dispatchCommercialCreditCancellationAccountingEventForOrder({ orderId, triggeredBy: profile.id, route: "/admin/pedidos" })
@@ -211,7 +215,12 @@ export async function updateOrderPaymentStatusAction(orderId: string, status: Pa
   revalidatePath("/admin/contabilidad");
   revalidateProductAvailability();
 
-  const accountingWarning = accountingResult.ok && creditCancellationResult?.ok !== false ? "" : " Advertencia: no se pudo registrar el evento contable.";
+  const accountingWarning =
+    accountingResults.some((result) => !result.ok && !["pending_mapping", "pending_data"].includes(result.outboxStatus))
+      || cancellationResult?.ok === false
+      || creditCancellationResult?.ok === false
+      ? " Advertencia: el hecho quedó en la outbox y el borrador contable requiere reintento."
+      : "";
   return {
     ok: true,
     message: (status === "approved" ? "Pago recibido confirmado." : "Pago rechazado. El pedido fue cancelado y la reserva quedó liberada.") + accountingWarning,
@@ -602,19 +611,10 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     },
   });
 
-  const accountingResult =
-    canonicalOrderStatus(transition.status) === "confirmado"
-      ? await dispatchAccountingEvent({
-          sourceType: "order",
-          sourceId: orderId,
-          eventPurpose: "sale_revenue",
-          triggeredBy: profile.id,
-          route: "/admin/pedidos",
-        })
-      : null;
+  const accountingResults = await processAccountingOutboxesForOrderV2(orderId);
 
   revalidateOperationalPaths();
-  if (accountingResult) revalidatePath("/admin/contabilidad");
+  if (accountingResults.length > 0) revalidatePath("/admin/contabilidad");
   revalidateProductAvailability();
 
   await notifyCustomerOfOrderChange({
@@ -623,7 +623,11 @@ export async function updateOrderStatusAction(orderId: string, status: OrderStat
     status: transition.status,
   });
 
-  const accountingWarning = accountingResult?.ok === false ? " Advertencia: no se pudo registrar el evento contable." : "";
+  const accountingWarning = accountingResults.some(
+    (result) => !result.ok && !["pending_mapping", "pending_data"].includes(result.outboxStatus),
+  )
+    ? " Advertencia: el hecho quedó en la outbox y el borrador contable requiere reintento."
+    : "";
   return { ok: true, message: "Estado del pedido actualizado." + accountingWarning };
 }
 

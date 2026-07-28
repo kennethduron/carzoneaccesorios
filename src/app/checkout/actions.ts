@@ -10,7 +10,6 @@ import { revalidateProductAvailability } from "@/lib/product-availability-cache"
 import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { dispatchCommercialCreditAccountingEventForOrder } from "@/services/accounting/accounting-event-dispatcher";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getActiveCreditAccountForUser, getOpenCreditBalance } from "@/services/supabase/credit.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
@@ -701,15 +700,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const admin = getSupabaseAdminClient();
 
-  const accountingResult =
-    paymentMethod === "commercial_credit"
-      ? await dispatchCommercialCreditAccountingEventForOrder({
-          orderId: createdOrder.order_id,
-          triggeredBy: user?.id ?? null,
-          route: "/checkout",
-        })
-      : null;
-
   if (paymentMethod === "card") {
     const { error: cardPaymentMetadataError } = await admin
       .from("payments")
@@ -783,7 +773,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   revalidatePath("/admin/pedidos");
   revalidatePath("/admin/inventario");
   revalidatePath("/admin/reportes");
-  if (accountingResult) revalidatePath("/admin/contabilidad");
   revalidateProductAvailability();
 
   try {
