@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, Edit3, PlusCircle, ReceiptText, Search, X } from "lucide-react";
 import {
@@ -49,7 +49,14 @@ function emptyPayableDraft(): PayableDraft {
 }
 
 function emptyPaymentDraft(): PaymentDraft {
-  return { accounts_payable_id: "", amount: "", payment_method: "", paid_at: todayValue(), notes: "" };
+  return {
+    accounts_payable_id: "",
+    amount: "",
+    payment_method: "",
+    paid_at: todayValue(),
+    notes: "",
+    idempotency_key: globalThis.crypto.randomUUID(),
+  };
 }
 
 function emptyCreditDraft(): CreditDraft {
@@ -63,6 +70,17 @@ function normalize(value: string) {
 function formatDate(value: string | null) {
   if (!value) return "Sin fecha";
   return new Intl.DateTimeFormat("es-HN", { dateStyle: "medium" }).format(new Date(`${value.slice(0, 10)}T00:00:00-06:00`));
+}
+
+function paymentMethodLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return ({
+    cash: "Efectivo",
+    bank_transfer: "Transferencia bancaria",
+    card_credit: "Tarjeta de crédito",
+    card_debit: "Tarjeta de débito",
+    tarjeta: "Tarjeta (método legacy sin clasificación)",
+  } as Record<string, string>)[normalized] ?? value;
 }
 
 function invoiceTotal(draft: InvoiceDraft) {
@@ -97,6 +115,7 @@ export function AccountsPayableManager({
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(emptyPaymentDraft());
   const [creditDraft, setCreditDraft] = useState<CreditDraft>(emptyCreditDraft());
   const [isPending, startTransition] = useTransition();
+  const voidKeysRef = useRef(new Map<string, string>());
 
   const invoiceById = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
 
@@ -171,7 +190,23 @@ export function AccountsPayableManager({
   }
 
   function selectPayableForPayment(payable: AdminAccountsPayable) {
-    setPaymentDraft({ accounts_payable_id: payable.id, amount: payable.balance.toFixed(2), payment_method: "", paid_at: todayValue(), notes: "" });
+    setPaymentDraft({
+      accounts_payable_id: payable.id,
+      amount: payable.balance.toFixed(2),
+      payment_method: "",
+      paid_at: todayValue(),
+      notes: "",
+      idempotency_key: globalThis.crypto.randomUUID(),
+    });
+  }
+
+  function voidPayment(paymentId: string) {
+    const requestKey = voidKeysRef.current.get(paymentId) ?? globalThis.crypto.randomUUID();
+    voidKeysRef.current.set(paymentId, requestKey);
+    runAction(
+      voidSupplierPaymentAction(paymentId, prompt("Motivo de anulación") ?? undefined, requestKey),
+      () => voidKeysRef.current.delete(paymentId),
+    );
   }
 
   function selectPayableForCredit(payableId: string) {
@@ -203,7 +238,7 @@ export function AccountsPayableManager({
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
           <div className="min-w-0 space-y-4">
             {tab === "payables" ? (
-              <PayablesTable payables={visiblePayables} canManage={canManage} isPending={isPending} onEdit={editPayable} onPay={selectPayableForPayment} onCancel={(payable) => runAction(cancelAccountsPayableAction(payable.id))} onVoid={(paymentId) => runAction(voidSupplierPaymentAction(paymentId, prompt("Motivo de anulación") ?? undefined))} />
+              <PayablesTable payables={visiblePayables} canManage={canManage} isPending={isPending} onEdit={editPayable} onPay={selectPayableForPayment} onCancel={(payable) => runAction(cancelAccountsPayableAction(payable.id))} onVoid={voidPayment} />
             ) : tab === "invoices" ? (
               <InvoicesTable invoices={visibleInvoices} canManage={canManage} isPending={isPending} onEdit={editInvoice} onCreatePayable={createPayableFromInvoice} onReceive={(invoice) => runAction(receiveSupplierInvoiceAction(invoice.id))} onCancel={(invoice) => runAction(cancelSupplierInvoiceAction(invoice.id))} />
             ) : (
@@ -235,7 +270,7 @@ export function AccountsPayableManager({
             <FormPanel title="Registrar pago a proveedor">
               <Field label="Cuenta por pagar"><select value={paymentDraft.accounts_payable_id} onChange={(event) => setPaymentDraft({ ...paymentDraft, accounts_payable_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Monto"><Input type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft({ ...paymentDraft, amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de pago"><Input type="date" value={paymentDraft.paid_at ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, paid_at: event.target.value })} disabled={!canManage || isPending} /></Field></div>
-              <Field label="Método de pago"><Input value={paymentDraft.payment_method} onChange={(event) => setPaymentDraft({ ...paymentDraft, payment_method: event.target.value })} placeholder="Transferencia, cheque, efectivo" disabled={!canManage || isPending} /></Field>
+              <Field label="Método de pago"><select value={paymentDraft.payment_method} onChange={(event) => setPaymentDraft({ ...paymentDraft, payment_method: event.target.value as PaymentDraft["payment_method"] })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia bancaria</option><option value="card_credit">Tarjeta de crédito</option><option value="card_debit">Tarjeta de débito</option></select></Field>
               <Field label="Notas"><textarea value={paymentDraft.notes ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
               <Button type="button" onClick={() => runAction(registerSupplierPaymentAction(paymentDraft), () => setPaymentDraft(emptyPaymentDraft()))} disabled={!canManage || isPending}><ReceiptText size={16} />Registrar pago</Button>
             </FormPanel>
@@ -255,7 +290,7 @@ export function AccountsPayableManager({
 }
 
 function PayablesTable({ payables, canManage, isPending, onEdit, onPay, onCancel, onVoid }: { payables: AdminAccountsPayable[]; canManage: boolean; isPending: boolean; onEdit: (payable: AdminAccountsPayable) => void; onPay: (payable: AdminAccountsPayable) => void; onCancel: (payable: AdminAccountsPayable) => void; onVoid: (paymentId: string) => void }) {
-  return <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[980px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Factura</th><th className="px-3 py-2">Vencimiento</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Pagado</th><th className="px-3 py-2">Saldo</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Historial</th><th className="px-3 py-2">Acciones</th></tr></thead><tbody className="divide-y divide-black/10">{payables.map((payable) => <tr key={payable.id}><td className="px-3 py-3 align-top"><p className="font-semibold">{payable.supplier_name}</p><p className="text-xs text-black/50">{payable.purchase_number ?? "Sin compra"}</p></td><td className="px-3 py-3 align-top">{payable.invoice_number ?? "Sin factura"}</td><td className="px-3 py-3 align-top">{formatDate(payable.due_date)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.total_amount)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.paid_amount)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(payable.balance)}</td><td className="px-3 py-3 align-top">{payableLabels[payable.status]}</td><td className="px-3 py-3 align-top"><div className="grid gap-1">{payable.payments.length === 0 ? <span className="text-xs text-black/45">Sin pagos</span> : payable.payments.map((payment) => <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs"><p className="font-semibold">{formatCurrency(payment.amount)} - {paymentLabels[payment.status]}</p><p>{payment.payment_method} - {formatDate(payment.paid_at ?? payment.created_at)}</p>{payment.status === "paid" && canManage ? <button type="button" onClick={() => onVoid(payment.id)} disabled={isPending} className="mt-1 font-semibold text-[#b91c25]">Anular pago</button> : null}</div>)}</div></td><td className="px-3 py-3 align-top"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" onClick={() => onEdit(payable)} disabled={!canManage || isPending || ["paid", "cancelled"].includes(payable.status)}><Edit3 size={16} />Editar</Button><Button type="button" variant="ghost" onClick={() => onPay(payable)} disabled={!canManage || isPending || payable.balance <= 0 || ["paid", "cancelled"].includes(payable.status)}><ReceiptText size={16} />Registrar pago</Button><Button type="button" variant="ghost" onClick={() => onCancel(payable)} disabled={!canManage || isPending || ["paid", "cancelled"].includes(payable.status) || payable.paid_amount > 0}><Ban size={16} />Anular</Button></div></td></tr>)}{payables.length === 0 ? <tr><td colSpan={9} className="px-3 py-6 text-center text-black/55">No hay cuentas por pagar para este filtro.</td></tr> : null}</tbody></table></div>;
+  return <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[980px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Factura</th><th className="px-3 py-2">Vencimiento</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Pagado</th><th className="px-3 py-2">Saldo</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Historial</th><th className="px-3 py-2">Acciones</th></tr></thead><tbody className="divide-y divide-black/10">{payables.map((payable) => <tr key={payable.id}><td className="px-3 py-3 align-top"><p className="font-semibold">{payable.supplier_name}</p><p className="text-xs text-black/50">{payable.purchase_number ?? "Sin compra"}</p></td><td className="px-3 py-3 align-top">{payable.invoice_number ?? "Sin factura"}</td><td className="px-3 py-3 align-top">{formatDate(payable.due_date)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.total_amount)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.paid_amount)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(payable.balance)}</td><td className="px-3 py-3 align-top">{payableLabels[payable.status]}</td><td className="px-3 py-3 align-top"><div className="grid gap-1">{payable.payments.length === 0 ? <span className="text-xs text-black/45">Sin pagos</span> : payable.payments.map((payment) => <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs"><p className="font-semibold">{formatCurrency(payment.amount)} - {paymentLabels[payment.status]}</p><p>{paymentMethodLabel(payment.payment_method)} - {formatDate(payment.paid_at ?? payment.created_at)}</p>{payment.status === "paid" && canManage ? <button type="button" onClick={() => onVoid(payment.id)} disabled={isPending} className="mt-1 font-semibold text-[#b91c25]">Anular pago</button> : null}</div>)}</div></td><td className="px-3 py-3 align-top"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" onClick={() => onEdit(payable)} disabled={!canManage || isPending || ["paid", "cancelled"].includes(payable.status)}><Edit3 size={16} />Editar</Button><Button type="button" variant="ghost" onClick={() => onPay(payable)} disabled={!canManage || isPending || payable.balance <= 0 || ["paid", "cancelled"].includes(payable.status)}><ReceiptText size={16} />Registrar pago</Button><Button type="button" variant="ghost" onClick={() => onCancel(payable)} disabled={!canManage || isPending || ["paid", "cancelled"].includes(payable.status) || payable.paid_amount > 0}><Ban size={16} />Anular</Button></div></td></tr>)}{payables.length === 0 ? <tr><td colSpan={9} className="px-3 py-6 text-center text-black/55">No hay cuentas por pagar para este filtro.</td></tr> : null}</tbody></table></div>;
 }
 
 function InvoicesTable({ invoices, canManage, isPending, onEdit, onCreatePayable, onReceive, onCancel }: { invoices: AdminSupplierInvoice[]; canManage: boolean; isPending: boolean; onEdit: (invoice: AdminSupplierInvoice) => void; onCreatePayable: (invoice: AdminSupplierInvoice) => void; onReceive: (invoice: AdminSupplierInvoice) => void; onCancel: (invoice: AdminSupplierInvoice) => void }) {

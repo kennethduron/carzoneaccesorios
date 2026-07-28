@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
+import { processAccountingOutboxV2 } from "@/services/accounting/accounting-outbox-v2";
 import {
   applyHistoricalPayableImportBatch,
   assignHistoricalPayableImportRow,
@@ -19,6 +20,7 @@ import type { HistoricalPayableImportActionState } from "@/types/accounts-payabl
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type SupplierInvoiceFormInput = {
   id?: string;
@@ -59,9 +61,10 @@ export type SupplierCreditFormInput = {
 export type SupplierPaymentFormInput = {
   accounts_payable_id: string;
   amount: number | string;
-  payment_method: string;
+  payment_method: "cash" | "bank_transfer" | "card_credit" | "card_debit" | "";
   paid_at?: string | null;
   notes?: string | null;
+  idempotency_key: string;
 };
 
 function cleanText(value: unknown) {
@@ -393,23 +396,30 @@ export async function cancelAccountsPayableAction(payableId: string): Promise<Ac
 }
 
 export async function registerSupplierPaymentAction(input: SupplierPaymentFormInput): Promise<ActionResult> {
-  const profile = await requirePermission("payables:manage");
+  await requirePermission("payables:manage");
   const payableId = cleanText(input.accounts_payable_id);
   const amount = toMoney(input.amount);
   const paymentMethod = cleanText(input.payment_method);
   const paidAt = cleanText(input.paid_at);
+  const idempotencyKey = cleanText(input.idempotency_key);
 
   if (!payableId) return { ok: false, message: "Selecciona una cuenta por pagar." };
   if (!Number.isFinite(amount) || amount <= 0) return { ok: false, message: "El pago debe ser mayor que cero." };
-  if (!paymentMethod) return { ok: false, message: "El método de pago es obligatorio." };
+  if (!paymentMethod || !["cash", "bank_transfer", "card_credit", "card_debit"].includes(paymentMethod)) {
+    return { ok: false, message: "Selecciona un método de pago permitido." };
+  }
+  if (!idempotencyKey || !uuidPattern.test(idempotencyKey)) {
+    return { ok: false, message: "La clave segura del pago no es válida. Vuelve a abrir el formulario." };
+  }
 
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("register_supplier_payment", {
+  const { data, error } = await supabase.rpc("register_supplier_payment_v2", {
     target_accounts_payable_id: payableId,
     payment_amount: amount,
-    payment_method: paymentMethod,
-    payment_paid_at: paidAt ? new Date(paidAt).toISOString() : new Date().toISOString(),
+    supplier_payment_method: paymentMethod,
+    payment_paid_date: paidAt,
     payment_notes: cleanText(input.notes),
+    request_key: idempotencyKey,
   });
 
   if (error) {
@@ -417,24 +427,41 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  await writeAuditLog({ tableName: "supplier_payments", recordId: row?.payment_id ?? null, action: "supplier_payments.pay", newData: { accounts_payable_id: payableId, amount } });
-  if (row?.payment_id) {
-    await dispatchAccountingEvent({ sourceType: "supplier_payment", sourceId: row.payment_id, eventPurpose: "supplier_payment", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
-  }
+  const accountingResult = row?.outbox_id
+    ? await processAccountingOutboxV2({ outboxId: row.outbox_id })
+    : null;
   revalidatePath("/admin/cuentas-por-pagar");
-  return { ok: true, message: "Pago a proveedor registrado." };
+  revalidatePath("/admin/contabilidad");
+  const accountingMessage = accountingResult?.draftStatus === "borrador"
+    ? " Se creó la partida en borrador para revisión manual."
+    : accountingResult?.outboxStatus === "pending_mapping"
+      ? " La contabilidad quedó pendiente por un mapping faltante."
+      : accountingResult?.outboxStatus === "pending_data"
+        ? " La contabilidad quedó pendiente por un dato requerido."
+        : accountingResult?.ok === false
+          ? " El pago quedó protegido por la outbox y el worker puede reintentarse."
+          : "";
+  return {
+    ok: true,
+    message: `${row?.idempotent_replay ? "Pago recuperado sin duplicarlo." : "Pago a proveedor registrado."}${accountingMessage}`,
+  };
 }
 
-export async function voidSupplierPaymentAction(paymentId: string, notes?: string): Promise<ActionResult> {
-  const profile = await requirePermission("payables:manage");
+export async function voidSupplierPaymentAction(paymentId: string, notes?: string, requestKey?: string): Promise<ActionResult> {
+  await requirePermission("payables:manage");
   const id = cleanText(paymentId);
+  const idempotencyKey = cleanText(requestKey);
 
   if (!id) return { ok: false, message: "Selecciona un pago valido." };
+  if (!idempotencyKey || !uuidPattern.test(idempotencyKey)) {
+    return { ok: false, message: "La clave segura de anulación no es válida." };
+  }
 
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("void_supplier_payment", {
+  const { data, error } = await supabase.rpc("void_supplier_payment_v2", {
     target_supplier_payment_id: id,
     void_notes: cleanText(notes),
+    request_key: idempotencyKey,
   });
 
   if (error) {
@@ -442,10 +469,12 @@ export async function voidSupplierPaymentAction(paymentId: string, notes?: strin
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  await writeAuditLog({ tableName: "supplier_payments", recordId: id, action: "supplier_payments.void", newData: { accounts_payable_id: row?.accounts_payable_id ?? null } });
-  await dispatchAccountingEvent({ sourceType: "supplier_payment", sourceId: id, eventPurpose: "supplier_payment_cancelled", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
+  if (row?.compensation_outbox_id) {
+    await processAccountingOutboxV2({ outboxId: row.compensation_outbox_id });
+  }
   revalidatePath("/admin/cuentas-por-pagar");
-  return { ok: true, message: "Pago anulado." };
+  revalidatePath("/admin/contabilidad");
+  return { ok: true, message: row?.idempotent_replay ? "La anulación ya había sido aplicada." : "Pago anulado." };
 }
 
 export async function registerSupplierCreditAction(input: SupplierCreditFormInput): Promise<ActionResult> {
