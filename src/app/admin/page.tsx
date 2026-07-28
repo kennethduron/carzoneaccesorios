@@ -81,6 +81,7 @@ const moduleGroups = [
     description: "Seguimiento de cobros, facturas y reportes.",
     defaultOpen: true,
     modules: [
+      { title: "Punto de Venta", href: "/admin/pos", description: "SelecciÃ³n de clientes y reglas comerciales. Productos, carrito y cobro siguen pendientes.", permissions: ["pos:access"] },
       { title: "Pedidos por cobrar", href: "/admin/pedidos?task=pending_payments", description: "Pagos pendientes de confirmar.", permissions: ["payments:confirm", "payments:manage"] },
       { title: "Facturas pendientes", href: "/admin/facturas?task=pending_invoices", description: "Facturas listas para revisar o emitir.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes", href: "/admin/reportes", description: "Reportes contables, filtros, Excel, CSV y PDF.", permissions: ["reports:read"] },

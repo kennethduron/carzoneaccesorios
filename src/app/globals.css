@@ -151,3 +151,21 @@ textarea:focus-visible {
     animation: none;
   }
 }
+
+.pos-input {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid rgb(0 0 0 / 0.15);
+  border-radius: 0.5rem;
+  background: white;
+  padding-inline: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.pos-input:focus {
+  border-color: #e4252c;
+  box-shadow: 0 0 0 3px rgb(228 37 44 / 0.15);
+}

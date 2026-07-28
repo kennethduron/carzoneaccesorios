@@ -1,9 +1,9 @@
 # Contrato funcional POS — Fase 1
 
-Versión: 1.1
-Fecha: 2026-07-21
+Versión: 1.2
+Fecha: 2026-07-28
 Estado: contrato de diseño; no habilita ventas POS
-Ámbito: `create_internal_sale_v1`, a implementarse y probarse en la Etapa 3
+Ámbito: `create_internal_sale_v1`, a implementarse y probarse en la Etapa 4
 
 Dependencia compartida ya disponible: el futuro POS debe reutilizar
 `adjust_sale_terms_v1` y `calculate_sale_financials_v1`, sin duplicar sus reglas.
@@ -73,7 +73,7 @@ Los precios visibles incluyen ISV. Para una base gravada `G` y tasa `r`, el cont
 - ISV incluido: `round(G - subtotal_antes_impuesto, 2)`;
 - total de producto: `G`; nunca `G + 15%`.
 
-Hallazgo actual: el SQL histórico llegó a calcular `subtotal + tax`, mientras `applyIncludedTaxFinancialsToOrder` normaliza después del commit desde TypeScript y captura errores sin invalidar el pedido. Esto puede dejar temporal o permanentemente diferencias entre RPC, pedido, pago y factura borrador. La Etapa 3 debe mover el cálculo único de ISV incluido al RPC atómico. Esta fase no modifica checkout.
+Hallazgo actual: el SQL histórico llegó a calcular `subtotal + tax`, mientras `applyIncludedTaxFinancialsToOrder` normaliza después del commit desde TypeScript y captura errores sin invalidar el pedido. Esto puede dejar temporal o permanentemente diferencias entre RPC, pedido, pago y factura borrador. La Etapa 4 debe mover el cálculo único de ISV incluido al RPC atómico. Esta fase no modifica checkout.
 
 ## 6. Descuentos
 
