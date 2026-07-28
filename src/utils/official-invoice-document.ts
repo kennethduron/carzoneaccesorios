@@ -1,6 +1,10 @@
 import type { AdditionalFee } from "@/types/financial";
 import { additionalFeesTotal, roundMoney } from "@/utils/financial-summary";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
+import {
+  officialInvoiceLogoLayout,
+  resolveOfficialInvoiceLogoSrc,
+} from "@/utils/official-invoice-logo";
 import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -52,12 +56,6 @@ export type OfficialInvoiceInput = {
   notes?: string | null;
 };
 
-const invoiceLogoPath = "/brand/car-zone-logo-nav.png";
-const legacySquareLogoSources = [
-  "/brand/car-zone-logo.jpeg",
-  "fiscal-logo-1779667712816-e5d6974a.webp",
-];
-
 const units = [
   "",
   "uno",
@@ -85,6 +83,7 @@ const hundreds = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "q
 
 export const officialInvoiceCss = `
   .cz-official-invoice-host {
+    box-sizing: border-box;
     width: 100%;
     overflow-x: auto;
     background: #e5e5e5;
@@ -122,15 +121,26 @@ export const officialInvoiceCss = `
     align-items: start;
   }
 
+  .cz-official-logo-container {
+    width: ${officialInvoiceLogoLayout.maxWidthMm}mm;
+    max-width: ${officialInvoiceLogoLayout.maxWidthMm}mm;
+    height: ${officialInvoiceLogoLayout.maxHeightMm}mm;
+    max-height: ${officialInvoiceLogoLayout.maxHeightMm}mm;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+    margin: ${officialInvoiceLogoLayout.htmlMarginTopMm}mm 0 ${officialInvoiceLogoLayout.htmlMarginBottomMm}mm;
+  }
+
   .cz-official-logo {
     display: block;
     width: auto;
     height: auto;
-    max-width: 68mm;
-    max-height: 30mm;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
     object-position: left center;
-    margin: 5mm 0 17mm 7mm;
   }
 
   .cz-official-company {
@@ -356,9 +366,11 @@ export const officialInvoiceCss = `
       gap: 12px;
     }
 
-    .cz-official-logo {
-      width: 128px;
-      max-height: 64px;
+    .cz-official-logo-container {
+      width: 100%;
+      max-width: 100%;
+      height: ${officialInvoiceLogoLayout.mobileMaxHeightPx}px;
+      max-height: ${officialInvoiceLogoLayout.mobileMaxHeightPx}px;
       margin: 0 0 12px;
     }
 
@@ -578,10 +590,7 @@ export function statusLabel(status: string) {
 }
 
 export function getOfficialInvoiceLogoSrc(invoice: OfficialInvoiceInput) {
-  const configuredLogo = invoice.companyLogoUrl?.trim();
-  if (!configuredLogo) return invoiceLogoPath;
-
-  return legacySquareLogoSources.some((source) => configuredLogo.includes(source)) ? invoiceLogoPath : configuredLogo;
+  return resolveOfficialInvoiceLogoSrc(invoice.companyLogoUrl);
 }
 
 function formatOfficialDate(value: string | null | undefined) {
@@ -655,7 +664,11 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
       <article class="cz-official-invoice" aria-label="Factura ${escapeHtml(invoice.invoiceNumber)}">
         <header class="cz-official-header">
           <div>
-            ${logoSrc ? `<img class="cz-official-logo" src="${escapeHtml(logoSrc)}" alt="Car Zone Accesorios" />` : ""}
+            ${
+              logoSrc
+                ? `<div class="cz-official-logo-container"><img class="cz-official-logo" src="${escapeHtml(logoSrc)}" alt="Car Zone Accesorios" /></div>`
+                : ""
+            }
             <section class="cz-official-company">
               <h1 class="cz-official-company-name">${escapeHtml(companyName)}</h1>
               <div class="cz-official-company-lines">

@@ -2,7 +2,6 @@
 
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
-import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
@@ -30,6 +29,10 @@ import {
   fiscalLogoTooManyPixelsMessage,
   isAllowedFiscalLogoMimeType,
 } from "@/utils/fiscal-logo-rules";
+import {
+  FiscalLogoNormalizationError,
+  normalizeFiscalLogo,
+} from "@/utils/fiscal-logo-normalization";
 
 type FiscalLogoMutation = {
   ok: boolean;
@@ -312,41 +315,27 @@ async function uploadFiscalLogo(file: File): Promise<FiscalLogoMutation> {
   let optimizedBuffer: Buffer;
   let width = 0;
   let height = 0;
+  let normalizedWidth = 0;
+  let normalizedHeight = 0;
 
   try {
-    const metadata = await sharp(buffer, { animated: false, limitInputPixels: fiscalLogoMaxPixels + 1 })
-      .rotate()
-      .metadata();
-    width = metadata.width ?? 0;
-    height = metadata.height ?? 0;
-    const format = metadata.format?.toLowerCase();
-
-    if (!format || !["jpeg", "jpg", "png", "webp"].includes(format)) {
-      return { ok: false, message: fiscalLogoInvalidFormatMessage };
-    }
-
-    if (!width || !height) {
-      return { ok: false, message: fiscalLogoInvalidFormatMessage };
-    }
-
-    if (width * height > fiscalLogoMaxPixels) {
-      return { ok: false, message: fiscalLogoTooManyPixelsMessage };
-    }
-
-    optimizedBuffer = await sharp(buffer, { animated: false })
-      .rotate()
-      .resize({
-        width: fiscalLogoMaxDisplayWidth,
-        fit: "inside",
-        withoutEnlargement: true,
-      })
-      .webp({ quality: 86, effort: 5 })
-      .toBuffer();
+    const normalized = await normalizeFiscalLogo(buffer, {
+      maxInputPixels: fiscalLogoMaxPixels,
+      maxOutputWidth: fiscalLogoMaxDisplayWidth,
+    });
+    optimizedBuffer = normalized.buffer;
+    width = normalized.originalWidth;
+    height = normalized.originalHeight;
+    normalizedWidth = normalized.finalWidth;
+    normalizedHeight = normalized.finalHeight;
   } catch (error) {
-    const message =
-      error instanceof Error && error.message.toLowerCase().includes("pixel")
+    const message = error instanceof FiscalLogoNormalizationError
+      ? error.code === "too_many_pixels"
         ? fiscalLogoTooManyPixelsMessage
-        : fiscalLogoInvalidFormatMessage;
+        : error.code === "empty_image" || error.code === "unsafe_crop"
+          ? error.message
+          : fiscalLogoInvalidFormatMessage
+      : fiscalLogoInvalidFormatMessage;
     return { ok: false, message };
   }
 
@@ -367,6 +356,7 @@ async function uploadFiscalLogo(file: File): Promise<FiscalLogoMutation> {
           original_mime: file.type,
           original_pixels: String(width * height),
           optimized_bytes: String(optimizedBuffer.length),
+          normalized_dimensions: `${normalizedWidth}x${normalizedHeight}`,
         },
       },
       (error, uploadResult) => {

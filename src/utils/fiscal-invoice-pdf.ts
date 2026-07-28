@@ -13,6 +13,7 @@ import {
   type OfficialInvoiceInput,
 } from "@/utils/official-invoice-document";
 import { formatHnDateTime } from "@/utils/format";
+import { officialInvoiceLogoLayout } from "@/utils/official-invoice-logo";
 
 export type FiscalInvoicePdfItem = OfficialInvoiceInput["items"][number];
 export type FiscalInvoicePdfInput = OfficialInvoiceInput;
@@ -102,8 +103,8 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
   const address = valueOrDash(invoice.companyAddress);
 
   if (logoDataUrl) {
-    const logoMaxWidth = 68;
-    const logoMaxHeight = 30;
+    const logoMaxWidth = officialInvoiceLogoLayout.maxWidthMm;
+    const logoMaxHeight = officialInvoiceLogoLayout.maxHeightMm;
     let logoSize = await getImageSize(logoDataUrl);
     if (!logoSize) {
       try {
@@ -116,17 +117,31 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
 
     if (logoSize) {
       const fittedLogo = containSize(logoSize.width, logoSize.height, logoMaxWidth, logoMaxHeight);
-      doc.addImage(logoDataUrl, imageFormatFromDataUrl(logoDataUrl), 17, 18, fittedLogo.width, fittedLogo.height, undefined, "FAST");
+      const logoRight = officialInvoiceLogoLayout.pdfX + fittedLogo.width;
+      const maximumLogoRight = officialInvoiceLogoLayout.pdfInvoiceBoxX - officialInvoiceLogoLayout.pdfMinimumGap;
+      if (logoRight <= maximumLogoRight) {
+        doc.addImage(
+          logoDataUrl,
+          imageFormatFromDataUrl(logoDataUrl),
+          officialInvoiceLogoLayout.pdfX,
+          officialInvoiceLogoLayout.pdfY,
+          fittedLogo.width,
+          fittedLogo.height,
+          undefined,
+          "FAST",
+        );
+      }
     }
   }
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text(companyName, marginX, 72);
+  doc.text(companyName, marginX, officialInvoiceLogoLayout.pdfCompanyNameY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.1);
-  let lineY = 77;
+  let lineY: number = officialInvoiceLogoLayout.pdfCompanyLinesY;
+  const companyTextWidth = officialInvoiceLogoLayout.pdfInvoiceBoxX - marginX - officialInvoiceLogoLayout.pdfMinimumGap;
   const companyLines = [
     `RTN: ${companyRtn}`,
     `CAI: ${valueOrDash(invoice.cai)}`,
@@ -138,11 +153,17 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
   ];
   companyLines.forEach((line, index) => {
     doc.setFont("helvetica", index === 0 ? "bold" : "normal");
-    lineY = drawWrappedLine(doc, line, marginX, lineY, 122, 3.5);
+    lineY = drawWrappedLine(doc, line, marginX, lineY, companyTextWidth, 3.5);
   });
 
   doc.setFillColor(...black);
-  doc.rect(130, 14, 52, 12, "F");
+  doc.rect(
+    officialInvoiceLogoLayout.pdfInvoiceBoxX,
+    14,
+    officialInvoiceLogoLayout.pdfInvoiceBoxWidth,
+    12,
+    "F",
+  );
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
