@@ -17,6 +17,10 @@
       "schedule": "0 15 * * *"
     },
     {
+      "path": "/api/cron/process-accounting-outbox-v2",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/backups/email",
       "schedule": "0 8 * * 1"
     }
