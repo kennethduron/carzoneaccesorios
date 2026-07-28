@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useMemo, useState, useTransition } from "react";
-import { AlertTriangle, Check, ChevronDown, History, PackagePlus, Save, Search } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { AlertTriangle, History, PackagePlus, Save } from "lucide-react";
 import { createInventoryMovementAction } from "@/app/admin/inventario/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
+import { InventoryProductCombobox } from "@/components/admin/inventory-product-combobox";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
@@ -14,11 +15,11 @@ import type {
   InventoryMovementType,
   InventoryProductOption,
 } from "@/types/inventory";
+import type { InventoryProductSearchResult } from "@/types/admin-search";
 import { formatHnDateTime } from "@/utils/format";
 
 type InventoryManagerProps = {
   products: InventoryProductOption[];
-  productOptions: InventoryProductOption[];
   movements: InventoryMovementRow[];
   summary: AdminInventorySummary;
   productQuery: string;
@@ -61,7 +62,6 @@ function inventoryProductState(product: InventoryProductOption) {
 
 export function InventoryManager({
   products,
-  productOptions,
   movements,
   summary,
   productQuery,
@@ -69,6 +69,7 @@ export function InventoryManager({
   canManageInventory,
 }: InventoryManagerProps) {
   const [movement, setMovement] = useState<InventoryMovementInput>(emptyMovement);
+  const [selectedMovementProduct, setSelectedMovementProduct] = useState<InventoryProductSearchResult | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
@@ -82,6 +83,7 @@ export function InventoryManager({
       if (result.ok) {
         toast.success(result.message || "Movimiento de inventario registrado correctamente.");
         setMovement(emptyMovement);
+        setSelectedMovementProduct(null);
       } else {
         toast.error(result.message || "No se pudo registrar el movimiento de inventario.");
       }
@@ -95,8 +97,8 @@ export function InventoryManager({
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Productos encontrados" value={summary.productsTotal.toLocaleString("es-HN")} />
         <Metric
-          label={canManageInventory ? "Opciones cargadas" : "Bajo mínimo"}
-          value={(canManageInventory ? summary.productOptionsLoaded : summary.lowStockProducts).toLocaleString("es-HN")}
+          label={canManageInventory ? "Bajo mínimo" : "Bajo mínimo"}
+          value={summary.lowStockProducts.toLocaleString("es-HN")}
         />
         <Metric label="Reservas activas" value={summary.activeReservations.toLocaleString("es-HN")} />
         <Metric label="Productos sin stock" value={summary.outOfStockProducts.toLocaleString("es-HN")} />
@@ -121,10 +123,14 @@ export function InventoryManager({
           <div className="grid gap-3">
             <InventorySearchForm productQuery={productQuery} activeFilter={activeFilter} managementMode />
 
-            <ProductCombobox
-              products={productOptions}
+            <InventoryProductCombobox
               value={movement.product_id}
-              onChange={(productId) => setMovement((current) => ({ ...current, product_id: productId }))}
+              selectedOption={selectedMovementProduct}
+              disabled={isPending}
+              onChange={(product) => {
+                setSelectedMovementProduct(product);
+                setMovement((current) => ({ ...current, product_id: product?.id ?? "" }));
+              }}
             />
             <label className="block">
               <span className="mb-1 block text-xs font-medium uppercase text-black/50">Tipo</span>
@@ -424,152 +430,8 @@ function InventorySearchForm({
       <Button type="submit" variant="ghost">
         Buscar inventario
       </Button>
-      {managementMode ? (
-        <p className="text-xs text-black/50">
-          Se cargan hasta 1000 opciones para registrar movimientos. Usa búsqueda si no ves el producto.
-        </p>
-      ) : null}
+      {managementMode ? <p className="text-xs text-black/50">El selector consulta el catálogo autorizado en páginas de 25 resultados.</p> : null}
     </form>
-  );
-}
-
-function normalizeSearchText(value: string | null | undefined) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function productSearchText(product: InventoryProductOption) {
-  return normalizeSearchText([product.sku, product.internal_code, product.name, product.brand, product.category_name].filter(Boolean).join(" "));
-}
-
-function productLabel(product: InventoryProductOption) {
-  const code = product.internal_code && product.internal_code !== product.sku ? ` / ${product.internal_code}` : "";
-  return `${product.sku}${code} - ${product.name}`;
-}
-
-function ProductCombobox({
-  products,
-  value,
-  onChange,
-}: {
-  products: InventoryProductOption[];
-  value: string;
-  onChange: (productId: string) => void;
-}) {
-  const inputId = useId();
-  const listboxId = useId();
-  const [query, setQuery] = useState("");
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const selectedProduct = products.find((product) => product.id === value) ?? null;
-  const normalizedQuery = normalizeSearchText(query);
-  const filteredProducts = useMemo(() => {
-    if (!normalizedQuery) return products.slice(0, 12);
-    return products.filter((product) => productSearchText(product).includes(normalizedQuery)).slice(0, 12);
-  }, [normalizedQuery, products]);
-
-  function selectProduct(product: InventoryProductOption) {
-    onChange(product.id);
-    setQuery("");
-    setIsOpen(false);
-    setActiveIndex(0);
-  }
-
-  return (
-    <div className="relative">
-      <label htmlFor={inputId} className="mb-1 block text-xs font-medium uppercase text-black/50">
-        Producto
-      </label>
-      <div className="relative">
-        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/40" />
-        <input
-          id={inputId}
-          type="text"
-          role="combobox"
-          aria-autocomplete="list"
-          aria-expanded={isOpen}
-          aria-controls={listboxId}
-          aria-activedescendant={isOpen && filteredProducts[activeIndex] ? `${listboxId}-${filteredProducts[activeIndex].id}` : undefined}
-          value={isOpen || query ? query : selectedProduct ? productLabel(selectedProduct) : ""}
-          placeholder="Buscar por SKU, codigo, nombre, marca o categoria"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setIsOpen(true);
-            setActiveIndex(0);
-          }}
-          onFocus={() => setIsOpen(true)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setIsOpen(true);
-              setActiveIndex((current) => Math.min(current + 1, Math.max(filteredProducts.length - 1, 0)));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActiveIndex((current) => Math.max(current - 1, 0));
-            } else if (event.key === "Enter" && isOpen && filteredProducts[activeIndex]) {
-              event.preventDefault();
-              selectProduct(filteredProducts[activeIndex]);
-            } else if (event.key === "Escape") {
-              setIsOpen(false);
-              setQuery("");
-            }
-          }}
-          className="w-full rounded-md border border-black/10 bg-white py-2 pl-9 pr-10 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15"
-        />
-        <button
-          type="button"
-          aria-label={isOpen ? "Cerrar lista de productos" : "Abrir lista de productos"}
-          onClick={() => setIsOpen((current) => !current)}
-          className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md text-black/50 hover:bg-black/5"
-        >
-          <ChevronDown size={16} />
-        </button>
-      </div>
-      {selectedProduct ? (
-        <p className="mt-1 text-xs text-black/55">
-          Seleccionado: {productLabel(selectedProduct)} ({selectedProduct.available_stock} disponibles)
-        </p>
-      ) : (
-        <p className="mt-1 text-xs text-black/45">Escribe para filtrar las opciones cargadas.</p>
-      )}
-      {isOpen ? (
-        <div
-          id={listboxId}
-          role="listbox"
-          className="absolute z-20 mt-2 max-h-72 w-full overflow-y-auto rounded-md border border-black/10 bg-white p-1 text-sm shadow-xl shadow-black/10"
-        >
-          {filteredProducts.length > 0 ? (
-            filteredProducts.map((product, index) => (
-              <button
-                id={`${listboxId}-${product.id}`}
-                key={product.id}
-                type="button"
-                role="option"
-                aria-selected={product.id === value}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectProduct(product)}
-                className={`flex w-full min-w-0 items-start justify-between gap-3 rounded-md px-3 py-2 text-left ${
-                  index === activeIndex ? "bg-[#fff1f2]" : "hover:bg-[#f4f4f5]"
-                }`}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-semibold">{productLabel(product)}</span>
-                  <span className="mt-0.5 block truncate text-xs text-black/50">
-                    {[product.brand, product.category_name, `${product.available_stock} disponibles`].filter(Boolean).join(" · ")}
-                  </span>
-                </span>
-                {product.id === value ? <Check size={16} className="mt-1 shrink-0 text-[#166534]" /> : null}
-              </button>
-            ))
-          ) : (
-            <p className="px-3 py-3 text-sm text-black/55">No hay productos cargados que coincidan.</p>
-          )}
-        </div>
-      ) : null}
-    </div>
   );
 }
 

@@ -4,13 +4,15 @@ import { readFile } from "node:fs/promises";
 const migrationPath = "supabase/migrations/202607180001_product_stock_automation_and_purchase_inventory.sql";
 const purchaseActionsPath = "src/app/admin/compras/actions.ts";
 const purchaseServicePath = "src/services/supabase/purchases.service.ts";
+const purchaseSearchRoutePath = "src/app/api/admin/purchases/products/search/route.ts";
 const productActionsPath = "src/app/admin/productos/actions.ts";
 const cachePath = "src/lib/product-availability-cache.ts";
 
-const [migration, purchaseActions, purchaseService, productActions, cache] = await Promise.all([
+const [migration, purchaseActions, purchaseService, purchaseSearchRoute, productActions, cache] = await Promise.all([
   readFile(migrationPath, "utf8"),
   readFile(purchaseActionsPath, "utf8"),
   readFile(purchaseServicePath, "utf8"),
+  readFile(purchaseSearchRoutePath, "utf8"),
   readFile(productActionsPath, "utf8"),
   readFile(cachePath, "utf8"),
 ]);
@@ -152,7 +154,9 @@ assert.match(purchaseActions, /\.rpc\("confirm_purchase_locked"/);
 assert.match(purchaseActions, /\.rpc\("cancel_purchase_with_inventory"/);
 assert.match(purchaseActions, /Compra registrada correctamente\. El inventario fue actualizado\./);
 assert.doesNotMatch(purchaseService, /\.eq\("active", true\)/);
-assert.match(purchaseService, /auto_disabled_by_stock/);
+assert.match(purchaseSearchRoute, /p_include_inactive: true/);
+assert.match(purchaseSearchRoute, /is_active/);
+assert.match(purchaseSearchRoute, /status/);
 
 assert.match(productActions, /product\.manually_activated/);
 assert.match(productActions, /product\.manually_deactivated/);

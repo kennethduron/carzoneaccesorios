@@ -40,7 +40,7 @@ assert.match(inventoryPage, /requirePermission\("admin:access"\)/);
 assert.match(inventoryPage, /const canManageInventory = hasEffectivePermission[\s\S]*"inventory:manage"/);
 assert.match(inventoryPage, /const canReadInventory =[\s\S]*"inventory:read"/);
 assert.match(inventoryPage, /if \(!canReadInventory\) \{[\s\S]*redirect\("\/sin-permiso"\)/);
-assert.match(inventoryPage, /includeManagementOptions: canManageInventory/);
+assert.doesNotMatch(inventoryPage, /includeManagementOptions/);
 assert.match(inventoryPage, /canManageInventory=\{canManageInventory\}/);
 
 assert.match(inventoryManager, /canManageInventory: boolean/);
@@ -49,15 +49,16 @@ assert.match(inventoryManager, /Acceso de consulta\. Las entradas y cambios de i
 assert.match(inventoryManager, /\{canManageInventory \? \([\s\S]*Registrar movimiento/);
 assert.match(inventoryManager, /<InventorySearchForm productQuery=\{productQuery\} activeFilter=\{activeFilter\} \/>/);
 assert.match(inventoryManager, /Buscar inventario/);
-assert.match(inventoryManager, /canManageInventory \? "Opciones cargadas" : "Bajo mínimo"/);
+assert.match(inventoryManager, /label=\{canManageInventory/);
 assert.match(inventoryManager, /Stock total/);
 assert.match(inventoryManager, /Reservado/);
 assert.match(inventoryManager, /Disponible/);
 assert.match(inventoryManager, /Stock minimo/);
 assert.match(inventoryManager, /Historial/);
 
-assert.match(inventoryService, /includeManagementOptions\?: boolean/);
-assert.match(inventoryService, /filters\.includeManagementOptions[\s\S]*\.limit\(1000\)[\s\S]*Promise\.resolve\(\{ data: \[\]/);
+assert.doesNotMatch(inventoryService, /includeManagementOptions/);
+assert.match(inventoryService, /\.limit\(50\)/);
+assert.match(inventoryManager, /<InventoryProductCombobox/);
 assert.match(inventoryService, /movementPageSize/);
 assert.match(inventoryService, /\.range\(movementFrom, movementTo\)/);
 

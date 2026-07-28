@@ -8,15 +8,18 @@ import {
   recalculateJournalDraftFromSourceAction,
   updateJournalDraftAction,
 } from "@/app/admin/contabilidad/actions";
+import { AccountingAccountCombobox } from "@/components/admin/accounting-account-combobox";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { JournalEntryEditData, JournalEntryLineInput } from "@/types/accounting";
+import type { AccountingAccountSearchResult } from "@/types/admin-search";
 import { formatHnDateTime } from "@/utils/format";
 
 type EditableLine = Omit<JournalEntryLineInput, "debit" | "credit"> & {
   client_id: string;
   debit: string;
   credit: string;
+  account: AccountingAccountSearchResult | null;
 };
 
 function newClientId() {
@@ -31,6 +34,7 @@ function emptyLine(): EditableLine {
     account_id: "",
     debit: "0",
     credit: "0",
+    account: null,
     description: "",
     customer_id: null,
     vendor_id: null,
@@ -45,6 +49,16 @@ function initialLines(data: JournalEntryEditData): EditableLine[] {
     account_id: line.account_id,
     debit: String(line.debit),
     credit: String(line.credit),
+    account: line.account ? {
+      id: line.account.id,
+      code: line.account.code,
+      name: line.account.name,
+      accountType: line.account.type,
+      normalBalance: ["asset", "cost", "expense"].includes(line.account.type) ? "debit" : "credit",
+      isActive: line.account.is_active,
+      parentId: null,
+      isSelectable: line.account.is_active,
+    } : null,
     description: line.description ?? "",
     customer_id: line.customer_id,
     vendor_id: line.vendor_id,
@@ -242,12 +256,12 @@ export function JournalEntryEditor({ data }: { data: JournalEntryEditData }) {
                 {lines.map((line, index) => (
                   <article key={line.client_id} className="rounded-xl border border-black/10 p-3 sm:p-4">
                     <div className="grid gap-3 xl:grid-cols-[minmax(240px,1.2fr)_minmax(200px,1fr)_140px_140px_44px]">
-                      <label className="text-xs font-semibold uppercase text-black/45">Cuenta
-                        <select className="mt-2 h-11 w-full rounded-lg border border-black/15 bg-white px-3 text-sm disabled:opacity-60" value={line.account_id} disabled={!isDraft || isPending} onChange={(event) => updateLine(line.client_id, "account_id", event.target.value)}>
-                          <option value="">Seleccionar cuenta</option>
-                          {data.activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name}</option>)}
-                        </select>
-                      </label>
+                      <AccountingAccountCombobox
+                        value={line.account_id}
+                        selectedOption={line.account}
+                        disabled={!isDraft || isPending}
+                        onChange={(account) => setLines((current) => current.map((item) => item.client_id === line.client_id ? { ...item, account_id: account?.id ?? "", account } : item))}
+                      />
                       <label className="text-xs font-semibold uppercase text-black/45">Descripción
                         <Input className="mt-2" value={line.description ?? ""} maxLength={500} disabled={!isDraft || isPending} onChange={(event) => updateLine(line.client_id, "description", event.target.value)} />
                       </label>

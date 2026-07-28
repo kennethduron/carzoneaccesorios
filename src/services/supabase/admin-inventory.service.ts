@@ -8,12 +8,10 @@ export type AdminInventoryFilters = {
   filter?: "low_stock" | null;
   movementPage?: number;
   movementPageSize?: number;
-  includeManagementOptions?: boolean;
 };
 
 export type AdminInventorySummary = {
   productsTotal: number;
-  productOptionsLoaded: number;
   lowStockProducts: number;
   outOfStockProducts: number;
   activeReservations: number;
@@ -128,24 +126,13 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
           .returns<InventoryProductOption[]>()
       : productsQuery.returns<ProductOptionQueryRow[]>();
 
-  const productOptionsRequest = filters.includeManagementOptions
-    ? supabase
-        .from("products")
-        .select(productOptionSelect)
-        .order("name", { ascending: true })
-        .limit(1000)
-        .returns<ProductOptionQueryRow[]>()
-    : Promise.resolve({ data: [] as ProductOptionQueryRow[], error: null });
-
   const [
     { data: products, error: productsError, count },
-    { data: productOptions, error: productOptionsError },
     { data: movements, error: movementsError, count: movementsTotal },
     overview,
   ] =
     await Promise.all([
       productsRequest,
-      productOptionsRequest,
       supabase
         .from("inventory_movements")
         .select(
@@ -180,24 +167,16 @@ export async function getAdminInventory(filters: AdminInventoryFilters = {}) {
     throw new Error(productsError.message);
   }
 
-  if (productOptionsError) {
-    throw new Error(productOptionsError.message);
-  }
-
   if (movementsError) {
     throw new Error(movementsError.message);
   }
 
   const productRows = Array.isArray(products) ? products : [];
   const normalizedProducts = productRows.map(normalizeProductOption);
-  const normalizedProductOptions = (productOptions ?? []).map(normalizeProductOption);
-
   return {
     products: normalizedProducts,
-    productOptions: normalizedProductOptions,
     summary: {
       productsTotal: count ?? normalizedProducts.length,
-      productOptionsLoaded: normalizedProductOptions.length,
       lowStockProducts: overview.lowStockProducts,
       outOfStockProducts: overview.outOfStockProducts,
       activeReservations: overview.activeReservations,

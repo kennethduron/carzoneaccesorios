@@ -14,6 +14,7 @@
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
+    "test:accounting-reversal-admin-search": "node scripts/test-accounting-reversal-admin-search.mjs",
     "test:receivable-payment-accounting": "node scripts/test-receivable-payment-accounting-outbox.mjs",
     "test:receivable-payment-accounting:local": "node scripts/test-receivable-payment-accounting-local.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",

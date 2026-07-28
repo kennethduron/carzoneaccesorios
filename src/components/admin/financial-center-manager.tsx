@@ -13,6 +13,7 @@ import {
   updateAutomationModeAction,
 } from "@/app/admin/contabilidad/actions";
 import { AccountingManager } from "@/components/admin/accounting-manager";
+import { AccountingAccountCombobox } from "@/components/admin/accounting-account-combobox";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { buildJournalEntryViewerHref, normalizeFinancialCenterTab, type FinancialCenterTab } from "@/lib/accounting-navigation";
@@ -23,6 +24,7 @@ import {
   getAccountingMappingDisplayLabel,
 } from "@/services/supabase/accounting-config.service";
 import type { AccountingPageData, JournalEntryViewerData, JournalEntryViewerStatus } from "@/types/accounting";
+import type { AccountingAccountSearchResult } from "@/types/admin-search";
 import type {
   AccountingMapping,
   AutomationMode,
@@ -348,6 +350,18 @@ export function FinancialCenterManager({
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account?.id ?? ""])),
   );
+  const [selectedAccountOptions, setSelectedAccountOptions] = useState<Record<string, AccountingAccountSearchResult | null>>(() =>
+    Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account ? {
+      id: item.account.id,
+      code: item.account.code,
+      name: item.account.name,
+      accountType: item.account.type,
+      normalBalance: ["asset", "cost", "expense"].includes(item.account.type) ? "debit" : "credit",
+      isActive: item.account.is_active,
+      parentId: null,
+      isSelectable: item.account.is_active,
+    } : null])),
+  );
   const [automationMode, setAutomationMode] = useState<AutomationMode>(financialData.summary.automationMode);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -383,7 +397,6 @@ export function FinancialCenterManager({
     });
   }
 
-  const activeAccounts = accountingData.activeAccounts;
   const configuredLabel = `${formatNumber(financialData.summary.configuredMappings)} de ${formatNumber(financialData.readinessItems.length)}`;
   const visibleEvents = eventFilter === "pending"
     ? financialData.events.filter((event) => event.status === "pending")
@@ -618,20 +631,16 @@ export function FinancialCenterManager({
                     <p className="mt-1 text-sm text-black/55">{accountingMappingTypeLabels[item.mappingType]} · {getAccountingMappingDisplayLabel(item.sourceKey)}</p>
                     <MappingStatusBadge status={item.status} />
                   </div>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-medium uppercase text-black/50">Cuenta contable</span>
-                    <select
-                      value={selectedAccounts[item.key] ?? ""}
-                      onChange={(event) => setSelectedAccounts((current) => ({ ...current, [item.key]: event.target.value }))}
-                      disabled={!canConfigureAccounting || isPending}
-                      className="h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15 disabled:cursor-not-allowed disabled:bg-[#f4f4f5]"
-                    >
-                      <option value="">Cuenta no configurada</option>
-                      {activeAccounts.map((account) => (
-                        <option key={account.id} value={account.id}>{account.code} - {account.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                  <AccountingAccountCombobox
+                    value={selectedAccounts[item.key] ?? ""}
+                    selectedOption={selectedAccountOptions[item.key] ?? null}
+                    disabled={!canConfigureAccounting || isPending}
+                    label="Cuenta contable"
+                    onChange={(account) => {
+                      setSelectedAccounts((current) => ({ ...current, [item.key]: account?.id ?? "" }));
+                      setSelectedAccountOptions((current) => ({ ...current, [item.key]: account }));
+                    }}
+                  />
                   {canConfigureAccounting ? (
                     <Button onClick={() => saveMapping(item.key)} disabled={isPending} variant="dark" className="h-10">
                       <Save size={16} />

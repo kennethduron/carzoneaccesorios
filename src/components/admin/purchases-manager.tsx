@@ -7,11 +7,13 @@ import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, Edit3, PlusCircle, Search, Trash2, X } from "lucide-react";
 import { cancelPurchaseAction, confirmPurchaseAction, registerPurchaseReturnAction, savePurchaseAction, type PurchaseFormInput, type PurchaseReturnFormInput } from "@/app/admin/compras/actions";
 import { Button, Input } from "@/components/ui";
+import { PurchaseProductCombobox } from "@/components/admin/purchase-product-combobox";
 import { useToast } from "@/contexts/toast-context";
-import type { AdminPurchase, ProductPurchaseOption, PurchasesSummary, SupplierOption } from "@/types/purchases";
+import type { AdminPurchase, PurchasesSummary, SupplierOption } from "@/types/purchases";
+import type { PurchaseProductSearchResult } from "@/types/admin-search";
 import { formatCurrency } from "@/utils/pricing";
 
-type LineDraft = PurchaseFormInput["items"][number] & { key: string };
+type LineDraft = PurchaseFormInput["items"][number] & { key: string; selectedProduct?: PurchaseProductSearchResult | null };
 type PurchaseDraft = Omit<PurchaseFormInput, "items"> & { items: LineDraft[] };
 type ReturnDraft = PurchaseReturnFormInput;
 
@@ -55,22 +57,6 @@ function lineTotal(line: LineDraft) {
   return Math.max(Math.round((quantity * unitCost + tax - discount) * 100) / 100, 0);
 }
 
-function purchaseProductLabel(product: ProductPurchaseOption) {
-  const identity = `${product.sku ? `${product.sku} - ` : ""}${product.name}`;
-  const state = product.status === "draft"
-    ? "Borrador"
-    : product.status === "archived"
-      ? "Archivado"
-      : product.active
-        ? product.available_stock > 0
-          ? "Activo"
-          : "Sin inventario"
-        : product.auto_disabled_by_stock
-          ? "Inactivo por inventario"
-          : "Inactivo manual";
-  return `${identity} (${state})`;
-}
-
 function LineNumberField({
   label,
   min,
@@ -97,13 +83,11 @@ function LineNumberField({
 export function PurchasesManager({
   purchases,
   suppliers,
-  products,
   summary,
   canManage,
 }: {
   purchases: AdminPurchase[];
   suppliers: SupplierOption[];
-  products: ProductPurchaseOption[];
   summary: PurchasesSummary;
   canManage: boolean;
 }) {
@@ -117,8 +101,6 @@ export function PurchasesManager({
   const [selectedId, setSelectedId] = useState<string | null>(purchases[0]?.id ?? null);
   const [returnDraft, setReturnDraft] = useState<ReturnDraft>(emptyReturnDraft(purchases[0]?.id ?? ""));
   const [isPending, startTransition] = useTransition();
-
-  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   const visiblePurchases = useMemo(() => {
     const needle = normalize(query.trim());
@@ -148,12 +130,12 @@ export function PurchasesManager({
     setDraft((current) => ({ ...current, items: current.items.length > 1 ? current.items.filter((line) => line.key !== key) : current.items }));
   }
 
-  function chooseProduct(line: LineDraft, productId: string) {
-    const product = productById.get(productId);
+  function chooseProduct(line: LineDraft, product: PurchaseProductSearchResult | null) {
     updateLine(line.key, {
-      product_id: productId,
+      product_id: product?.id ?? "",
+      selectedProduct: product,
       description: product ? `${product.sku ? `${product.sku} - ` : ""}${product.name}` : line.description,
-      unit_cost: product ? product.cost_price : line.unit_cost,
+      unit_cost: product ? product.costPrice : line.unit_cost,
     });
   }
 
@@ -168,7 +150,23 @@ export function PurchasesManager({
       shipping_amount: purchase.shipping_amount,
       currency: purchase.currency,
       notes: purchase.notes ?? "",
-      items: purchase.items.length > 0 ? purchase.items.map((item) => ({ ...item, key: item.id, product_id: item.product_id ?? "" })) : [newLine()],
+      items: purchase.items.length > 0 ? purchase.items.map((item) => ({
+        ...item,
+        key: item.id,
+        product_id: item.product_id ?? "",
+        selectedProduct: item.product_id ? {
+          id: item.product_id,
+          sku: item.product_sku ?? "Producto",
+          internalCode: null,
+          name: item.product_name ?? item.description,
+          brand: "",
+          unit: null,
+          status: "active",
+          isActive: true,
+          availableStock: 0,
+          costPrice: item.unit_cost,
+        } : null,
+      })) : [newLine()],
     });
   }
 
@@ -297,7 +295,7 @@ export function PurchasesManager({
                       </button>
                     </div>
                     <div className="grid gap-2">
-                      <select value={line.product_id ?? ""} onChange={(event) => chooseProduct(line, event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin producto vinculado</option>{products.map((product) => <option key={product.id} value={product.id}>{purchaseProductLabel(product)}</option>)}</select>
+                      <PurchaseProductCombobox value={line.product_id ?? ""} selectedOption={line.selectedProduct ?? null} onChange={(product) => chooseProduct(line, product)} disabled={!canManage || isPending} />
                       <Input value={line.description} onChange={(event) => updateLine(line.key, { description: event.target.value })} placeholder="Descripción" disabled={!canManage || isPending} />
                       <div className="grid gap-2 sm:grid-cols-2">
                         <LineNumberField label="Cantidad" min={line.product_id ? "1" : "0.01"} step={line.product_id ? "1" : "0.01"} value={line.quantity} onChange={(value) => updateLine(line.key, { quantity: value })} disabled={!canManage || isPending} />

@@ -5,7 +5,7 @@ import { PurchasesManager } from "@/components/admin/purchases-manager";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminPurchases, getPurchaseProductOptions } from "@/services/supabase/purchases.service";
+import { getAdminPurchases } from "@/services/supabase/purchases.service";
 import { getSupplierOptions } from "@/services/supabase/suppliers.service";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +21,9 @@ export default async function PurchasesPage() {
     redirect("/sin-permiso");
   }
 
-  const [{ purchases, summary }, suppliers, products] = await Promise.all([
+  const [{ purchases, summary }, suppliers] = await Promise.all([
     getAdminPurchases(),
     getSupplierOptions(true),
-    getPurchaseProductOptions(),
   ]);
 
   return (
@@ -35,7 +34,7 @@ export default async function PurchasesPage() {
           Panel administrativo
         </Link>
       </div>
-      <PurchasesManager purchases={purchases} suppliers={suppliers} products={products} summary={summary} canManage={canManage} />
+      <PurchasesManager purchases={purchases} suppliers={suppliers} summary={summary} canManage={canManage} />
     </AdminShell>
   );
 }

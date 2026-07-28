@@ -24,12 +24,11 @@ export default async function AdminInventoryPage({
 
   const params = await searchParams;
   const activeFilter = params.filter === "low_stock" ? { id: "low_stock" as const, label: "Productos con bajo stock o sin stock" } : null;
-  const { products, productOptions, movements, summary } = await getAdminInventory({
+  const { products, movements, summary } = await getAdminInventory({
     query: params.q,
     filter: activeFilter?.id ?? null,
     movementPage: Number(params.mov_page ?? 1),
     movementPageSize: 50,
-    includeManagementOptions: canManageInventory,
   });
 
   return (
@@ -37,7 +36,6 @@ export default async function AdminInventoryPage({
       <AdminBackButton />
       <InventoryManager
         products={products}
-        productOptions={productOptions}
         movements={movements}
         summary={summary}
         productQuery={params.q ?? ""}
