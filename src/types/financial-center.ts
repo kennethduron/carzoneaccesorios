@@ -22,6 +22,18 @@ export type FinancialEventStatus =
   | "reversed";
 
 export type AutomationMode = "disabled" | "dry_run" | "draft_only" | "auto_post";
+export type AccountingFeatureFlagState = "disabled" | "shadow" | "enabled";
+
+export type AccountingFeatureFlag = {
+  key: "sales_draft_v2" | "cogs_draft_v2" | "supplier_payment_draft_v2";
+  state: AccountingFeatureFlagState;
+  cutover_at: string | null;
+  version: "v2";
+  updated_by: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type AccountingMappingAccount = Pick<AccountingAccount, "id" | "code" | "name" | "type" | "is_active">;
 
@@ -71,11 +83,20 @@ export type FinancialEvent = {
   } | null;
   outbox?: {
     id: string;
-    status: "queued" | "processing" | "completed" | "failed";
+    status: "queued" | "processing" | "completed" | "failed" | "pending_mapping" | "pending_data" | "cancelled" | "shadow_validated";
     attempts: number;
     last_error: string | null;
     available_at: string;
     processed_at: string | null;
+    module?: string | null;
+    topic?: string | null;
+    scenario?: string | null;
+    next_attempt_at?: string | null;
+    cutover_at?: string | null;
+    posting_version?: string | null;
+    missing_key?: string | null;
+    duplicate_avoided?: boolean;
+    compensated_event_id?: string | null;
   } | null;
   created_by: string | null;
   created_at: string;
@@ -131,6 +152,7 @@ export type FinancialCenterData = {
   events: FinancialEvent[];
   readinessItems: MappingReadinessItem[];
   automationSetting: AccountingAutomationSetting | null;
+  featureFlags: AccountingFeatureFlag[];
   periodReadiness: PeriodReadiness;
   eventQuery: {
     search: string;

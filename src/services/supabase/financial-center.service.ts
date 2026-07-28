@@ -3,6 +3,7 @@ import "server-only";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   AccountingAutomationSetting,
+  AccountingFeatureFlag,
   AccountingMapping,
   AccountingMappingAccount,
   AutomationMode,
@@ -29,6 +30,25 @@ type AccountingOutboxRow = NonNullable<FinancialEvent["outbox"]> & {
   source_id: string;
 };
 
+type AccountingOutboxV2Row = {
+  id: string;
+  source_id: string;
+  financial_event_id: string | null;
+  feature_key: string;
+  topic: string;
+  scenario: string;
+  posting_version: string;
+  status: NonNullable<FinancialEvent["outbox"]>["status"];
+  attempt_count: number;
+  next_attempt_at: string;
+  last_error_message: string | null;
+  missing_key: string | null;
+  duplicate_avoided: boolean;
+  compensated_event_id: string | null;
+  cutover_at: string;
+  processed_at: string | null;
+};
+
 const automationModes = new Set<AutomationMode>(["disabled", "dry_run", "draft_only", "auto_post"]);
 
 export const requiredAccountingMappings: RequiredMappingDefinition[] = [
@@ -37,6 +57,10 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "card", label: "Cuenta puente de tarjeta", mappingType: "payment_method", sourceKey: "card" },
   { key: "accounts_receivable", label: "Cuenta por cobrar", mappingType: "receivable", sourceKey: "accounts_receivable" },
   { key: "sales_revenue", label: "Ingresos por ventas", mappingType: "revenue", sourceKey: "sales_revenue" },
+  { key: "sale_shipping_fee", label: "Ingreso por entrega", mappingType: "revenue", sourceKey: "sale_shipping_fee" },
+  { key: "sale_cod_fee", label: "Ingreso por contraentrega", mappingType: "revenue", sourceKey: "sale_cod_fee" },
+  { key: "sale_external_charge", label: "Cargo externo de entrega", mappingType: "revenue", sourceKey: "sale_external_charge" },
+  { key: "sale_other_charge", label: "Otros cargos de venta", mappingType: "revenue", sourceKey: "sale_other_charge" },
   { key: "tax_payable", label: "Impuestos por pagar", mappingType: "tax", sourceKey: "tax_payable" },
   { key: "inventory_asset", label: "Inventario", mappingType: "inventory", sourceKey: "inventory_asset" },
   { key: "cost_of_goods_sold", label: "Costo de ventas", mappingType: "inventory", sourceKey: "cost_of_goods_sold" },
@@ -49,7 +73,7 @@ export const requiredAccountingMappings: RequiredMappingDefinition[] = [
   { key: "purchase_expense", label: "Gasto de compras", mappingType: "default_account", sourceKey: "purchase_expense" },
   { key: "supplier_payment_cash", label: "Pago a proveedores - caja", mappingType: "payment_method", sourceKey: "supplier_payment_cash" },
   { key: "supplier_payment_bank", label: "Pago a proveedores - banco", mappingType: "payment_method", sourceKey: "supplier_payment_bank" },
-  { key: "supplier_payment_card", label: "Pago a proveedores - tarjeta", mappingType: "payment_method", sourceKey: "supplier_payment_card" },
+  { key: "supplier_payment_card", label: "Pago a proveedores - tarjeta de crédito", mappingType: "payment_method", sourceKey: "supplier_payment_card" },
   { key: "purchase_tax", label: "Impuesto de compras", mappingType: "tax", sourceKey: "purchase_tax" },
   { key: "purchase_return", label: "Devoluciones de compras", mappingType: "default_account", sourceKey: "purchase_return" },
   { key: "supplier_credit", label: "Crédito de proveedor", mappingType: "default_account", sourceKey: "supplier_credit" },
@@ -201,6 +225,7 @@ export async function getFinancialCenterData(input: {
     { data: mappingRows, error: mappingsError },
     { data: eventRows, error: eventsError, count: eventCount },
     { data: automationSetting, error: settingError },
+    { data: featureFlagRows, error: featureFlagsError },
     { count: pendingEvents, error: pendingEventsError },
     { count: openPeriods, error: openPeriodsError },
     { count: totalPeriods, error: totalPeriodsError },
@@ -235,6 +260,11 @@ export async function getFinancialCenterData(input: {
       .eq("key", "automation_mode")
       .maybeSingle<AccountingAutomationSetting>(),
     supabase
+      .from("accounting_feature_flags")
+      .select("key, state, cutover_at, version, updated_by, notes, created_at, updated_at")
+      .order("key")
+      .returns<AccountingFeatureFlag[]>(),
+    supabase
       .from("financial_events")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),
@@ -250,6 +280,7 @@ export async function getFinancialCenterData(input: {
   if (mappingsError) throw new Error(mappingsError.message);
   if (eventsError) throw new Error(eventsError.message);
   if (settingError) throw new Error(settingError.message);
+  if (featureFlagsError) throw new Error(featureFlagsError.message);
   if (pendingEventsError) throw new Error(pendingEventsError.message);
   if (openPeriodsError) throw new Error(openPeriodsError.message);
   if (totalPeriodsError) throw new Error(totalPeriodsError.message);
@@ -271,11 +302,42 @@ export async function getFinancialCenterData(input: {
     : { data: [], error: null };
   if (outboxError) throw new Error(outboxError.message);
   const outboxByPayment = new Map((outboxRows ?? []).map((row) => [row.source_id, row]));
+  const eventIds = normalizedEvents.map((event) => event.id);
+  const { data: outboxV2Rows, error: outboxV2Error } = eventIds.length > 0
+    ? await supabase
+        .from("accounting_outbox_v2")
+        .select("id, source_id, financial_event_id, feature_key, topic, scenario, posting_version, status, attempt_count, next_attempt_at, last_error_message, missing_key, duplicate_avoided, compensated_event_id, cutover_at, processed_at")
+        .in("financial_event_id", eventIds)
+        .returns<AccountingOutboxV2Row[]>()
+    : { data: [], error: null };
+  if (outboxV2Error) throw new Error(outboxV2Error.message);
+  const outboxV2ByEvent = new Map((outboxV2Rows ?? []).map((row) => [row.financial_event_id, row]));
   const events = normalizedEvents.map((event) => ({
     ...event,
-    outbox: event.source_type === "receivable_payment"
-      ? outboxByPayment.get(event.source_id) ?? null
-      : null,
+    outbox: outboxV2ByEvent.has(event.id)
+      ? (() => {
+          const row = outboxV2ByEvent.get(event.id)!;
+          return {
+            id: row.id,
+            status: row.status,
+            attempts: row.attempt_count,
+            last_error: row.last_error_message,
+            available_at: row.next_attempt_at,
+            processed_at: row.processed_at,
+            module: row.feature_key,
+            topic: row.topic,
+            scenario: row.scenario,
+            next_attempt_at: row.next_attempt_at,
+            cutover_at: row.cutover_at,
+            posting_version: row.posting_version,
+            missing_key: row.missing_key,
+            duplicate_avoided: row.duplicate_avoided,
+            compensated_event_id: row.compensated_event_id,
+          };
+        })()
+      : event.source_type === "receivable_payment"
+        ? outboxByPayment.get(event.source_id) ?? null
+        : null,
   }));
   const readinessItems = buildReadinessItems(mappings);
   const activeDefinitionCounts = new Map<string, number>();
@@ -303,6 +365,7 @@ export async function getFinancialCenterData(input: {
     events,
     readinessItems,
     automationSetting: automationSetting ?? null,
+    featureFlags: featureFlagRows ?? [],
     periodReadiness,
     eventQuery: {
       search: eventSearch,

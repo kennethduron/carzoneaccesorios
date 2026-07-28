@@ -19,6 +19,7 @@
     "test:invoice-logo:pdf": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-invoice-logo-pdf.mjs",
     "test:receivable-payment-accounting": "node scripts/test-receivable-payment-accounting-outbox.mjs",
     "test:receivable-payment-accounting:local": "node scripts/test-receivable-payment-accounting-local.mjs",
+    "test:accounting-automation-v2": "node scripts/test-accounting-automation-v2.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",
     "test:order-commercial-terms:local": "node scripts/test-order-commercial-terms-local.mjs",
     "test:pos-stage-3-customers": "node scripts/test-pos-stage-3-customers.mjs",

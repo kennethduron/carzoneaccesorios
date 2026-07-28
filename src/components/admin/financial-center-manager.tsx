@@ -6,6 +6,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock, ExternalLink, FilePlus2, Landmark, LayoutDashboard, RefreshCw, Save, SearchCheck, Settings2, SlidersHorizontal, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   generateJournalDraftFromFinancialEventAction,
+  retryAccountingOutboxV2Action,
   retryReceivablePaymentAccountingAction,
   saveAccountingMappingAction,
   scanFinancialEventsAction,
@@ -114,6 +115,7 @@ const draftEligiblePurposes = new Set([
 const draftEligibleStatuses = new Set<FinancialEventStatus>(["pending", "ready", "failed"]);
 
 const eventPurposeLabels: Record<string, string> = {
+  sale_recognized: "Venta reconocida V2",
   sale_revenue: "Venta confirmada",
   payment_received: "Pago recibido",
   invoice_issued: "Factura fiscal emitida",
@@ -133,6 +135,9 @@ const eventPurposeLabels: Record<string, string> = {
   accounts_payable_created: "Cuenta por pagar creada",
   supplier_payment: "Pago a proveedor",
   supplier_payment_cancelled: "Pago a proveedor anulado",
+  sale_compensation: "Compensación de venta V2",
+  inventory_cogs_compensation: "Compensación de costo V2",
+  supplier_payment_compensation: "Compensación de pago V2",
   purchase_cancelled: "Compra anulada",
   purchase_return: "Devolución a proveedor",
   supplier_credit: "Nota de crédito de proveedor",
@@ -320,7 +325,10 @@ function validationIssueLabel(issue: string) {
 }
 
 function canGenerateDraftForEvent(event: FinancialEvent) {
-  return !event.journal_entry_id && draftEligiblePurposes.has(event.event_purpose) && draftEligibleStatuses.has(event.status);
+  return event.posting_version !== "v2"
+    && !event.journal_entry_id
+    && draftEligiblePurposes.has(event.event_purpose)
+    && draftEligibleStatuses.has(event.status);
 }
 
 export function FinancialCenterManager({
@@ -346,7 +354,7 @@ export function FinancialCenterManager({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [fallbackTab, setFallbackTab] = useState<FinancialCenterTab>(initialTab);
-  const [eventFilter, setEventFilter] = useState<"all" | "pending">("all");
+  const [eventFilter, setEventFilter] = useState<"all" | "pending" | "sales_v2" | "cogs_v2" | "supplier_v2" | "drafts">("all");
   const [selectedAccounts, setSelectedAccounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(financialData.readinessItems.map((item) => [item.key, item.account?.id ?? ""])),
   );
@@ -398,9 +406,14 @@ export function FinancialCenterManager({
   }
 
   const configuredLabel = `${formatNumber(financialData.summary.configuredMappings)} de ${formatNumber(financialData.readinessItems.length)}`;
-  const visibleEvents = eventFilter === "pending"
-    ? financialData.events.filter((event) => event.status === "pending")
-    : financialData.events;
+  const visibleEvents = financialData.events.filter((event) => {
+    if (eventFilter === "pending") return ["pending", "failed"].includes(event.status) || ["pending_mapping", "pending_data", "failed"].includes(event.outbox?.status ?? "");
+    if (eventFilter === "sales_v2") return event.event_purpose === "sale_recognized" && event.posting_version === "v2";
+    if (eventFilter === "cogs_v2") return event.event_purpose === "inventory_cogs" && event.posting_version === "v2";
+    if (eventFilter === "supplier_v2") return event.event_purpose === "supplier_payment" && event.posting_version === "v2";
+    if (eventFilter === "drafts") return event.status === "draft_created";
+    return true;
+  });
   const hasEvents = visibleEvents.length > 0;
 
   const mappingsByRequiredKey = useMemo(() => {
@@ -499,6 +512,19 @@ export function FinancialCenterManager({
     });
   }
 
+  function retryV2Event(outboxId: string) {
+    startTransition(async () => {
+      const result = await retryAccountingOutboxV2Action(outboxId);
+      setMessage(result.message);
+      if (result.ok) {
+        toast.success(result.message);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
   function eventPageHref(page: number) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", "events");
@@ -578,8 +604,19 @@ export function FinancialCenterManager({
               <div className="mt-4 space-y-3 text-sm text-black/60">
                 <p className="rounded-md border border-black/10 bg-[#fafafa] p-3">{financialData.periodReadiness.message}</p>
                 <p className="rounded-md border border-[#e4252c]/15 bg-[#fff1f2] p-3 text-[#7f1d1d]">
-                  El modo global sigue desactivado. Solo los abonos de CxC crean un borrador dirigido; ventas, pagos generales, facturas e inventario conservan su comportamiento actual.
+                  El modo global sigue desactivado. Los módulos V2 usan flags separados, fecha de corte prospectiva y publicación siempre manual.
                 </p>
+                <div className="grid gap-2">
+                  {financialData.featureFlags.map((flag) => (
+                    <div key={flag.key} className="rounded-md border border-black/10 bg-[#fafafa] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold">{flag.key}</span>
+                        <span className="rounded-full border border-black/10 bg-white px-2 py-1 text-xs font-semibold uppercase">{flag.state}</span>
+                      </div>
+                      <p className="mt-1 text-xs">Versión {flag.version} · corte {flag.cutover_at ? formatHnDateTime(flag.cutover_at) : "sin activar"}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </aside>
           </div>
@@ -728,7 +765,7 @@ export function FinancialCenterManager({
             </p>
           </div>
 
-          <div className="mb-3 flex gap-2">
+          <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setEventFilter("all")}
@@ -743,6 +780,10 @@ export function FinancialCenterManager({
             >
               Pendientes
             </button>
+            <button type="button" onClick={() => setEventFilter("sales_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "sales_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Ventas V2</button>
+            <button type="button" onClick={() => setEventFilter("cogs_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "cogs_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>COGS V2</button>
+            <button type="button" onClick={() => setEventFilter("supplier_v2")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "supplier_v2" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Proveedores V2</button>
+            <button type="button" onClick={() => setEventFilter("drafts")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${eventFilter === "drafts" ? "border-[#080808] bg-[#080808] text-white" : "border-black/10 bg-white text-black/65"}`}>Borradores</button>
           </div>
 
           {hasEvents ? (
@@ -771,6 +812,7 @@ export function FinancialCenterManager({
                     const issues = [
                       ...validationMessages(event.validation_errors),
                       ...(event.outbox?.last_error ? [event.outbox.last_error] : []),
+                      ...(event.outbox?.missing_key ? [`Mapping/dato faltante: ${event.outbox.missing_key}`] : []),
                     ];
                     const linkedDraft = event.journal_entry;
                     const originHref = resolveAccountingOriginHref(event.source_type, event.source_id);
@@ -783,15 +825,24 @@ export function FinancialCenterManager({
                       event.outbox?.id &&
                       ["pending", "ready", "failed"].includes(event.status),
                     );
+                    const canRetryV2 = Boolean(
+                      canRetryPaymentEvents
+                      && event.posting_version === "v2"
+                      && !event.journal_entry_id
+                      && event.outbox?.id
+                      && ["failed", "pending_mapping", "pending_data"].includes(event.outbox.status),
+                    );
 
                     return (
                       <tr key={event.id}>
                         <td className="px-3 py-3">
                           <p className="font-medium">{eventPurposeLabels[event.event_purpose] ?? "Evento contable"}</p>
+                          <p className="text-xs text-black/45">{event.outbox?.module ?? event.source_type} · {event.posting_version}</p>
+                          {event.outbox?.scenario ? <p className="text-xs text-black/45">{event.outbox.scenario}</p> : null}
                         </td>
                         <td className="px-3 py-3">
                           <p className="font-medium">{sourceTypeLabels[event.source_type] ?? "Origen operativo"}</p>
-                          <p className="text-xs text-black/45">{shortReference(sourceNumber) ?? "Referencia operativa"}</p>
+                          <p className="text-xs text-black/45">{shortReference(sourceNumber ?? event.source_id) ?? "Referencia operativa"}</p>
                           {originHref ? (
                             <a href={originHref} className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-black/10 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#080808] hover:border-[#e4252c]/30 hover:bg-[#fff1f2]">
                               <ExternalLink size={13} />
@@ -804,7 +855,10 @@ export function FinancialCenterManager({
                           <p className="font-medium">{detail.title}</p>
                           {detail.helper ? <p className="text-xs text-black/45">{detail.helper}</p> : null}
                         </td>
-                        <td className="px-3 py-3">{formatHnDateTime(event.occurred_at)}</td>
+                        <td className="px-3 py-3">
+                          <p>{formatHnDateTime(event.occurred_at)}</p>
+                          {event.outbox?.cutover_at ? <p className="text-xs text-black/45">Corte: {formatHnDateTime(event.outbox.cutover_at)}</p> : null}
+                        </td>
                         <td className="px-3 py-3">
                           {linkedDraft ? (
                             <div>
@@ -826,6 +880,9 @@ export function FinancialCenterManager({
                         <td className="px-3 py-3">
                           <p className="font-medium">{event.outbox?.attempts ?? 0}</p>
                           <p className="text-xs text-black/45">{event.outbox?.status ?? "Sin outbox"}</p>
+                          {event.outbox?.next_attempt_at ? <p className="text-xs text-black/45">Próximo: {formatHnDateTime(event.outbox.next_attempt_at)}</p> : null}
+                          {event.outbox?.duplicate_avoided ? <p className="text-xs font-semibold text-[#166534]">Duplicado evitado</p> : null}
+                          {event.outbox?.compensated_event_id ? <p className="text-xs font-semibold text-[#7c2d12]">Evento compensatorio</p> : null}
                         </td>
                         <td className="px-3 py-3">
                           {issues.length > 0 ? (
@@ -849,13 +906,19 @@ export function FinancialCenterManager({
                                 Reintentar procesamiento
                               </Button>
                             ) : null}
-                            {canGenerateDraft && !canRetryPayment ? (
+                            {canRetryV2 && event.outbox ? (
+                              <Button variant="ghost" disabled={isPending} onClick={() => retryV2Event(event.outbox!.id)}>
+                                <RefreshCw size={16} />
+                                Reintentar V2
+                              </Button>
+                            ) : null}
+                            {canGenerateDraft && !canRetryPayment && !canRetryV2 ? (
                               <Button variant="ghost" disabled={isPending} onClick={() => generateDraft(event.id)}>
                                 <FilePlus2 size={16} />
                                 Generar borrador
                               </Button>
                             ) : null}
-                            {!canRetryPayment && !canGenerateDraft ? (
+                            {!canRetryPayment && !canRetryV2 && !canGenerateDraft ? (
                               <span className="text-xs text-black/45">{event.journal_entry_id ? "Vinculado" : "No aplica"}</span>
                             ) : null}
                             </div>

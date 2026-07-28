@@ -8,6 +8,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
 import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
 import { processReceivablePaymentAccountingOutbox } from "@/services/accounting/receivable-payment-outbox";
+import { processAccountingOutboxV2 } from "@/services/accounting/accounting-outbox-v2";
 import {
   applyChartOfAccountsImport,
   logAccountingCatalogEvent,
@@ -571,6 +572,44 @@ export async function retryReceivablePaymentAccountingAction(outboxId: string): 
     message: result.ok
       ? "El evento contable fue reconciliado sin duplicados."
       : "El procesamiento contable continúa pendiente; puede reintentarse de forma segura.",
+  };
+}
+
+export async function retryAccountingOutboxV2Action(outboxId: string): Promise<AccountingMutationResult> {
+  await requirePermission("accounting:manage");
+  const validatedId = uuidLike(outboxId, "ID de outbox contable");
+  if (!validatedId.ok) return { ok: false, message: validatedId.message };
+
+  const supabase = await getSupabaseServerClient();
+  const { error } = await supabase.rpc("retry_accounting_outbox_v2", {
+    target_outbox_id: validatedId.value,
+    retry_reason: "Reintento autorizado desde el Centro Financiero",
+  });
+  if (error) return { ok: false, message: error.message || "No se pudo solicitar el reintento." };
+
+  const result = await processAccountingOutboxV2({
+    outboxId: validatedId.value,
+    forceRetry: true,
+  });
+
+  revalidatePath("/admin/contabilidad");
+  revalidatePath("/admin/cuentas-por-pagar");
+  revalidatePath("/admin/pedidos");
+
+  if (result.draftStatus === "borrador") {
+    return { ok: true, message: "La partida contable fue creada en borrador para revisión manual." };
+  }
+  if (result.outboxStatus === "pending_mapping") {
+    return { ok: true, message: "El evento continúa pendiente porque falta un mapping contable exacto." };
+  }
+  if (result.outboxStatus === "pending_data") {
+    return { ok: true, message: "El evento continúa pendiente porque falta un dato canónico." };
+  }
+  return {
+    ok: result.ok,
+    message: result.ok
+      ? "El evento V2 fue reconciliado sin duplicados."
+      : "El evento permanece protegido en la outbox y puede volver a reintentarse.",
   };
 }
 
