@@ -1,4 +1,5 @@
 export type ProductStatus = "active" | "inactive" | "draft" | "archived";
+export type ProductTaxCategory = "standard" | "exempt";
 
 export type ProductImageInput = {
   id?: string;
@@ -35,6 +36,8 @@ export type ProductAdminRow = {
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;
+  tax_category: ProductTaxCategory;
+  product_sales_version: number;
   is_new: boolean;
   status: ProductStatus;
   active: boolean;
@@ -69,6 +72,7 @@ export type ProductFormInput = {
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;
+  tax_category: ProductTaxCategory;
   is_new: boolean;
   status: ProductStatus;
   active: boolean;

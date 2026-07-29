@@ -8,7 +8,8 @@ import { writeErrorLog } from "@/lib/error-logging";
 import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { isOfficialProductCategory } from "@/lib/product-categories";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import type { ProductFormInput, ProductImageInput, ProductStatus } from "@/types/products";
+import { productTaxCategorySchema } from "@/lib/validation/product-tax";
+import type { ProductFormInput, ProductImageInput, ProductStatus, ProductTaxCategory } from "@/types/products";
 import {
   formatMegapixels,
   isAllowedProductImageMimeType,
@@ -119,6 +120,7 @@ type ProductDbPayload = {
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;
+  tax_category: ProductTaxCategory;
   is_new: boolean;
   status: ProductStatus;
   active: boolean;
@@ -206,6 +208,10 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     throw new Error("El precio mayorista no puede ser mayor que el precio al detalle.");
   }
 
+  if (!productTaxCategorySchema.safeParse(input.tax_category).success) {
+    throw new Error("Selecciona una clasificación fiscal válida.");
+  }
+
   const shortDescription = cleanText(input.short_description);
   if (shortDescription && shortDescription.length > 160) {
     throw new Error("La descripción corta no puede superar 160 caracteres.");
@@ -234,6 +240,7 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     retail_price: positiveNumber(input.retail_price),
     wholesale_price: positiveNumber(input.wholesale_price),
     wholesale_min_quantity: Math.max(1, positiveInteger(input.wholesale_min_quantity, 1)),
+    tax_category: input.tax_category,
     is_new: Boolean(input.is_new),
     status,
     active: status === "active" && input.active,
@@ -499,7 +506,7 @@ export async function saveProductAction(input: ProductFormInput): Promise<Produc
 
     const { stock: targetStock, ...catalogPayload } = payload;
     const authorizedTargetStock = capabilities.adjustStock ? stockIntegerForAdjustment(input.stock) : targetStock;
-    const { data, error } = await supabase.rpc("save_product_catalog_locked", {
+    const { data, error } = await supabase.rpc("save_product_catalog_v2_locked", {
       target_product_id: input.id ?? null,
       product_data: catalogPayload,
       images_data: capabilities.manageImages ? imagePayload(input.images) : null,
@@ -875,7 +882,7 @@ export async function importProductsAction(
       const { stock: catalogStock, ...catalogData } = payloadWithStock;
       void catalogStock;
       const images = capabilities.manageImages && product.images.length > 0 ? imagePayload(product.images) : null;
-      const { data, error } = await supabase.rpc("import_product_row_atomic", {
+      const { data, error } = await supabase.rpc("import_product_row_v2_atomic", {
         product_data: catalogData,
         images_data: images,
         target_stock: targetStock,

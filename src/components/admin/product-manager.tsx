@@ -217,6 +217,7 @@ const emptyProduct: EditableProductInput = {
   retail_price: 0,
   wholesale_price: 0,
   wholesale_min_quantity: 1,
+  tax_category: "standard",
   is_new: false,
   status: "active",
   active: true,
@@ -247,6 +248,7 @@ function toFormProduct(product: ProductAdminRow): EditableProductInput {
     retail_price: product.retail_price,
     wholesale_price: product.wholesale_price,
     wholesale_min_quantity: product.wholesale_min_quantity,
+    tax_category: product.tax_category,
     is_new: product.is_new,
     status: product.status,
     active: product.active,
@@ -334,6 +336,13 @@ function slugifyProductUrl(value: string) {
     .slice(0, 80);
 }
 
+function parseProductTaxCategory(value: unknown): ProductFormInput["tax_category"] {
+  const normalized = String(value ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (!normalized || normalized === "standard" || normalized === "gravado") return "standard";
+  if (normalized === "exempt" || normalized === "exento") return "exempt";
+  throw new Error(`Clasificacion fiscal no valida: ${String(value)}`);
+}
+
 const productExcelHeaders = [
   "SKU",
   "Código OEM / proveedor",
@@ -346,6 +355,7 @@ const productExcelHeaders = [
   "Precio costo",
   "Precio al detalle",
   "Precio mayorista",
+  "Clasificacion fiscal",
   "Cantidad mínima mayorista",
   "Producto nuevo",
   "Estado",
@@ -376,6 +386,7 @@ const productTechnicalCsvHeaders = [
   "precio_detalle",
   "precio_mayorista",
   "cantidad_minima_mayorista",
+  "clasificacion_fiscal",
   "producto_nuevo",
   "estado",
   "activo",
@@ -1119,6 +1130,7 @@ export function ProductManager({
       product.retail_price,
       product.wholesale_price,
       product.wholesale_min_quantity,
+      product.tax_category,
       product.is_new,
       product.status,
       product.active,
@@ -1158,6 +1170,7 @@ export function ProductManager({
       "100.00",
       "80.00",
       "1",
+      "standard",
       "false",
       "active",
       "true",
@@ -1231,6 +1244,7 @@ export function ProductManager({
           cost_price: numberValue(row.cost_price ?? row.precio_costo ?? "0"),
           retail_price: numberValue(row.retail_price ?? row.precio_detalle ?? "0"),
           wholesale_price: numberValue(row.wholesale_price ?? row.precio_mayorista ?? "0"),
+          tax_category: parseProductTaxCategory(row.tax_category || row.clasificacion_fiscal || "standard"),
           wholesale_min_quantity: numberValue(row.wholesale_min_quantity ?? row.cantidad_minima_mayorista ?? row["cantidad_mínima_mayorista"] ?? "1"),
           is_new: ["true", "1", "si", "sí", "yes"].includes(String(row.is_new ?? row.producto_nuevo ?? "false").trim().toLowerCase()),
           status: (row.status as ProductStatus) || (row.estado as ProductStatus) || "active",
@@ -1273,6 +1287,7 @@ export function ProductManager({
       formatCurrency(product.cost_price),
       formatCurrency(product.retail_price),
       formatCurrency(product.wholesale_price),
+      product.tax_category === "exempt" ? "Exento" : "Gravado",
       product.wholesale_min_quantity,
       yesNo(product.is_new),
       displayStatus(product.status),
@@ -1483,6 +1498,7 @@ export function ProductManager({
             cost_price: numberValue(readExcelCell(row, ["Precio costo"])),
             retail_price: retailPrice,
             wholesale_price: wholesalePrice,
+            tax_category: parseProductTaxCategory(readExcelCell(row, ["Clasificacion fiscal"])),
             wholesale_min_quantity: wholesaleMinQuantity,
             is_new: parseYesNo(readExcelCell(row, ["Producto nuevo"])),
             status: statusValue,
@@ -2737,6 +2753,12 @@ function ProductEditor({
                 <Field label="Precio mayorista" help="Precio especial para clientes mayoristas autorizados.">
                   <DecimalProductInput value={product.wholesale_price} onChange={(value) => onField("wholesale_price", value)} />
                 </Field>
+                <Field label="Clasificación fiscal" help="Gravado incluye ISV; exento no calcula ISV.">
+                  <select value={product.tax_category} onChange={(event) => onField("tax_category", event.target.value as ProductFormInput["tax_category"])} className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+                    <option value="standard">Gravado (ISV incluido)</option>
+                    <option value="exempt">Exento</option>
+                  </select>
+                </Field>
               </div>
               {decimalValueForSave(product.wholesale_price, 0) > decimalValueForSave(product.retail_price, 0) ? (
                 <p className="rounded-md bg-[#fff0ea] px-3 py-2 text-sm font-medium text-[#9b341b]">
@@ -3014,6 +3036,12 @@ function ProductEditor({
               </Field>
               <Field label="Precio mayorista">
                 <DecimalProductInput value={product.wholesale_price} onChange={(value) => onField("wholesale_price", value)} />
+              </Field>
+              <Field label="Clasificación fiscal">
+                <select value={product.tax_category} onChange={(event) => onField("tax_category", event.target.value as ProductFormInput["tax_category"])} className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+                  <option value="standard">Gravado (ISV incluido)</option>
+                  <option value="exempt">Exento</option>
+                </select>
               </Field>
             </div>
             </div>

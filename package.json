@@ -24,6 +24,9 @@
     "test:order-commercial-terms:local": "node scripts/test-order-commercial-terms-local.mjs",
     "test:pos-stage-3-customers": "node scripts/test-pos-stage-3-customers.mjs",
     "test:pos-stage-3-customers:local": "node scripts/test-pos-stage-3-customers-local.mjs",
+    "test:pos-stage-4": "node scripts/test-pos-stage-4.mjs",
+    "test:pos-stage-4:local": "node scripts/test-pos-stage-4-local.mjs",
+    "test:pos-stage-4:validation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-pos-stage-4-validation.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
     "test:product-accountant-access": "node scripts/test-product-accountant-access.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",
@@ -57,7 +60,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-icons": "^5.6.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "zod": "^4.4.3"
   },
   "overrides": {
     "postcss": "^8.5.14",
