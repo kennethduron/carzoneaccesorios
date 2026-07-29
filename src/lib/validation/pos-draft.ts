@@ -1,0 +1,46 @@
+import { z } from "zod";
+
+const nullableText = (maximum: number) => z.string().trim().max(maximum).nullable();
+
+export const createPosDraftSchema = z.object({
+  requestKey: z.string().uuid(),
+  customerId: z.string().uuid(),
+}).strict();
+
+export const savePosDraftSchema = z.object({
+  requestKey: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+  customerId: z.string().uuid(),
+  expectedCustomerCommercialVersion: z.number().int().nonnegative(),
+  items: z.array(z.object({
+    productId: z.string().uuid(),
+    quantity: z.number().int().min(1).max(9999),
+    finalUnitPrice: z.number().finite().positive().nullable(),
+    priceOverrideReason: nullableText(500),
+    expectedProductSalesVersion: z.number().int().positive(),
+  }).strict()).max(200),
+  deliveryMode: z.enum(["store_immediate", "home_delivery", "cash_on_delivery"]),
+  deliveryAddress: nullableText(500),
+  deliveryNotes: nullableText(1000),
+  internalNotes: nullableText(1000),
+}).strict();
+
+export const abandonPosDraftSchema = z.object({
+  requestKey: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
+export const posProductSearchSchema = z.object({
+  query: z.string().trim().max(120).transform((value) => value.replace(/\s+/g, " ")),
+  customerId: z.string().uuid(),
+  expectedCustomerCommercialVersion: z.coerce.number().int().nonnegative(),
+  categoryId: z.string().uuid().nullable().optional(),
+  brand: z.string().trim().max(120).nullable().optional(),
+  includeUnavailable: z.enum(["true", "false"]).transform((value) => value === "true").default(true),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
+  offset: z.coerce.number().int().min(0).max(10000).default(0),
+}).strict();
+
+export function firstZodMessage(error: z.ZodError) {
+  return error.issues[0]?.message ?? "La solicitud contiene datos invalidos.";
+}

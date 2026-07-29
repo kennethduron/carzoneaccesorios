@@ -237,3 +237,133 @@ export type PosCustomerWriteResult = {
   commercialVersion: number;
   idempotentReplay: boolean;
 };
+
+export type PosProductSearchResult = {
+  productId: string;
+  sku: string;
+  internalCode: string | null;
+  productName: string;
+  brand: string;
+  categoryId: string | null;
+  categoryName: string | null;
+  baseUnitPrice: number;
+  pricingSource: "retail" | "wholesale";
+  wholesaleMinQuantity: number;
+  taxCategory: "standard" | "exempt";
+  includedTaxRate: number;
+  productSalesVersion: number;
+  productStatus: "active" | "inactive" | "draft" | "archived";
+  active: boolean;
+  autoDisabledByStock: boolean;
+  availableStock: number;
+  lowStockThreshold: number;
+  imageUrl: string | null;
+};
+
+export type PosProductSearchPage = {
+  results: PosProductSearchResult[];
+  total: number;
+  nextOffset: number | null;
+};
+
+export type PosDraftItem = {
+  itemId?: string;
+  productId: string;
+  productSalesVersion: number;
+  sku: string;
+  internalCode: string | null;
+  productName: string;
+  brand: string;
+  categoryName: string | null;
+  imageUrl: string | null;
+  pricingSource: "retail" | "wholesale";
+  baseUnitPrice: number;
+  finalUnitPrice: number;
+  priceOverridden: boolean;
+  priceOverrideReason: string | null;
+  quantity: number;
+  taxCategory: "standard" | "exempt";
+  includedTaxRate: number;
+  lineMerchandiseGross: number;
+  lineTaxableBase: number;
+  lineTaxAmount: number;
+  lineExemptAmount: number;
+  availableStock: number;
+  stockObservedAt: string;
+  stockStatus: "available" | "low" | "insufficient";
+  validationStatus: "valid" | "warning" | "blocked";
+  costFloorValidated: boolean;
+  costValidationVersion: 1;
+  costValidatedAt: string;
+};
+
+export type PosSaleDraft = {
+  draftId: string;
+  ownerId: string;
+  customerId: string;
+  customerCommercialVersion: number;
+  pricingMode: "retail" | "wholesale";
+  status: "active" | "abandoned" | "expired";
+  version: number;
+  deliveryMode: PosDeliveryMode;
+  deliveryAddress: string | null;
+  deliveryNotes: string | null;
+  internalNotes: string | null;
+  merchandiseGross: number;
+  taxableGross: number;
+  taxableBase: number;
+  exemptGross: number;
+  taxAmount: number;
+  shippingFee: number;
+  codFee: number;
+  otherCharge: number;
+  grandTotal: number;
+  calculationVersion: 2;
+  currency: "HNL";
+  validationStatus: "valid" | "warning";
+  validationMessages: Array<{ code: string; message: string }>;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  items: PosDraftItem[];
+  idempotentReplay?: boolean;
+};
+
+export type PosDraftSaveInput = {
+  requestKey: string;
+  draftId: string;
+  expectedVersion: number;
+  customerId: string;
+  expectedCustomerCommercialVersion: number;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    finalUnitPrice: number | null;
+    priceOverrideReason: string | null;
+    expectedProductSalesVersion: number;
+  }>;
+  deliveryMode: PosDeliveryMode;
+  deliveryAddress: string | null;
+  deliveryNotes: string | null;
+  internalNotes: string | null;
+};
+
+export type PosChargeCapabilities = {
+  shippingFeeEnabled: boolean;
+  codFeeEnabled: boolean;
+  externalChargeEnabled: boolean;
+  otherChargeEnabled: boolean;
+  disabledReason: string;
+};
+
+export type PosActiveDraftSummary = {
+  draftId: string;
+  customerId: string;
+  customerName: string;
+  status: "active";
+  version: number;
+  itemCount: number;
+  total: number;
+  updatedAt: string;
+  expiresAt: string;
+};

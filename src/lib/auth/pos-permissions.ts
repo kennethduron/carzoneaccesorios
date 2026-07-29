@@ -8,6 +8,13 @@ export type PosPermission =
   | "pos:customers:search"
   | "pos:customers:create"
   | "pos:customers:update"
+  | "pos:drafts:create"
+  | "pos:drafts:read"
+  | "pos:drafts:edit_own"
+  | "pos:drafts:edit_any"
+  | "pos:drafts:abandon"
+  | "pos:products:search"
+  | "pos:price_override"
   | "customers:read_commercial"
   | "customers:read_credit";
 
