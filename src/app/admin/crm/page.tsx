@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminCrm } from "@/services/supabase/admin-crm.service";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 
 export const dynamic = "force-dynamic";
 
@@ -31,16 +32,22 @@ export default async function AdminCrmPage({
   const canEditCustomerIdentity =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "customers:update_identity", profile.email);
+  const canManageWholesale =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
 
   const params = await searchParams;
   const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
-  const crm = await getAdminCrm({
-    customerPage: 1,
-    followupPage: Number(params.page ?? 1),
-    pageSize: 50,
-    followupTask: activeTask?.id ?? null,
-    viewerRole: profile.role,
-  });
+  const [crm, settings] = await Promise.all([
+    getAdminCrm({
+      customerPage: 1,
+      followupPage: Number(params.page ?? 1),
+      pageSize: 50,
+      followupTask: activeTask?.id ?? null,
+      viewerRole: profile.role,
+    }),
+    getPublicCompanySettings(),
+  ]);
 
   return (
     <AdminShell title="CRM">
@@ -61,6 +68,8 @@ export default async function AdminCrmPage({
         canManageCredit={canManageCredit}
         canLinkPortalAccount={canLinkPortalAccount}
         canEditCustomerIdentity={canEditCustomerIdentity}
+        canManageWholesale={canManageWholesale}
+        firstWholesaleMinimum={Number(settings.first_wholesale_minimum ?? 10000)}
       />
     </AdminShell>
   );

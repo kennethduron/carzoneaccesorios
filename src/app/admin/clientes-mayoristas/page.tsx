@@ -4,6 +4,7 @@ import { WholesaleCustomersManager } from "@/components/admin/wholesale-customer
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminCrm } from "@/services/supabase/admin-crm.service";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,10 @@ export default async function AdminWholesaleCustomersPage({
   const profile = await requirePermission("wholesale:manage");
   const params = await searchParams;
   const activeStatus = params.status === "pending" ? { id: "pending" as const, label: "Solicitudes mayoristas pendientes" } : null;
-  const data = await getAdminCrm({ pageSize: 100, wholesaleStatus: activeStatus?.id ?? null });
+  const [data, settings] = await Promise.all([
+    getAdminCrm({ pageSize: 100, wholesaleStatus: activeStatus?.id ?? null }),
+    getPublicCompanySettings(),
+  ]);
 
   return (
     <AdminShell title="Clientes Mayoristas">
@@ -24,6 +28,7 @@ export default async function AdminWholesaleCustomersPage({
         customers={data.customers}
         activeFilter={activeStatus}
         canManageWholesale={hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email)}
+        firstWholesaleMinimum={Number(settings.first_wholesale_minimum ?? 10000)}
       />
     </AdminShell>
   );

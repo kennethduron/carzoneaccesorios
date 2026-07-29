@@ -308,7 +308,9 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
         : "Cuenta mayorista aprobada. Para tu primera compra mayorista, el monto mínimo requerido es de L 10,000. Después de esa primera compra, podrás comprar cualquier monto.",
       canEnterCode: false,
       account: toAccount(approvedCustomer, requirement),
-      shouldShowApprovedNotice: approvedCustomer.wholesale_approved_notice_seen === false,
+      // Approval notices are now delivered by the private, server-backed
+      // customer_portal_notifications contract on /cuenta.
+      shouldShowApprovedNotice: false,
       customerType: approvedCustomer.wholesale_customer_type,
       firstPurchaseRequirement: requirement,
     };

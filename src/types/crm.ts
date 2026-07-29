@@ -33,6 +33,7 @@ export type CrmCustomerOption = {
   wholesale_customer_type: CrmWholesaleCustomerType;
   wholesale_first_purchase_completed: boolean;
   wholesale_first_purchase_completed_at: string | null;
+  commercial_version: number;
   status: "active" | "inactive" | "disabled" | "pending_account";
   active: boolean;
   lead_status: CrmLeadStatus;
@@ -194,6 +195,16 @@ export type CrmCustomerWholesaleHistoryRow = {
   created_at: string;
   user_name: string | null;
   user_email: string | null;
+  operation?: "approve_request" | "direct_grant" | "change_type" | "reject" | "suspend" | "reactivate";
+  source?: "customer_request" | "admin_direct_grant";
+  actor_role?: string;
+  previous_status?: CrmWholesaleStatus;
+  new_status?: CrmWholesaleStatus;
+  previous_type?: CrmWholesaleCustomerType;
+  new_type?: CrmWholesaleCustomerType;
+  reason?: string | null;
+  previous_commercial_version?: number;
+  new_commercial_version?: number;
 };
 
 export type CrmCustomerProfile = {

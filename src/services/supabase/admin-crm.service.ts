@@ -203,9 +203,18 @@ type CustomerProfileWholesaleCodeRow = {
 
 type CustomerWholesaleHistoryRow = {
   id: string;
-  note: string;
+  operation: "approve_request" | "direct_grant" | "change_type" | "reject" | "suspend" | "reactivate";
+  source: "customer_request" | "admin_direct_grant";
+  previous_status: CrmCustomerOption["wholesale_status"];
+  new_status: CrmCustomerOption["wholesale_status"];
+  previous_type: CrmCustomerOption["wholesale_customer_type"];
+  new_type: CrmCustomerOption["wholesale_customer_type"];
+  actor_role: string;
+  reason: string | null;
+  previous_commercial_version: number;
+  new_commercial_version: number;
   created_at: string;
-  users: {
+  actor: {
     full_name: string | null;
     email: string | null;
   } | null;
@@ -597,7 +606,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   let customersQuery = supabase
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
       { count: "exact" },
     );
 
@@ -849,7 +858,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();
@@ -956,11 +965,10 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .limit(20)
       .returns<CustomerProfileWholesaleCodeRow[]>(),
     admin
-      .from("crm_notes")
-      .select("id, note, created_at, users(full_name, email)")
+      .from("wholesale_access_history")
+      .select("id, operation, source, previous_status, new_status, previous_type, new_type, actor_role, reason, previous_commercial_version, new_commercial_version, created_at, actor:users!wholesale_access_history_actor_user_id_fkey(full_name, email)")
       .eq("customer_id", customerId)
-      .eq("note_type", "wholesale_status")
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .returns<CustomerWholesaleHistoryRow[]>(),
     getCustomerCreditAccount(customerId),
     getCustomerReceivables(customerId, 50),
@@ -1094,10 +1102,30 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     })),
     wholesaleHistory: (wholesaleHistory ?? []).map((item) => ({
       id: item.id,
-      note: item.note,
+      note: item.operation === "approve_request"
+        ? `Solicitud aprobada como mayorista ${item.new_type === "existing" ? "existente" : "nuevo"}.`
+        : item.operation === "direct_grant"
+          ? `Acceso otorgado directamente como mayorista ${item.new_type === "existing" ? "existente" : "nuevo"}.`
+          : item.operation === "change_type"
+            ? `Tipo mayorista cambiado a ${item.new_type === "existing" ? "existente" : "nuevo"}.`
+            : item.operation === "reject"
+              ? "Solicitud mayorista rechazada."
+              : item.operation === "suspend"
+                ? "Acceso mayorista suspendido."
+                : "Acceso mayorista reactivado.",
       created_at: item.created_at,
-      user_name: item.users?.full_name ?? null,
-      user_email: item.users?.email ?? null,
+      user_name: item.actor?.full_name ?? null,
+      user_email: item.actor?.email ?? null,
+      operation: item.operation,
+      source: item.source,
+      actor_role: item.actor_role,
+      previous_status: item.previous_status,
+      new_status: item.new_status,
+      previous_type: item.previous_type,
+      new_type: item.new_type,
+      reason: item.reason,
+      previous_commercial_version: item.previous_commercial_version,
+      new_commercial_version: item.new_commercial_version,
     })),
     creditAccount,
     receivables,

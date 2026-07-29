@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, RotateCcw, Search, ShieldAlert, X } from "lucide-react";
 import {
   approveWholesaleRequestAction,
@@ -20,6 +21,7 @@ type WholesaleCustomersManagerProps = {
   customers: CrmCustomerOption[];
   activeFilter?: { id: Filter; label: string } | null;
   canManageWholesale: boolean;
+  firstWholesaleMinimum: number;
 };
 
 type Filter = "all" | CrmWholesaleStatus;
@@ -50,12 +52,13 @@ function customerName(customer: CrmCustomerOption) {
   return customer.business_name || customer.company_name || customer.contact_name;
 }
 
-export function WholesaleCustomersManager({ customers, activeFilter = null, canManageWholesale }: WholesaleCustomersManagerProps) {
+export function WholesaleCustomersManager({ customers, activeFilter = null, canManageWholesale, firstWholesaleMinimum }: WholesaleCustomersManagerProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>(activeFilter?.id ?? "all");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
+  const router = useRouter();
 
   const wholesaleCustomers = useMemo(
     () =>
@@ -97,14 +100,32 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message);
+        router.refresh();
       } else {
         toast.error(result.message);
       }
     });
   }
 
-  function approve(customerId: string, wholesaleCustomerType: WholesaleCustomerType) {
-    runAction(() => approveWholesaleRequestAction(customerId, wholesaleCustomerType));
+  async function approve(customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType) {
+    const confirmed = await toast.confirm({
+      title: wholesaleCustomerType === "existing" ? "Aprobar como mayorista existente" : "Aprobar como mayorista nuevo",
+      message: wholesaleCustomerType === "existing"
+        ? "El cliente quedará aprobado como mayorista existente sin requisito de primera compra mínima."
+        : `El cliente quedará aprobado como mayorista nuevo y deberá completar una primera compra mayorista mínima de ${new Intl.NumberFormat("es-HN", { style: "currency", currency: "HNL" }).format(firstWholesaleMinimum)}.`,
+      confirmLabel: "Aprobar mayoreo",
+      cancelLabel: "Cancelar",
+      tone: "neutral",
+    });
+    if (!confirmed) return;
+    runAction(() => approveWholesaleRequestAction({
+      requestKey: crypto.randomUUID(),
+      customerId: customer.id,
+      wholesaleCustomerType,
+      expectedCommercialVersion: customer.commercial_version,
+      expectedWholesaleStatus: "pending",
+      expectedRequestedAt: customer.wholesale_requested_at,
+    }));
   }
 
   async function changeType(customer: CrmCustomerOption) {
@@ -118,10 +139,13 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
 
     if (confirmed) {
       runAction(() =>
-        changeWholesaleCustomerTypeAction(
-          customer.id,
-          customer.wholesale_customer_type === "existing" ? "new" : "existing",
-        ),
+        changeWholesaleCustomerTypeAction({
+          requestKey: crypto.randomUUID(),
+          customerId: customer.id,
+          expectedCommercialVersion: customer.commercial_version,
+          expectedWholesaleStatus: customer.wholesale_status,
+          wholesaleCustomerType: customer.wholesale_customer_type === "existing" ? "new" : "existing",
+        }),
       );
     }
   }
@@ -215,19 +239,19 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
                         : "Sin acceso mayorista activo."}
                 </p>
                 {canManageWholesale ? <div className="flex flex-wrap gap-2 xl:justify-end">
-                  {customer.wholesale_status === "pending" || customer.wholesale_status === "rejected" ? (
+                  {customer.wholesale_status === "pending" ? (
                     <>
-                      <Button onClick={() => approve(customer.id, "new")} disabled={isPending} variant="dark">
+                      <Button onClick={() => void approve(customer, "new")} disabled={isPending} variant="dark">
                         <CheckCircle2 size={16} />
                         Aprobar como nuevo
                       </Button>
-                      <Button onClick={() => approve(customer.id, "existing")} disabled={isPending} variant="secondary">
+                      <Button onClick={() => void approve(customer, "existing")} disabled={isPending} variant="secondary">
                         Aprobar como existente
                       </Button>
                     </>
                   ) : null}
                   {customer.wholesale_status === "pending" ? (
-                    <Button onClick={() => runAction(() => rejectWholesaleRequestAction(customer.id))} disabled={isPending} variant="ghost">
+                    <Button onClick={() => runAction(() => rejectWholesaleRequestAction({ requestKey: crypto.randomUUID(), customerId: customer.id, expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "pending" }))} disabled={isPending} variant="ghost">
                       <ShieldAlert size={16} />
                       Rechazar
                     </Button>
@@ -241,14 +265,14 @@ export function WholesaleCustomersManager({ customers, activeFilter = null, canM
                       >
                         Cambiar a {customer.wholesale_customer_type === "existing" ? "nuevo" : "existente"}
                       </Button>
-                      <Button onClick={() => runAction(() => suspendWholesaleAccessAction(customer.id))} disabled={isPending} variant="ghost">
+                      <Button onClick={() => runAction(() => suspendWholesaleAccessAction({ requestKey: crypto.randomUUID(), customerId: customer.id, expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "approved" }))} disabled={isPending} variant="ghost">
                         <Ban size={16} />
                         Suspender
                       </Button>
                     </>
                   ) : null}
                   {customer.wholesale_status === "suspended" ? (
-                    <Button onClick={() => runAction(() => reactivateWholesaleAccessAction(customer.id))} disabled={isPending} variant="dark">
+                    <Button onClick={() => runAction(() => reactivateWholesaleAccessAction({ requestKey: crypto.randomUUID(), customerId: customer.id, expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "suspended" }))} disabled={isPending} variant="dark">
                       <RotateCcw size={16} />
                       Reactivar
                     </Button>

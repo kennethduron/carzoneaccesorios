@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getAdminCrm } from "@/services/supabase/admin-crm.service";
+import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +32,15 @@ export default async function AdminCustomersPage({
   const canEditCustomerIdentity =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "customers:update_identity", profile.email);
+  const canManageWholesale =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
 
   const params = await searchParams;
-  const crm = await getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role });
+  const [crm, settings] = await Promise.all([
+    getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role }),
+    getPublicCompanySettings(),
+  ]);
 
   return (
     <AdminShell title="Clientes">
@@ -53,6 +60,8 @@ export default async function AdminCustomersPage({
         canManageCredit={canManageCredit}
         canLinkPortalAccount={canLinkPortalAccount}
         canEditCustomerIdentity={canEditCustomerIdentity}
+        canManageWholesale={canManageWholesale}
+        firstWholesaleMinimum={Number(settings.first_wholesale_minimum ?? 10000)}
       />
     </AdminShell>
   );

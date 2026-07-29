@@ -4,6 +4,8 @@ import { CreditPaymentHistory } from "@/components/admin/credit-payment-history"
 import { LogoutButton } from "@/components/auth";
 import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-download-button";
 import { CustomerCreditNotificationToast } from "@/components/store/customer-credit-notification-toast";
+import { CustomerWholesaleNotificationToast } from "@/components/store/customer-wholesale-notification-toast";
+import { CustomerNotifications } from "@/components/store/customer-notifications";
 import { WholesaleAccountRequestCard } from "@/components/store/wholesale-account-request-card";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
@@ -16,6 +18,7 @@ import {
   type CustomerOrderRow,
 } from "@/services/supabase/customer-account.service";
 import { getActiveCreditAccountForUser, getCustomerReceivablesForUser, getUnreadCustomerCreditNotifications } from "@/services/supabase/credit.service";
+import { getCustomerPortalNotifications } from "@/services/supabase/customer-portal-notifications.service";
 import type { StoreInvoice } from "@/types/invoices";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { formatCurrency } from "@/utils/pricing";
@@ -118,7 +121,7 @@ export default async function CuentaPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const profile = await requireSession();
-  const [wholesaleState, accountSummary, recentOrders, issuedInvoices, creditAccount, creditReceivables, creditNotifications] = await Promise.all([
+  const [wholesaleState, accountSummary, recentOrders, issuedInvoices, creditAccount, creditReceivables, creditNotifications, portalNotifications] = await Promise.all([
     getWholesaleAccessStateAction(),
     getCustomerAccountSummary(profile.id),
     getCustomerOrders(profile.id, 5),
@@ -126,6 +129,7 @@ export default async function CuentaPage({
     getActiveCreditAccountForUser(profile.id).catch(() => null),
     getCustomerReceivablesForUser(profile.id, 10).catch(() => []),
     getUnreadCustomerCreditNotifications(profile.id).catch(() => []),
+    getCustomerPortalNotifications().catch(() => []),
   ]);
   const params = (await searchParams) ?? {};
   const confirmed = params.confirmed === "1";
@@ -147,6 +151,7 @@ export default async function CuentaPage({
   return (
     <PublicStoreShell>
       <CustomerCreditNotificationToast notifications={creditAccount ? creditNotifications : []} />
+      <CustomerWholesaleNotificationToast notifications={portalNotifications} />
       <section className="mx-auto max-w-6xl px-5 py-8">
         {confirmed ? (
           <div className="mb-4 rounded-lg border border-[#16a34a]/20 bg-[#f0fdf4] p-4 text-sm text-[#166534]">
@@ -190,6 +195,8 @@ export default async function CuentaPage({
 
           <WholesaleAccountRequestCard initialState={wholesaleState} context="account" />
         </div>
+
+        <CustomerNotifications initialNotifications={portalNotifications} />
 
         {wholesaleState.kind === "approved" ? (
           <section className="mt-5 rounded-lg border border-black/10 bg-white p-5 shadow-sm">

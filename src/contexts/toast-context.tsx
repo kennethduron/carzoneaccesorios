@@ -163,6 +163,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={toast.id}
             className={`pointer-events-auto rounded-lg border p-3 text-sm shadow-lg shadow-black/10 ${toastTone(toast.type)}`}
             role="status"
+            aria-live="polite"
+            aria-atomic="true"
           >
             <div className="flex items-start gap-3">
               <span className="mt-0.5 shrink-0">{toastIcon(toast.type)}</span>
