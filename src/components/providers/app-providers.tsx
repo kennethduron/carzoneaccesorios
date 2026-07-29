@@ -7,11 +7,18 @@ import { OrdersProvider } from "@/contexts/orders-context";
 import { ProductRegistryProvider } from "@/contexts/product-registry-context";
 import { ToastProvider } from "@/contexts/toast-context";
 import { NavigationLoadingOverlay } from "@/components/navigation-loading-overlay";
+import type { PortalCommercialContext } from "@/types/portal-commercial";
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+export function AppProviders({
+  children,
+  initialCommercialContext,
+}: {
+  children: React.ReactNode;
+  initialCommercialContext: PortalCommercialContext;
+}) {
   return (
     <ToastProvider>
-      <PriceModeProvider>
+      <PriceModeProvider initialContext={initialCommercialContext}>
         <ProductRegistryProvider>
           <CartProvider>
             <OrdersProvider>

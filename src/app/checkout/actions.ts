@@ -11,10 +11,10 @@ import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
-import { getActiveCreditAccountForUser, getOpenCreditBalance } from "@/services/supabase/credit.service";
+import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
+import type { PortalCommercialBlockCode, PortalCommercialWarningCode } from "@/types/portal-commercial";
 import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
-import { getAuthorizedProductPrice, hasValidWholesalePrice } from "@/utils/pricing";
 import { validateHondurasPhone } from "@/utils/validation";
 
 type CheckoutOrderItemInput = {
@@ -25,7 +25,10 @@ type CheckoutOrderItemInput = {
 type CreateCheckoutOrderInput = {
   checkout: CheckoutData;
   items: CheckoutOrderItemInput[];
-  priceMode: PriceMode;
+  requestKey: string;
+  expectedCommercialVersion: number | null;
+  expectedContextToken: string | null;
+  expectedPriceMode: PriceMode;
 };
 
 type CheckoutActionResult = {
@@ -34,6 +37,7 @@ type CheckoutActionResult = {
   orderNumber?: string;
   trackingCode?: string;
   transferReceiptUrl?: string | null;
+  code?: string;
 };
 
 type TransferReceiptUpload = {
@@ -59,20 +63,21 @@ export type CheckoutAccountInfo = {
   address: string | null;
   city: string | null;
   credit: {
-    customerId: string;
     creditLimit: number;
     termsDays: number;
-    openBalance: number;
+    usedCredit: number;
     availableCredit: number;
+    overdueBalance: number;
+    enabled: boolean;
+    status: "active" | "suspended" | null;
+    usable: boolean;
+    blockCodes: PortalCommercialBlockCode[];
+    warningCodes: PortalCommercialWarningCode[];
   } | null;
-};
-
-type CustomerAuthorizationRow = {
-  id: string;
-  is_wholesale: boolean;
-  wholesale_status: "none" | "pending" | "approved" | "rejected" | "suspended" | null;
-  status: "active" | "inactive" | "disabled" | "pending_account";
-  active: boolean;
+  linked: boolean;
+  effectivePriceMode: "retail" | "wholesale";
+  commercialVersion: number | null;
+  contextToken: string | null;
 };
 
 type CheckoutProductPriceRow = {
@@ -99,6 +104,34 @@ function isUuid(value: string) {
 function safeCheckoutErrorMessage(message: string) {
   const normalized = message.toLowerCase();
   const genericCheckoutMessage = "No se pudo crear el pedido. Revisa la información e inténtalo nuevamente.";
+
+  if (normalized.includes("commercial_context_changed")) {
+    return "Tus condiciones comerciales cambiaron. Actualizamos el checkout; revisa el total e inténtalo nuevamente.";
+  }
+
+  if (normalized.includes("checkout_idempotency_conflict")) {
+    return "Esta solicitud ya fue usada con datos diferentes. Actualiza el checkout e inténtalo nuevamente.";
+  }
+
+  if (normalized.includes("checkout_customer_changed")) {
+    return "La sesión del cliente cambió. Actualiza la página antes de continuar.";
+  }
+
+  if (normalized.includes("wholesale_not_available")) {
+    return "El precio mayorista ya no está disponible para esta sesión. Actualiza el carrito.";
+  }
+
+  if (normalized.includes("credit_not_available")) {
+    return "El crédito comercial no está disponible para este pedido. Revisa el método de pago.";
+  }
+
+  if (normalized.includes("checkout_invalid_input")) {
+    return "Los datos del checkout no son válidos. Revisa el carrito e inténtalo nuevamente.";
+  }
+
+  if (normalized.includes("checkout_internal_error")) {
+    return genericCheckoutMessage;
+  }
 
   if (
     normalized.includes("solo hay") ||
@@ -172,10 +205,17 @@ function paymentMethodValue(method: CheckoutData["paymentMethod"]) {
 }
 
 function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
+  const versionValue = String(formData.get("expectedCommercialVersion") ?? "").trim();
+  const contextTokenValue = String(formData.get("expectedContextToken") ?? "").trim();
+  const priceModeValue = String(formData.get("expectedPriceMode") ?? "retail");
+
   return {
     checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
     items: JSON.parse(String(formData.get("items") ?? "[]")) as CheckoutOrderItemInput[],
-    priceMode: String(formData.get("priceMode") ?? "retail") as PriceMode,
+    requestKey: String(formData.get("requestKey") ?? ""),
+    expectedCommercialVersion: versionValue === "" ? null : Number(versionValue),
+    expectedContextToken: contextTokenValue || null,
+    expectedPriceMode: priceModeValue === "wholesale" ? "wholesale" : "retail",
   };
 }
 
@@ -215,6 +255,10 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     address: null,
     city: null,
     credit: null,
+    linked: false,
+    effectivePriceMode: "retail",
+    commercialVersion: null,
+    contextToken: null,
   };
 
   const supabase = await getSupabaseServerClient();
@@ -226,6 +270,7 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     return guestAccount;
   }
 
+  const commercial = await getPortalCommercialContext();
   const admin = getSupabaseAdminClient();
   const [{ data: profile }, { data: customer }] = await Promise.all([
     admin
@@ -236,9 +281,7 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     admin
       .from("customers")
       .select("id, contact_name, email, phone, tax_id, address, city")
-      .eq("user_id", user.id)
-      .eq("active", true)
-      .order("updated_at", { ascending: false })
+      .eq("id", commercial.customerId ?? "00000000-0000-0000-0000-000000000000")
       .limit(1)
       .maybeSingle<{
         id: string;
@@ -252,8 +295,6 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
   ]);
 
   const accountEmail = normalizeEmail(user.email || profile?.email || customer?.email);
-  const creditAccount = await getActiveCreditAccountForUser(user.id).catch(() => null);
-  const openBalance = creditAccount ? await getOpenCreditBalance(creditAccount.customer_id).catch(() => 0) : 0;
 
   return {
     isAuthenticated: true,
@@ -263,15 +304,24 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
     rtn: customer?.tax_id || null,
     address: customer?.address || null,
     city: customer?.city || null,
-    credit: creditAccount
+    credit: commercial.creditAccountExists
       ? {
-          customerId: creditAccount.customer_id,
-          creditLimit: creditAccount.credit_limit,
-          termsDays: creditAccount.terms_days,
-          openBalance,
-          availableCredit: Math.max(creditAccount.credit_limit - openBalance, 0),
+          creditLimit: commercial.creditLimit ?? 0,
+          termsDays: commercial.creditTermsDays ?? 0,
+          usedCredit: commercial.creditUsed ?? 0,
+          availableCredit: commercial.creditAvailable ?? 0,
+          overdueBalance: commercial.overdueBalance ?? 0,
+          enabled: commercial.creditEnabled,
+          status: commercial.creditStatus,
+          usable: commercial.creditUsable,
+          blockCodes: commercial.blockCodes,
+          warningCodes: commercial.warningCodes,
         }
       : null,
+    linked: commercial.linked,
+    effectivePriceMode: commercial.effectivePriceMode,
+    commercialVersion: commercial.commercialVersion,
+    contextToken: commercial.contextToken,
   };
 }
 
@@ -382,6 +432,18 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const accountEmail = normalizeEmail(user?.email);
   const submittedEmail = normalizeEmail(input.checkout.email);
 
+  if (!isUuid(input.requestKey)) {
+    return { ok: false, message: "Actualiza el checkout e inténtalo nuevamente." };
+  }
+
+  if (
+    (input.expectedCommercialVersion !== null &&
+      (!Number.isInteger(input.expectedCommercialVersion) || input.expectedCommercialVersion < 0)) ||
+    (input.expectedContextToken !== null && !/^[0-9a-f]{64}$/.test(input.expectedContextToken))
+  ) {
+    return { ok: false, code: "COMMERCIAL_CONTEXT_CHANGED", message: "Actualiza el checkout e inténtalo nuevamente." };
+  }
+
   const checkoutLimit = await checkRateLimit({
     route: "/checkout",
     limit: 6,
@@ -420,6 +482,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const bankReference = bankReferenceResult.ok ? bankReferenceResult.value : "";
   const rawItems = Array.isArray(input.items) ? input.items : [];
   const settings = await getPublicCompanySettings();
+  const priceMode = input.expectedPriceMode;
 
   if (country !== "Honduras") {
     return { ok: false, message: hondurasOnlyMessage };
@@ -461,10 +524,11 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
 
   const normalizedItems = rawItems
     .map((item) => ({
-      productId: item.productId,
+      productId: String(item.productId ?? ""),
       quantity: Math.trunc(Number(item.quantity)),
     }))
-    .filter((item) => item.productId && item.quantity > 0);
+    .filter((item) => item.productId && item.quantity > 0)
+    .sort((left, right) => left.productId.localeCompare(right.productId));
 
   if (normalizedItems.length === 0) {
     return { ok: false, message: "Agrega productos válidos para crear el pedido." };
@@ -487,10 +551,12 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
-  const { data: availableProducts, error: productsError } = await supabase
-    .from("public_catalog_products_v1")
+  const { data: availableProducts, error: productsError } = await getSupabaseAdminClient()
+    .from("products")
     .select("id, name, retail_price, wholesale_price, wholesale_min_quantity")
     .in("id", productIds)
+    .eq("active", true)
+    .eq("status", "active")
     .returns<CheckoutProductPriceRow[]>();
 
   if (productsError) {
@@ -514,33 +580,12 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     };
   }
 
-  if (input.priceMode === "wholesale") {
+  if (priceMode === "wholesale") {
     if (!settings.wholesale_purchases_enabled) {
       return { ok: false, message: "Las compras mayoristas están desactivadas temporalmente." };
     }
 
     if (!user) {
-      return { ok: false, message: wholesaleMessages.loginRequired };
-    }
-
-    const { data: customerRows, error: customerError } = await supabase
-      .from("customers")
-      .select("id, is_wholesale, wholesale_status, status, active")
-      .eq("user_id", user.id)
-      .returns<CustomerAuthorizationRow[]>();
-
-    if (customerError) {
-      return { ok: false, message: wholesaleMessages.accountNotAuthorized };
-    }
-
-    const authorizedWholesaleAccount = (customerRows ?? []).find(
-      (customer) =>
-        customer.active &&
-        (customer.wholesale_status === "approved" ||
-          (customer.wholesale_status === null && customer.is_wholesale && customer.status === "active")),
-    );
-
-    if (!authorizedWholesaleAccount) {
       return { ok: false, message: wholesaleMessages.accountNotAuthorized };
     }
 
@@ -552,10 +597,8 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         if (
           !product ||
           minimumQuantity <= 1 ||
-          !hasValidWholesalePrice({
-            retail_price: Number(product.retail_price ?? 0),
-            wholesale_price: Number(product.wholesale_price ?? 0),
-          }) ||
+          Number(product.wholesale_price ?? 0) <= 0 ||
+          Number(product.wholesale_price ?? 0) >= Number(product.retail_price ?? 0) ||
           item.quantity >= minimumQuantity
         ) {
           return null;
@@ -582,40 +625,6 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
       };
     }
 
-    if (settings.first_wholesale_minimum > 0) {
-      const { data: hasCompletedWholesaleOrder, error: historyError } = await supabase.rpc("has_completed_wholesale_order", {
-        target_customer_id: authorizedWholesaleAccount.id,
-      });
-
-      if (historyError) {
-        return { ok: false, message: "No se pudo validar historial mayorista." };
-      }
-
-      if (!Boolean(hasCompletedWholesaleOrder)) {
-        const authorizedPriceByProductId = new Map(
-          (availableProducts ?? []).map((product) => [
-            product.id,
-            getAuthorizedProductPrice(
-              { retail_price: Number(product.retail_price ?? 0), wholesale_price: Number(product.wholesale_price ?? 0) },
-              "wholesale",
-            ),
-          ]),
-        );
-        const wholesaleProductsTotal = normalizedItems.reduce(
-          (total, item) => total + (authorizedPriceByProductId.get(item.productId) ?? 0) * item.quantity,
-          0,
-        );
-        const missing = Math.max(0, Math.round((settings.first_wholesale_minimum - wholesaleProductsTotal) * 100) / 100);
-
-        if (missing > 0) {
-          return {
-            ok: false,
-            message:
-              "Para activar tu primera compra mayorista, el monto mínimo debe ser de L 10,000. Después de tu primera compra mayorista, podrás comprar cualquier monto.",
-          };
-        }
-      }
-    }
   }
 
   let transferReceipt: TransferReceiptUpload | null = null;
@@ -648,29 +657,32 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   }
 
   const { data, error } = await supabase
-    .rpc("create_checkout_order_v2", {
-      customer_name: customerName,
-      customer_email: email,
-      customer_phone: phone,
-      customer_rtn: customerRtn,
-      delivery_address: deliveryAddress,
-      delivery_country: "Honduras",
-      country_code: "HN",
-      delivery_department: department,
-      delivery_city: city,
-      requested_price_mode: input.priceMode,
-      requested_payment_method: paymentMethod,
-      requested_payment_timing: paymentTiming,
-      bank_reference_number: paymentMethod === "bank_transfer" && paymentTiming === "before_delivery" ? bankReference : null,
-      order_items: normalizedItems.map((item) => ({
+    .rpc("create_checkout_order_v3", {
+      p_request_key: input.requestKey,
+      p_expected_commercial_version: input.expectedCommercialVersion,
+      p_expected_context_token: input.expectedContextToken,
+      p_customer_name: customerName,
+      p_customer_email: email,
+      p_customer_phone: phone,
+      p_customer_rtn: customerRtn,
+      p_delivery_address: deliveryAddress,
+      p_delivery_country: "Honduras",
+      p_country_code: "HN",
+      p_delivery_department: department,
+      p_delivery_city: city,
+      p_requested_price_mode: priceMode,
+      p_requested_payment_method: paymentMethod,
+      p_requested_payment_timing: paymentTiming,
+      p_bank_reference_number: paymentMethod === "bank_transfer" && paymentTiming === "before_delivery" ? bankReference : null,
+      p_order_items: normalizedItems.map((item) => ({
         product_id: item.productId,
         quantity: item.quantity,
       })),
-      wholesale_code: null,
-      wholesale_code_id: null,
-      transfer_receipt_url: null,
+      p_wholesale_code: null,
+      p_wholesale_code_id: null,
+      p_transfer_receipt_url: null,
     })
-    .returns<Array<{ order_id: string; order_number: string; tracking_code: string }>>();
+    .returns<Array<{ order_id: string; order_number: string; tracking_code: string; idempotent_replay: boolean }>>();
 
   if (error) {
     await writeErrorLog({
@@ -682,13 +694,23 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
         details: error.details,
         hint: error.hint,
         product_ids: productIds,
-        price_mode: input.priceMode,
+        price_mode: priceMode,
         payment_method: paymentMethod,
         payment_timing: paymentTiming,
       },
     });
 
-    return { ok: false, message: safeCheckoutErrorMessage(error.message) };
+    const code = [
+      "COMMERCIAL_CONTEXT_CHANGED",
+      "CHECKOUT_IDEMPOTENCY_CONFLICT",
+      "CHECKOUT_CUSTOMER_CHANGED",
+      "WHOLESALE_NOT_AVAILABLE",
+      "CREDIT_NOT_AVAILABLE",
+      "CHECKOUT_INVALID_INPUT",
+      "CHECKOUT_INTERNAL_ERROR",
+    ].find((candidate) => error.message.includes(candidate));
+
+    return { ok: false, code, message: safeCheckoutErrorMessage(error.message) };
   }
 
   const rows = (Array.isArray(data) ? data : []) as Array<{ order_id: string; order_number: string; tracking_code: string }>;

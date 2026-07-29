@@ -30,6 +30,7 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
   const [accountQuery, setAccountQuery] = useState("");
   const [accountResults, setAccountResults] = useState<PortalAccountCandidate[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<PortalAccountCandidate | null>(null);
+  const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
   const [reason, setReason] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -38,7 +39,12 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
   const [linking, setLinking] = useState(false);
   const requestSequence = useRef(0);
   const linkingRef = useRef(false);
+  const linkRequestKeyRef = useRef<string | null>(null);
   const debouncedAccountQuery = useDebouncedValue(accountQuery, 350);
+  useEffect(() => {
+    linkRequestKeyRef.current = null;
+  }, [reason, selectedAccount?.id, selectedCustomer?.id, selectedEvidenceIndex]);
+
 
   useEffect(() => {
     if (!selectedCustomer || selectedCustomer.linked || debouncedAccountQuery.trim().length < 3) return;
@@ -80,7 +86,10 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
   }
 
   async function confirmLink() {
-    if (!selectedCustomer || !selectedAccount || linkingRef.current || reason.trim().length < 10) return;
+    const evidence = selectedAccount?.evidence[selectedEvidenceIndex];
+    const minimumReasonLength = evidence?.source === "manual_verified_identity" ? 20 : 10;
+    if (!selectedCustomer || !selectedAccount || !evidence || linkingRef.current || reason.trim().length < minimumReasonLength) return;
+    linkRequestKeyRef.current ??= crypto.randomUUID();
     linkingRef.current = true;
     setLinking(true);
     setMessage(null);
@@ -88,6 +97,10 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
       const result = await linkCustomerPortalAccountAction({
         customerId: selectedCustomer.id,
         userId: selectedAccount.id,
+        requestKey: linkRequestKeyRef.current,
+        expectedCommercialVersion: selectedCustomer.commercialVersion,
+        evidenceSource: evidence.source,
+        evidenceReference: evidence.reference,
         reason,
         confirmed: true,
       });
@@ -97,9 +110,10 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
         return;
       }
       toast.success(result.message);
-      setSelectedCustomer({ ...selectedCustomer, linked: true, linkedAccountEmail: selectedAccount.email });
+      setSelectedCustomer({ ...selectedCustomer, linked: true, linkedAccountEmail: selectedAccount.email, commercialVersion: result.commercialVersion ?? selectedCustomer.commercialVersion });
       setSelectedAccount(null);
       setAccountResults([]);
+      linkRequestKeyRef.current = null;
       setReason("");
       setConfirmOpen(false);
       router.refresh();
@@ -108,6 +122,9 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
       setLinking(false);
     }
   }
+
+  const selectedEvidence = selectedAccount?.evidence[selectedEvidenceIndex] ?? null;
+  const reasonMinimumLength = selectedEvidence?.source === "manual_verified_identity" ? 20 : 10;
 
   const hasDifferences = Boolean(selectedCustomer && selectedAccount && (
     normalize(selectedCustomer.displayName) !== normalize(selectedAccount.fullName || selectedAccount.username) ||
@@ -180,10 +197,11 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
               {accountResults.length > 0 ? (
                 <div className="grid gap-2 md:grid-cols-2">
                   {accountResults.map((account) => (
-                    <button key={account.id} type="button" disabled={linking} onClick={() => setSelectedAccount(account)} aria-pressed={selectedAccount?.id === account.id} className={`rounded-md border p-3 text-left transition-colors ${selectedAccount?.id === account.id ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10 hover:bg-[#f4f4f5]"}`}>
+                    <button key={account.id} type="button" disabled={linking} onClick={() => { setSelectedAccount(account); setSelectedEvidenceIndex(0); }} aria-pressed={selectedAccount?.id === account.id} className={`rounded-md border p-3 text-left transition-colors ${selectedAccount?.id === account.id ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10 hover:bg-[#f4f4f5]"}`}>
                       <span className="font-semibold">{account.fullName || account.username || "Cuenta del portal"}</span>
                       <span className="mt-1 block text-sm text-black/55">{account.email || "Sin correo visible"}</span>
                       <span className="mt-1 block text-xs text-black/45">{account.phone || "Sin teléfono"} · {account.role ? roleLabels[account.role] : "Sin rol"}</span>
+                      <span className="mt-1 block text-xs font-medium text-[#166534]">{account.evidence.some((item) => item.exact) ? "Evidencia autenticada disponible" : "Requiere verificación manual"}</span>
                     </button>
                   ))}
                 </div>
@@ -203,6 +221,18 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
                   ]} />
                   {hasDifferences ? <p className="mt-3 rounded-md bg-[#fffbeb] p-3 text-sm text-[#78350f]">Los datos comerciales y los de acceso no coinciden por completo. Esto es informativo: la vinculación no copiará ni reemplazará ningún dato.</p> : null}
                   <p className="mt-3 text-sm text-black/60">El historial existente se conservará y el correo de acceso seguirá separado del correo comercial.</p>
+                  <label className="mt-3 block text-sm font-medium">
+                    Evidencia de identidad
+                    <select
+                      value={selectedEvidenceIndex}
+                      onChange={(event) => setSelectedEvidenceIndex(Number(event.target.value))}
+                      className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2"
+                    >
+                      {selectedAccount.evidence.map((item, index) => (
+                        <option key={`${item.source}:${index}`} value={index}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
                   <Button type="button" className="mt-4" disabled={selectedAccount.linkedToThisCustomer || linking} onClick={() => setConfirmOpen(true)}>
                     <CheckCircle2 size={16} /> Revisar y confirmar vinculación
                   </Button>
@@ -226,13 +256,14 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
               <p id="portal-link-description" className="text-sm leading-6 text-black/65">Está a punto de vincular el cliente comercial <strong>{selectedCustomer.displayName}</strong> con la cuenta <strong>{selectedAccount.email || selectedAccount.fullName || "seleccionada"}</strong>. El historial comercial existente se conservará y no se reemplazarán automáticamente los datos del cliente. ¿Desea continuar?</p>
               <div className="grid gap-2 sm:grid-cols-2"><Summary label="Cliente" value={selectedCustomer.displayName} /><Summary label="Cuenta" value={selectedAccount.email || selectedAccount.fullName || "Sin correo"} /></div>
               <label className="block text-sm font-medium">Motivo de la vinculación
-                <textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={10} maxLength={500} rows={3} disabled={linking} className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 outline-none focus:border-[#e4252c]" placeholder="Describe cómo se verificó la identidad del cliente." />
-                <span className="mt-1 block text-xs text-black/45">Entre 10 y 500 caracteres.</span>
+                <textarea value={reason} onChange={(event) => setReason(event.target.value)} minLength={reasonMinimumLength} maxLength={500} rows={3} disabled={linking} className="mt-1 w-full rounded-md border border-black/10 bg-white px-3 py-2 outline-none focus:border-[#e4252c]" placeholder="Describe cómo se verificó la identidad del cliente." />
+                <span className="mt-1 block text-xs text-black/45">Entre {reasonMinimumLength} y 500 caracteres.</span>
               </label>
+              <div className="grid gap-2 sm:grid-cols-2"><Summary label="Evidencia" value={selectedEvidence?.label ?? "No seleccionada"} /><Summary label="Versión comercial" value={String(selectedCustomer.commercialVersion)} /></div>
             </div>
             <footer className="flex flex-col-reverse gap-2 p-5 pt-0 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" disabled={linking} onClick={() => setConfirmOpen(false)}>Cancelar</Button>
-              <Button type="button" variant="dark" disabled={linking || reason.trim().length < 10} onClick={confirmLink}>{linking ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{linking ? "Vinculando..." : "Sí, vincular cuenta"}</Button>
+              <Button type="button" variant="dark" disabled={linking || !selectedEvidence || reason.trim().length < reasonMinimumLength} onClick={confirmLink}>{linking ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{linking ? "Vinculando..." : "Sí, vincular cuenta"}</Button>
             </footer>
           </section>
         </div>

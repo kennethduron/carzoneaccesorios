@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { getCartProductsAction } from "@/app/actions/commercial-context";
 import type { CartItem, Product } from "@/types/commerce";
 import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
 import { getProductPrice } from "@/utils/pricing";
@@ -32,6 +33,7 @@ type CartContextValue = {
   rows: CartRow[];
   wholesaleQuantityIssues: WholesaleQuantityIssue[];
   invalidItemCount: number;
+  isResolvingCart: boolean;
   cartMessage: string;
   subtotal: number;
   tax: number;
@@ -64,12 +66,21 @@ function readStoredCart() {
       return [];
     }
 
-    const parsed = JSON.parse(stored) as CartItem[];
-    const validCart = parsed.filter(
-      (item) => typeof item.productId === "string" && isUuid(item.productId) && Number.isFinite(item.quantity),
-    );
+    const parsed = JSON.parse(stored) as Array<Partial<CartItem>>;
+    const validCart: CartItem[] = parsed
+      .filter(
+        (item) =>
+          typeof item.productId === "string" &&
+          isUuid(item.productId) &&
+          Number.isFinite(item.quantity) &&
+          Number(item.quantity) > 0,
+      )
+      .map((item) => ({
+        productId: item.productId as string,
+        quantity: Math.max(1, Math.floor(Number(item.quantity))),
+      }));
 
-    if (validCart.length !== parsed.length) {
+    if (validCart.length !== parsed.length || parsed.some((item) => "productSnapshot" in item)) {
       window.sessionStorage.setItem(storageKey, JSON.stringify(validCart));
     }
 
@@ -88,51 +99,56 @@ function writeStoredCart(cart: CartItem[]) {
   window.sessionStorage.setItem(storageKey, JSON.stringify(cart));
 }
 
-function productSnapshotChanged(current: Product | undefined, next: Product) {
-  return (
-    !current ||
-    current.name !== next.name ||
-    current.sku !== next.sku ||
-    current.stock !== next.stock ||
-    current.retail_price !== next.retail_price ||
-    current.wholesale_price !== next.wholesale_price ||
-    current.wholesale_min_quantity !== next.wholesale_min_quantity
-  );
-}
-
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>(readStoredCart);
   const [cartMessage, setCartMessage] = useState("");
-  const { priceMode } = usePriceMode();
-  const { findProduct } = useProductRegistry();
+  const [resolvedCartProducts, setResolvedCartProducts] = useState<Record<string, Product>>({});
+  const [resolvedCartRequestKey, setResolvedCartRequestKey] = useState("");
+  const { priceMode, commercialContext } = usePriceMode();
+  const { findProduct, registerProducts } = useProductRegistry();
   const toast = useToast();
+  const productIdsKey = useMemo(
+    () => Array.from(new Set(cart.map((item) => item.productId))).sort().join(","),
+    [cart],
+  );
+  const commercialSignature = `${commercialContext.contextToken}:${commercialContext.commercialVersion ?? "guest"}`;
+  const cartRequestKey = `${commercialSignature}:${productIdsKey}`;
+  const isResolvingCart = Boolean(productIdsKey) && resolvedCartRequestKey !== cartRequestKey;
+  const previousCommercialSignature = useRef(commercialSignature);
 
   useEffect(() => {
-    let changed = false;
-    const nextCart = cart.map((item) => {
-      const product = isUuid(item.productId) ? findProduct(item.productId) : null;
-      if (!product || !productSnapshotChanged(item.productSnapshot, product)) {
-        return item;
-      }
+    let cancelled = false;
+    const productIds = productIdsKey ? productIdsKey.split(",") : [];
 
-      changed = true;
-      return { ...item, productSnapshot: product };
-    });
-
-    if (!changed) {
-      return;
+    if (productIds.length === 0) {
+      previousCommercialSignature.current = commercialSignature;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    const timeout = window.setTimeout(() => {
-      writeStoredCart(nextCart);
-      setCart(nextCart);
-      const message = "Actualizamos los precios según tu cuenta actual.";
-      setCartMessage(message);
-      toast.info(message);
-    }, 0);
+    void getCartProductsAction(productIds)
+      .then((products) => {
+        if (cancelled) return;
+        registerProducts(products);
+        setResolvedCartProducts(
+          Object.fromEntries(products.map((product) => [product.id, product])),
+        );
+        if (previousCommercialSignature.current !== commercialSignature) {
+          const message = "Actualizamos los precios según tu cuenta actual.";
+          setCartMessage(message);
+          toast.info(message);
+        }
+        previousCommercialSignature.current = commercialSignature;
+      })
+      .finally(() => {
+        if (!cancelled) setResolvedCartRequestKey(cartRequestKey);
+      });
 
-    return () => window.clearTimeout(timeout);
-  }, [cart, findProduct, toast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [cartRequestKey, commercialSignature, productIdsKey, registerProducts, toast]);
 
   const rows = useMemo(() => {
     return cart
@@ -141,7 +157,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           return null;
         }
 
-        const product = findProduct(item.productId) ?? item.productSnapshot ?? null;
+        const product = resolvedCartProducts[item.productId] ?? null;
         if (!product) {
           return null;
         }
@@ -155,7 +171,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         };
       })
       .filter(Boolean) as CartRow[];
-  }, [cart, findProduct, priceMode]);
+  }, [cart, priceMode, resolvedCartProducts]);
 
   const productsTotal = rows.reduce((sum, item) => sum + item.lineTotal, 0);
   const includedTax = calculateIncludedTaxBreakdown(productsTotal);
@@ -163,7 +179,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const tax = includedTax.includedTax;
   const total = includedTax.totalWithTax;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const invalidItemCount = Math.max(0, cart.length - rows.length);
+  const invalidItemCount = isResolvingCart ? 0 : Math.max(0, cart.length - rows.length);
   const wholesaleQuantityIssues = rows
     .filter((item) => requiresWholesaleMinimumQuantity(item.product, priceMode))
     .map((item) => ({
@@ -180,6 +196,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       rows,
       wholesaleQuantityIssues,
       invalidItemCount,
+      isResolvingCart,
       cartMessage,
       subtotal,
       tax,
@@ -220,7 +237,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
           if (existing) {
             const nextCart = current.map((item) =>
-              item.productId === productId ? { ...item, quantity: nextQuantity, productSnapshot: product } : item,
+              item.productId === productId ? { productId, quantity: nextQuantity } : item,
             );
             writeStoredCart(nextCart);
             const message = shouldApplyWholesaleMinimum && nextQuantity === minimumQuantity
@@ -231,7 +248,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             added = true;
             return nextCart;
           }
-          const nextCart = [...current, { productId, quantity: shouldApplyWholesaleMinimum ? minimumQuantity : 1, productSnapshot: product }];
+          const nextCart = [
+            ...current,
+            { productId, quantity: shouldApplyWholesaleMinimum ? minimumQuantity : 1 },
+          ];
           writeStoredCart(nextCart);
           const message = shouldApplyWholesaleMinimum
             ? wholesaleMinimumQuantityMessage(minimumQuantity)
@@ -246,11 +266,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       updateQuantity(productId, delta) {
         let updated = false;
         setCart((current) => {
-          const existing = current.find((item) => item.productId === productId);
-          const product = findProduct(productId) ?? existing?.productSnapshot ?? null;
+          const product = resolvedCartProducts[productId] ?? null;
 
           if (!product) {
-            const message = "Producto no encontrado.";
+            const message = isResolvingCart
+              ? "Estamos actualizando este producto. Intenta de nuevo."
+              : "Producto no encontrado.";
             setCartMessage(message);
             toast.error(message);
             return current;
@@ -284,7 +305,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
               setCartMessage("Cantidad actualizada en el carrito.");
               updated = true;
-              return { ...item, quantity: nextQuantity, productSnapshot: product };
+              return { productId: item.productId, quantity: nextQuantity };
             })
             .filter((item) => item.quantity > 0);
           writeStoredCart(nextCart);
@@ -302,7 +323,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       },
       clearInvalidCartItems() {
         setCart((current) => {
-          const nextCart = current.filter((item) => isUuid(item.productId) && (findProduct(item.productId) || item.productSnapshot));
+          const nextCart = current.filter(
+            (item) => isUuid(item.productId) && Boolean(resolvedCartProducts[item.productId]),
+          );
           writeStoredCart(nextCart);
           setCartMessage("");
           toast.info("Productos invalidos eliminados del carrito.");
@@ -318,7 +341,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         setCartMessage("");
       },
     }),
-    [cart, cartCount, cartMessage, findProduct, invalidItemCount, priceMode, rows, subtotal, tax, toast, total, wholesaleQuantityIssues],
+    [
+      cart,
+      cartCount,
+      cartMessage,
+      findProduct,
+      invalidItemCount,
+      isResolvingCart,
+      priceMode,
+      resolvedCartProducts,
+      rows,
+      subtotal,
+      tax,
+      toast,
+      total,
+      wholesaleQuantityIssues,
+    ],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

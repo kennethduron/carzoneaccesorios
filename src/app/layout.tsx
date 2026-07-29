@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Rajdhani, Titillium_Web } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { defaultOgImageUrl, siteName, siteUrl } from "@/lib/seo";
+import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
 import "./globals.css";
 
 const rajdhani = Rajdhani({
@@ -93,15 +94,16 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const commercialContext = await getPortalCommercialContext();
   return (
     <html lang="es" className={`${rajdhani.variable} ${titillium.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders initialCommercialContext={commercialContext}>{children}</AppProviders>
       </body>
     </html>
   );

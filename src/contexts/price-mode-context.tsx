@@ -1,37 +1,77 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { getPortalCommercialContextAction } from "@/app/actions/commercial-context";
 import type { PriceMode } from "@/types/commerce";
+import {
+  createGuestPortalCommercialContext,
+  type PortalCommercialContext,
+} from "@/types/portal-commercial";
 import type { WholesaleAccount } from "@/types/wholesale";
 
 type PriceModeContextValue = {
   priceMode: PriceMode;
   wholesaleAccount: WholesaleAccount | null;
-  activateWholesaleMode: (account: WholesaleAccount) => void;
-  clearWholesaleMode: () => void;
+  commercialContext: PortalCommercialContext;
+  refreshCommercialContext: () => Promise<PortalCommercialContext>;
+  clearCommercialContext: () => void;
 };
 
 const PriceModeContext = createContext<PriceModeContextValue | null>(null);
 
-export function PriceModeProvider({ children }: { children: React.ReactNode }) {
-  const [wholesaleAccount, setWholesaleAccount] = useState<WholesaleAccount | null>(null);
-  const activateWholesaleMode = useCallback((account: WholesaleAccount) => {
-    setWholesaleAccount(account);
+export function PriceModeProvider({
+  children,
+  initialContext,
+}: {
+  children: React.ReactNode;
+  initialContext: PortalCommercialContext;
+}) {
+  const [commercialContext, setCommercialContext] = useState(initialContext);
+
+  const refreshCommercialContext = useCallback(async () => {
+    const next = await getPortalCommercialContextAction();
+    setCommercialContext(next);
+    return next;
   }, []);
-  const clearWholesaleMode = useCallback(() => {
-    setWholesaleAccount(null);
+
+  const clearCommercialContext = useCallback(() => {
+    setCommercialContext(createGuestPortalCommercialContext());
   }, []);
 
   const value = useMemo<PriceModeContextValue>(() => {
-    const priceMode: PriceMode = wholesaleAccount ? "wholesale" : "retail";
+    const priceMode = commercialContext.effectivePriceMode;
+    const wholesaleAccount: WholesaleAccount | null =
+      priceMode === "wholesale" && commercialContext.customerId
+        ? {
+            id: commercialContext.customerId,
+            customerId: commercialContext.customerId,
+            customerName: "Cliente",
+            businessName: "Tu cuenta",
+            status: "approved",
+            customerType: commercialContext.wholesaleCustomerType ?? "new",
+            firstPurchaseRequirement: commercialContext.firstPurchaseRequired
+              ? {
+                  minimum: commercialContext.firstPurchaseMinimum,
+                  accumulated: commercialContext.firstPurchaseAccumulated,
+                  missing: Math.max(
+                    commercialContext.firstPurchaseMinimum -
+                      commercialContext.firstPurchaseAccumulated,
+                    0,
+                  ),
+                  completed: commercialContext.firstPurchaseCompleted,
+                }
+              : null,
+          }
+        : null;
 
     return {
       priceMode,
       wholesaleAccount,
-      activateWholesaleMode,
-      clearWholesaleMode,
+      commercialContext,
+      refreshCommercialContext,
+      clearCommercialContext,
     };
-  }, [activateWholesaleMode, clearWholesaleMode, wholesaleAccount]);
+  }, [clearCommercialContext, commercialContext, refreshCommercialContext]);
 
   return <PriceModeContext.Provider value={value}>{children}</PriceModeContext.Provider>;
 }

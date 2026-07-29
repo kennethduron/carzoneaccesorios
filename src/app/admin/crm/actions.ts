@@ -40,6 +40,13 @@ export type CustomerIdentityMutationResult = CrmMutationResult & {
   profile?: CrmCustomerProfile | null;
 };
 
+export type PortalLinkEvidence = {
+  source: "authenticated_wholesale_request" | "authenticated_portal_registration" | "manual_verified_identity";
+  reference: string;
+  label: string;
+  exact: boolean;
+};
+
 export type PortalAccountCandidate = {
   id: string;
   email: string | null;
@@ -53,6 +60,7 @@ export type PortalAccountCandidate = {
   linkedToAnotherCustomer: boolean;
   createdAt: string;
   emailConfirmedAt: string | null;
+  evidence: PortalLinkEvidence[];
 };
 
 export type PortalLinkCustomerCandidate = {
@@ -71,6 +79,7 @@ export type PortalLinkCustomerCandidate = {
   receivableCount: number;
   invoiceCount: number;
   hasCreditAccount: boolean;
+  commercialVersion: number;
 };
 
 type CustomerProfileResult = {
@@ -136,7 +145,7 @@ const wholesaleManagementPermissionMessage = "Solo usuarios autorizados pueden c
 const wholesaleManagementRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 
 const customerIdentityRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
-const portalLinkRoles: AppRole[] = ["technical_owner", "business_owner", "admin", "contadora"];
+const portalLinkRoles: AppRole[] = ["technical_owner", "business_owner", "admin"];
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
@@ -207,21 +216,48 @@ export async function searchPortalAccountCandidatesAction(
   if (rows.length === 0) return { ok: true, message: "No se encontraron cuentas web elegibles.", candidates: [] };
 
   const ids = rows.map((row) => row.id);
-  const [{ data: linkedCustomers, error: linkedError }, authChecks] = await Promise.all([
+  const [{ data: linkedCustomers, error: linkedError }, authChecks, { data: auditEvidence, error: auditEvidenceError }] = await Promise.all([
     admin.from("customers").select("id, user_id").in("user_id", ids),
     Promise.all(rows.map((row) => admin.auth.admin.getUserById(row.id))),
+    admin
+      .from("audit_logs")
+      .select("id, user_id, action, created_at")
+      .eq("table_name", "customers")
+      .eq("record_id", customer.value)
+      .in("user_id", ids)
+      .in("action", ["wholesale_request.created_from_account", "customer_portal_registration.created", "auth.registration.customer_evidence"])
+      .order("created_at", { ascending: false }),
   ]);
-  if (linkedError) return { ok: false, message: "No fue posible validar el estado de vinculación.", candidates: [] };
+  if (linkedError || auditEvidenceError) return { ok: false, message: "No fue posible validar el estado de vinculación.", candidates: [] };
 
   const links = new Map(
     ((linkedCustomers ?? []) as Array<{ id: string; user_id: string | null }>)
       .filter((row) => row.user_id)
       .map((row) => [row.user_id as string, row.id]),
   );
+  const exactEvidenceByUser = new Map<string, PortalLinkEvidence>();
+  for (const evidence of auditEvidence ?? []) {
+    if (!evidence.user_id || exactEvidenceByUser.has(evidence.user_id)) continue;
+    const wholesaleRequest = evidence.action === "wholesale_request.created_from_account";
+    exactEvidenceByUser.set(evidence.user_id, {
+      source: wholesaleRequest ? "authenticated_wholesale_request" : "authenticated_portal_registration",
+      reference: `audit:${evidence.id}`,
+      label: wholesaleRequest ? "Solicitud mayorista autenticada" : "Registro autenticado del portal",
+      exact: true,
+    });
+  }
 
   const candidates = rows.flatMap((row, index): PortalAccountCandidate[] => {
     const authUser = authChecks[index].data.user;
     const linkedCustomerId = links.get(row.id) ?? null;
+    const exactEvidence = exactEvidenceByUser.get(row.id);
+    const evidence: PortalLinkEvidence[] = exactEvidence ? [exactEvidence] : [];
+    evidence.push({
+      source: "manual_verified_identity",
+      reference: `manual:${customer.value}:${row.id}`,
+      label: "Identidad verificada manualmente",
+      exact: false,
+    });
     if (authChecks[index].error || !authUser || (linkedCustomerId && linkedCustomerId !== customer.value)) return [];
     return [{
       id: row.id,
@@ -235,6 +271,7 @@ export async function searchPortalAccountCandidatesAction(
       linkedToThisCustomer: linkedCustomerId === customer.value,
       linkedToAnotherCustomer: false,
       createdAt: row.created_at,
+      evidence,
       emailConfirmedAt: authUser.email_confirmed_at ?? null,
     }];
   });
@@ -264,7 +301,7 @@ export async function searchCustomersForPortalLinkAction(
 
   const admin = getSupabaseAdminClient();
   const pattern = `%${search}%`;
-  const columns = "id, business_name, company_name, contact_name, email, phone, tax_id, city, active, status, user_id";
+  const columns = "id, business_name, company_name, contact_name, email, phone, tax_id, city, active, status, user_id, commercial_version";
   const [byName, byBusiness, byEmail, byPhone] = await Promise.all([
     admin.from("customers").select(columns).ilike("contact_name", pattern).limit(10),
     admin.from("customers").select(columns).ilike("business_name", pattern).limit(10),
@@ -286,6 +323,7 @@ export async function searchCustomersForPortalLinkAction(
     active: boolean;
     status: string;
     user_id: string | null;
+    commercial_version: number;
   };
 
   const customersById = new Map<string, LinkCustomerRow>();
@@ -343,6 +381,7 @@ export async function searchCustomersForPortalLinkAction(
       invoiceCount: invoiceCounts.get(row.id) ?? 0,
       receivableCount: receivableCounts.get(row.id) ?? 0,
       hasCreditAccount: creditCustomerIds.has(row.id),
+      commercialVersion: row.commercial_version,
     })),
   };
 }
@@ -350,6 +389,10 @@ export async function searchCustomersForPortalLinkAction(
 export async function linkCustomerPortalAccountAction(input: {
   customerId: string;
   userId: string;
+  requestKey: string;
+  expectedCommercialVersion: number;
+  evidenceSource: PortalLinkEvidence["source"];
+  evidenceReference: string;
   reason: string;
   confirmed: boolean;
 }): Promise<CrmMutationResult & { status?: string }> {
@@ -361,20 +404,35 @@ export async function linkCustomerPortalAccountAction(input: {
 
   const customer = uuidLike(input.customerId, "Cliente");
   const user = uuidLike(input.userId, "Cuenta web");
+  const requestKey = uuidLike(input.requestKey, "Solicitud");
   const reason = input.reason.trim();
   if (!customer.ok) return { ok: false, message: customer.message };
   if (!user.ok) return { ok: false, message: user.message };
+  if (!requestKey.ok) return { ok: false, message: requestKey.message };
+  if (!Number.isInteger(input.expectedCommercialVersion) || input.expectedCommercialVersion < 0) {
+    return { ok: false, code: "PORTAL_LINK_VERSION_INVALID", message: "La versión comercial no es válida." };
+  }
   if (!input.confirmed) return { ok: false, message: "Confirma explícitamente la vinculación." };
-  if (reason.length < 10 || reason.length > 500) {
-    return { ok: false, message: "El motivo debe tener entre 10 y 500 caracteres." };
+  const minimumReasonLength = input.evidenceSource === "manual_verified_identity" ? 20 : 10;
+  if (reason.length < minimumReasonLength || reason.length > 500) {
+    return { ok: false, message: `El motivo debe tener entre ${minimumReasonLength} y 500 caracteres.` };
+  }
+  if (
+    !["authenticated_wholesale_request", "authenticated_portal_registration", "manual_verified_identity"].includes(input.evidenceSource) ||
+    !/^[A-Za-z0-9:#._/-]{6,180}$/.test(input.evidenceReference)
+  ) {
+    return { ok: false, code: "PORTAL_LINK_EVIDENCE_INVALID", message: "Selecciona evidencia válida para la vinculación." };
   }
 
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("link_customer_portal_account_manual", {
+  const { data, error } = await supabase.rpc("link_customer_portal_account_v2", {
+    p_request_key: requestKey.value,
     p_customer_id: customer.value,
-    p_user_id: user.value,
+    p_portal_user_id: user.value,
+    p_expected_commercial_version: input.expectedCommercialVersion,
+    p_evidence_source: input.evidenceSource,
+    p_evidence_reference: input.evidenceReference,
     p_reason: reason,
-    p_confirmed: true,
   });
   if (error) {
     await writeErrorLog({
@@ -383,18 +441,52 @@ export async function linkCustomerPortalAccountAction(input: {
       errorMessage: error.message,
       metadata: { code: error.code ?? null },
     });
-    return { ok: false, message: "No fue posible vincular la cuenta. Revisa el estado e intenta nuevamente." };
+    const code = [
+      "PORTAL_LINK_FORBIDDEN",
+      "PORTAL_LINK_EVIDENCE_INVALID",
+      "PORTAL_LINK_CUSTOMER_NOT_FOUND",
+      "PORTAL_LINK_CUSTOMER_INACTIVE",
+      "PORTAL_LINK_CUSTOMER_CONFLICT",
+      "PORTAL_LINK_VERSION_CONFLICT",
+      "PORTAL_LINK_ACCOUNT_INACTIVE",
+      "PORTAL_LINK_ROLE_INVALID",
+      "PORTAL_LINK_ACCOUNT_CONFLICT",
+      "PORTAL_LINK_IDEMPOTENCY_CONFLICT",
+    ].find((candidate) => error.message.includes(candidate)) ?? "PORTAL_LINK_FAILED";
+    const currentVersion = code === "PORTAL_LINK_VERSION_CONFLICT"
+      ? Number(error.message.split(":").at(-1))
+      : undefined;
+    const messages: Record<string, string> = {
+      PORTAL_LINK_FORBIDDEN: "No tienes permiso para vincular cuentas del portal.",
+      PORTAL_LINK_EVIDENCE_INVALID: "La evidencia ya no es válida. Actualiza la búsqueda y verifica nuevamente.",
+      PORTAL_LINK_CUSTOMER_NOT_FOUND: "El cliente ya no existe.",
+      PORTAL_LINK_CUSTOMER_INACTIVE: "El cliente no está activo.",
+      PORTAL_LINK_CUSTOMER_CONFLICT: "El cliente ya está vinculado a otra cuenta.",
+      PORTAL_LINK_VERSION_CONFLICT: "El cliente cambió desde que lo revisaste. Actualiza antes de vincular.",
+      PORTAL_LINK_ACCOUNT_INACTIVE: "La cuenta del portal no está activa.",
+      PORTAL_LINK_ROLE_INVALID: "La cuenta seleccionada no tiene rol Cliente.",
+      PORTAL_LINK_ACCOUNT_CONFLICT: "La cuenta ya está vinculada a otro cliente.",
+      PORTAL_LINK_IDEMPOTENCY_CONFLICT: "La solicitud ya fue usada con datos diferentes.",
+    };
+    return { ok: false, code, currentVersion: Number.isFinite(currentVersion) ? currentVersion : undefined, message: messages[code] ?? "No fue posible vincular la cuenta. Revisa el estado e intenta nuevamente." };
   }
 
-  const result = (data as Array<{ ok: boolean; status: string; message: string }> | null)?.[0];
+  const result = data as { ok?: boolean; code?: string; commercialVersion?: number } | null;
   if (!result) return { ok: false, message: "La vinculación no devolvió un resultado válido." };
   if (result.ok) {
     revalidatePath("/admin/crm");
     revalidatePath("/admin/clientes");
     revalidatePath("/admin/vincular-cuenta-cliente");
     revalidatePath("/cuenta");
+    revalidatePath("/catalogo");
+    revalidatePath("/producto/[slug]", "page");
+    revalidatePath("/carrito");
+    revalidatePath("/checkout");
   }
-  return { ok: result.ok, status: result.status, message: result.message };
+  const message = result.code === "PORTAL_LINK_ALREADY_EXISTS"
+    ? "La cuenta ya estaba vinculada de forma segura."
+    : "Cuenta del portal vinculada correctamente.";
+  return { ok: Boolean(result.ok), code: result.code, commercialVersion: result.commercialVersion, message };
 }
 
 export async function updateCustomerIdentityAction(
@@ -1034,6 +1126,9 @@ function revalidateWholesaleViews() {
   revalidatePath("/admin/clientes-mayoristas");
   revalidatePath("/cuenta");
   revalidatePath("/catalogo");
+  revalidatePath("/producto/[slug]", "page");
+  revalidatePath("/carrito");
+  revalidatePath("/checkout");
 }
 
 async function runWholesaleGrant(

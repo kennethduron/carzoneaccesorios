@@ -30,7 +30,7 @@ const stateIcon = {
 export function WholesaleCodePanel() {
   const [accessState, setAccessState] = useState<WholesaleAccessState>(loadingState);
   const [accessReady, setAccessReady] = useState(false);
-  const { wholesaleAccount, activateWholesaleMode, clearWholesaleMode } = usePriceMode();
+  const { wholesaleAccount } = usePriceMode();
 
   useEffect(() => {
     let active = true;
@@ -43,17 +43,12 @@ export function WholesaleCodePanel() {
       setAccessState(state);
       setAccessReady(true);
 
-      if (state.account) {
-        activateWholesaleMode(state.account);
-      } else {
-        clearWholesaleMode();
-      }
     });
 
     return () => {
       active = false;
     };
-  }, [activateWholesaleMode, clearWholesaleMode]);
+  }, []);
 
   const Icon = stateIcon[accessState.kind];
 

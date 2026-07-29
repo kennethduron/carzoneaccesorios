@@ -46,13 +46,17 @@ assert.match(source.migration, /has_permission\('inventory:read'\)/);
 assert.match(source.migration, /search_accounting_accounts_v1/);
 
 assert.doesNotMatch(source.publicProducts, /\.from\("products"\)/);
-assert.match(source.publicProducts, /\.from\("public_catalog_products_v1"\)/);
+assert.match(source.publicProducts, /\.from\("portal_catalog_products_v1"\)/);
+assert.match(source.publicProducts, /\.from\("public_catalog_products_v2"\)/);
 const checkoutProductValidation = source.checkout.slice(
   source.checkout.indexOf("const productIds ="),
   source.checkout.indexOf("const availableProductIds ="),
 );
-assert.match(checkoutProductValidation, /\.from\("public_catalog_products_v1"\)/);
-assert.doesNotMatch(checkoutProductValidation, /\.from\("products"\)/);
+assert.match(source.checkout, /^"use server";/);
+assert.match(checkoutProductValidation, /getSupabaseAdminClient\(\)/);
+assert.match(checkoutProductValidation, /\.from\("products"\)/);
+assert.match(source.checkout, /getPortalCommercialContext\(\)/);
+assert.doesNotMatch(source.checkout, /formData\.get\("priceMode"\)/);
 assert.doesNotMatch(source.purchasesPage, /getPurchaseProductOptions/);
 assert.doesNotMatch(source.purchasesUi, /products\.map\(\(product\).*<option/);
 assert.doesNotMatch(source.inventoryPage, /productOptions=/);

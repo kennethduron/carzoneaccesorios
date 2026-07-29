@@ -2,12 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CheckCircle2, ChevronDown, LogIn, LogOut, Menu, ShoppingCart, UserRound, X } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { useEffect, useRef, useState } from "react";
 import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
-import { getWholesaleAccessStateAction, markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
+import { markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
 import { SocialLinks } from "@/components/store/social-links";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useShoppingCart } from "@/contexts/cart-context";
@@ -48,6 +48,7 @@ const guestAccountState: PublicAccountMenuState = {
 
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [accountState, setAccountState] = useState<PublicAccountMenuState>(guestAccountState);
@@ -58,7 +59,10 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const { priceMode, activateWholesaleMode, clearWholesaleMode } = usePriceMode();
+  const { priceMode, commercialContext, refreshCommercialContext, clearCommercialContext } = usePriceMode();
+  const contextSignatureRef = useRef(
+    `${commercialContext.contextToken ?? "guest"}:${commercialContext.commercialVersion ?? "none"}`,
+  );
   const { cartCount } = useShoppingCart();
 
   useEffect(() => {
@@ -72,27 +76,29 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
 
       if (!hasSession) {
         setAccountState(guestAccountState);
-        clearWholesaleMode();
+        clearCommercialContext();
         return;
       }
 
-      const [state, wholesaleState] = await Promise.all([getPublicAccountMenuStateAction(), getWholesaleAccessStateAction()]);
+      const [state, nextCommercialContext] = await Promise.all([
+        getPublicAccountMenuStateAction(),
+        refreshCommercialContext(),
+      ]);
       if (active) {
         setAccountState(state);
-        if (wholesaleState.account) {
-          activateWholesaleMode(wholesaleState.account);
-          setShowWholesaleApprovedNotice(wholesaleState.shouldShowApprovedNotice);
-        } else {
-          clearWholesaleMode();
-          setShowWholesaleApprovedNotice(false);
+        const nextSignature = `${nextCommercialContext.contextToken ?? "guest"}:${nextCommercialContext.commercialVersion ?? "none"}`;
+        if (contextSignatureRef.current !== nextSignature) {
+          contextSignatureRef.current = nextSignature;
+          router.refresh();
         }
+        setShowWholesaleApprovedNotice(false);
       }
     }
 
     supabase.auth.getSession().then(({ data }) => {
       const hasSession = Boolean(data.session);
       if (!hasSession) {
-        clearWholesaleMode();
+        clearCommercialContext();
       }
       void refreshAccountState(hasSession);
     });
@@ -102,7 +108,9 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const hasSession = Boolean(session);
       if (!hasSession) {
-        clearWholesaleMode();
+        clearCommercialContext();
+        contextSignatureRef.current = "guest:none";
+        router.refresh();
       }
       void refreshAccountState(hasSession);
     });
@@ -111,7 +119,29 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
       active = false;
       subscription.unsubscribe();
     };
-  }, [activateWholesaleMode, clearWholesaleMode]);
+  }, [clearCommercialContext, refreshCommercialContext, router]);
+
+  useEffect(() => {
+    function refreshVisibleContext() {
+      if (document.visibilityState === "visible") {
+        void refreshCommercialContext().then((next) => {
+          const nextSignature = `${next.contextToken ?? "guest"}:${next.commercialVersion ?? "none"}`;
+          if (contextSignatureRef.current !== nextSignature) {
+            contextSignatureRef.current = nextSignature;
+            router.refresh();
+          }
+        });
+      }
+    }
+
+    window.addEventListener("focus", refreshVisibleContext);
+    document.addEventListener("visibilitychange", refreshVisibleContext);
+    return () => {
+      window.removeEventListener("focus", refreshVisibleContext);
+      document.removeEventListener("visibilitychange", refreshVisibleContext);
+    };
+  }, [refreshCommercialContext, router]);
+
 
   useEffect(() => {
     let active = true;

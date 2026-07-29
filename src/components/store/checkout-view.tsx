@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
 import {
   createCheckoutOrderAction,
   getCheckoutAccountAction,
-  getWholesalePurchaseStatusAction,
   type CheckoutAccountInfo,
 } from "@/app/checkout/actions";
 import type { CheckoutData } from "@/types/commerce";
@@ -44,6 +43,10 @@ const guestCheckoutAccount: CheckoutAccountInfo = {
   address: null,
   city: null,
   credit: null,
+  linked: false,
+  effectivePriceMode: "retail",
+  commercialVersion: null,
+  contextToken: null,
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -111,6 +114,12 @@ type OrderConfirmation = {
   total: number;
   currentStatus: string;
 };
+type CheckoutRequestAttempt = {
+  requestKey: string;
+  expectedCommercialVersion: number | null;
+  expectedContextToken: string | null;
+  expectedPriceMode: "retail" | "wholesale";
+};
 
 export function CheckoutView({
   settings,
@@ -128,12 +137,12 @@ export function CheckoutView({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [orderNumber, setOrderNumber] = useState("");
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
-  const [isFirstWholesalePurchase, setIsFirstWholesalePurchase] = useState(true);
   const [isPending, startTransition] = useTransition();
-  const { priceMode, wholesaleAccount } = usePriceMode();
-  const { rows, wholesaleQuantityIssues, invalidItemCount, subtotal, tax, total: productsTotal, clearCart, clearInvalidCartItems } = useShoppingCart();
+  const { priceMode, wholesaleAccount, commercialContext, refreshCommercialContext } = usePriceMode();
+  const { rows, wholesaleQuantityIssues, invalidItemCount, isResolvingCart, subtotal, tax, total: productsTotal, clearCart, clearInvalidCartItems } = useShoppingCart();
   const { createOrder } = useOrders();
   const toast = useToast();
+  const requestAttemptRef = useRef<CheckoutRequestAttempt | null>(null);
   const sellsInHonduras = checkout.country === "Honduras";
   const checkoutFees = useMemo(
     () => calculateCheckoutFees({ subtotal: productsTotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
@@ -149,7 +158,7 @@ export function CheckoutView({
     if (settings.allow_cash_on_delivery) {
       methods.push(["Efectivo", Store]);
     }
-    if (accountInfo.credit) {
+    if (accountInfo.credit?.usable) {
       methods.push(["Crédito Comercial", Banknote]);
     }
     return methods;
@@ -159,17 +168,28 @@ export function CheckoutView({
   const additionalFees: [] = [];
   const finalTotal = Math.round((productsTotal + checkoutFees.shippingFee + checkoutFees.cashOnDeliveryFee + smallOrderFee - discountTotal) * 100) / 100;
   const wholesaleMinimumMissing = Math.max(0, Math.round((settings.first_wholesale_minimum - finalTotal) * 100) / 100);
-  const effectiveIsFirstWholesalePurchase = wholesaleAccount ? isFirstWholesalePurchase : true;
   const wholesaleMinimumApplies =
     priceMode === "wholesale" &&
     Boolean(wholesaleAccount) &&
-    effectiveIsFirstWholesalePurchase &&
+    commercialContext.firstPurchaseRequired &&
     settings.first_wholesale_minimum > 0;
   const blocksFirstWholesaleOrder = wholesaleMinimumApplies && wholesaleMinimumMissing > 0;
   const blocksWholesalePurchases = priceMode === "wholesale" && !settings.wholesale_purchases_enabled;
   const blocksWholesaleQuantityMinimum = priceMode === "wholesale" && wholesaleQuantityIssues.length > 0;
+  const creditInsufficient =
+    Boolean(accountInfo.credit?.usable) && finalTotal > (accountInfo.credit?.availableCredit ?? 0);
   const blocksCommercialCreditLimit =
-    checkout.paymentMethod === "Crédito Comercial" && accountInfo.credit ? finalTotal > accountInfo.credit.availableCredit : false;
+    checkout.paymentMethod === "Crédito Comercial" && creditInsufficient;
+  const creditUnavailableMessage = accountInfo.credit
+    ? accountInfo.credit.status === "suspended" ||
+        accountInfo.credit.blockCodes.includes("CREDIT_SUSPENDED")
+      ? "El crédito está temporalmente suspendido."
+      : !accountInfo.credit.enabled || accountInfo.credit.blockCodes.includes("CREDIT_DISABLED")
+        ? "El crédito comercial está inactivo."
+        : accountInfo.credit.blockCodes.includes("CREDIT_ACCOUNT_CONFLICT")
+          ? "El crédito comercial requiere revisión administrativa."
+          : "El crédito comercial no está disponible en este momento."
+    : "";
 
   const wholesaleMinimumBlockMessage =
     "Para activar tu primera compra mayorista, el monto mínimo debe ser de L 10,000. Después de tu primera compra mayorista, podrás comprar cualquier monto.";
@@ -179,6 +199,21 @@ export function CheckoutView({
       : `No se puede crear el pedido. Corrige las cantidades mínimas mayoristas antes de crear el pedido: ${wholesaleQuantityIssues
           .map((issue) => `${issue.productName} requiere mínimo ${issue.minimumQuantity}`)
           .join("; ")}.`;
+
+  const requestPayloadSignature = useMemo(
+    () =>
+      JSON.stringify({
+        checkout,
+        items: rows.map((item) => [item.product.id, item.quantity]),
+        proof: proofFile ? [proofFile.name, proofFile.size, proofFile.lastModified] : null,
+      }),
+    [checkout, proofFile, rows],
+  );
+
+  useEffect(() => {
+    requestAttemptRef.current = null;
+  }, [requestPayloadSignature]);
+
 
   useEffect(() => {
     let active = true;
@@ -205,23 +240,6 @@ export function CheckoutView({
     }
   }, [checkout.paymentMethod, paymentMethods]);
 
-  useEffect(() => {
-    let active = true;
-
-    if (!wholesaleAccount?.customerId) {
-      return;
-    }
-
-    getWholesalePurchaseStatusAction(wholesaleAccount.customerId).then((result) => {
-      if (active) {
-        setIsFirstWholesalePurchase(result.isFirstWholesalePurchase);
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [wholesaleAccount?.customerId]);
 
   function showCheckoutError(field: string, message: string) {
     setFieldErrors((current) => ({ ...current, [field]: message }));
@@ -283,6 +301,13 @@ export function CheckoutView({
       return;
     }
 
+    if (isResolvingCart) {
+      const message = "Estamos actualizando los precios de tu carrito. Espera un momento.";
+      setCheckoutMessage(message);
+      toast.info(message);
+      return;
+    }
+
     if (rows.length === 0) {
       const message =
         invalidItemCount > 0
@@ -322,8 +347,8 @@ export function CheckoutView({
       return;
     }
 
-    if (checkout.paymentMethod === "Crédito Comercial" && !accountInfo.credit) {
-      showCheckoutError("paymentMethod", "Tu cuenta no tiene crédito comercial activo.");
+    if (checkout.paymentMethod === "Crédito Comercial" && !accountInfo.credit?.usable) {
+      showCheckoutError("paymentMethod", "Tu crédito comercial no está disponible en este momento.");
       return;
     }
 
@@ -364,6 +389,14 @@ export function CheckoutView({
     }
 
     startTransition(async () => {
+      requestAttemptRef.current ??= {
+        requestKey: crypto.randomUUID(),
+        expectedCommercialVersion: commercialContext.commercialVersion,
+        expectedContextToken: commercialContext.contextToken,
+        expectedPriceMode: commercialContext.effectivePriceMode,
+      };
+      const requestAttempt = requestAttemptRef.current;
+
       toast.loading("Creando pedido...");
       const items = rows.map((item) => ({
         productId: item.product.id,
@@ -378,7 +411,10 @@ export function CheckoutView({
 
       formData.set("checkout", JSON.stringify(checkoutForOrder));
       formData.set("items", JSON.stringify(items));
-      formData.set("priceMode", priceMode);
+      formData.set("requestKey", requestAttempt.requestKey);
+      formData.set("expectedCommercialVersion", requestAttempt.expectedCommercialVersion?.toString() ?? "");
+      formData.set("expectedContextToken", requestAttempt.expectedContextToken ?? "");
+      formData.set("expectedPriceMode", requestAttempt.expectedPriceMode);
 
       if (isBankTransferNow && proofFile) {
         formData.set("transferReceipt", proofFile);
@@ -387,6 +423,21 @@ export function CheckoutView({
       const result = await createCheckoutOrderAction(formData);
 
       if (!result.ok || !result.orderNumber || !result.trackingCode) {
+        if (
+          result.code === "COMMERCIAL_CONTEXT_CHANGED" ||
+          result.code === "CHECKOUT_CUSTOMER_CHANGED" ||
+          result.code === "CHECKOUT_IDEMPOTENCY_CONFLICT" ||
+          result.code === "WHOLESALE_NOT_AVAILABLE" ||
+          result.code === "CREDIT_NOT_AVAILABLE"
+        ) {
+          requestAttemptRef.current = null;
+          const [nextAccount] = await Promise.all([
+            getCheckoutAccountAction(),
+            refreshCommercialContext(),
+          ]);
+          setAccountInfo(nextAccount);
+          setCheckout((current) => mergeCheckoutAccount(current, nextAccount));
+        }
         setCheckoutMessage(result.message);
         toast.error(result.message || "No se pudo crear el pedido. Revisa la información e intenta nuevamente.");
         return;
@@ -457,6 +508,7 @@ export function CheckoutView({
       setProofFileName("");
       setProofMessage("");
       clearCart();
+      requestAttemptRef.current = null;
     });
   }
 
@@ -586,6 +638,7 @@ export function CheckoutView({
             {paymentMethods.map(([method, Icon]) => (
               <button
                 key={method as string}
+                disabled={method === "Crédito Comercial" && creditInsufficient}
                 onClick={() => {
                   setCheckout((current) => ({
                     ...current,
@@ -600,7 +653,9 @@ export function CheckoutView({
                   setCheckoutMessage("");
                 }}
                 className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-md border px-2 text-xs ${
-                  checkout.paymentMethod === method ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10"
+                  checkout.paymentMethod === method
+                    ? "border-[#e4252c] bg-[#fff1f2]"
+                    : "border-black/10 disabled:cursor-not-allowed disabled:bg-[#f4f4f5] disabled:text-black/40"
                 }`}
               >
                 <Icon size={17} />
@@ -609,6 +664,17 @@ export function CheckoutView({
             ))}
             </div>
           </div>
+
+          {accountInfo.credit && !accountInfo.credit.usable ? (
+            <p className="rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm text-black/60">
+              <span className="font-semibold">Crédito comercial no disponible.</span>{" "}
+              {creditUnavailableMessage}
+            </p>
+          ) : accountInfo.credit?.usable && finalTotal > accountInfo.credit.availableCredit ? (
+            <p className="rounded-md bg-[#fff0ea] p-3 text-sm font-medium text-[#9b341b]">
+              Tu crédito no cubre el total de este pedido.
+            </p>
+          ) : null}
 
           {checkout.paymentMethod === "Transferencia bancaria" ? (
             <section className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
@@ -797,6 +863,11 @@ export function CheckoutView({
                   Este pedido supera el crédito autorizado para este cliente.
                 </p>
               ) : null}
+              {accountInfo.credit.warningCodes.includes("CREDIT_OVERDUE_WARNING") ? (
+                <p className="mt-3 rounded-md bg-[#fff0ea] p-3 text-sm text-[#9b341b]">
+                  Tienes una cuenta vencida pendiente. Esta advertencia no bloquea automáticamente el crédito bajo el contrato actual.
+                </p>
+              ) : null}
             </section>
           ) : null}
 
@@ -847,11 +918,11 @@ export function CheckoutView({
 
           <button
             onClick={submitOrder}
-            disabled={!sellsInHonduras || isPending || paymentMethods.length === 0}
+            disabled={!sellsInHonduras || isPending || isResolvingCart || paymentMethods.length === 0 || blocksCommercialCreditLimit}
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
-            {isPending ? "Creando pedido..." : "Crear pedido"}
+            {isPending ? "Enviando pedido..." : "Enviar pedido"}
           </button>
         </div>
       </div>

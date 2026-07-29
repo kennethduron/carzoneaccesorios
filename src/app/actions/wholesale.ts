@@ -13,6 +13,7 @@ import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
+import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
 import type {
   WholesaleAccessState,
   WholesaleAccount,
@@ -258,6 +259,58 @@ export async function getWholesaleAccessStateAction(): Promise<WholesaleAccessSt
 
   if (!user) {
     return guestWholesaleState();
+  }
+
+  const commercial = await getPortalCommercialContext();
+  if (commercial.linked && commercial.customerId) {
+    if (!commercial.customerActive || commercial.wholesaleStatus === "suspended") {
+      return suspendedWholesaleState();
+    }
+
+    if (commercial.wholesaleStatus === "rejected") {
+      return rejectedWholesaleState();
+    }
+
+    if (commercial.wholesaleStatus === "pending") {
+      return pendingWholesaleState();
+    }
+
+    if (commercial.effectivePriceMode === "wholesale") {
+      const customerType = commercial.wholesaleCustomerType ?? "new";
+      const requirement: WholesaleFirstPurchaseRequirement | null = commercial.firstPurchaseRequired
+        ? {
+            minimum: commercial.firstPurchaseMinimum,
+            accumulated: commercial.firstPurchaseAccumulated,
+            missing: Math.max(commercial.firstPurchaseMinimum - commercial.firstPurchaseAccumulated, 0),
+            completed: commercial.firstPurchaseCompleted,
+          }
+        : null;
+      return {
+        kind: "approved",
+        title: "Mayorista aprobado",
+        message:
+          customerType === "existing"
+            ? "Cuenta mayorista aprobada. Puedes acceder a precios mayoristas sin requisito de primera compra mínima."
+            : commercial.firstPurchaseRequired
+              ? "Cuenta mayorista aprobada. Tu primera compra debe cumplir el mínimo comercial vigente."
+              : "Cuenta mayorista aprobada. Los precios se aplican automáticamente.",
+        canEnterCode: false,
+        account: {
+          id: commercial.customerId,
+          customerId: commercial.customerId,
+          customerName: "Cliente",
+          businessName: "Tu cuenta",
+          status: "approved",
+          customerType,
+          firstPurchaseRequirement: requirement,
+        },
+        shouldShowApprovedNotice: false,
+        customerType,
+        firstPurchaseRequirement: requirement,
+      };
+    }
+
+    return regularWholesaleState();
   }
 
   const { customers, error } = await getWholesaleCustomersForPortalUser(user.id);

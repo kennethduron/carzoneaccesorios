@@ -9,6 +9,7 @@ import {
 } from "@/lib/product-categories";
 import { defaultOgImagePath, getProductImageAlt } from "@/lib/seo";
 import { getSupabasePublicClient } from "@/lib/supabase";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type { Product, ProductAngle, ProductAngleImage } from "@/types/commerce";
 import {
   normalizeVehicleBrand,
@@ -88,8 +89,11 @@ type CatalogProductRow = {
   stock?: number | null;
   available_stock?: number | null;
   retail_price: unknown;
-  wholesale_price: unknown;
-  wholesale_min_quantity: unknown;
+  wholesale_price?: unknown;
+  wholesale_min_quantity?: unknown;
+  effective_price?: unknown;
+  effective_price_mode?: "retail" | "wholesale" | null;
+  effective_min_quantity?: unknown;
   is_new?: boolean | null;
   category_name: string | null;
   category_slug: string | null;
@@ -171,6 +175,9 @@ function normalizeImages(
 }
 
 function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): Product {
+  const retailPrice = toNumber(row.retail_price);
+  const effectiveMode = row.effective_price_mode === "wholesale" ? "wholesale" : "retail";
+  const effectivePrice = toNumber(row.effective_price ?? row.retail_price);
   const normalizedImages = normalizeImages(row, images);
 
   return {
@@ -188,9 +195,11 @@ function normalizeProduct(row: CatalogProductRow, images?: ProductImageRow[]): P
     image: normalizedImages[0]?.url ?? defaultOgImagePath,
     images: normalizedImages,
     stock: toNumber(row.available_stock ?? row.stock ?? 0),
-    retail_price: toNumber(row.retail_price),
-    wholesale_price: toNumber(row.wholesale_price),
-    wholesale_min_quantity: Math.max(1, Math.trunc(toNumber(row.wholesale_min_quantity) || 1)),
+    retail_price: retailPrice,
+    // The DTO never carries the raw wholesale column. For an authorized
+    // portal session this field contains only that session's effective price.
+    wholesale_price: effectiveMode === "wholesale" ? effectivePrice : 0,
+    wholesale_min_quantity: Math.max(1, Math.trunc(toNumber(row.effective_min_quantity) || 1)),
     is_new: Boolean(row.is_new),
     short_description: row.short_description,
     description: row.description,
@@ -353,7 +362,7 @@ const getCachedActiveCategories = unstable_cache(async () => {
 const getCachedProductFilterOptions = unstable_cache(async (outOfStockCatalogMode: "show" | "hide" = "show") => {
   const supabase = getSupabasePublicClient();
   let query = supabase
-    .from("public_catalog_products_v1")
+    .from("public_catalog_products_v2")
     .select("vehicle_brand, vehicle_model, vehicle_year_start, vehicle_year_end");
 
   if (outOfStockCatalogMode === "hide") {
@@ -387,7 +396,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   const vehicleModel = normalizeVehicleModel(filters.vehicleModel) ?? "";
   const vehicleYear = normalizeOptionalNumber(filters.vehicleYear);
   const availability = filters.availability?.trim() ?? "";
-  const priceColumn = filters.priceMode === "wholesale" ? "wholesale_price" : "retail_price";
+  const priceColumn = "effective_price";
 
   try {
     const [outOfStockCatalogMode, categories] = await Promise.all([getOutOfStockCatalogMode(), getCachedActiveCategories()]);
@@ -395,7 +404,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
     const selectedCategory = canonicalCategorySlug
       ? categories.find((item) => item.slug === canonicalCategorySlug)
       : null;
-    const supabase = getSupabasePublicClient();
+    const supabase = await getSupabaseServerClient();
     const productSelect = `
         id,
         category_id,
@@ -415,8 +424,9 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
         compatibility_notes,
         available_stock,
         retail_price,
-        wholesale_price,
-        wholesale_min_quantity,
+        effective_price,
+        effective_price_mode,
+        effective_min_quantity,
         is_new,
         category_name,
         category_slug
@@ -424,7 +434,7 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
 
     function buildProductsQuery(selectColumns: string, options?: { count?: "exact"; head?: boolean }) {
       let productsQuery = supabase
-        .from("public_catalog_products_v1")
+        .from("portal_catalog_products_v1")
         .select(selectColumns, options);
 
       if (outOfStockCatalogMode === "hide") {
@@ -583,12 +593,12 @@ export async function getCatalogProducts(filters: ProductCatalogFilters = {}): P
   }
 }
 
-export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
+export async function getFeaturedProducts(limit = 3) {
   try {
     const outOfStockCatalogMode = await getOutOfStockCatalogMode();
-    const supabase = getSupabasePublicClient();
+    const supabase = await getSupabaseServerClient();
     let query = supabase
-      .from("public_catalog_products_v1")
+      .from("portal_catalog_products_v1")
       .select(
         `
         id,
@@ -608,8 +618,9 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
         compatibility_notes,
         available_stock,
         retail_price,
-        wholesale_price,
-        wholesale_min_quantity,
+        effective_price,
+        effective_price_mode,
+        effective_min_quantity,
         is_new,
         category_name,
         category_slug,
@@ -633,13 +644,13 @@ export const getFeaturedProducts = unstable_cache(async (limit = 3) => {
     await logProductServiceError("catalog.featured_products.load_failed", error, { limit });
     return [];
   }
-}, ["featured-products"], { revalidate: 900, tags: ["products", "featured-products"] });
+}
 
 export async function getProductBySlug(slug: string) {
   try {
-    const supabase = getSupabasePublicClient();
+    const supabase = await getSupabaseServerClient();
     const { data, error } = await supabase
-      .from("public_catalog_products_v1")
+      .from("portal_catalog_products_v1")
       .select(
         `
         id,
@@ -659,8 +670,9 @@ export async function getProductBySlug(slug: string) {
         compatibility_notes,
         available_stock,
         retail_price,
-        wholesale_price,
-        wholesale_min_quantity,
+        effective_price,
+        effective_price_mode,
+        effective_min_quantity,
         is_new,
         category_name,
         category_slug
@@ -684,7 +696,7 @@ export async function getProductBySlug(slug: string) {
 
 export async function getRelatedProducts(product: Product, limit = 4) {
   try {
-    const supabase = getSupabasePublicClient();
+    const supabase = await getSupabaseServerClient();
     const relatedConditions = [
       product.category_id ? `category_id.eq.${product.category_id}` : null,
       product.brand && !product.brand.includes(",") ? `brand.eq.${product.brand}` : null,
@@ -693,7 +705,7 @@ export async function getRelatedProducts(product: Product, limit = 4) {
     ].filter(Boolean);
 
     let query = supabase
-      .from("public_catalog_products_v1")
+      .from("portal_catalog_products_v1")
       .select(
         `
         id,
@@ -713,8 +725,9 @@ export async function getRelatedProducts(product: Product, limit = 4) {
         compatibility_notes,
         available_stock,
        retail_price,
-       wholesale_price,
-        wholesale_min_quantity,
+       effective_price,
+       effective_price_mode,
+       effective_min_quantity,
        is_new,
         category_name,
         category_slug,
@@ -760,7 +773,7 @@ export async function getSitemapProducts() {
 
     for (let from = 0; ; from += pageSize) {
       let query = supabase
-        .from("public_catalog_products_v1")
+        .from("public_catalog_products_v2")
         .select(
           `
           id,
@@ -823,3 +836,64 @@ export async function getCompatibilityBrandSummaries(limit = 12) {
   }
 }
 
+export async function getProductsByIdsForPortal(productIds: string[]): Promise<Product[]> {
+  if (productIds.length === 0) return [];
+
+  try {
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("portal_catalog_products_v1")
+      .select(
+        `
+        id,
+        category_id,
+        sku,
+        internal_code,
+        slug,
+        name,
+        brand,
+        vehicle_brand,
+        vehicle_model,
+        vehicle_year_start,
+        vehicle_year_end,
+        short_description,
+        description,
+        features,
+        specifications,
+        compatibility_notes,
+        available_stock,
+        retail_price,
+        effective_price,
+        effective_price_mode,
+        effective_min_quantity,
+        is_new,
+        category_name,
+        category_slug
+      `,
+      )
+      .in("id", productIds)
+      .returns<CatalogProductRow[]>();
+
+    if (error) throw new Error(error.message);
+
+    const rows = data ?? [];
+    const imageByProduct = await getImagesForProducts(rows.map((product) => product.id));
+    const byId = new Map(
+      rows.map((product) => [
+        product.id,
+        normalizeProduct(product, imageByProduct.get(product.id)),
+      ]),
+    );
+
+    return productIds.flatMap((productId) => {
+      const product = byId.get(productId);
+
+      return product ? [product] : [];
+    });
+  } catch (error) {
+    await logProductServiceError("catalog.cart_products.load_failed", error, {
+      product_count: productIds.length,
+    });
+    return [];
+  }
+}

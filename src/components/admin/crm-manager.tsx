@@ -3305,6 +3305,7 @@ function CustomerProfileActions({
               invoiceCount: customer.invoice_count,
               receivableCount: profile?.receivables.length ?? 0,
               hasCreditAccount: Boolean(profile?.creditAccount),
+              commercialVersion: customer.commercial_version,
             }}
           />
         </div>
