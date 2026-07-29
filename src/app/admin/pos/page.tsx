@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { PosCustomerWorkspace } from "@/components/admin/pos-customer-workspace";
+import { PosWorkspace } from "@/components/admin/pos-workspace";
 import { hasDatabasePosPermission } from "@/lib/auth/pos-server-authorization";
 import { hasPosPermission } from "@/lib/auth/pos-permissions";
 import { requirePermission } from "@/lib/auth/session";
@@ -23,7 +23,7 @@ export default async function PointOfSalePage() {
   return (
     <AdminShell title="Punto de Venta · Clientes">
       <main className="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 lg:px-6">
-        <PosCustomerWorkspace />
+        <PosWorkspace />
       </main>
     </AdminShell>
   );

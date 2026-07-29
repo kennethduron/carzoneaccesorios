@@ -85,7 +85,7 @@ function statusTone(status: PosCustomerContext["wholesaleStatus"]) {
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
-export function PosCustomerWorkspace() {
+export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = true, onCustomerContextChange }: { selectedCustomerId?: string | null; showFutureStages?: boolean; onCustomerContextChange?: (context: PosCustomerContext | null) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PosCustomerSearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -108,6 +108,10 @@ export function PosCustomerWorkspace() {
   const listboxId = "pos-customer-results";
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
+
+  useEffect(() => {
+    onCustomerContextChange?.(context);
+  }, [context, onCustomerContextChange]);
 
   useEffect(() => {
     if (!dirty) return;
@@ -189,6 +193,12 @@ export function PosCustomerWorkspace() {
       setContextLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!selectedCustomerId || selectedCustomerId === context?.customerId) return;
+    const timer = window.setTimeout(() => void loadContext(selectedCustomerId), 0);
+    return () => window.clearTimeout(timer);
+  }, [context?.customerId, loadContext, selectedCustomerId]);
 
   const selectCustomer = useCallback((customer: PosCustomerSearchResult) => {
     if (!confirmDiscard()) return;
@@ -429,14 +439,14 @@ export function PosCustomerWorkspace() {
         </section>
       </div>
 
-      <section className="rounded-xl border border-dashed border-black/15 bg-[#fafafa] p-4 sm:p-5">
+      {showFutureStages ? <section className="rounded-xl border border-dashed border-black/15 bg-[#fafafa] p-4 sm:p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           <FutureStageCard icon={PackageSearch} title="Productos" />
           <FutureStageCard icon={ShoppingCart} title="Carrito" />
           <FutureStageCard icon={CreditCard} title="Pago y cierre" />
         </div>
         <p className="mt-3 text-center text-xs font-medium text-black/50">Disponibles en la siguiente etapa. No hay acciones de venta habilitadas aquí.</p>
-      </section>
+      </section> : null}
     </div>
   );
 }

@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const read = (file) => readFileSync(join(process.cwd(), file), "utf8");
+const fiscal = read("supabase/migrations/202607280007_pos_product_tax_and_calculator.sql");
+const drafts = read("supabase/migrations/202607280008_pos_sale_drafts_and_cart.sql");
+const workspace = read("src/components/admin/pos-workspace.tsx");
+const service = read("src/services/supabase/pos-draft.service.ts");
+const schemas = read("src/lib/validation/pos-draft.ts");
+
+for (const contract of ["tax_category", "product_sales_version", "calculate_pos_draft_financials_v2", "save_product_catalog_v2_locked", "import_product_row_v2_atomic"]) assert.ok(fiscal.includes(contract), `Missing fiscal contract: ${contract}`);
+for (const contract of ["pos_sale_drafts", "pos_sale_draft_items", "search_pos_products_v1", "create_pos_sale_draft_v1", "save_pos_sale_draft_v1", "abandon_pos_sale_draft_v1", "expected_version", "price_override_reason", "cost_floor_validated", "stock_observed_at", "validation_messages", "last_saved_by"]) assert.ok(drafts.includes(contract), `Missing draft contract: ${contract}`);
+for (const permission of ["pos:drafts:create", "pos:drafts:read", "pos:drafts:edit_own", "pos:drafts:edit_any", "pos:drafts:abandon", "pos:products:search", "pos:price_override"]) assert.ok(drafts.includes(permission), `Missing permission: ${permission}`);
+assert.match(drafts, /where name in \('technical_owner', 'business_owner', 'admin'\)/);
+assert.match(drafts, /where name in \('contadora', 'vendedor', 'bodega', 'soporte', 'cliente'\)/);
+assert.match(drafts, /revoke all on table public\.pos_sale_drafts from public, anon, authenticated/);
+assert.match(drafts, /p_delivery_charge, 0\) <> 0/);
+assert.match(drafts, /product_record\.cost_price is null or product_record\.cost_price <= 0/);
+assert.match(drafts, /final_price <= 0/);
+assert.match(drafts, /for update/);
+assert.match(drafts, /order by p\.id[\s\S]*for share/);
+assert.match(drafts, /version = p_expected_version[\s\S]*returning \* into draft_record/);
+
+const forbidden = /(?:insert\s+into|update|delete\s+from)\s+public\.(orders|order_items|payments|invoices|accounts_receivable|inventory_movements|inventory_reservations|financial_events|accounting_outbox_v2|journal_entries)/gi;
+assert.deepEqual([...drafts.matchAll(forbidden)].map((match) => match[0]), [], "Stage 4 migration writes an economic table");
+assert.match(workspace, /sessionStorage\.setItem\(storedDraftKey, next\.draftId\)/);
+assert.doesNotMatch(workspace, /localStorage/);
+assert.match(workspace, /setTimeout\(\(\) => void saveDraft\(\), 750\)/);
+assert.match(workspace, /status !== "dirty"/);
+assert.match(workspace, /expectedCustomerCommercialVersion/);
+assert.match(workspace, /expectedProductSalesVersion/);
+assert.match(workspace, /PosDraftSummary/);
+assert.match(workspace, /pendingSaveKeyRef/);
+assert.match(workspace, /"conflict"/);
+assert.doesNotMatch(workspace, /crear.*(?:pedido|factura|pago)/i);
+assert.match(service, /server-only/);
+assert.match(schemas, /z\.object/);
+assert.match(schemas, /\.positive\(\)\.nullable\(\)/);
+assert.match(schemas, /expectedCustomerCommercialVersion: z\.(?:coerce\.)?number\(\)\.int\(\)\.nonnegative\(\)/);
+assert.match(schemas, /\.strict\(\)/);
+console.log("POS Stage 4 structural, least-privilege, and non-economic contract: OK");
