@@ -468,6 +468,27 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
   };
 
   if (existing) {
+    if (
+      candidate.source_type === "supplier_payment" &&
+      candidate.event_purpose === "supplier_payment"
+    ) {
+      const { data: coverage } = await supabase
+        .from("supplier_payment_accounting_repairs")
+        .select("id, status")
+        .eq("payment_id", candidate.source_id)
+        .in("status", ["queued", "processing", "completed"])
+        .maybeSingle<{ id: string; status: string }>();
+
+      if (coverage) {
+        return {
+          result: "skipped_duplicate" as const,
+          status: existing.status,
+          updated: false,
+          eventId: existing.id,
+        };
+      }
+    }
+
     if (dryRunStatuses.has(existing.status) && !existing.journal_entry_id) {
       const { error: updateError } = await supabase
         .from("financial_events")

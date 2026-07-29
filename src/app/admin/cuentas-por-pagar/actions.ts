@@ -8,6 +8,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import { processAccountingOutboxV2 } from "@/services/accounting/accounting-outbox-v2";
+import { repairLateRecordedSupplierPayment } from "@/services/accounting/supplier-payment-accounting-repairs";
 import {
   applyHistoricalPayableImportBatch,
   assignHistoricalPayableImportRow,
@@ -18,6 +19,7 @@ import {
 import { setImportBatchStatus } from "@/services/supabase/import-foundation.service";
 import type { HistoricalPayableImportActionState } from "@/types/accounts-payable-import";
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
+import type { SupplierPaymentRepairResult } from "@/types/supplier-payment-accounting-repair";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -427,24 +429,88 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
   }
 
   const row = Array.isArray(data) ? data[0] : data;
-  const accountingResult = row?.outbox_id
-    ? await processAccountingOutboxV2({ outboxId: row.outbox_id })
-    : null;
   revalidatePath("/admin/cuentas-por-pagar");
   revalidatePath("/admin/contabilidad");
-  const accountingMessage = accountingResult?.draftStatus === "borrador"
-    ? " Se creó la partida en borrador para revisión manual."
-    : accountingResult?.outboxStatus === "pending_mapping"
-      ? " La contabilidad quedó pendiente por un mapping faltante."
-      : accountingResult?.outboxStatus === "pending_data"
-        ? " La contabilidad quedó pendiente por un dato requerido."
-        : accountingResult?.ok === false
-          ? " El pago quedó protegido por la outbox y el worker puede reintentarse."
-          : "";
+  const accountingMessage = row?.outbox_id
+    ? " Pago registrado y enviado al procesamiento contable. La publicación continuará siendo manual."
+    : " Pago registrado. Contabilidad pendiente de revisión histórica.";
   return {
     ok: true,
     message: `${row?.idempotent_replay ? "Pago recuperado sin duplicarlo." : "Pago a proveedor registrado."}${accountingMessage}`,
   };
+}
+
+export type SupplierPaymentRepairActionInput = {
+  request_key: string;
+  payment_id: string;
+  expected_fingerprint: string;
+  reason: string;
+};
+
+export type SupplierPaymentRepairActionResult =
+  | { ok: true; message: string; result: SupplierPaymentRepairResult }
+  | { ok: false; message: string };
+
+export async function repairLateRecordedSupplierPaymentAction(
+  input: SupplierPaymentRepairActionInput,
+): Promise<SupplierPaymentRepairActionResult> {
+  const profile = await requirePermission("accounting:repair_supplier_payment");
+  if (profile.role !== "technical_owner") {
+    return { ok: false, message: "Solo technical_owner puede ejecutar esta reparación." };
+  }
+
+  const requestKey = cleanText(input.request_key);
+  const paymentId = cleanText(input.payment_id);
+  const fingerprint = cleanText(input.expected_fingerprint)?.toLowerCase();
+  const reason = cleanText(input.reason);
+
+  if (!requestKey || !uuidPattern.test(requestKey)) {
+    return { ok: false, message: "La clave segura de reparación no es válida." };
+  }
+  if (!paymentId || !uuidPattern.test(paymentId)) {
+    return { ok: false, message: "El pago seleccionado no es válido." };
+  }
+  if (!fingerprint || !/^[0-9a-f]{64}$/.test(fingerprint)) {
+    return { ok: false, message: "La vista previa cambió o no es válida. Actualízala." };
+  }
+  if (!reason || reason.length < 8 || reason.includes("@") || /\d{8,}/.test(reason)) {
+    return { ok: false, message: "Indica un motivo operativo sin datos sensibles." };
+  }
+
+  try {
+    const result = await repairLateRecordedSupplierPayment({
+      requestKey,
+      paymentId,
+      expectedFingerprint: fingerprint,
+      reason,
+    });
+
+    revalidatePath("/admin/cuentas-por-pagar");
+    revalidatePath("/admin/contabilidad");
+
+    if (!result.ok || result.status === "review_required") {
+      return {
+        ok: true,
+        message: "Pago registrado. Contabilidad pendiente de revisión histórica.",
+        result,
+      };
+    }
+
+    return {
+      ok: true,
+      message: result.idempotent_replay
+        ? "La solicitud ya estaba protegida; no se duplicó ningún efecto."
+        : "Pago enviado al procesamiento contable. La publicación continuará siendo manual.",
+      result,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error
+        ? error.message
+        : "No se pudo ejecutar la reparación contable.",
+    };
+  }
 }
 
 export async function voidSupplierPaymentAction(paymentId: string, notes?: string, requestKey?: string): Promise<ActionResult> {

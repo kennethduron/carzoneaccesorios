@@ -100,6 +100,7 @@ export type Permission =
   | "accounting:close_period"
   | "accounting:reopen_period"
   | "accounting:view_reports"
+  | "accounting:repair_supplier_payment"
   | "shipments:manage"
   | "crm:manage"
   | "reports:read"

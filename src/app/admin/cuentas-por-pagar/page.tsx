@@ -3,10 +3,12 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AccountsPayableImportManager } from "@/components/admin/accounts-payable-import-manager";
 import { AccountsPayableManager } from "@/components/admin/accounts-payable-manager";
+import { SupplierPaymentAccountingRepairPanel } from "@/components/admin/supplier-payment-accounting-repair-panel";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getHistoricalAccountsPayableImportData } from "@/services/supabase/accounts-payable-import.service";
+import { getSupplierPaymentAccountingRepairPreviews } from "@/services/accounting/supplier-payment-accounting-repairs";
 import { getAdminPayables } from "@/services/supabase/payables.service";
 import { getPurchaseOptions } from "@/services/supabase/purchases.service";
 import { getSupplierOptions } from "@/services/supabase/suppliers.service";
@@ -23,13 +25,21 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
   const canApply = hasEffectivePermission(profile.role, profile.permissions, "payables:apply", profile.email);
   const canAssign = hasEffectivePermission(profile.role, profile.permissions, "payables:assign", profile.email);
   const canRollback = ["technical_owner", "business_owner"].includes(profile.role) && hasEffectivePermission(profile.role, profile.permissions, "payables:rollback", profile.email);
+  const canRepairSupplierPayment =
+    isTechnicalOwner(profile.role, profile.email) &&
+    hasEffectivePermission(
+      profile.role,
+      profile.permissions,
+      "accounting:repair_supplier_payment",
+      profile.email,
+    );
 
   if (!canRead) {
     redirect("/sin-permiso");
   }
 
   const params = await searchParams;
-  const [{ payables, invoices, credits, summary }, suppliers, purchases, importData] = await Promise.all([
+  const [{ payables, invoices, credits, summary }, suppliers, purchases, importData, repairPreviews] = await Promise.all([
     getAdminPayables(),
     getSupplierOptions(true),
     getPurchaseOptions(),
@@ -40,6 +50,7 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
       canAssign,
       canRollback,
     }),
+    getSupplierPaymentAccountingRepairPreviews(),
   ]);
 
   return (
@@ -51,6 +62,10 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
         </Link>
       </div>
       <div className="space-y-6">
+        <SupplierPaymentAccountingRepairPanel
+          previews={repairPreviews}
+          canRepair={canRepairSupplierPayment}
+        />
         <AccountsPayableImportManager data={importData} />
         <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} />
       </div>
