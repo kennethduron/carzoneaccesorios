@@ -27,6 +27,8 @@
     "test:pos-stage-4": "node scripts/test-pos-stage-4.mjs",
     "test:pos-stage-4:local": "node scripts/test-pos-stage-4-local.mjs",
     "test:pos-stage-4:validation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-pos-stage-4-validation.mjs",
+    "test:portal-customer-sync": "node scripts/test-portal-customer-profile-sync.mjs",
+    "test:portal-customer-sync:local": "node scripts/test-portal-customer-profile-sync-local.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
     "test:product-accountant-access": "node scripts/test-product-accountant-access.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",

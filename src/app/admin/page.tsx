@@ -267,6 +267,34 @@ function hnMonthKey(value: string | Date) {
   return hnDateKey(value).slice(0, 7);
 }
 
+type PortalRegistrationNotificationRow = {
+  id: string;
+  title: string;
+  message: string;
+  severity: "info" | "warning" | "error" | "critical";
+  metadata: Record<string, unknown> | null;
+};
+
+async function getPortalRegistrationNotifications(role: AppRole) {
+  if (!["technical_owner", "business_owner", "admin"].includes(role)) {
+    return [] as PortalRegistrationNotificationRow[];
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("internal_notifications")
+    .select("id, title, message, severity, metadata")
+    .in("event_type", ["portal_customer_registered", "portal_customer_link_review_required"])
+    .in("status", ["open", "reviewing"])
+    .neq("read_state", "archived")
+    .contains("audience_roles", [role])
+    .order("created_at", { ascending: false })
+    .limit(20)
+    .returns<PortalRegistrationNotificationRow[]>();
+
+  return error ? [] : data ?? [];
+}
+
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
   const isAccountant = profile.role === "contadora" && !isTechnicalOwner(profile.role, profile.email);
@@ -417,7 +445,11 @@ export default async function AdminPage() {
     );
   }
 
-  const [overview, businessSettings] = await Promise.all([getAdminDashboardOverview(), getAdminBusinessSettings()]);
+  const [overview, businessSettings, portalRegistrationNotifications] = await Promise.all([
+    getAdminDashboardOverview(),
+    getAdminBusinessSettings(),
+    getPortalRegistrationNotifications(profile.role),
+  ]);
   const visibleCards = businessSettings.dashboard_cards;
 
   const todayTaskOptions = [
@@ -640,6 +672,22 @@ export default async function AdminPage() {
     if (condition) notificationItems.push(item);
   };
   const isProblemStatus = (status: string | null) => Boolean(status && !["success", "ok", "active"].includes(status));
+
+  portalRegistrationNotifications.forEach((notification) => {
+    const actionPath = notification.metadata?.action_path;
+    notificationItems.push({
+      id: `internal:${notification.id}`,
+      title: notification.title,
+      detail: notification.message,
+      href: typeof actionPath === "string" && actionPath.startsWith("/admin/") ? actionPath : "/admin/clientes",
+      tone:
+        notification.severity === "critical" || notification.severity === "error"
+          ? "danger"
+          : notification.severity === "warning"
+            ? "warning"
+            : "info",
+    });
+  });
 
   fiscalAlerts.forEach((alert, index) => {
     notificationItems.push({

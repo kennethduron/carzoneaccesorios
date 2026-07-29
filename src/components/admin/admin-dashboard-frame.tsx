@@ -181,6 +181,20 @@ export function AdminDashboardFrame({
   }, [collapsed]);
 
   useEffect(() => {
+    const notification = notifications.find((item) => {
+      if (!item.id.startsWith("internal:")) return false;
+      return window.sessionStorage.getItem(`carzone:admin-notification-toasted:${item.id}`) !== "1";
+    });
+
+    if (!notification) return;
+
+    window.sessionStorage.setItem(`carzone:admin-notification-toasted:${notification.id}`, "1");
+    if (notification.tone === "danger") toast.error(notification.title);
+    else if (notification.tone === "warning") toast.warning(notification.title);
+    else toast.info(notification.title);
+  }, [notifications, toast]);
+
+  useEffect(() => {
     const desktopMedia = window.matchMedia("(min-width: 640px)");
 
     function onBreakpointChange(event: MediaQueryListEvent) {

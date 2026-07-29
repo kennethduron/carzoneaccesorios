@@ -12,6 +12,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
+import { ensureMyPortalCustomerProfile } from "@/lib/auth/portal-customer-sync";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import type { PortalCommercialBlockCode, PortalCommercialWarningCode } from "@/types/portal-commercial";
 import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
@@ -442,6 +443,50 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     (input.expectedContextToken !== null && !/^[0-9a-f]{64}$/.test(input.expectedContextToken))
   ) {
     return { ok: false, code: "COMMERCIAL_CONTEXT_CHANGED", message: "Actualiza el checkout e inténtalo nuevamente." };
+  }
+
+  if (user) {
+    try {
+      const profileSync = await ensureMyPortalCustomerProfile(
+        supabase,
+        user.id,
+        "checkout_recovery",
+        input.requestKey,
+      );
+
+      if (!profileSync.ok) {
+        await writeErrorLog({
+          route: "/checkout",
+          action: "checkout.portal_customer_profile_review_required",
+          errorMessage: profileSync.code,
+          userId: user.id,
+          metadata: {
+            sync_code: profileSync.code,
+            sync_state: profileSync.state ?? null,
+          },
+        });
+
+        return {
+          ok: false,
+          message: "Tu cuenta requiere revisión antes de crear el pedido. Contacta al equipo de Car Zone Accesorios.",
+        };
+      }
+    } catch (syncError) {
+      await writeErrorLog({
+        route: "/checkout",
+        action: "checkout.portal_customer_profile_recovery_failed",
+        errorMessage: syncError instanceof Error ? syncError.message : "Portal customer profile recovery failed.",
+        userId: user.id,
+        metadata: {
+          recovery_available: true,
+        },
+      });
+
+      return {
+        ok: false,
+        message: "No pudimos validar tu perfil de cliente. Actualiza la página e inténtalo nuevamente.",
+      };
+    }
   }
 
   const checkoutLimit = await checkRateLimit({

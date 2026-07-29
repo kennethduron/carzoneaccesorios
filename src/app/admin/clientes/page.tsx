@@ -4,10 +4,36 @@ import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminCrm } from "@/services/supabase/admin-crm.service";
+import {
+  getAdminCrm,
+  type AdminCrmCustomerFilter,
+} from "@/services/supabase/admin-crm.service";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 
 export const dynamic = "force-dynamic";
+
+const customerFilters = new Set<AdminCrmCustomerFilter>([
+  "clients",
+  "internal",
+  "all",
+  "active",
+  "prospects",
+  "wholesale",
+  "wholesale_requests",
+  "suspended",
+]);
+
+function customerFilter(value: string | undefined): AdminCrmCustomerFilter {
+  return value && customerFilters.has(value as AdminCrmCustomerFilter)
+    ? (value as AdminCrmCustomerFilter)
+    : "clients";
+}
+
+function customerId(value: string | undefined) {
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : null;
+}
 
 const CrmManager = nextDynamic(
   () => import("@/components/admin/crm-manager").then((module) => module.CrmManager),
@@ -17,7 +43,7 @@ const CrmManager = nextDynamic(
 export default async function AdminCustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; filter?: string; customerId?: string }>;
 }) {
   const profile = await requirePermission("crm:manage");
   const canManageCredit =
@@ -37,8 +63,18 @@ export default async function AdminCustomersPage({
     hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
 
   const params = await searchParams;
+  const initialQuery = String(params.q ?? "").trim().slice(0, 120);
+  const initialFilter = customerFilter(params.filter);
+  const initialCustomerId = customerId(params.customerId);
   const [crm, settings] = await Promise.all([
-    getAdminCrm({ customerPage: Number(params.page ?? 1), followupPage: 1, pageSize: 20, viewerRole: profile.role }),
+    getAdminCrm({
+      customerPage: Number(params.page ?? 1),
+      followupPage: 1,
+      pageSize: 20,
+      customerQuery: initialQuery,
+      customerFilter: initialFilter,
+      viewerRole: profile.role,
+    }),
     getPublicCompanySettings(),
   ]);
 
@@ -62,6 +98,9 @@ export default async function AdminCustomersPage({
         canEditCustomerIdentity={canEditCustomerIdentity}
         canManageWholesale={canManageWholesale}
         firstWholesaleMinimum={Number(settings.first_wholesale_minimum ?? 10000)}
+        initialCustomerQuery={initialQuery}
+        initialCustomerFilter={initialFilter}
+        initialCustomerId={initialCustomerId}
       />
     </AdminShell>
   );

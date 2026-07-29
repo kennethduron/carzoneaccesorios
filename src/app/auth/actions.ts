@@ -6,6 +6,11 @@ import { checkRateLimit, getRateLimitMessage, type RateLimitResult } from "@/lib
 import { getSupabasePublicClient } from "@/lib/supabase";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAuthUserByEmail } from "@/lib/auth/email-confirmation";
+import {
+  ensureMyPortalCustomerProfile,
+  ensurePortalCustomerProfileForUser,
+} from "@/lib/auth/portal-customer-sync";
+import { publicRegistrationSchema, type PublicRegistrationInput } from "@/lib/auth/registration-schema";
 import { createVerificationSuccessToken } from "@/lib/auth/verification-token";
 import { mapOperationalError, type MappedOperationalError } from "@/lib/operational-errors";
 import { queueCustomerWelcomeEmail } from "@/lib/notifications/customer-lifecycle-emails";
@@ -14,8 +19,6 @@ import {
   ensureRetailProfile,
   getEmailForUsername,
   normalizeAuthEmail,
-  normalizeAuthPhone,
-  normalizeAuthText,
   usernameExistsInProfile,
 } from "@/lib/auth/profile-sync";
 import { validateUsername } from "@/utils/usernames";
@@ -29,14 +32,6 @@ export type AuthActionResult = {
 
 function normalizeEmail(email: string) {
   return normalizeAuthEmail(email);
-}
-
-function normalizeText(value: string) {
-  return normalizeAuthText(value);
-}
-
-function normalizePhone(phone: string) {
-  return normalizeAuthPhone(phone);
 }
 
 function validateEmail(email: string) {
@@ -386,6 +381,21 @@ export async function loginWithEmailAction(identifierInput: string, password: st
       username: data.user.user_metadata?.username,
     });
 
+    try {
+      await ensureMyPortalCustomerProfile(supabase, data.user.id, "login", data.user.last_sign_in_at);
+    } catch (syncError) {
+      const mapped = mapOperationalError(syncError, {
+        module: "auth",
+        action: "auth.portal_customer_login_recovery_failed",
+        route: "/login",
+        category: "auth",
+      });
+      await writeMappedAuthError(mapped, data.user.email ?? resolved.email, {
+        stage: "ensure_my_portal_customer_profile_v1",
+        source: "login",
+      });
+    }
+
     const { data: profile } = await supabase
       .from("users")
       .select("active")
@@ -401,15 +411,17 @@ export async function loginWithEmailAction(identifierInput: string, password: st
   return { ok: true, message: "Sesión iniciada correctamente.", redirectTo: nextPath };
 }
 
-export async function registerWithEmailAction(input: {
-  fullName: string;
-  username: string;
-  email: string;
-  phone: string;
-  password: string;
-  nextPath?: string;
-}): Promise<AuthActionResult> {
-  const emailForLimit = normalizeEmail(input.email);
+export async function registerWithEmailAction(input: PublicRegistrationInput): Promise<AuthActionResult> {
+  const parsed = publicRegistrationSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "Revisa los datos del registro e inténtalo nuevamente.",
+    };
+  }
+
+  const validatedInput = parsed.data;
+  const emailForLimit = validatedInput.email;
   const registerLimit = await checkRegisterRateLimits(emailForLimit);
 
   if (registerLimit) {
@@ -434,7 +446,7 @@ export async function registerWithEmailAction(input: {
             ? "Pedir al cliente esperar unos minutos o revisar si ya intentó registrar ese correo."
             : "Pedir al cliente esperar unos minutos; si es una sucursal o red compartida, intentar más tarde.",
       },
-      input.email,
+      validatedInput.email,
       {
         rate_limit_kind: registerLimit.cause,
         route_key: registerLimit.result.route,
@@ -442,36 +454,20 @@ export async function registerWithEmailAction(input: {
         attempts: registerLimit.result.attempts,
         limit: registerLimit.limit,
         window_seconds: registerLimit.windowSeconds,
-        username_present: Boolean(input.username.trim()),
+        username_present: Boolean(validatedInput.username.trim()),
       },
     );
     return { ok: false, message };
   }
 
-  const fullName = normalizeText(input.fullName);
-  const username = validateUsername(input.username);
+  const fullName = validatedInput.fullName;
+  const username = validateUsername(validatedInput.username);
   const email = emailForLimit;
-  const phone = normalizePhone(input.phone);
-  const nextPath = safeNextPath(input.nextPath);
-
-  if (fullName.length < 3) {
-    return { ok: false, message: "Ingresa tu nombre completo." };
-  }
+  const phone = validatedInput.phone;
+  const nextPath = safeNextPath(validatedInput.nextPath);
 
   if (!username.ok) {
     return { ok: false, message: username.message };
-  }
-
-  if (!validateEmail(email)) {
-    return { ok: false, message: "Ingresa un correo electrónico válido." };
-  }
-
-  if (phone.length < 8) {
-    return { ok: false, message: "Ingresa un número de teléfono válido." };
-  }
-
-  if (input.password.length < 8) {
-    return { ok: false, message: "La contraseña debe tener al menos 8 caracteres." };
   }
 
   if (await emailExistsInProfile(email)) {
@@ -488,7 +484,7 @@ export async function registerWithEmailAction(input: {
   const emailRedirectTo = buildAuthCallbackUrl(siteUrl, nextPath, email);
   const { data, error } = await supabase.auth.signUp({
     email,
-    password: input.password,
+    password: validatedInput.password,
     options: {
       emailRedirectTo,
       data: {
@@ -531,6 +527,22 @@ export async function registerWithEmailAction(input: {
       phone,
       username: username.username,
     });
+
+    try {
+      await ensurePortalCustomerProfileForUser(data.user.id, "registration");
+    } catch (syncError) {
+      const mapped = mapOperationalError(syncError, {
+        module: "auth",
+        action: "auth.portal_customer_registration_sync_failed",
+        route: "/registro",
+        category: "auth",
+      });
+      await writeMappedAuthError(mapped, data.user.email ?? email, {
+        stage: "ensure_portal_customer_profile_internal_v1",
+        source: "registration",
+        recovery_available: true,
+      });
+    }
   }
 
   if (!data.session) {
@@ -613,6 +625,26 @@ export async function checkRegisteredEmailVerificationAction(emailInput: string)
       phone: user.user_metadata?.phone,
       username: user.user_metadata?.username,
     });
+
+    try {
+      await ensurePortalCustomerProfileForUser(
+        user.id,
+        "callback",
+        user.email_confirmed_at ?? user.confirmed_at,
+      );
+    } catch (syncError) {
+      const mapped = mapOperationalError(syncError, {
+        module: "auth",
+        action: "auth.portal_customer_verification_sync_failed",
+        route: "/registro",
+        category: "auth",
+      });
+      await writeMappedAuthError(mapped, user.email ?? email, {
+        stage: "ensure_portal_customer_profile_internal_v1",
+        source: "callback",
+        recovery_available: true,
+      });
+    }
 
     await queueCustomerWelcomeEmail({
       userId: user.id,

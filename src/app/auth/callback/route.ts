@@ -6,6 +6,7 @@ import { mapOperationalError } from "@/lib/operational-errors";
 import { queueCustomerWelcomeEmail } from "@/lib/notifications/customer-lifecycle-emails";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAuthUserByEmail, isValidAuthEmail } from "@/lib/auth/email-confirmation";
+import { ensurePortalCustomerProfileForUser } from "@/lib/auth/portal-customer-sync";
 import { ensureRetailProfile } from "@/lib/auth/profile-sync";
 import { createVerificationSuccessToken } from "@/lib/auth/verification-token";
 
@@ -153,7 +154,7 @@ function confirmationErrorReason(message: string) {
   return "failed";
 }
 
-async function ensureProfileForConfirmedEmail(email: string) {
+async function ensureProfileForConfirmedEmail(request: NextRequest, email: string) {
   const user = await getAuthUserByEmail(email);
   if (!user || !(user.email_confirmed_at || user.confirmed_at)) {
     return false;
@@ -166,6 +167,16 @@ async function ensureProfileForConfirmedEmail(email: string) {
     phone: user.user_metadata?.phone,
     username: user.user_metadata?.username,
   });
+
+  try {
+    await ensurePortalCustomerProfileForUser(
+      user.id,
+      "callback",
+      user.email_confirmed_at ?? user.confirmed_at,
+    );
+  } catch (error) {
+    await logAuthCallbackError(request, "auth.callback_portal_customer_sync_failed", error);
+  }
 
   await queueCustomerWelcomeEmail({
     userId: user.id,
@@ -219,7 +230,7 @@ async function redirectToVerifiedIfConfirmed(request: NextRequest, errorMessage:
     return null;
   }
 
-  return (await ensureProfileForConfirmedEmail(email))
+  return (await ensureProfileForConfirmedEmail(request, email))
     ? redirectToVerified(request, "already")
     : null;
 }
@@ -314,6 +325,16 @@ export async function GET(request: NextRequest) {
               phone: user.user_metadata?.phone,
             });
 
+            try {
+              await ensurePortalCustomerProfileForUser(
+                user.id,
+                "callback",
+                user.email_confirmed_at ?? user.confirmed_at,
+              );
+            } catch (syncError) {
+              await logAuthCallbackError(request, "auth.callback_portal_customer_sync_failed", syncError);
+            }
+
             await queueCustomerWelcomeEmail({
               userId: user.id,
               email: user.email ?? "",
@@ -383,6 +404,16 @@ export async function GET(request: NextRequest) {
     fullName: callbackUser.user_metadata?.full_name,
     phone: callbackUser.user_metadata?.phone,
   });
+
+  try {
+    await ensurePortalCustomerProfileForUser(
+      callbackUser.id,
+      "callback",
+      callbackUser.email_confirmed_at ?? callbackUser.confirmed_at,
+    );
+  } catch (syncError) {
+    await logAuthCallbackError(request, "auth.callback_portal_customer_sync_failed", syncError);
+  }
 
   await queueCustomerWelcomeEmail({
     userId: callbackUser.id,

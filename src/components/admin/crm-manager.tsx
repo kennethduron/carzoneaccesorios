@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Archive,
@@ -78,6 +79,7 @@ import type {
 } from "@/types/crm";
 import type { AccountsReceivableRow, CommercialCreditPaymentReceivedMethod } from "@/types/credit";
 import type { WholesaleCustomerType } from "@/types/wholesale";
+import type { AdminCrmCustomerFilter } from "@/services/supabase/admin-crm.service";
 import { isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { formatHnDate, formatHnDateTime } from "@/utils/format";
 import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
@@ -93,9 +95,12 @@ type CrmManagerProps = {
   canEditCustomerIdentity?: boolean;
   canManageWholesale?: boolean;
   firstWholesaleMinimum?: number;
+  initialCustomerQuery?: string;
+  initialCustomerFilter?: AdminCrmCustomerFilter;
+  initialCustomerId?: string | null;
 };
 
-type CustomerFilter = "clients" | "internal" | "all" | "active" | "prospects" | "wholesale" | "wholesale_requests" | "suspended";
+type CustomerFilter = AdminCrmCustomerFilter;
 
 type DuplicateMergeRequest = {
   source: CrmDuplicateCandidate;
@@ -307,14 +312,19 @@ export function CrmManager({
   canEditCustomerIdentity = false,
   canManageWholesale = false,
   firstWholesaleMinimum = 10000,
+  initialCustomerQuery = "",
+  initialCustomerFilter = "clients",
+  initialCustomerId = null,
 }: CrmManagerProps) {
-  const [query, setQuery] = useState("");
+  const router = useRouter();
+  const currentSearchParams = useSearchParams();
+  const [query, setQuery] = useState(initialCustomerQuery);
   const [lead, setLead] = useState<CrmLeadInput>(emptyLead);
   const [followup, setFollowup] = useState<CrmFollowupInput>(emptyFollowup);
   const [note, setNote] = useState<CrmNoteInput>(emptyNote);
-  const [selectedCustomerId, setSelectedCustomerId] = useState(data.customers[0]?.id ?? "");
+  const [selectedCustomerId, setSelectedCustomerId] = useState(initialCustomerId ?? data.customers[0]?.id ?? "");
   const [selectedFollowupId, setSelectedFollowupId] = useState(data.followups[0]?.id ?? "");
-  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>("clients");
+  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>(initialCustomerFilter);
   const [followupStatusFilter, setFollowupStatusFilter] = useState<"all" | "pending" | "completed" | "cancelled" | "overdue">(
     activeTask?.id === "overdue" ? "overdue" : "all",
   );
@@ -334,6 +344,56 @@ export function CrmManager({
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
+  const openedInitialCustomerRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (focus !== "customers") return;
+
+    const normalizedQuery = debouncedQuery.trim();
+    const urlQuery = currentSearchParams.get("q")?.trim() ?? "";
+    const urlFilter = (currentSearchParams.get("filter") as CustomerFilter | null) ?? "clients";
+    if (normalizedQuery === urlQuery && customerFilter === urlFilter) return;
+
+    const params = new URLSearchParams(currentSearchParams.toString());
+    if (normalizedQuery) params.set("q", normalizedQuery);
+    else params.delete("q");
+    if (customerFilter !== "clients") params.set("filter", customerFilter);
+    else params.delete("filter");
+    params.delete("page");
+
+    const nextQuery = params.toString();
+    const currentQuery = currentSearchParams.toString();
+    if (nextQuery !== currentQuery) {
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, { scroll: false });
+    }
+  }, [basePath, currentSearchParams, customerFilter, debouncedQuery, focus, router]);
+
+  useEffect(() => {
+    if (!initialCustomerId || openedInitialCustomerRef.current === initialCustomerId) return;
+    openedInitialCustomerRef.current = initialCustomerId;
+    let active = true;
+    setSelectedCustomerId(initialCustomerId);
+    setProfileCustomerId(initialCustomerId);
+    setCustomerProfile(null);
+    setProfileError(null);
+    setProfileLoading(true);
+
+    void getCustomerProfileAction(initialCustomerId).then((result) => {
+      if (!active) return;
+      if (result.ok && result.profile) {
+        setCustomerProfile(result.profile);
+      } else {
+        const errorMessage = result.message || "No se pudo cargar el perfil del cliente.";
+        setProfileError(errorMessage);
+        toast.error(errorMessage);
+      }
+      setProfileLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [initialCustomerId, toast]);
 
   const filteredFollowups = useMemo(() => {
     const normalized = debouncedQuery.trim().toLowerCase();
@@ -360,6 +420,10 @@ export function CrmManager({
   }, [customerFilter, data.followups, debouncedQuery, followupPriorityFilter, followupStatusFilter, followupTypeFilter]);
 
   const searchedCustomers = useMemo(() => {
+    if (focus === "customers") {
+      return data.customers;
+    }
+
     const normalized = debouncedQuery.trim().toLowerCase();
     return data.customers.filter((customer) => {
       if (!normalized) {
@@ -370,11 +434,11 @@ export function CrmManager({
         .toLowerCase()
         .includes(normalized);
     });
-  }, [data.customers, debouncedQuery]);
+  }, [data.customers, debouncedQuery, focus]);
 
   const filteredCustomers = useMemo(
     () =>
-      searchedCustomers.filter((customer) => {
+      focus === "customers" ? searchedCustomers : searchedCustomers.filter((customer) => {
         if (customerFilter === "clients") {
           return customer.profile_kind === "customer";
         }
@@ -399,7 +463,7 @@ export function CrmManager({
 
         return true;
       }),
-    [customerFilter, searchedCustomers],
+    [customerFilter, focus, searchedCustomers],
   );
 
   const pendingFollowups = data.followups.filter((item) => item.status === "pending");
@@ -909,12 +973,18 @@ export function CrmManager({
     setMergeRequest({ source, target });
   }
 
-  async function openCustomerProfile(customerId: string) {
+  async function openCustomerProfile(customerId: string, updateUrl = true) {
     setSelectedCustomerId(customerId);
     setProfileCustomerId(customerId);
     setCustomerProfile(null);
     setProfileError(null);
     setProfileLoading(true);
+
+    if (updateUrl && focus === "customers") {
+      const params = new URLSearchParams(currentSearchParams.toString());
+      params.set("customerId", customerId);
+      router.replace(`${basePath}?${params.toString()}`, { scroll: false });
+    }
 
     const result = await getCustomerProfileAction(customerId);
     if (result.ok && result.profile) {
@@ -930,6 +1000,12 @@ export function CrmManager({
   function closeCustomerProfile() {
     setProfileCustomerId(null);
     setProfileError(null);
+    if (focus === "customers") {
+      const params = new URLSearchParams(currentSearchParams.toString());
+      params.delete("customerId");
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, { scroll: false });
+    }
   }
 
   function closeActiveCustomerWindows(customerId?: string) {
@@ -967,7 +1043,13 @@ export function CrmManager({
         pageSize={data.pageSize}
         total={focus === "customers" ? data.customersTotal : data.followupsTotal}
         label={focus === "customers" ? "clientes" : "seguimientos"}
-        params={activeTask ? { task: activeTask.id } : undefined}
+        params={
+          focus === "customers"
+            ? { q: debouncedQuery.trim() || null, filter: customerFilter }
+            : activeTask
+              ? { task: activeTask.id }
+              : undefined
+        }
       />
 
       <div className="grid gap-3 md:grid-cols-5">

@@ -18,10 +18,22 @@ export type AdminCrmPageFilters = {
   customerPage?: number;
   followupPage?: number;
   pageSize?: number;
+  customerQuery?: string;
+  customerFilter?: AdminCrmCustomerFilter;
   followupTask?: "overdue" | null;
   wholesaleStatus?: "pending" | null;
   viewerRole?: AppRole;
 };
+
+export type AdminCrmCustomerFilter =
+  | "clients"
+  | "internal"
+  | "all"
+  | "active"
+  | "prospects"
+  | "wholesale"
+  | "wholesale_requests"
+  | "suspended";
 
 export type AdminCrmPageData = AdminCrmData & {
   customersTotal: number;
@@ -602,16 +614,57 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   const pageSize = normalizePageSize(filters.pageSize);
   const customerFrom = (customerPage - 1) * pageSize;
   const followupFrom = (followupPage - 1) * pageSize;
+  const customerFilter = filters.wholesaleStatus === "pending" ? "wholesale_requests" : filters.customerFilter ?? "all";
+  const customerQuery = String(filters.customerQuery ?? "").trim().slice(0, 120);
+
+  const { data: customerMatches, error: customerMatchesError } = await supabase
+    .rpc("search_admin_crm_customer_ids_v1", {
+      p_query: customerQuery,
+      p_filter: customerFilter,
+      p_limit: pageSize,
+      p_offset: customerFrom,
+    })
+    .returns<Array<{ customer_id: string; total_count: number }>>();
+
+  if (customerMatchesError) {
+    throw new Error(customerMatchesError.message);
+  }
+
+  const customerMatchRows = (Array.isArray(customerMatches) ? customerMatches : []) as Array<{
+    customer_id: string;
+    total_count: number;
+  }>;
+  let matchedCustomersTotal = Number(customerMatchRows[0]?.total_count ?? 0);
+  if (customerMatchRows.length === 0 && customerFrom > 0) {
+    const { data: firstCustomerMatch, error: firstCustomerMatchError } = await supabase
+      .rpc("search_admin_crm_customer_ids_v1", {
+        p_query: customerQuery,
+        p_filter: customerFilter,
+        p_limit: 1,
+        p_offset: 0,
+      })
+      .returns<Array<{ customer_id: string; total_count: number }>>();
+    if (firstCustomerMatchError) {
+      throw new Error(firstCustomerMatchError.message);
+    }
+    const firstCustomerMatchRows = (Array.isArray(firstCustomerMatch) ? firstCustomerMatch : []) as Array<{
+      customer_id: string;
+      total_count: number;
+    }>;
+    matchedCustomersTotal = Number(firstCustomerMatchRows[0]?.total_count ?? 0);
+  }
+  const matchedCustomerIds = customerMatchRows.map((row) => row.customer_id);
 
   let customersQuery = supabase
     .from("customers")
     .select(
       "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
-      { count: "exact" },
     );
 
-  if (filters.wholesaleStatus === "pending") {
-    customersQuery = customersQuery.eq("wholesale_status", "pending");
+  if (matchedCustomerIds.length > 0) {
+    customersQuery = customersQuery.in("id", matchedCustomerIds);
+  } else {
+    customersQuery = customersQuery.eq("id", "00000000-0000-0000-0000-000000000000");
   }
 
   let followupsQuery = supabase
@@ -644,15 +697,12 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   }
 
   const [
-    { data: customers, error: customersError, count: customersTotal },
+    { data: customers, error: customersError },
     { data: followups, error: followupsError, count: followupsTotal },
     { data: notes, error: notesError },
     { data: duplicateCustomers, error: duplicateCustomersError },
   ] = await Promise.all([
-    customersQuery
-      .order("created_at", { ascending: false })
-      .range(customerFrom, customerFrom + pageSize - 1)
-      .returns<CustomerQueryRow[]>(),
+    customersQuery.returns<CustomerQueryRow[]>(),
     followupsQuery
       .order("due_at", { ascending: true, nullsFirst: false })
       .range(followupFrom, followupFrom + pageSize - 1)
@@ -821,17 +871,20 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
     }
   }
 
-  const normalizedCustomers = customerRows.map((customer) =>
-    normalizeCustomer(
-      customer,
-      authByUserId,
-      ordersByCustomerId,
-      ordersByUserId,
-      ordersByEmail,
-      invoiceCountsByCustomerId,
-      wholesaleCodeCountsByCustomerId,
-    ),
-  );
+  const customerOrder = new Map(matchedCustomerIds.map((customerId, index) => [customerId, index]));
+  const normalizedCustomers = customerRows
+    .map((customer) =>
+      normalizeCustomer(
+        customer,
+        authByUserId,
+        ordersByCustomerId,
+        ordersByUserId,
+        ordersByEmail,
+        invoiceCountsByCustomerId,
+        wholesaleCodeCountsByCustomerId,
+      ),
+    )
+    .sort((left, right) => (customerOrder.get(left.id) ?? 0) - (customerOrder.get(right.id) ?? 0));
   const visibleCustomers = canViewInternalProfiles(filters.viewerRole)
     ? uniqueCustomers(normalizedCustomers)
     : uniqueCustomers(normalizedCustomers).filter((customer) => customer.profile_kind === "customer");
@@ -845,7 +898,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       : normalizedFollowups.filter((followup) => followup.customer_profile_kind === "customer" || visibleCustomerIds.has(followup.customer_id)),
     notes: (notes ?? []).map(normalizeNote),
     duplicateGroups: buildDuplicateGroups(duplicateRows, duplicateOrderCounts, duplicateInvoiceCounts),
-    customersTotal: customersTotal ?? 0,
+    customersTotal: matchedCustomersTotal,
     followupsTotal: followupsTotal ?? 0,
     customerPage,
     followupPage,
