@@ -10,6 +10,7 @@ import { requirePermission } from "@/lib/auth/session";
 import { getHistoricalAccountsPayableImportData } from "@/services/supabase/accounts-payable-import.service";
 import { getSupplierPaymentAccountingRepairPreviews } from "@/services/accounting/supplier-payment-accounting-repairs";
 import { getAdminPayables } from "@/services/supabase/payables.service";
+import { getSupplierMultiPaymentConfig, getSupplierMultiPaymentHistory } from "@/services/supabase/supplier-multi-payment.service";
 import { getPurchaseOptions } from "@/services/supabase/purchases.service";
 import { getSupplierOptions } from "@/services/supabase/suppliers.service";
 
@@ -39,7 +40,7 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
   }
 
   const params = await searchParams;
-  const [{ payables, invoices, credits, summary }, suppliers, purchases, importData, repairPreviews] = await Promise.all([
+  const [{ payables, invoices, credits, summary }, suppliers, purchases, importData, repairPreviews, multiPaymentConfig, multiPaymentHistory] = await Promise.all([
     getAdminPayables(),
     getSupplierOptions(true),
     getPurchaseOptions(),
@@ -51,6 +52,8 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
       canRollback,
     }),
     getSupplierPaymentAccountingRepairPreviews(),
+    getSupplierMultiPaymentConfig(),
+    getSupplierMultiPaymentHistory(),
   ]);
 
   return (
@@ -67,7 +70,7 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
           canRepair={canRepairSupplierPayment}
         />
         <AccountsPayableImportManager data={importData} />
-        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} />
+        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} multiPaymentConfig={multiPaymentConfig} multiPaymentHistory={multiPaymentHistory} />
       </div>
     </AdminShell>
   );

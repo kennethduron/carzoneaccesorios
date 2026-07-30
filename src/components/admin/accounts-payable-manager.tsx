@@ -19,8 +19,10 @@ import {
   type SupplierPaymentFormInput,
   type SupplierCreditFormInput,
 } from "@/app/admin/cuentas-por-pagar/actions";
+import { SupplierMultiPaymentWizard } from "@/components/admin/supplier-multi-payment-wizard";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
+import type { SupplierMultiPaymentConfig, SupplierMultiPaymentHistoryItem } from "@/services/supabase/supplier-multi-payment.service";
 import type { AdminAccountsPayable, AdminSupplierCredit, AdminSupplierInvoice, PayablesSummary, SupplierOption } from "@/types/purchases";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -95,6 +97,8 @@ export function AccountsPayableManager({
   purchases,
   summary,
   canManage,
+  multiPaymentConfig,
+  multiPaymentHistory,
 }: {
   payables: AdminAccountsPayable[];
   invoices: AdminSupplierInvoice[];
@@ -103,6 +107,8 @@ export function AccountsPayableManager({
   purchases: PurchaseOption[];
   summary: PayablesSummary;
   canManage: boolean;
+  multiPaymentConfig: SupplierMultiPaymentConfig;
+  multiPaymentHistory: SupplierMultiPaymentHistoryItem[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -190,6 +196,11 @@ export function AccountsPayableManager({
   }
 
   function selectPayableForPayment(payable: AdminAccountsPayable) {
+    if (multiPaymentConfig.enabled) {
+      document.getElementById("supplier-multi-payment-wizard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      toast.success("Usa Registrar pago para distribuir una sola salida entre una o varias facturas.");
+      return;
+    }
     setPaymentDraft({
       accounts_payable_id: payable.id,
       amount: payable.balance.toFixed(2),
@@ -231,6 +242,10 @@ export function AccountsPayableManager({
         <Metric label="Cuentas vencidas" value={summary.overdueCount.toLocaleString("es-HN")} />
       </section>
 
+      <div id="supplier-multi-payment-wizard">
+        <SupplierMultiPaymentWizard suppliers={suppliers} config={multiPaymentConfig} history={multiPaymentHistory} canManage={canManage} />
+      </div>
+
       <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="text-lg font-semibold">Cuentas por pagar</h2><p className="text-sm text-black/55">Facturas, saldos y pagos a proveedores.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setTab("payables")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "payables" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Cuentas por pagar</button><button type="button" onClick={() => setTab("invoices")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "invoices" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Facturas de proveedor</button><button type="button" onClick={() => setTab("credits")} className={`rounded-md border px-3 py-2 text-sm font-semibold ${tab === "credits" ? "border-[#e4252c] bg-[#fff1f2] text-[#b91c25]" : "border-black/10 bg-white"}`}>Notas de crédito</button></div></div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_240px_220px_auto] lg:items-center"><label className="flex min-w-0 items-center gap-2 rounded-md border border-black/10 px-3 py-2 focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15"><Search size={18} className="shrink-0 text-black/45" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por proveedor, factura, compra o estado" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label><select value={supplierFilter} onChange={(event) => setSupplierFilter(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm"><option value="all">Todos los proveedores</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm"><option value="open">Abiertas</option><option value="pending">Pendientes</option><option value="partial">Parciales</option><option value="paid">Pagadas</option><option value="cancelled">Anuladas</option><option value="all">Todas</option></select>{query ? <Button type="button" variant="ghost" onClick={() => setQuery("")}><X size={16} />Limpiar</Button> : null}</div>
@@ -267,6 +282,7 @@ export function AccountsPayableManager({
               <Button type="button" onClick={() => runAction(saveAccountsPayableAction(payableDraft), () => setPayableDraft(emptyPayableDraft()))} disabled={!canManage || isPending}><PlusCircle size={16} />Guardar cuenta</Button>
             </FormPanel>
 
+            {!multiPaymentConfig.enabled ? (
             <FormPanel title="Registrar pago a proveedor">
               <Field label="Cuenta por pagar"><select value={paymentDraft.accounts_payable_id} onChange={(event) => setPaymentDraft({ ...paymentDraft, accounts_payable_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Monto"><Input type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft({ ...paymentDraft, amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de pago"><Input type="date" value={paymentDraft.paid_at ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, paid_at: event.target.value })} disabled={!canManage || isPending} /></Field></div>
@@ -274,6 +290,7 @@ export function AccountsPayableManager({
               <Field label="Notas"><textarea value={paymentDraft.notes ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
               <Button type="button" onClick={() => runAction(registerSupplierPaymentAction(paymentDraft), () => setPaymentDraft(emptyPaymentDraft()))} disabled={!canManage || isPending}><ReceiptText size={16} />Registrar pago</Button>
             </FormPanel>
+            ) : null}
             <FormPanel title="Registrar nota de crédito de proveedor" onReset={() => setCreditDraft(emptyCreditDraft())} showReset={Boolean(creditDraft.supplier_id || creditDraft.credit_number || creditDraft.amount)}>
               <Field label="Proveedor"><select value={creditDraft.supplier_id} onChange={(event) => setCreditDraft({ ...creditDraft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
               <Field label="Cuenta por pagar opcional"><select value={creditDraft.accounts_payable_id ?? ""} onChange={(event) => selectPayableForCredit(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin aplicar a cuenta</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>

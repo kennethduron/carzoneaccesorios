@@ -72,7 +72,8 @@ type AccountsPayableEventRow = {
 
 type SupplierPaymentEventRow = {
   id: string;
-  accounts_payable_id: string;
+  accounts_payable_id: string | null;
+  allocation_mode: "legacy_single" | "applications_v1";
   supplier_id: string;
   amount: unknown;
   payment_method: string;
@@ -395,7 +396,7 @@ async function getSupplierPaymentCandidates(client?: SupabaseClient): Promise<Fi
   const supabase = client ?? (await getSupabaseServerClient());
   const { data, error } = await supabase
     .from("supplier_payments")
-    .select("id, accounts_payable_id, supplier_id, amount, payment_method, status, paid_at, voided_at, created_at, updated_at, suppliers(name), accounts_payable(id, purchase_id, supplier_invoice_id, total_amount, paid_amount, balance, currency, purchases(purchase_number), supplier_invoices(invoice_number))")
+    .select("id, accounts_payable_id, allocation_mode, supplier_id, amount, payment_method, status, paid_at, voided_at, created_at, updated_at, suppliers(name), accounts_payable(id, purchase_id, supplier_invoice_id, total_amount, paid_amount, balance, currency, purchases(purchase_number), supplier_invoices(invoice_number))")
     .in("status", ["paid", "voided"])
     .order("created_at", { ascending: false })
     .limit(500)
@@ -404,6 +405,11 @@ async function getSupplierPaymentCandidates(client?: SupabaseClient): Promise<Fi
   if (error) throw new Error(error.message);
 
   return (data ?? []).flatMap<FinancialEventCandidate>((row) => {
+    // applications_v1 is V2-only. It must never create one V1 event per
+    // application, dereference a null legacy payable, or race the V2 outbox.
+    if (row.allocation_mode === "applications_v1") {
+      return [];
+    }
     const snapshot = supplierPaymentSnapshot(row);
     const base = {
       source_type: "supplier_payment" as const,

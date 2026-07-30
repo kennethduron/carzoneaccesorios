@@ -17,6 +17,19 @@ import {
   rollbackHistoricalPayableImportBatch,
 } from "@/services/supabase/accounts-payable-import.service";
 import { setImportBatchStatus } from "@/services/supabase/import-foundation.service";
+import {
+  getSupplierOpenPayables,
+  registerSupplierMultiPayment,
+} from "@/services/supabase/supplier-multi-payment.service";
+import {
+  uploadSupplierPaymentReceipt,
+} from "@/services/supplier-payment-receipt.service";
+import {
+  supplierMultiPaymentSchema,
+  supplierMultiPaymentVoidSchema,
+  supplierOpenPayablesQuerySchema,
+  type SupplierMultiPaymentRpcResult,
+} from "@/schemas/supplier-multi-payment";
 import type { HistoricalPayableImportActionState } from "@/types/accounts-payable-import";
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
 import type { SupplierPaymentRepairResult } from "@/types/supplier-payment-accounting-repair";
@@ -750,4 +763,217 @@ export async function rollbackHistoricalPayableBatchAction(batchId: string, reas
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo revertir el lote." };
   }
+}
+
+export type SupplierMultiPaymentActionResult =
+  | {
+      ok: true;
+      message: string;
+      result: SupplierMultiPaymentRpcResult;
+    }
+  | { ok: false; message: string };
+
+function supplierMultiPaymentErrorMessage(error: unknown) {
+  const message =
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+      ? error.message
+      : "";
+
+  if (message.includes("clave de solicitud")) {
+    return "La solicitud ya fue usada con datos distintos. Cancela el borrador y vuelve a iniciar.";
+  }
+  if (message.includes("saldo") || message.includes("40001")) {
+    return "Uno de los saldos cambió. Actualiza las facturas y revisa la distribución.";
+  }
+  if (message.includes("reconocimiento")) {
+    return "Una obligación no cumple el reconocimiento contable requerido.";
+  }
+  if (message.includes("mapping") || message.includes("cuentas contables")) {
+    return "Falta una configuración contable activa para este método.";
+  }
+  if (message.includes("periodo cerrado")) {
+    return "La fecha contable pertenece a un período cerrado.";
+  }
+  if (message.includes("habilitado")) {
+    return "El pago multifáctura todavía no está habilitado.";
+  }
+  return "No se pudo registrar el pago. No se aplicó ningún cambio.";
+}
+
+export async function getSupplierOpenPayablesAction(input: unknown) {
+  await requirePermission("payables:manage");
+  const parsed = supplierOpenPayablesQuerySchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      message: "Los filtros de cuentas por pagar no son válidos.",
+      items: [],
+      nextCursor: null,
+    };
+  }
+
+  try {
+    const result = await getSupplierOpenPayables(parsed.data);
+    return { ok: true as const, ...result };
+  } catch {
+    return {
+      ok: false as const,
+      message: "No se pudieron cargar las cuentas por pagar del proveedor.",
+      items: [],
+      nextCursor: null,
+    };
+  }
+}
+
+export async function registerSupplierMultiPaymentAction(
+  formData: FormData,
+): Promise<SupplierMultiPaymentActionResult> {
+  const actor = await requirePermission("payables:manage");
+
+  const payloadValue = formData.get("payload");
+  if (typeof payloadValue !== "string" || payloadValue.length > 120_000) {
+    return { ok: false, message: "El borrador del pago no es válido." };
+  }
+
+  let rawInput: unknown;
+  try {
+    rawInput = JSON.parse(payloadValue);
+  } catch {
+    return { ok: false, message: "El borrador del pago no es válido." };
+  }
+
+  if (
+    typeof rawInput === "object" &&
+    rawInput !== null &&
+    "receipt_public_id" in rawInput &&
+    rawInput.receipt_public_id
+  ) {
+    return {
+      ok: false,
+      message: "El identificador del comprobante solo puede derivarse en el servidor.",
+    };
+  }
+
+  const parsed = supplierMultiPaymentSchema.safeParse({
+    ...(typeof rawInput === "object" && rawInput !== null ? rawInput : {}),
+    receipt_public_id: null,
+  });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message:
+        parsed.error.issues[0]?.message ??
+        "Revisa los datos y la distribución del pago.",
+    };
+  }
+
+  const receiptValue = formData.get("receipt");
+  const receipt = receiptValue instanceof File ? receiptValue : null;
+  let upload: Awaited<
+    ReturnType<typeof uploadSupplierPaymentReceipt>
+  > = null;
+
+  try {
+    upload = await uploadSupplierPaymentReceipt(
+      receipt,
+      parsed.data.request_key,
+    );
+    const result = await registerSupplierMultiPayment({
+      ...parsed.data,
+      receipt_public_id: upload?.publicId ?? null,
+    });
+
+    revalidatePath("/admin/cuentas-por-pagar");
+    revalidatePath("/admin/contabilidad");
+    return {
+      ok: true,
+      message: result.replayed
+        ? "Pago recuperado sin duplicarlo."
+        : "Pago registrado en una sola transacción. El borrador contable se publicará manualmente.",
+      result,
+    };
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : null;
+    const errorMessage =
+      typeof error === "object" &&
+      error !== null &&
+      "message" in error &&
+      typeof error.message === "string"
+        ? error.message
+        : "";
+    const responseUnknown =
+      !errorCode &&
+      /fetch|network|timeout|connection|respuesta/i.test(errorMessage);
+
+    if (!responseUnknown) {
+      console.warn(
+        errorCode === "40001"
+          ? "supplier_multi_payment_balance_conflict"
+          : "supplier_multi_payment_rejected",
+        {
+          actor_id: actor.id,
+          actor_role: actor.role,
+          supplier_id: parsed.data.supplier_id,
+          payment_total: parsed.data.applications.reduce(
+            (sum, application) => sum + application.applied_amount,
+            0,
+          ),
+          payment_method: parsed.data.payment_method,
+          paid_date: parsed.data.paid_date,
+          application_count: parsed.data.applications.length,
+          request_key_suffix: parsed.data.request_key.slice(-8),
+          error_code: errorCode ?? "application_rejected",
+          result: "rejected",
+        },
+      );
+    }
+    return { ok: false, message: supplierMultiPaymentErrorMessage(error) };
+  }
+}
+
+export async function voidSupplierMultiPaymentAction(
+  input: unknown,
+): Promise<ActionResult> {
+  await requirePermission("payables:manage");
+  const parsed = supplierMultiPaymentVoidSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? "La anulación no es válida.",
+    };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc(
+    "void_supplier_multi_payment_v1",
+    {
+      p_payment_id: parsed.data.payment_id,
+      p_request_key: parsed.data.request_key,
+      p_reason: parsed.data.reason,
+    },
+  );
+  if (error) {
+    return {
+      ok: false,
+      message: "No se pudo anular el pago completo. No se aplicó ningún cambio.",
+    };
+  }
+
+  revalidatePath("/admin/cuentas-por-pagar");
+  revalidatePath("/admin/contabilidad");
+  return {
+    ok: true,
+    message: data?.replayed
+      ? "La anulación completa ya había sido aplicada."
+      : "Pago completo anulado y saldos restaurados.",
+  };
 }
