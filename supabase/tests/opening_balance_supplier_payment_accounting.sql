@@ -83,8 +83,8 @@ end;
 $$;
 rollback to savepoint direct_event_recognition;
 
--- An incompatible individual event blocks the opening-balance fallback.
-savepoint incompatible_individual_recognition;
+-- A pending manual-scan event without a journal does not block opening evidence.
+savepoint pending_manual_scan_event;
 insert into public.financial_events (
   id, source_type, source_id, event_purpose, posting_version, status,
   occurred_at, source_snapshot, validation_errors, created_by
@@ -92,6 +92,30 @@ insert into public.financial_events (
   '93000000-0000-4000-8000-000000000008',
   'accounts_payable', '3decb1cc-fa18-49e2-ac9a-c97e84916f5b',
   'accounts_payable_created', 'v1', 'pending',
+  '2026-07-15 12:00:00+00', '{}'::jsonb, '[]'::jsonb,
+  '91000000-0000-4000-8000-000000000001'
+);
+do $$
+begin
+  if (
+    public.resolve_accounts_payable_accounting_recognition_v1(
+      '3decb1cc-fa18-49e2-ac9a-c97e84916f5b', '2026-07-30', null
+    )->>'reason_code'
+  ) <> 'accounts_payable_recognized_opening_balance_control'
+  then raise exception 'pending manual scan event compatibility'; end if;
+end;
+$$;
+rollback to savepoint pending_manual_scan_event;
+
+-- A non-pending individual event without a valid journal remains blocking.
+savepoint incompatible_individual_recognition;
+insert into public.financial_events (
+  id, source_type, source_id, event_purpose, posting_version, status,
+  occurred_at, source_snapshot, validation_errors, created_by
+) values (
+  '93000000-0000-4000-8000-000000000010',
+  'accounts_payable', '3decb1cc-fa18-49e2-ac9a-c97e84916f5b',
+  'accounts_payable_created', 'v2', 'ready',
   '2026-07-15 12:00:00+00', '{}'::jsonb, '[]'::jsonb,
   '91000000-0000-4000-8000-000000000001'
 );

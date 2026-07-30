@@ -20,6 +20,10 @@ const [migration, sqlContract, types, panel, worker, lateMigration] =
     ),
   ]);
 
+const compatibilityMigration = await read(
+  "supabase/migrations/202607280016_opening_balance_pending_event_compatibility.sql",
+);
+
 const mustContain = (text, values, contract) => {
   for (const value of values) {
     assert.ok(text.includes(value), `${contract}: missing ${value}`);
@@ -61,6 +65,17 @@ mustContain(
     "manual_publication_required",
   ],
   "migration contract",
+);
+
+mustContain(
+  compatibilityMigration,
+  [
+    "direct_artifact_count",
+    "event.journal_entry_id is not null",
+    "event.status <> 'pending'",
+    "accounts_payable_individual_recognition_incompatible",
+  ],
+  "pending manual-scan compatibility contract",
 );
 
 const resolverCalls = [
