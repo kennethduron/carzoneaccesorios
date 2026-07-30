@@ -262,9 +262,18 @@ export function SupplierPaymentAccountingRepairPanel({
                       <span className="block text-xs text-stone-500">
                         Reconocimiento CxP
                       </span>
-                      {preview.payable_recognition
-                        ? `${preview.payable_recognition.entry_number} · ${formatDate(preview.payable_recognition.entry_date)}`
-                        : "No identificado"}
+                      {preview.payable_recognition ? (
+                        <>
+                          {preview.payable_recognition.recognition_origin ===
+                          "opening_balance_control"
+                            ? "Saldo inicial"
+                            : "Partida individual"}{" "}
+                          · {preview.payable_recognition.entry_number} ·{" "}
+                          {formatDate(preview.payable_recognition.entry_date)}
+                        </>
+                      ) : (
+                        "No identificado"
+                      )}
                     </p>
                     <p>
                       <span className="block text-xs text-stone-500">Método</span>
@@ -275,6 +284,13 @@ export function SupplierPaymentAccountingRepairPanel({
                       {preview.balanced ? "Débitos = créditos" : "Revisión requerida"}
                     </p>
                   </div>
+                  {preview.recognition_origin ===
+                  "opening_balance_control" ? (
+                    <p className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-900">
+                      Obligación reconocida mediante saldo inicial. Pago elegible
+                      para procesamiento contable.
+                    </p>
+                  ) : null}
                   <p className="flex items-center gap-2 rounded-md bg-blue-50 p-3 text-sm text-blue-900">
                     <CheckCircle2 size={17} />
                     Publicación manual obligatoria. La vista previa no crea

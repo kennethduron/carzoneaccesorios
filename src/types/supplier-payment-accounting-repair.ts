@@ -35,6 +35,7 @@ export type SupplierPaymentAccountingRepairPreview = {
   payment_method: string | null;
   classification: SupplierPaymentRepairClassification;
   classification_reason: string;
+  recognition_origin: "direct_event" | "opening_balance_control" | null;
   routing_origin: string;
   cutover_at: string | null;
   cutover_applied: boolean;
@@ -66,11 +67,25 @@ export type SupplierPaymentAccountingRepairPreview = {
     status: string;
   } | null;
   payable_recognition: {
-    event_id: string;
+    event_id: string | null;
     journal_entry_id: string;
     entry_number: string;
     entry_date: string;
     status: string;
+    recognition_origin: "direct_event" | "opening_balance_control";
+  } | null;
+  opening_balance_recognition: {
+    recognized: boolean;
+    recognition_origin: "opening_balance_control";
+    journal_entry_id: string | null;
+    journal_entry_number: string | null;
+    journal_date: string | null;
+    control_account_id: string | null;
+    opening_balance_batch_id: string | null;
+    protected_count: number | null;
+    protected_total: number | null;
+    protected_hash: string | null;
+    reason_code: string;
   } | null;
   preview_lines: SupplierPaymentRepairLine[];
   total_debit: number;
