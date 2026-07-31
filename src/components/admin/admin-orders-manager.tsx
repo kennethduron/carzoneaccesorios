@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import { cancelInvoiceAction, getInvoiceDetailAction } from "@/app/admin/facturas/actions";
@@ -233,6 +233,7 @@ export function AdminOrdersManager({
   const [orderToExtend, setOrderToExtend] = useState<AdminOrderRow | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
+  const invoiceRequestKeys = useRef(new Map<string, string>());
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
 
@@ -284,7 +285,7 @@ export function AdminOrdersManager({
       return;
     }
 
-    if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)) {
+    if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee, order.delivery_mode)) {
       showAdminMessage("Debes confirmar el cargo contra entrega antes de emitir la factura.", false);
       return;
     }
@@ -295,9 +296,12 @@ export function AdminOrdersManager({
     }
 
     startTransition(async () => {
-      const result = await generateInvoiceFromOrderAction(order.id);
+      const requestKey = invoiceRequestKeys.current.get(order.id) ?? crypto.randomUUID();
+      invoiceRequestKeys.current.set(order.id, requestKey);
+      const result = await generateInvoiceFromOrderAction(order.id, requestKey);
       showAdminMessage(result.message, result.ok);
       if (result.ok && result.invoice) {
+        invoiceRequestKeys.current.delete(order.id);
         setInvoicePreview(result.invoice);
         router.refresh();
       }
@@ -654,7 +658,7 @@ function canIssueInvoice(order: AdminOrderRow) {
     normalizedStatus !== "cancelado" &&
     !reservationReleased &&
     !orderHasActiveInvoice(order) &&
-    !isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)
+    !isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee, order.delivery_mode)
   );
 }
 
@@ -763,8 +767,8 @@ function OrderDetail({
   const invoiceCanBeIssued = canIssueInvoice(order);
   const invoiceIsCancelled = order.invoice_status === "anulada" || order.invoice_status === "cancelled";
   const hasActiveInvoice = Boolean(order.invoice_number && !invoiceIsCancelled);
-  const cashOnDeliveryRequired = cashOnDeliveryApplies(order.payment_method, order.payment_timing);
-  const cashOnDeliveryPending = isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee);
+  const cashOnDeliveryRequired = cashOnDeliveryApplies(order.payment_method, order.payment_timing, order.delivery_mode);
+  const cashOnDeliveryPending = isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee, order.delivery_mode);
   const canEditCashOnDelivery =
     (canManageOrders || canConfirmPayments) && cashOnDeliveryRequired && !hasActiveInvoice && normalizedStatus !== "cancelado";
   const cashOnDeliveryLockedReason = hasActiveInvoice

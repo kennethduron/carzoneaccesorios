@@ -721,18 +721,22 @@ export async function adjustSaleTermsAction(input: AdjustSaleTermsInput) {
   };
 }
 
-export async function generateInvoiceFromOrderAction(orderId: string) {
-  const profile = await requirePermission("invoices:create");
+export async function generateInvoiceFromOrderAction(orderId: string, requestKey: string) {
+  await requirePermission("invoices:create");
+  if (!uuidPattern.test(orderId) || !uuidPattern.test(requestKey)) {
+    return { ok: false, message: "La solicitud fiscal no es válida. Actualiza la página e inténtalo nuevamente." };
+  }
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, payment_method, payment_timing, cash_on_delivery_fee, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
+    .select("id, status, payment_method, payment_timing, delivery_mode, cash_on_delivery_fee, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
       status: string;
       payment_method: "bank_transfer" | "card" | "cash" | "commercial_credit";
       payment_timing: "before_delivery" | "on_delivery";
+      delivery_mode: string | null;
       cash_on_delivery_fee: unknown;
       order_reservation_status: string | null;
       payments: Array<{ payment_status: string | null; status: string | null }> | null;
@@ -755,7 +759,7 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     return { ok: false, message: "No se puede emitir factura porque la reserva de inventario fue liberada." };
   }
 
-  if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee)) {
+  if (isCashOnDeliveryPending(order.payment_method, order.payment_timing, order.cash_on_delivery_fee, order.delivery_mode)) {
     return { ok: false, message: "Debes confirmar el cargo contra entrega antes de emitir la factura." };
   }
 
@@ -782,16 +786,22 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
   }
 
   const { data, error } = await supabase
-    .rpc("generate_fiscal_invoice_from_order", {
-      target_order_id: orderId,
+    .rpc("generate_fiscal_invoice_from_order_v2", {
+      p_request_key: requestKey,
+      p_order_id: orderId,
     })
-    .returns<Array<{ invoice_id: string; invoice_number: string }>>();
+    .returns<Array<{ status: string; replayed: boolean; invoice_id: string; invoice_number: string }>>();
 
   if (error) {
     return { ok: false, message: error.message || "Error fiscal: no se pudo crear la factura." };
   }
 
-  const rows = (Array.isArray(data) ? data : []) as Array<{ invoice_id: string; invoice_number: string }>;
+  const rows = (Array.isArray(data) ? data : []) as Array<{
+    status: string;
+    replayed: boolean;
+    invoice_id: string;
+    invoice_number: string;
+  }>;
   const invoice = rows[0];
 
   if (!invoice) {
@@ -803,21 +813,15 @@ export async function generateInvoiceFromOrderAction(orderId: string) {
     return { ok: false, message: "La factura fue generada, pero no se pudo cargar la vista previa." };
   }
 
-  const accountingResult = await dispatchAccountingEvent({
-    sourceType: "invoice",
-    sourceId: invoice.invoice_id,
-    eventPurpose: "invoice_issued",
-    triggeredBy: profile.id,
-    route: "/admin/pedidos",
-  });
-
   revalidateOperationalPaths();
   revalidatePath("/admin/configuracion-fiscal");
   revalidatePath("/admin/contabilidad");
 
   return {
     ok: true,
-    message: `Factura ${invoice.invoice_number} generada correctamente.${accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable."}`,
+    message: invoice.replayed
+      ? `La factura ${invoice.invoice_number} ya existía y se recuperó sin consumir otro correlativo.`
+      : `Factura ${invoice.invoice_number} generada correctamente.`,
     invoiceId: invoice.invoice_id,
     invoiceNumber: invoice.invoice_number,
     invoice: invoiceDetail,
