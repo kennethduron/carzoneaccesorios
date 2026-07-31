@@ -46,6 +46,13 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
     accounting_traceability: null,
     customer_rtn: null,
     fiscal_customer_rtn: null,
+    price_review: {
+      status: "none",
+      reasons: [],
+      invoiceConsistent: null,
+      legitimateModeFallbackItemIds: [],
+      adjustments: [],
+    },
     order_items: order.order_items.map((item) => ({
       ...item,
       unit_price: 0,
@@ -139,6 +146,8 @@ export default async function AdminOrdersPage({
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
         canViewFinancialData={canViewFinancialData}
+        orderPriceReviewEnabled={canViewFinancialData && ordersPage.featureFlags.orderPriceReviewV2}
+        orderPriceConfirmationModalEnabled={canViewFinancialData && ordersPage.featureFlags.orderPriceConfirmationModalV1}
         activeTask={task ? { id: task, label: adminOrderTaskLabels[task] } : null}
       />
     </AdminShell>

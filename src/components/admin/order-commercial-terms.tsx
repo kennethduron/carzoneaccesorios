@@ -3,10 +3,21 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, CalendarDays, PackageSearch, Truck } from "lucide-react";
-import { adjustSaleTermsAction } from "@/app/admin/pedidos/actions";
+import {
+  adjustSaleTermsAction,
+  confirmSaleTermsAdjustmentAction,
+  previewSaleTermsAdjustmentAction,
+} from "@/app/admin/pedidos/actions";
+import { OrderPriceConfirmationDialog } from "@/components/admin/order-price-confirmation-dialog";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import type { AdminOrderRow, DeliveryMode, SaleFinancialSnapshot } from "@/types/orders";
+import type {
+  AdjustSaleTermsInput,
+  AdminOrderRow,
+  DeliveryMode,
+  OrderPriceAdjustmentPreview,
+  SaleFinancialSnapshot,
+} from "@/types/orders";
 import { formatSqlDateHn, todayInHonduras } from "@/utils/honduras-date";
 import { isPaymentConfirmed } from "@/utils/order-workflow";
 import { formatCurrency } from "@/utils/pricing";
@@ -62,10 +73,12 @@ function draftSignature(input: {
 export function OrderCommercialTerms({
   order,
   canEdit,
+  confirmationModalEnabled,
   onDirtyChange,
 }: {
   order: AdminOrderRow;
   canEdit: boolean;
+  confirmationModalEnabled: boolean;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const router = useRouter();
@@ -97,6 +110,12 @@ export function OrderCommercialTerms({
   const [version, setVersion] = useState(order.commercial_terms_version);
   const [financials, setFinancials] = useState(() => initialFinancials(order));
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [confirmation, setConfirmation] = useState<{
+    preview: OrderPriceAdjustmentPreview;
+    input: AdjustSaleTermsInput;
+    signature: string;
+  } | null>(null);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const currentDraft = useMemo(() => ({
@@ -134,48 +153,90 @@ export function OrderCommercialTerms({
     return null;
   }, [order.order_items, prices, shippingFee]);
 
+  function applySuccess(
+    snapshot: { commercial_terms_version: number; financials: SaleFinancialSnapshot },
+    message: string,
+    requestSignature: string,
+  ) {
+    setVersion(snapshot.commercial_terms_version);
+    setFinancials(snapshot.financials);
+    setSavedSignature(requestSignature);
+    setIdempotencyKey(crypto.randomUUID());
+    toast.success(message);
+    router.refresh();
+  }
+
+  function buildInput(): AdjustSaleTermsInput {
+    return {
+      orderId: order.id,
+      requestedInvoiceDate: invoiceDate,
+      linePriceOverrides: order.order_items.map((item) => ({
+        orderItemId: item.id,
+        finalUnitPrice: Number(prices[item.id]),
+      })),
+      requestedShippingFee: Number(shippingFee),
+      deliveryMode: deliveryMode || null,
+      externalDeliveryProvider: externalProvider || null,
+      priceReason: priceReason || null,
+      deliveryReason: deliveryReason || null,
+      expectedVersion: version,
+      idempotencyKey,
+    };
+  }
+
   function save() {
     if (clientValidation) {
       toast.error(clientValidation);
       return;
     }
     const requestSignature = draftSignature(currentDraft);
+    const input = buildInput();
+    const hasPriceChanges = order.order_items.some((item) => (
+      Math.abs(Number(prices[item.id]) - Number(item.unit_price)) > 0.005
+    ));
     startTransition(async () => {
-      const result = await adjustSaleTermsAction({
-        orderId: order.id,
-        requestedInvoiceDate: invoiceDate,
-        linePriceOverrides: order.order_items.map((item) => ({
-          orderItemId: item.id,
-          finalUnitPrice: Number(prices[item.id]),
-        })),
-        requestedShippingFee: Number(shippingFee),
-        deliveryMode: deliveryMode || null,
-        externalDeliveryProvider: externalProvider || null,
-        priceReason: priceReason || null,
-        deliveryReason: deliveryReason || null,
-        expectedVersion: version,
-        idempotencyKey,
-      });
+      if (confirmationModalEnabled && hasPriceChanges) {
+        const result = await previewSaleTermsAdjustmentAction(input);
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+        setConfirmation({ preview: result.preview, input, signature: requestSignature });
+        return;
+      }
+      const result = await adjustSaleTermsAction(input);
       if (!result.ok) {
         toast.error(result.message);
         return;
       }
-      setVersion(result.snapshot.commercial_terms_version);
-      setFinancials(result.snapshot.financials);
-      setSavedSignature(requestSignature);
-      setIdempotencyKey(crypto.randomUUID());
-      toast.success(result.message);
-      router.refresh();
+      applySuccess(result.snapshot, result.message, requestSignature);
     });
   }
 
+  async function confirmAdjustment(note: string) {
+    if (!confirmation || isAuthorizing) return;
+    setIsAuthorizing(true);
+    const result = await confirmSaleTermsAdjustmentAction({ ...confirmation.input, note });
+    setIsAuthorizing(false);
+    if (!result.ok) {
+      toast.error(result.message);
+      return;
+    }
+    applySuccess(result.snapshot, result.message, confirmation.signature);
+    setConfirmation(null);
+  }
+
   return (
-    <section className="min-w-0 rounded-lg border border-[#b91c25]/20 bg-[#fffafa] p-4" aria-labelledby={`commercial-terms-${order.id}`}>
+    <section className="min-w-0 rounded-lg border border-[#b91c25]/20 bg-[#fffafa] p-4" aria-labelledby={`commercial-terms-title-${order.id}`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 id={`commercial-terms-${order.id}`} className="text-base font-semibold">Ajustes previos a facturación</h3>
+          <h3 id={`commercial-terms-title-${order.id}`} className="text-base font-semibold">
+            {activeInvoice ? "Historial de ajustes previos a facturación" : "Ajustes previos a facturación"}
+          </h3>
           <p className="mt-1 text-sm text-black/60">
-            Guarda este snapshot antes de generar la factura. Los cambios quedan en auditoría interna.
+            {activeInvoice
+              ? "Snapshot histórico inmutable utilizado para emitir la factura."
+              : "Guarda este snapshot antes de generar la factura. Los cambios quedan en auditoría interna."}
           </p>
         </div>
         <span className="self-start rounded-full bg-white px-3 py-1 text-xs font-semibold text-black/55">
@@ -276,10 +337,10 @@ export function OrderCommercialTerms({
                 </tbody>
               </table>
             </div>
-            <label className="mt-3 block text-xs font-medium uppercase text-black/55">
+            {!confirmationModalEnabled ? <label className="mt-3 block text-xs font-medium uppercase text-black/55">
               Motivo del ajuste de precio (opcional)
               <Input value={priceReason} maxLength={500} disabled={!canEdit || monetaryLocked || isPending} onChange={(event) => setPriceReason(event.target.value)} className="mt-1 min-h-11" />
-            </label>
+            </label> : null}
           </div>
 
           <div className="rounded-md border border-black/10 bg-white p-3">
@@ -326,12 +387,20 @@ export function OrderCommercialTerms({
           {!canEdit ? <p className="mt-3 text-xs text-black/55">Solo lectura. Tu rol no puede modificar fecha, precio ni entrega.</p> : null}
           {canEdit && !activeInvoice ? (
             <Button onClick={save} disabled={isPending || !dirty || Boolean(clientValidation)} variant="dark" className="mt-4 min-h-11 w-full">
-              {isPending ? "Guardando..." : "Guardar y recalcular"}
+              {isPending ? "Calculando..." : "Guardar y recalcular"}
             </Button>
           ) : null}
           {dirty ? <p className="mt-2 text-center text-xs font-medium text-[#b91c25]">Hay cambios sin guardar.</p> : null}
         </aside>
       </div>
+      {confirmation ? (
+        <OrderPriceConfirmationDialog
+          preview={confirmation.preview}
+          processing={isAuthorizing}
+          onBack={() => setConfirmation(null)}
+          onConfirm={confirmAdjustment}
+        />
+      ) : null}
     </section>
   );
 }
