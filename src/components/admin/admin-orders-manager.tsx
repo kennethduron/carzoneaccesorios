@@ -60,6 +60,8 @@ type AdminOrdersManagerProps = {
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
+  orderPriceReviewEnabled: boolean;
+  orderPriceConfirmationModalEnabled: boolean;
   activeTask?: { id: string; label: string } | null;
 };
 
@@ -220,6 +222,8 @@ export function AdminOrdersManager({
   canCancelInvoices,
   canCorrectInvoices,
   canViewFinancialData,
+  orderPriceReviewEnabled,
+  orderPriceConfirmationModalEnabled,
   activeTask = null,
 }: AdminOrdersManagerProps) {
   const router = useRouter();
@@ -263,8 +267,9 @@ export function AdminOrdersManager({
     [filteredOrders, orders, selectedOrderId],
   );
   const pricingInconsistencies = useMemo(
-    () =>
-      orders.filter((order) =>
+    () => orderPriceReviewEnabled
+      ? orders.filter((order) => order.price_review.status === "action_required")
+      : orders.filter((order) =>
         order.order_items.some((item) => {
           const expectedSnapshot =
             item.applied_price_mode === 'wholesale'
@@ -276,7 +281,7 @@ export function AdminOrdersManager({
           );
         }),
       ),
-    [orders],
+    [orderPriceReviewEnabled, orders],
   );
 
   function generateInvoice(order: AdminOrderRow) {
@@ -476,7 +481,19 @@ export function AdminOrdersManager({
   return (
     <div className="space-y-5">
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
-      {pricingInconsistencies.length > 0 ? (
+      {orderPriceReviewEnabled && pricingInconsistencies.length > 0 ? (
+        <section className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+          <div>
+            <p className="font-semibold">{"Revisi\u00f3n de precio requerida"}</p>
+            <p className="mt-1">
+              {"Existe evidencia incompleta o una diferencia econ\u00f3mica accionable en "}
+              {pricingInconsistencies.map((order) => order.order_number).join(", ")}.
+            </p>
+          </div>
+        </section>
+      ) : null}
+      {!orderPriceReviewEnabled && pricingInconsistencies.length > 0 ? (
         <section className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
           <AlertTriangle className="mt-0.5 shrink-0" size={18} />
           <div>
@@ -572,6 +589,7 @@ export function AdminOrdersManager({
             canCancelInvoices={canCancelInvoices}
             canCorrectInvoices={canCorrectInvoices}
             canViewFinancialData={canViewFinancialData}
+            orderPriceConfirmationModalEnabled={orderPriceConfirmationModalEnabled}
             isPending={isPending}
             message={message}
             onGenerateInvoice={() => generateInvoice(selectedOrder)}
@@ -721,6 +739,37 @@ function orderHasActiveInvoice(order: AdminOrderRow) {
   return Boolean(order.invoice_number && !["anulada", "cancelled"].includes(String(order.invoice_status ?? "")));
 }
 
+function AuthorizedPriceAdjustmentNotice({ order }: { order: AdminOrderRow }) {
+  if (order.price_review.status !== "authorized_manual_override") return null;
+  return (
+    <section className="rounded-lg border border-[#0f766e]/25 bg-[#f0fdfa] p-3 text-sm text-[#134e4a]" aria-label="Precio personalizado autorizado">
+      <div className="flex items-start gap-2">
+        <CheckCircle2 className="mt-0.5 shrink-0" size={18} />
+        <div className="min-w-0">
+          <p className="font-semibold">{"Precio personalizado autorizado"}</p>
+          <p className="mt-1 text-xs leading-5 text-[#115e59]">
+            {"El precio final tiene evidencia de un ajuste realizado por un usuario autorizado. No requiere correcci\u00f3n operativa."}
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {order.price_review.adjustments.map((adjustment) => {
+          const item = order.order_items.find((candidate) => candidate.id === adjustment.orderItemId);
+          return (
+            <div key={`${adjustment.auditId}-${adjustment.orderItemId}`} className="rounded-md border border-[#0f766e]/15 bg-white p-3 text-xs">
+              <p className="font-semibold text-black">{item?.product_name ?? item?.sku ?? "Producto"}</p>
+              <p className="mt-1">Autorizado por: {adjustment.actorName ?? adjustment.actorRole}</p>
+              <p>Fecha: {formatHnDateTime(adjustment.adjustedAt)}</p>
+              <p>Precio anterior: {formatCurrency(adjustment.previousUnitPrice)}</p>
+              <p>Precio final: {formatCurrency(adjustment.finalUnitPrice)}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function OrderDetail({
   order,
   canConfirmPayments,
@@ -736,6 +785,7 @@ function OrderDetail({
   canCancelInvoices,
   canCorrectInvoices,
   canViewFinancialData,
+  orderPriceConfirmationModalEnabled,
   isPending,
   message,
   onGenerateInvoice,
@@ -765,6 +815,7 @@ function OrderDetail({
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canViewFinancialData: boolean;
+  orderPriceConfirmationModalEnabled: boolean;
   isPending: boolean;
   message: string;
   onGenerateInvoice: () => void;
@@ -892,11 +943,15 @@ function OrderDetail({
         </div>
 
         {canViewFinancialData ? (
-          <OrderCommercialTerms
-            order={order}
-            canEdit={canAdjustSaleTerms}
-            onDirtyChange={setCommercialTermsDirty}
-          />
+          <>
+            <AuthorizedPriceAdjustmentNotice order={order} />
+            <OrderCommercialTerms
+              order={order}
+              canEdit={canAdjustSaleTerms}
+              confirmationModalEnabled={orderPriceConfirmationModalEnabled}
+              onDirtyChange={setCommercialTermsDirty}
+            />
+          </>
         ) : null}
 
         {isCredit && order.receivable_id ? (

@@ -21,7 +21,11 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 import type { AppRole, Permission } from "@/types/auth";
-import type { AdjustSaleTermsInput, SaleFinancialSnapshot } from "@/types/orders";
+import type {
+  AdjustSaleTermsInput,
+  OrderPriceAdjustmentPreview,
+  SaleFinancialSnapshot,
+} from "@/types/orders";
 import { isSqlDate } from "@/utils/honduras-date";
 import { cashOnDeliveryApplies, isCashOnDeliveryPending } from "@/utils/cash-on-delivery";
 import { canMoveOrderToStatus, canonicalOrderStatus, isPaymentConfirmed } from "@/utils/order-workflow";
@@ -644,6 +648,141 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 function validMoney(value: number) {
   return Number.isFinite(value) && value >= 0 && Math.round(value * 100) === value * 100;
+}
+
+function validatePriceAdjustmentInput(input: AdjustSaleTermsInput) {
+  if (!uuidPattern.test(input.orderId) || !uuidPattern.test(input.idempotencyKey)) {
+    return "El pedido o la clave de guardado no es valida.";
+  }
+  if (!isSqlDate(input.requestedInvoiceDate)) {
+    return "Selecciona una fecha de factura valida.";
+  }
+  if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 0) {
+    return "La version de los terminos no es valida. Recarga el pedido.";
+  }
+  if (!validMoney(input.requestedShippingFee)) {
+    return "Ingresa un cargo de entrega no negativo con maximo dos decimales.";
+  }
+  if (!Array.isArray(input.linePriceOverrides) || input.linePriceOverrides.length === 0) {
+    return "El pedido debe incluir al menos una linea.";
+  }
+  const itemIds = new Set<string>();
+  for (const line of input.linePriceOverrides) {
+    if (!uuidPattern.test(line.orderItemId) || !validMoney(line.finalUnitPrice) || line.finalUnitPrice <= 0) {
+      return "Revisa los precios finales del pedido.";
+    }
+    if (itemIds.has(line.orderItemId)) return "Cada linea del pedido debe enviarse una sola vez.";
+    itemIds.add(line.orderItemId);
+  }
+  return null;
+}
+
+function safePriceAdjustmentMessage(message: string) {
+  if (message.includes("ORDER_PRICE_BELOW_COST")) return "El nuevo precio no puede ser inferior al costo registrado.";
+  if (message.includes("ORDER_PRICE_VERSION_CONFLICT")) return "Otro usuario modifico estos terminos. Recarga el pedido antes de continuar.";
+  if (message.includes("ORDER_ALREADY_INVOICED")) return "El pedido ya tiene factura y sus precios son inmutables.";
+  if (message.includes("ORDER_PRICE_NOTE_INVALID")) return "La nota no es valida. Usa texto simple de hasta 300 caracteres.";
+  if (message.includes("ORDER_PRICE_CONFIRMATION_DISABLED")) return "La confirmacion de precios no esta habilitada.";
+  if (message.includes("ORDER_PRICE_OVERRIDE_NOT_ALLOWED") || message.includes("permission denied")) {
+    return "El ajuste de precio no esta permitido para este pedido o usuario.";
+  }
+  return "No se pudo validar el ajuste de precio. Actualiza el pedido e intentalo nuevamente.";
+}
+
+function priceAdjustmentRpcArgs(input: AdjustSaleTermsInput) {
+  return {
+    p_order_id: input.orderId,
+    p_requested_invoice_date: input.requestedInvoiceDate,
+    p_line_price_overrides: input.linePriceOverrides.map((line) => ({
+      order_item_id: line.orderItemId,
+      final_unit_price: line.finalUnitPrice,
+    })),
+    p_requested_shipping_fee: input.requestedShippingFee,
+    p_delivery_mode: input.deliveryMode ?? null,
+    p_external_delivery_provider: input.externalDeliveryProvider?.trim() || null,
+    p_expected_version: input.expectedVersion,
+  };
+}
+
+function normalizePriceAdjustmentPreview(value: unknown): OrderPriceAdjustmentPreview | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  if (!Array.isArray(raw.lines) || !raw.previous_financials || !raw.next_financials) return null;
+  return {
+    orderId: String(raw.order_id ?? ""),
+    expectedVersion: Number(raw.expected_version),
+    requestKey: String(raw.request_key ?? ""),
+    lines: raw.lines.map((value) => {
+      const line = value as Record<string, unknown>;
+      return {
+        orderItemId: String(line.order_item_id ?? ""),
+        productName: String(line.product_name ?? ""),
+        sku: String(line.sku ?? ""),
+        quantity: Number(line.quantity ?? 0),
+        automaticUnitPrice: Number(line.automatic_unit_price ?? 0),
+        previousUnitPrice: Number(line.previous_unit_price ?? 0),
+        finalUnitPrice: Number(line.final_unit_price ?? 0),
+        unitDifference: Number(line.unit_difference ?? 0),
+        totalDifference: Number(line.total_difference ?? 0),
+        unitCost: Number(line.unit_cost ?? 0),
+        resultingUnitMargin: Number(line.resulting_unit_margin ?? 0),
+        aboveAutomaticPrice: Boolean(line.above_automatic_price),
+      };
+    }),
+    previousFinancials: raw.previous_financials as SaleFinancialSnapshot,
+    nextFinancials: raw.next_financials as SaleFinancialSnapshot,
+    orderTotalDifference: Number(raw.order_total_difference ?? 0),
+  };
+}
+
+export async function previewSaleTermsAdjustmentAction(input: AdjustSaleTermsInput) {
+  const profile = await requirePermission("admin:access");
+  if (!hasEffectivePermission(profile.role, profile.permissions, "sales:override_price", profile.email)) {
+    return { ok: false as const, message: "No tienes permiso para ajustar precios." };
+  }
+  const validationError = validatePriceAdjustmentInput(input);
+  if (validationError) return { ok: false as const, message: validationError };
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("preview_order_price_adjustment_v1", {
+    ...priceAdjustmentRpcArgs(input),
+    p_request_key: input.idempotencyKey,
+  });
+  if (error) return { ok: false as const, message: safePriceAdjustmentMessage(error.message) };
+  const preview = normalizePriceAdjustmentPreview(data);
+  if (!preview || preview.lines.length === 0) {
+    return { ok: false as const, message: "El servidor no devolvio una vista previa valida." };
+  }
+  return { ok: true as const, preview };
+}
+
+export async function confirmSaleTermsAdjustmentAction(input: AdjustSaleTermsInput & { note?: string | null }) {
+  const profile = await requirePermission("admin:access");
+  if (!hasEffectivePermission(profile.role, profile.permissions, "sales:override_price", profile.email)) {
+    return { ok: false as const, message: "No tienes permiso para ajustar precios." };
+  }
+  const validationError = validatePriceAdjustmentInput(input);
+  if (validationError) return { ok: false as const, message: validationError };
+  const note = input.note?.trim() || null;
+  if (note && (note.length > 300 || /[<>]/.test(note))) {
+    return { ok: false as const, message: "La nota debe ser texto simple de hasta 300 caracteres." };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("confirm_order_price_adjustment_v1", {
+    ...priceAdjustmentRpcArgs(input),
+    p_delivery_reason: input.deliveryReason?.trim() || null,
+    p_idempotency_key: input.idempotencyKey,
+    p_note: note,
+  });
+  if (error) return { ok: false as const, message: safePriceAdjustmentMessage(error.message) };
+  const snapshot = data as AdjustSaleTermsRpcResult | null;
+  if (!snapshot?.financials || !Number.isInteger(snapshot.commercial_terms_version)) {
+    return { ok: false as const, message: "El servidor no devolvio el snapshot monetario confirmado." };
+  }
+  revalidateOperationalPaths();
+  revalidatePath("/admin/reportes");
+  return { ok: true as const, message: "Ajuste autorizado, auditado y recalculado correctamente.", snapshot };
 }
 
 export async function adjustSaleTermsAction(input: AdjustSaleTermsInput) {
