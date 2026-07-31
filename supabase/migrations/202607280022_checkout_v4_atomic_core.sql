@@ -226,20 +226,31 @@ declare
   overdue_balance numeric(12,2) := 0;
   available_credit numeric(12,2) := 0;
   credit_usable boolean := false;
+  first_purchase_minimum numeric(12,2) := 10000;
+  accumulated_wholesale numeric(12,2) := 0;
   effective_mode public.order_price_mode := 'retail';
   context_status text;
   reason_code text;
   context_token text;
 begin
+  select round(coalesce(cs.first_wholesale_minimum, 10000), 2)
+  into first_purchase_minimum
+  from public.company_settings cs
+  order by cs.created_at
+  limit 1;
   if actor_id is null then
     if not coalesce(p_guest_intent, false) then
       return jsonb_build_object(
         'status', 'commercial_context_conflict',
         'actorScope', 'guest',
         'authenticated', false,
+        'accountActive', false,
+        'linked', false,
         'userId', null,
         'customerId', null,
+        'customerActive', false,
         'priceMode', 'retail',
+        'firstPurchaseMinimum', first_purchase_minimum,
         'commercialVersion', null,
         'contextToken', null,
         'reasonCode', 'CHECKOUT_SESSION_REQUIRED',
@@ -252,10 +263,20 @@ begin
       'status', 'guest',
       'actorScope', 'guest',
       'authenticated', false,
+      'accountActive', false,
+      'linked', false,
       'userId', null,
       'customerId', null,
+      'customerActive', false,
       'priceMode', 'retail',
       'wholesaleStatus', 'none',
+      'wholesaleCustomerType', null,
+      'firstPurchaseRequired', false,
+      'firstPurchaseMinimum', first_purchase_minimum,
+      'firstPurchaseCompleted', false,
+      'firstPurchaseAccumulated', 0,
+      'creditAccountExists', false,
+      'creditEnabled', false,
       'creditStatus', null,
       'creditUsable', false,
       'creditLimit', null,
@@ -265,6 +286,9 @@ begin
       'commercialVersion', null,
       'contextToken', context_token,
       'reasonCode', null,
+      'blockCodes', jsonb_build_array(),
+      'warningCodes', jsonb_build_array(),
+      'pendingLinkEvidence', false,
       'serverTimestamp', now()
     );
   end if;
@@ -281,9 +305,13 @@ begin
       'status', 'commercial_context_conflict',
       'actorScope', 'authenticated',
       'authenticated', true,
+      'accountActive', false,
+      'linked', false,
       'userId', actor_id,
       'customerId', null,
+      'customerActive', false,
       'priceMode', 'retail',
+      'firstPurchaseMinimum', first_purchase_minimum,
       'commercialVersion', null,
       'contextToken', null,
       'reasonCode', 'CHECKOUT_COMMERCIAL_CONTEXT_CONFLICT',
@@ -301,9 +329,13 @@ begin
       'status', 'commercial_context_conflict',
       'actorScope', 'authenticated',
       'authenticated', true,
+      'accountActive', true,
+      'linked', false,
       'userId', actor_id,
       'customerId', null,
+      'customerActive', false,
       'priceMode', 'retail',
+      'firstPurchaseMinimum', first_purchase_minimum,
       'commercialVersion', null,
       'contextToken', public.checkout_hash_text_v1(
         'checkout-commercial-context:v2:' || actor_id::text || ':unlinked'
@@ -316,9 +348,13 @@ begin
       'status', 'commercial_context_conflict',
       'actorScope', 'authenticated',
       'authenticated', true,
+      'accountActive', true,
+      'linked', false,
       'userId', actor_id,
       'customerId', null,
+      'customerActive', false,
       'priceMode', 'retail',
+      'firstPurchaseMinimum', first_purchase_minimum,
       'commercialVersion', null,
       'contextToken', null,
       'reasonCode', 'CHECKOUT_COMMERCIAL_CONTEXT_CONFLICT',
@@ -381,6 +417,13 @@ begin
     context_status := 'commercial_context_conflict';
   end if;
 
+  select coalesce(sum(o.total), 0)
+  into accumulated_wholesale
+  from public.orders o
+  where o.customer_id = customer_row.id
+    and o.price_mode = 'wholesale'
+    and o.status::text not in ('cancelado', 'cancelled');
+
   context_token := public.checkout_sha256_v1(jsonb_build_object(
     'contract', 'checkout-commercial-context:v2',
     'user_id', actor_id,
@@ -398,14 +441,24 @@ begin
     'status', context_status,
     'actorScope', 'authenticated',
     'authenticated', true,
+    'accountActive', true,
+    'linked', true,
     'userId', actor_id,
     'customerId', customer_row.id,
+    'customerActive', customer_row.active and customer_row.status = 'active',
     'priceMode', effective_mode,
     'wholesaleStatus', customer_row.wholesale_status,
     'wholesaleCustomerType', customer_row.wholesale_customer_type,
     'firstPurchaseRequired',
       customer_row.wholesale_customer_type = 'new'
       and not customer_row.wholesale_first_purchase_completed,
+    'firstPurchaseMinimum', first_purchase_minimum,
+    'firstPurchaseCompleted',
+      customer_row.wholesale_customer_type = 'existing'
+      or customer_row.wholesale_first_purchase_completed,
+    'firstPurchaseAccumulated', round(accumulated_wholesale, 2),
+    'creditAccountExists', credit_count = 1,
+    'creditEnabled', case when credit_count = 1 then credit_row.is_credit_enabled else false end,
     'creditStatus', case when credit_count = 1 then credit_row.status else null end,
     'creditUsable', credit_usable,
     'creditLimit', case when credit_count = 1 then credit_row.credit_limit else null end,
@@ -416,6 +469,15 @@ begin
     'commercialVersion', customer_row.commercial_version,
     'contextToken', context_token,
     'reasonCode', reason_code,
+    'blockCodes', case
+      when reason_code is null then jsonb_build_array()
+      else jsonb_build_array(reason_code)
+    end,
+    'warningCodes', case
+      when overdue_balance > 0 then jsonb_build_array('CREDIT_OVERDUE_WARNING')
+      else jsonb_build_array()
+    end,
+    'pendingLinkEvidence', false,
     'serverTimestamp', now()
   );
 end;

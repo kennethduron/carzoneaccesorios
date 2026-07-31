@@ -11,35 +11,33 @@ import { checkRateLimit, getRateLimitMessage } from "@/lib/rate-limit";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
-import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
+import { getPortalCommercialContextV2 } from "@/services/supabase/portal-commercial-context.service";
 import { ensureMyPortalCustomerProfile } from "@/lib/auth/portal-customer-sync";
 import type { CheckoutData, PriceMode } from "@/types/commerce";
 import type { PortalCommercialBlockCode, PortalCommercialWarningCode } from "@/types/portal-commercial";
 import { cashOnDeliveryApplies } from "@/utils/cash-on-delivery";
 import { validateHondurasPhone } from "@/utils/validation";
 
+import type { CheckoutV4Code, CheckoutV4Result } from '@/types/checkout-v4';
+
 type CheckoutOrderItemInput = {
   productId: string;
+  variantId?: string | null;
   quantity: number;
+  expectedUnitPrice?: number;
 };
 
 type CreateCheckoutOrderInput = {
   checkout: CheckoutData;
   items: CheckoutOrderItemInput[];
   requestKey: string;
+  recoveryToken: string;
   expectedCommercialVersion: number | null;
   expectedContextToken: string | null;
   expectedPriceMode: PriceMode;
 };
 
-type CheckoutActionResult = {
-  ok: boolean;
-  message: string;
-  orderNumber?: string;
-  trackingCode?: string;
-  transferReceiptUrl?: string | null;
-  code?: string;
-};
+type CheckoutActionResult = CheckoutV4Result;
 
 type TransferReceiptUpload = {
   publicId: string;
@@ -56,6 +54,16 @@ export type WholesalePurchaseStatusResult = {
 };
 
 export type CheckoutAccountInfo = {
+  checkoutV4Enabled: boolean;
+  userId: string | null;
+  contextStatus:
+    | 'guest'
+    | 'authenticated_retail'
+    | 'authenticated_wholesale'
+    | 'authenticated_credit'
+    | 'commercial_context_unavailable'
+    | 'commercial_context_conflict';
+  reasonCode: string | null;
   isAuthenticated: boolean;
   email: string | null;
   customerName: string | null;
@@ -214,6 +222,7 @@ function parseCheckoutOrderInput(formData: FormData): CreateCheckoutOrderInput {
     checkout: JSON.parse(String(formData.get("checkout") ?? "{}")) as CheckoutData,
     items: JSON.parse(String(formData.get("items") ?? "[]")) as CheckoutOrderItemInput[],
     requestKey: String(formData.get("requestKey") ?? ""),
+    recoveryToken: String(formData.get("recoveryToken") ?? ""),
     expectedCommercialVersion: versionValue === "" ? null : Number(versionValue),
     expectedContextToken: contextTokenValue || null,
     expectedPriceMode: priceModeValue === "wholesale" ? "wholesale" : "retail",
@@ -248,6 +257,10 @@ function validateBankReference(value: string) {
 
 export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
   const guestAccount: CheckoutAccountInfo = {
+    checkoutV4Enabled: false,
+    userId: null,
+    contextStatus: 'guest',
+    reasonCode: null,
     isAuthenticated: false,
     email: null,
     customerName: null,
@@ -263,15 +276,16 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
   };
 
   const supabase = await getSupabaseServerClient();
+  const useCheckoutV4 = await checkoutV4Enabled(supabase);
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return guestAccount;
+    return { ...guestAccount, checkoutV4Enabled: useCheckoutV4 };
   }
 
-  const commercial = await getPortalCommercialContext();
+  const commercial = await getPortalCommercialContextV2();
   const admin = getSupabaseAdminClient();
   const [{ data: profile }, { data: customer }] = await Promise.all([
     admin
@@ -298,6 +312,10 @@ export async function getCheckoutAccountAction(): Promise<CheckoutAccountInfo> {
   const accountEmail = normalizeEmail(user.email || profile?.email || customer?.email);
 
   return {
+    checkoutV4Enabled: useCheckoutV4,
+    userId: user.id,
+    contextStatus: commercial.resolutionStatus,
+    reasonCode: commercial.reasonCode,
     isAuthenticated: true,
     email: accountEmail || null,
     customerName: customer?.contact_name || profile?.full_name || null,
@@ -417,6 +435,489 @@ async function uploadTransferReceipt(file: File | null, bankReference: string): 
   });
 }
 
+type CheckoutRequestStatusRpc = {
+  status?: string;
+  replayed?: boolean;
+  orderNumber?: string | null;
+  trackingCode?: string | null;
+  createdAt?: string | null;
+  priceMode?: PriceMode | null;
+  total?: number | null;
+  errorCode?: string | null;
+  code?: string | null;
+  retryAllowed?: boolean;
+  expiresAt?: string | null;
+};
+
+const checkoutV4Codes = new Set<CheckoutV4Code>([
+  'CHECKOUT_SESSION_REQUIRED',
+  'CHECKOUT_CUSTOMER_LINK_REQUIRED',
+  'CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE',
+  'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED',
+  'CHECKOUT_PRICE_CHANGED',
+  'CHECKOUT_STOCK_CHANGED',
+  'CHECKOUT_WHOLESALE_PRICE_UNAVAILABLE',
+  'CHECKOUT_WHOLESALE_MINIMUM_QUANTITY',
+  'CHECKOUT_WHOLESALE_FIRST_MINIMUM',
+  'CHECKOUT_REQUEST_CONFLICT',
+  'CHECKOUT_REQUEST_EXPIRED',
+  'CHECKOUT_REQUEST_NOT_FOUND',
+  'CHECKOUT_CREDIT_LIMIT_EXCEEDED',
+  'CHECKOUT_PAYMENT_METHOD_UNAVAILABLE',
+  'CHECKOUT_BANK_REFERENCE_REQUIRED',
+  'CHECKOUT_PRODUCT_UNAVAILABLE',
+  'CHECKOUT_TEMPORARILY_UNAVAILABLE',
+]);
+
+function checkoutV4ErrorCode(value: unknown): CheckoutV4Code {
+  const text = value instanceof Error ? value.message : String(value ?? '');
+  for (const code of checkoutV4Codes) {
+    if (text.includes(code)) return code;
+  }
+  return 'CHECKOUT_TEMPORARILY_UNAVAILABLE';
+}
+
+function checkoutV4Message(code: string) {
+  const messages: Record<string, string> = {
+    CHECKOUT_SESSION_REQUIRED:
+      'Tu sesión terminó antes de confirmar. El pedido no fue creado y tu carrito se conserva. Inicia sesión nuevamente para continuar.',
+    CHECKOUT_CUSTOMER_LINK_REQUIRED:
+      'Tu cuenta necesita estar vinculada a un cliente antes de crear pedidos. El carrito se conserva; contacta a Car Zone Accesorios.',
+    CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE:
+      'No pudimos verificar temporalmente tus condiciones comerciales. No se creó ningún pedido y tu carrito se conserva.',
+    CHECKOUT_COMMERCIAL_CONTEXT_CHANGED:
+      'Tus condiciones comerciales cambiaron. Actualizamos los precios; revísalos y confirma nuevamente.',
+    CHECKOUT_PRICE_CHANGED:
+      'Uno o más precios cambiaron. No se creó el pedido; revisa el carrito actualizado y confirma nuevamente.',
+    CHECKOUT_STOCK_CHANGED:
+      'La disponibilidad cambió antes de confirmar. No se creó el pedido; actualiza el carrito para continuar.',
+    CHECKOUT_WHOLESALE_PRICE_UNAVAILABLE:
+      'Un producto no tiene un precio mayorista válido. No se creó el pedido y tu carrito se conserva.',
+    CHECKOUT_WHOLESALE_MINIMUM_QUANTITY:
+      'Una cantidad ya no cumple el mínimo mayorista. Corrige el carrito y confirma nuevamente.',
+    CHECKOUT_WHOLESALE_FIRST_MINIMUM:
+      'El pedido no alcanza el mínimo requerido para la primera compra mayorista.',
+    CHECKOUT_REQUEST_CONFLICT:
+      'Esta solicitud ya fue usada con información diferente. No se creó un pedido adicional.',
+    CHECKOUT_REQUEST_EXPIRED:
+      'La solicitud de checkout expiró. Tu carrito se conserva y puedes iniciar una nueva confirmación.',
+    CHECKOUT_REQUEST_NOT_FOUND:
+      'No encontramos una solicitud pendiente. Tu carrito se conserva y puedes intentarlo nuevamente.',
+    CHECKOUT_CREDIT_LIMIT_EXCEEDED:
+      'Este pedido supera el crédito disponible. No se creó el pedido; elige otra forma de pago o ajusta el carrito.',
+    CHECKOUT_PAYMENT_METHOD_UNAVAILABLE:
+      'La forma de pago seleccionada no está disponible en este momento.',
+    CHECKOUT_BANK_REFERENCE_REQUIRED:
+      'Ingresa la referencia bancaria para confirmar la transferencia.',
+    CHECKOUT_PRODUCT_UNAVAILABLE:
+      'Uno de los productos ya no está disponible. No se creó el pedido; actualiza el carrito.',
+    CHECKOUT_TEMPORARILY_UNAVAILABLE:
+      'No pudimos confirmar el estado del pedido. Conserva esta pantalla: intentaremos recuperar la solicitud sin duplicarla.',
+  };
+  return messages[code] ?? messages.CHECKOUT_TEMPORARILY_UNAVAILABLE;
+}
+
+function isRetryableCheckoutV4Code(code: string) {
+  return [
+    'CHECKOUT_SESSION_REQUIRED',
+    'CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE',
+    'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED',
+    'CHECKOUT_PRICE_CHANGED',
+    'CHECKOUT_STOCK_CHANGED',
+    'CHECKOUT_REQUEST_NOT_FOUND',
+    'CHECKOUT_TEMPORARILY_UNAVAILABLE',
+  ].includes(code);
+}
+
+async function checkoutV4Enabled(supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>) {
+  const { data, error } = await supabase.rpc('get_checkout_feature_flag_v1');
+  if (error || !data || typeof data !== 'object' || Array.isArray(data)) return false;
+  return (data as { enabled?: unknown }).enabled === true;
+}
+
+export async function getCheckoutRequestStatusAction(
+  requestKey: string,
+  recoveryToken: string,
+): Promise<CheckoutActionResult> {
+  if (!isUuid(requestKey) || recoveryToken.length > 256) {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_final',
+      code: 'CHECKOUT_REQUEST_NOT_FOUND',
+      retryAllowed: true,
+      message: checkoutV4Message('CHECKOUT_REQUEST_NOT_FOUND'),
+    };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc('get_checkout_request_status_v1', {
+    p_request_key: requestKey,
+    p_recovery_token: recoveryToken || null,
+  });
+
+  if (error || !data || typeof data !== 'object' || Array.isArray(data)) {
+    const code = checkoutV4ErrorCode(error?.message);
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code,
+      retryAllowed: true,
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const row = data as CheckoutRequestStatusRpc;
+  const committed = row.status === 'committed' && Boolean(row.orderNumber) && Boolean(row.trackingCode);
+  return {
+    ok: committed,
+    checkoutVersion: 4,
+    requestStatus: (row.status ?? 'failed_retryable') as CheckoutV4Result['requestStatus'],
+    replayed: row.replayed === true,
+    retryAllowed: row.retryAllowed === true,
+    orderNumber: row.orderNumber ?? undefined,
+    trackingCode: row.trackingCode ?? undefined,
+    createdAt: row.createdAt ?? undefined,
+    priceMode: row.priceMode ?? undefined,
+    total: row.total === null || row.total === undefined ? undefined : Number(row.total),
+    code: row.errorCode ?? row.code ?? undefined,
+    message: committed
+      ? 'Recuperamos tu pedido creado correctamente.'
+      : checkoutV4Message(row.errorCode ?? row.code ?? 'CHECKOUT_TEMPORARILY_UNAVAILABLE'),
+  };
+}
+
+export async function recordCheckoutConfirmationShownAction(
+  requestKey: string,
+  recoveryToken: string,
+  recovered: boolean,
+  durationMs: number | null,
+) {
+  if (!isUuid(requestKey) || recoveryToken.length > 256) return { ok: false };
+  const supabase = await getSupabaseServerClient();
+  const deploymentId = process.env.VERCEL_DEPLOYMENT_ID ?? process.env.VERCEL_URL ?? null;
+  const commitSha = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
+  const eventName = recovered ? 'checkout_response_recovered' : 'checkout_response_built';
+
+  await supabase.rpc('record_checkout_browser_event_v1', {
+    p_request_key: requestKey,
+    p_recovery_token: recoveryToken || null,
+    p_event_name: eventName,
+    p_deployment_id: deploymentId,
+    p_commit_sha: commitSha,
+    p_duration_ms: durationMs,
+  });
+  const { error } = await supabase.rpc('record_checkout_browser_event_v1', {
+    p_request_key: requestKey,
+    p_recovery_token: recoveryToken || null,
+    p_event_name: 'checkout_confirmation_shown',
+    p_deployment_id: deploymentId,
+    p_commit_sha: commitSha,
+    p_duration_ms: durationMs,
+  });
+  return { ok: !error };
+}
+
+async function createCheckoutOrderV4Atomic(input: {
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>;
+  checkoutInput: CreateCheckoutOrderInput;
+  customerName: string;
+  email: string;
+  phone: string;
+  customerRtn: string | null;
+  department: string;
+  city: string;
+  deliveryAddress: string;
+  paymentMethod: string;
+  paymentTiming: string;
+  bankReference: string;
+  normalizedItems: Array<{ productId: string; quantity: number; expectedUnitPrice: number }>;
+  transferReceipt: TransferReceiptUpload | null;
+}): Promise<CheckoutActionResult> {
+  const { supabase, checkoutInput } = input;
+  const commercial = await getPortalCommercialContextV2();
+  const actorScope = commercial.authenticated ? 'authenticated' : 'guest';
+
+  if (commercial.resolutionStatus === 'commercial_context_unavailable') {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code: 'CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE',
+      retryAllowed: true,
+      message: checkoutV4Message('CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE'),
+    };
+  }
+  if (commercial.resolutionStatus === 'commercial_context_conflict') {
+    const code = commercial.reasonCode || 'CHECKOUT_CUSTOMER_LINK_REQUIRED';
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_final',
+      code,
+      retryAllowed: code === 'CHECKOUT_SESSION_REQUIRED',
+      message: checkoutV4Message(code),
+    };
+  }
+
+  if (
+    commercial.contextToken !== checkoutInput.expectedContextToken ||
+    commercial.commercialVersion !== checkoutInput.expectedCommercialVersion ||
+    commercial.effectivePriceMode !== checkoutInput.expectedPriceMode
+  ) {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code: 'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED',
+      retryAllowed: true,
+      message: checkoutV4Message('CHECKOUT_COMMERCIAL_CONTEXT_CHANGED'),
+    };
+  }
+
+  const cartItems = input.normalizedItems.map((item) => ({
+    product_id: item.productId,
+    variant_id: null,
+    quantity: item.quantity,
+  }));
+  const { data: cartData, error: cartError } = await supabase.rpc('resolve_checkout_cart_v4', {
+    p_cart_items: cartItems,
+    p_guest_intent: actorScope === 'guest',
+  });
+
+  if (cartError || !cartData || typeof cartData !== 'object' || Array.isArray(cartData)) {
+    const code = checkoutV4ErrorCode(cartError?.message);
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code,
+      retryAllowed: true,
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const cart = cartData as {
+    ok?: boolean;
+    code?: string | null;
+    cartFingerprint?: string;
+    lines?: Array<{ productId?: string; unitPrice?: unknown }>;
+    context?: { contextToken?: string; commercialVersion?: unknown; priceMode?: PriceMode };
+  };
+  if (cart.ok !== true || !cart.cartFingerprint || !Array.isArray(cart.lines)) {
+    const code = cart.code || 'CHECKOUT_TEMPORARILY_UNAVAILABLE';
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: isRetryableCheckoutV4Code(code) ? 'failed_retryable' : 'failed_final',
+      code,
+      retryAllowed: isRetryableCheckoutV4Code(code),
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const expectedPriceByProduct = new Map(
+    input.normalizedItems.map((item) => [item.productId, Number(item.expectedUnitPrice)]),
+  );
+  const priceChanged = cart.lines.some((line) => {
+    const expected = line.productId ? expectedPriceByProduct.get(line.productId) : undefined;
+    return expected === undefined || !Number.isFinite(expected) || Math.abs(Number(line.unitPrice) - expected) > 0.001;
+  });
+  if (priceChanged) {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code: 'CHECKOUT_PRICE_CHANGED',
+      retryAllowed: true,
+      message: checkoutV4Message('CHECKOUT_PRICE_CHANGED'),
+    };
+  }
+
+  const recoveryToken = checkoutInput.recoveryToken;
+  const customerData = {
+    name: input.customerName,
+    email: input.email,
+    phone: input.phone,
+    rtn: input.customerRtn,
+    email_updates_opt_in: Boolean(checkoutInput.checkout.receiveOrderEmailUpdates),
+    bank_reference: input.bankReference || null,
+  };
+  const deliveryData = {
+    country: 'Honduras',
+    country_code: 'HN',
+    department: input.department,
+    city: input.city,
+    address: input.deliveryAddress,
+    mode: 'home_delivery',
+  };
+  const { data: beginData, error: beginError } = await supabase.rpc('begin_checkout_request_v1', {
+    p_request_key: checkoutInput.requestKey,
+    p_recovery_token: recoveryToken,
+    p_expected_actor_scope: actorScope,
+    p_expected_context_token: commercial.contextToken,
+    p_expected_commercial_version: commercial.commercialVersion,
+    p_cart_fingerprint: cart.cartFingerprint,
+    p_cart_items: cartItems,
+    p_customer_data: customerData,
+    p_delivery_data: deliveryData,
+    p_payment_method: input.paymentMethod,
+    p_payment_timing: input.paymentTiming,
+  });
+
+  if (beginError || !beginData || typeof beginData !== 'object' || Array.isArray(beginData)) {
+    const code = checkoutV4ErrorCode(beginError?.message);
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code,
+      retryAllowed: true,
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const begun = beginData as CheckoutRequestStatusRpc & {
+    ok?: boolean;
+    requestFingerprint?: string;
+    priceMode?: PriceMode;
+  };
+  if (begun.status === 'committed' && begun.orderNumber && begun.trackingCode) {
+    return {
+      ok: true,
+      checkoutVersion: 4,
+      requestStatus: 'committed',
+      replayed: true,
+      retryAllowed: false,
+      orderNumber: begun.orderNumber,
+      trackingCode: begun.trackingCode,
+      createdAt: begun.createdAt ?? new Date().toISOString(),
+      priceMode: begun.priceMode ?? commercial.effectivePriceMode,
+      total: Number(begun.total ?? 0),
+      emailStatus: 'queued',
+      message: 'Recuperamos tu pedido creado correctamente.',
+    };
+  }
+  if (begun.ok !== true || !begun.requestFingerprint) {
+    const code = begun.code || 'CHECKOUT_TEMPORARILY_UNAVAILABLE';
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: (begun.status ?? 'failed_retryable') as CheckoutV4Result['requestStatus'],
+      code,
+      retryAllowed: begun.retryAllowed === true,
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const paymentData = {
+    bank_reference: input.bankReference || null,
+    receipt_public_id: input.transferReceipt?.publicId ?? null,
+    receipt_resource_type: input.transferReceipt?.resourceType ?? null,
+    receipt_delivery_type: input.transferReceipt?.deliveryType ?? null,
+    receipt_format: input.transferReceipt?.format ?? null,
+    receipt_original_filename: input.transferReceipt?.originalFilename ?? null,
+  };
+  const { data: createData, error: createError } = await supabase.rpc('create_checkout_order_v4', {
+    p_request_key: checkoutInput.requestKey,
+    p_request_fingerprint: begun.requestFingerprint,
+    p_expected_context_token: commercial.contextToken,
+    p_expected_commercial_version: commercial.commercialVersion,
+    p_cart_fingerprint: cart.cartFingerprint,
+    p_cart_items: cartItems,
+    p_customer_data: customerData,
+    p_delivery_data: deliveryData,
+    p_payment_method: input.paymentMethod,
+    p_payment_timing: input.paymentTiming,
+    p_payment_data: paymentData,
+  });
+
+  if (createError || !createData || typeof createData !== 'object' || Array.isArray(createData)) {
+    const code = checkoutV4ErrorCode(createError?.message);
+    const retryable = isRetryableCheckoutV4Code(code);
+    await supabase.rpc('mark_checkout_request_failed_v1', {
+      p_request_key: checkoutInput.requestKey,
+      p_request_fingerprint: begun.requestFingerprint,
+      p_recovery_token: recoveryToken,
+      p_error_code: code,
+      p_retryable: retryable,
+    });
+    await writeErrorLog({
+      route: '/checkout',
+      action: 'checkout_v4.create_failed',
+      errorMessage: code,
+      userId: commercial.userId,
+      metadata: {
+        checkout_version: 4,
+        actor_scope: actorScope,
+        expected_tier: checkoutInput.expectedPriceMode,
+        resolved_tier: commercial.effectivePriceMode,
+        commercial_version: commercial.commercialVersion,
+        line_count: cartItems.length,
+        error_code: code,
+      },
+    });
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: retryable ? 'failed_retryable' : 'failed_final',
+      code,
+      retryAllowed: retryable,
+      message: checkoutV4Message(code),
+    };
+  }
+
+  const created = createData as {
+    ok?: boolean;
+    status?: string;
+    replayed?: boolean;
+    orderNumber?: string;
+    trackingCode?: string;
+    createdAt?: string;
+    priceMode?: PriceMode;
+    subtotal?: unknown;
+    tax?: unknown;
+    shipping?: unknown;
+    total?: unknown;
+    emailStatus?: string;
+  };
+  if (created.ok !== true || created.status !== 'committed' || !created.orderNumber || !created.trackingCode) {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_retryable',
+      code: 'CHECKOUT_TEMPORARILY_UNAVAILABLE',
+      retryAllowed: true,
+      message: checkoutV4Message('CHECKOUT_TEMPORARILY_UNAVAILABLE'),
+    };
+  }
+
+  revalidatePath('/admin/pedidos');
+  revalidatePath('/admin/inventario');
+  revalidatePath('/admin/reportes');
+  revalidateProductAvailability();
+
+  return {
+    ok: true,
+    checkoutVersion: 4,
+    requestStatus: 'committed',
+    replayed: created.replayed === true,
+    retryAllowed: false,
+    orderNumber: created.orderNumber,
+    trackingCode: created.trackingCode,
+    createdAt: created.createdAt ?? new Date().toISOString(),
+    priceMode: created.priceMode ?? commercial.effectivePriceMode,
+    subtotal: Number(created.subtotal ?? 0),
+    tax: Number(created.tax ?? 0),
+    shipping: Number(created.shipping ?? 0),
+    total: Number(created.total ?? 0),
+    emailStatus: created.emailStatus === 'queued' ? 'queued' : 'not_queued',
+    message: created.replayed
+      ? 'Recuperamos tu pedido creado correctamente.'
+      : 'Pedido creado correctamente. El correo quedó en cola y no retrasó la confirmación.',
+  };
+}
 export async function createCheckoutOrderAction(formData: FormData): Promise<CheckoutActionResult> {
   let input: CreateCheckoutOrderInput;
 
@@ -432,6 +933,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   } = await supabase.auth.getUser();
   const accountEmail = normalizeEmail(user?.email);
   const submittedEmail = normalizeEmail(input.checkout.email);
+  const useCheckoutV4 = await checkoutV4Enabled(supabase);
 
   if (!isUuid(input.requestKey)) {
     return { ok: false, message: "Actualiza el checkout e inténtalo nuevamente." };
@@ -460,7 +962,7 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     };
   }
 
-  if (user) {
+  if (!useCheckoutV4 && user) {
     try {
       const profileSync = await ensureMyPortalCustomerProfile(
         supabase,
@@ -585,7 +1087,9 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
   const normalizedItems = rawItems
     .map((item) => ({
       productId: String(item.productId ?? ""),
+      variantId: item.variantId ? String(item.variantId) : null,
       quantity: Math.trunc(Number(item.quantity)),
+      expectedUnitPrice: Number(item.expectedUnitPrice),
     }))
     .filter((item) => item.productId && item.quantity > 0)
     .sort((left, right) => left.productId.localeCompare(right.productId));
@@ -607,6 +1111,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return {
       ok: false,
       message: "Hay un producto inválido en el carrito. Elimínalo y vuelve a intentar.",
+    };
+  }
+
+  if (
+    useCheckoutV4 &&
+    (
+      !input.recoveryToken ||
+      input.recoveryToken.length < 32 ||
+      input.recoveryToken.length > 256 ||
+      normalizedItems.some((item) => !Number.isFinite(item.expectedUnitPrice) || item.expectedUnitPrice < 0)
+    )
+  ) {
+    return {
+      ok: false,
+      checkoutVersion: 4,
+      requestStatus: 'failed_final',
+      code: 'CHECKOUT_REQUEST_CONFLICT',
+      retryAllowed: false,
+      message: checkoutV4Message('CHECKOUT_REQUEST_CONFLICT'),
     };
   }
 
@@ -714,6 +1237,25 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
           ? error.message
           : "No se pudo subir el comprobante de transferencia. Revisa el archivo e intenta nuevamente.",
     };
+  }
+
+  if (useCheckoutV4) {
+    return createCheckoutOrderV4Atomic({
+      supabase,
+      checkoutInput: input,
+      customerName,
+      email,
+      phone,
+      customerRtn,
+      department,
+      city,
+      deliveryAddress,
+      paymentMethod,
+      paymentTiming,
+      bankReference,
+      normalizedItems,
+      transferReceipt,
+    });
   }
 
   const { data, error } = await supabase

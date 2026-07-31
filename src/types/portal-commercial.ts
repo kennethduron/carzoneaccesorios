@@ -13,7 +13,18 @@ export type PortalCommercialBlockCode =
 
 export type PortalCommercialWarningCode = "CREDIT_OVERDUE_WARNING";
 
+export type PortalCommercialResolutionStatus =
+  | 'guest'
+  | 'authenticated_retail'
+  | 'authenticated_wholesale'
+  | 'authenticated_credit'
+  | 'commercial_context_unavailable'
+  | 'commercial_context_conflict';
+
 export type PortalCommercialContext = {
+  resolutionStatus: PortalCommercialResolutionStatus;
+  reasonCode: string | null;
+  userId: string | null;
   authenticated: boolean;
   accountActive: boolean;
   linked: boolean;
@@ -45,6 +56,9 @@ export type PortalCommercialContext = {
 
 export function createGuestPortalCommercialContext(): PortalCommercialContext {
   return {
+    resolutionStatus: 'guest',
+    reasonCode: null,
+    userId: null,
     authenticated: false,
     accountActive: false,
     linked: false,
@@ -72,5 +86,16 @@ export function createGuestPortalCommercialContext(): PortalCommercialContext {
     pendingLinkEvidence: false,
     contextToken: null,
     serverTimestamp: new Date(0).toISOString(),
+  };
+}
+
+export function createUnavailablePortalCommercialContext(authenticated: boolean): PortalCommercialContext {
+  return {
+    ...createGuestPortalCommercialContext(),
+    resolutionStatus: 'commercial_context_unavailable',
+    reasonCode: 'CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE',
+    authenticated,
+    blockCodes: authenticated ? ['PORTAL_ACCOUNT_INACTIVE'] : [],
+    serverTimestamp: new Date().toISOString(),
   };
 }

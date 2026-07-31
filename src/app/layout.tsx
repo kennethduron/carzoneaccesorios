@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Rajdhani, Titillium_Web } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { defaultOgImageUrl, siteName, siteUrl } from "@/lib/seo";
-import { getPortalCommercialContext } from "@/services/supabase/portal-commercial-context.service";
+import { getPortalCommercialContextV2 } from "@/services/supabase/portal-commercial-context.service";
 import "./globals.css";
 
 const rajdhani = Rajdhani({
@@ -99,7 +99,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const commercialContext = await getPortalCommercialContext();
+  const commercialContext = await getPortalCommercialContextV2();
   return (
     <html lang="es" className={`${rajdhani.variable} ${titillium.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">

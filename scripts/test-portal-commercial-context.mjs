@@ -6,6 +6,7 @@ const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
 const linkMigration = read("supabase/migrations/202607280011_portal_commercial_context_wholesale_credit.sql");
 const checkoutMigration = read("supabase/migrations/202607280012_checkout_order_idempotency_v3.sql");
+const checkoutV4Migration = read('supabase/migrations/202607280022_checkout_v4_atomic_core.sql');
 const productsService = read("src/services/supabase/products.service.ts");
 const cartContext = read("src/contexts/cart-context.tsx");
 const checkoutAction = read("src/app/checkout/actions.ts");
@@ -58,8 +59,9 @@ assert.match(cartContext, /parsed\.some\(\(item\) => "productSnapshot" in item\)
 assert.doesNotMatch(cartContext, /item\.productSnapshot \?\?/);
 assert.doesNotMatch(cartContext, /productSnapshot: product/);
 
-assert.match(checkoutAction, /getPortalCommercialContext\(\)/);
+assert.match(checkoutAction, /getPortalCommercialContextV2\(\)/);
 assert.match(checkoutAction, /\.rpc\("create_checkout_order_v3"/);
+assert.match(checkoutAction, /\.rpc\('create_checkout_order_v4'/);
 assert.match(checkoutAction, /p_expected_commercial_version: input\.expectedCommercialVersion/);
 assert.match(checkoutAction, /p_expected_context_token: input\.expectedContextToken/);
 assert.doesNotMatch(checkoutAction, /formData\.get\("priceMode"\)/);
@@ -68,6 +70,17 @@ assert.match(checkoutView, /requestAttemptRef\.current \?\?= \{/);
 assert.match(checkoutView, /Crédito comercial no disponible/);
 assert.match(checkoutView, /Tu crédito no cubre el total de este pedido/);
 assert.match(checkoutView, /Enviar pedido/);
+assert.match(checkoutView, /getCheckoutRequestStatusAction/);
+assert.match(checkoutView, /checkoutRecoveryStorageKey/);
+
+assert.match(checkoutV4Migration, /resolve_portal_commercial_context_v2/);
+assert.match(checkoutV4Migration, /create_checkout_order_v4/);
+assert.match(checkoutV4Migration, /begin_checkout_request_v1/);
+assert.match(checkoutV4Migration, /get_checkout_request_status_v1/);
+assert.doesNotMatch(
+  checkoutV4Migration.match(/create or replace function public\.create_checkout_order_v4[\s\S]*?comment on function public\.create_checkout_order_v4/)?.[0] ?? '',
+  /create_checkout_order_v[123]|from public\.create_checkout_order\(/,
+);
 
 assert.doesNotMatch(crmAction, /portalLinkRoles:[^\n]*contadora/);
 assert.match(crmAction, /\.rpc\("link_customer_portal_account_v2"/);

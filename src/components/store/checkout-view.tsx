@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload } from "lucide-react";
+import { BadgeCheck, Banknote, Copy, CreditCard, Home, SearchCheck, ShieldCheck, Store, Upload, X } from "lucide-react";
 import {
   createCheckoutOrderAction,
   getCheckoutAccountAction,
+  getCheckoutRequestStatusAction,
+  recordCheckoutConfirmationShownAction,
   type CheckoutAccountInfo,
 } from "@/app/checkout/actions";
+import type { CheckoutRecoveryAttempt, CheckoutV4Result } from '@/types/checkout-v4';
 import type { CheckoutData } from "@/types/commerce";
 import type { PublicCompanySettings } from "@/types/settings";
 import { usePriceMode } from "@/contexts/price-mode-context";
@@ -35,6 +38,10 @@ const emptyCheckout: CheckoutData = {
 };
 
 const guestCheckoutAccount: CheckoutAccountInfo = {
+  checkoutV4Enabled: false,
+  userId: null,
+  contextStatus: 'guest',
+  reasonCode: null,
   isAuthenticated: false,
   email: null,
   customerName: null,
@@ -113,13 +120,51 @@ type OrderConfirmation = {
   paymentMethod: CheckoutData["paymentMethod"];
   total: number;
   currentStatus: string;
+  createdAt: string;
+  priceMode: 'retail' | 'wholesale';
+  recovered: boolean;
 };
-type CheckoutRequestAttempt = {
-  requestKey: string;
+type CheckoutRequestAttempt = CheckoutRecoveryAttempt & {
   expectedCommercialVersion: number | null;
   expectedContextToken: string | null;
   expectedPriceMode: "retail" | "wholesale";
+  paymentMethod: CheckoutData['paymentMethod'];
+  clientTotal: number;
 };
+
+const checkoutRecoveryStorageKey = 'carzone.checkout.v4.recovery';
+
+function createRecoveryToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function clientPayloadSignature(value: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, '0')}${(second >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function readRecoveryAttempt(): CheckoutRequestAttempt | null {
+  try {
+    const raw = window.sessionStorage.getItem(checkoutRecoveryStorageKey);
+    if (!raw) return null;
+    const attempt = JSON.parse(raw) as CheckoutRequestAttempt;
+    if (attempt.version !== 4 || !attempt.requestKey || !attempt.recoveryToken) return null;
+    return attempt;
+  } catch {
+    return null;
+  }
+}
+
+function saveRecoveryAttempt(attempt: CheckoutRequestAttempt) {
+  window.sessionStorage.setItem(checkoutRecoveryStorageKey, JSON.stringify(attempt));
+}
 
 export function CheckoutView({
   settings,
@@ -143,6 +188,9 @@ export function CheckoutView({
   const { createOrder } = useOrders();
   const toast = useToast();
   const requestAttemptRef = useRef<CheckoutRequestAttempt | null>(null);
+  const confirmationDialogRef = useRef<HTMLElement | null>(null);
+  const confirmationRecordedRef = useRef<string | null>(null);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const sellsInHonduras = checkout.country === "Honduras";
   const checkoutFees = useMemo(
     () => calculateCheckoutFees({ subtotal: productsTotal, paymentMethod: checkout.paymentMethod, paymentTiming: checkout.paymentTiming, settings }),
@@ -202,18 +250,13 @@ export function CheckoutView({
 
   const requestPayloadSignature = useMemo(
     () =>
-      JSON.stringify({
+      clientPayloadSignature(JSON.stringify({
         checkout,
         items: rows.map((item) => [item.product.id, item.quantity]),
         proof: proofFile ? [proofFile.name, proofFile.size, proofFile.lastModified] : null,
-      }),
+      })),
     [checkout, proofFile, rows],
   );
-
-  useEffect(() => {
-    requestAttemptRef.current = null;
-  }, [requestPayloadSignature]);
-
 
   useEffect(() => {
     let active = true;
@@ -229,6 +272,107 @@ export function CheckoutView({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const attempt = readRecoveryAttempt();
+    if (!attempt) return;
+    requestAttemptRef.current = attempt;
+    let checks = 0;
+
+    const recover = async () => {
+      checks += 1;
+      const result = await getCheckoutRequestStatusAction(attempt.requestKey, attempt.recoveryToken);
+      if (!active) return;
+      if (result.ok && result.orderNumber && result.trackingCode) {
+        attempt.result = {
+          orderNumber: result.orderNumber,
+          trackingCode: result.trackingCode,
+          createdAt: result.createdAt ?? new Date().toISOString(),
+          priceMode: result.priceMode ?? attempt.expectedPriceMode,
+          total: result.total ?? attempt.clientTotal,
+        };
+        saveRecoveryAttempt(attempt);
+        setOrderNumber(result.orderNumber);
+        setCheckoutMessage('Recuperamos la confirmación de tu pedido sin crear otro pedido.');
+        setConfirmation({
+          orderNumber: result.orderNumber,
+          trackingCode: result.trackingCode,
+          paymentMethod: attempt.paymentMethod,
+          total: result.total ?? attempt.clientTotal,
+          currentStatus: 'Pedido creado. Recuperamos esta confirmación después de una interrupción de la respuesta.',
+          createdAt: result.createdAt ?? new Date().toISOString(),
+          priceMode: result.priceMode ?? attempt.expectedPriceMode,
+          recovered: true,
+        });
+        return;
+      }
+      if (result.requestStatus === 'processing' || result.requestStatus === 'started') {
+        setCheckoutMessage('Estamos verificando una confirmación pendiente. No envíes el pedido nuevamente.');
+        if (checks < 6) timeoutId = setTimeout(recover, 1500);
+        return;
+      }
+      if (result.requestStatus === 'failed_final' || result.requestStatus === 'conflict' || result.requestStatus === 'expired') {
+        window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
+        requestAttemptRef.current = null;
+      } else if (result.requestStatus === 'failed_retryable') {
+        setCheckoutMessage(result.message);
+      }
+    };
+
+    void recover();
+    return () => {
+      active = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!confirmation) return;
+    const attempt = requestAttemptRef.current ?? readRecoveryAttempt();
+    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    confirmationDialogRef.current?.focus();
+    clearCart();
+
+    if (attempt && accountInfo.checkoutV4Enabled && confirmationRecordedRef.current !== attempt.requestKey) {
+      confirmationRecordedRef.current = attempt.requestKey;
+      void recordCheckoutConfirmationShownAction(
+        attempt.requestKey,
+        attempt.recoveryToken,
+        confirmation.recovered,
+        Math.max(0, Date.now() - Date.parse(attempt.startedAt)),
+      );
+      window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
+      requestAttemptRef.current = null;
+    } else if (attempt && !accountInfo.checkoutV4Enabled) {
+      requestAttemptRef.current = null;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setConfirmation(null);
+      if (event.key !== 'Tab' || !confirmationDialogRef.current) return;
+      const focusable = Array.from(
+        confirmationDialogRef.current.querySelectorAll<HTMLElement>('button, a[href], [tabindex]:not([tabindex="-1"])'),
+      ).filter((element) => !element.hasAttribute('disabled'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [accountInfo.checkoutV4Enabled, clearCart, confirmation]);
+
+  useEffect(() => {
+    if (!confirmation) lastFocusedElementRef.current?.focus();
+  }, [confirmation]);
 
   useEffect(() => {
     if (paymentMethods.length === 0) {
@@ -262,6 +406,19 @@ export function CheckoutView({
   function submitOrder() {
     if (!sellsInHonduras) {
       showCheckoutError("country", "Actualmente solo realizamos entregas dentro de Honduras.");
+      return;
+    }
+
+    if (
+      accountInfo.contextStatus === 'commercial_context_unavailable' ||
+      accountInfo.contextStatus === 'commercial_context_conflict'
+    ) {
+      const message =
+        accountInfo.contextStatus === 'commercial_context_conflict'
+          ? 'Tu cuenta requiere vinculación o revisión antes de crear pedidos. El carrito se conserva.'
+          : 'No pudimos verificar tus condiciones comerciales. No se creará el pedido y tu carrito se conserva.';
+      setCheckoutMessage(message);
+      toast.error(message);
       return;
     }
 
@@ -389,18 +546,34 @@ export function CheckoutView({
     }
 
     startTransition(async () => {
+      if (requestAttemptRef.current?.payloadSignature !== requestPayloadSignature) {
+        requestAttemptRef.current = null;
+        window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
+      }
       requestAttemptRef.current ??= {
+        version: 4,
         requestKey: crypto.randomUUID(),
+        recoveryToken: createRecoveryToken(),
+        payloadSignature: requestPayloadSignature,
+        actorScope: accountInfo.isAuthenticated ? 'authenticated' : 'guest',
+        commercialVersion: commercialContext.commercialVersion,
+        contextToken: commercialContext.contextToken,
+        cartFingerprint: requestPayloadSignature,
+        startedAt: new Date().toISOString(),
         expectedCommercialVersion: commercialContext.commercialVersion,
         expectedContextToken: commercialContext.contextToken,
         expectedPriceMode: commercialContext.effectivePriceMode,
+        paymentMethod: checkout.paymentMethod,
+        clientTotal: finalTotal,
       };
       const requestAttempt = requestAttemptRef.current;
+      if (accountInfo.checkoutV4Enabled) saveRecoveryAttempt(requestAttempt);
 
       toast.loading("Creando pedido...");
       const items = rows.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
+        expectedUnitPrice: item.unitPrice,
       }));
       const formData = new FormData();
       const checkoutForOrder = {
@@ -412,6 +585,7 @@ export function CheckoutView({
       formData.set("checkout", JSON.stringify(checkoutForOrder));
       formData.set("items", JSON.stringify(items));
       formData.set("requestKey", requestAttempt.requestKey);
+      formData.set('recoveryToken', requestAttempt.recoveryToken);
       formData.set("expectedCommercialVersion", requestAttempt.expectedCommercialVersion?.toString() ?? "");
       formData.set("expectedContextToken", requestAttempt.expectedContextToken ?? "");
       formData.set("expectedPriceMode", requestAttempt.expectedPriceMode);
@@ -420,23 +594,48 @@ export function CheckoutView({
         formData.set("transferReceipt", proofFile);
       }
 
-      const result = await createCheckoutOrderAction(formData);
+      let result: CheckoutV4Result;
+      try {
+        result = await createCheckoutOrderAction(formData);
+      } catch {
+        result = accountInfo.checkoutV4Enabled
+          ? await getCheckoutRequestStatusAction(requestAttempt.requestKey, requestAttempt.recoveryToken)
+          : {
+              ok: false,
+              checkoutVersion: 3,
+              code: 'CHECKOUT_TEMPORARILY_UNAVAILABLE',
+              message: 'No pudimos confirmar el estado del pedido. Conserva el carrito e inténtalo nuevamente.',
+            };
+      }
 
       if (!result.ok || !result.orderNumber || !result.trackingCode) {
         if (
           result.code === "COMMERCIAL_CONTEXT_CHANGED" ||
+          result.code === 'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED' ||
+          result.code === 'CHECKOUT_PRICE_CHANGED' ||
+          result.code === 'CHECKOUT_STOCK_CHANGED' ||
+          result.code === 'CHECKOUT_SESSION_REQUIRED' ||
+          result.code === 'CHECKOUT_CUSTOMER_LINK_REQUIRED' ||
           result.code === "CHECKOUT_CUSTOMER_CHANGED" ||
           result.code === "CHECKOUT_IDEMPOTENCY_CONFLICT" ||
           result.code === "WHOLESALE_NOT_AVAILABLE" ||
           result.code === "CREDIT_NOT_AVAILABLE"
         ) {
           requestAttemptRef.current = null;
+          window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
           const [nextAccount] = await Promise.all([
             getCheckoutAccountAction(),
             refreshCommercialContext(),
           ]);
           setAccountInfo(nextAccount);
           setCheckout((current) => mergeCheckoutAccount(current, nextAccount));
+        } else if (
+          result.requestStatus === 'failed_final' ||
+          result.requestStatus === 'conflict' ||
+          result.requestStatus === 'expired'
+        ) {
+          requestAttemptRef.current = null;
+          window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
         }
         setCheckoutMessage(result.message);
         toast.error(result.message || "No se pudo crear el pedido. Revisa la información e intenta nuevamente.");
@@ -478,11 +677,19 @@ export function CheckoutView({
 
       setOrderNumber(result.orderNumber);
       setCheckoutMessage(result.message);
+      requestAttempt.result = {
+        orderNumber: result.orderNumber,
+        trackingCode: result.trackingCode,
+        createdAt: result.createdAt ?? new Date().toISOString(),
+        priceMode: result.priceMode ?? priceMode,
+        total: result.total ?? finalTotal,
+      };
+      if (result.checkoutVersion === 4) saveRecoveryAttempt(requestAttempt);
       setConfirmation({
         orderNumber: result.orderNumber,
         trackingCode: result.trackingCode,
         paymentMethod: checkout.paymentMethod,
-        total: finalTotal,
+        total: result.total ?? finalTotal,
         currentStatus:
           requiresCashOnDeliveryReview
             ? "Seleccionaste pago contra entrega. Nuestro equipo revisará el cargo correspondiente y actualizará el total final del pedido."
@@ -493,6 +700,9 @@ export function CheckoutView({
                 : checkout.paymentMethod === "Crédito Comercial"
                   ? "Pedido creado con crédito comercial. El pago queda pendiente hasta marcarlo como pagado."
                 : "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago.",
+        createdAt: result.createdAt ?? new Date().toISOString(),
+        priceMode: result.priceMode ?? priceMode,
+        recovered: result.replayed === true,
       });
       setFieldErrors({});
       toast.success(
@@ -507,8 +717,6 @@ export function CheckoutView({
       setProofFile(null);
       setProofFileName("");
       setProofMessage("");
-      clearCart();
-      requestAttemptRef.current = null;
     });
   }
 
@@ -922,7 +1130,7 @@ export function CheckoutView({
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
-            {isPending ? "Enviando pedido..." : "Enviar pedido"}
+            {isPending ? "Creando pedido…" : "Enviar pedido"}
           </button>
         </div>
       </div>
@@ -1022,12 +1230,34 @@ export function CheckoutView({
       </aside>
     </section>
     {confirmation ? (
-      <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
-        <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
+      <div
+        className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setConfirmation(null);
+        }}
+      >
+        <section
+          ref={confirmationDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="checkout-confirmation-title"
+          tabIndex={-1}
+          className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl outline-none"
+        >
+          <button
+            type="button"
+            aria-label="Cerrar confirmación"
+            onClick={() => setConfirmation(null)}
+            className="absolute right-4 top-4 grid size-9 place-items-center rounded-full border border-black/10 text-black/60 hover:bg-black/5"
+          >
+            <X size={18} />
+          </button>
           <div className="grid size-12 place-items-center rounded-md bg-[#fff1f2] text-[#b91c25]">
             <BadgeCheck size={24} />
           </div>
-          <h2 className="mt-4 text-2xl font-semibold">Pedido creado correctamente</h2>
+          <h2 id="checkout-confirmation-title" className="mt-4 pr-8 text-2xl font-semibold">
+            Pedido creado correctamente
+          </h2>
           <p className="mt-2 text-sm text-black/60">
             Gracias por tu compra. Guarda este código para consultar el estado de tu pedido.
           </p>
@@ -1037,10 +1267,12 @@ export function CheckoutView({
             <InfoRow label="Código de seguimiento" value={confirmation.trackingCode} strong />
             <InfoRow label="Método de pago" value={confirmation.paymentMethod} />
             <InfoRow label="Estado actual" value={confirmation.currentStatus} />
+            <InfoRow label="Precio aplicado" value={confirmation.priceMode === 'wholesale' ? 'Mayorista' : 'Detalle'} />
+            <InfoRow label="Creado" value={new Date(confirmation.createdAt).toLocaleString('es-HN')} />
             <InfoRow label="Total" value={formatCurrency(confirmation.total)} strong />
           </div>
 
-          <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
             <button
               type="button"
               onClick={async () => {
@@ -1059,6 +1291,14 @@ export function CheckoutView({
               <SearchCheck size={16} />
               Ver estado
             </Link>
+            {accountInfo.isAuthenticated ? (
+              <Link
+                href="/mis-pedidos"
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-semibold"
+              >
+                Ver mis pedidos
+              </Link>
+            ) : null}
             <Link
               href="/"
               className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-semibold"
@@ -1066,6 +1306,13 @@ export function CheckoutView({
               <Home size={16} />
               Volver al inicio
             </Link>
+            <button
+              type="button"
+              onClick={() => setConfirmation(null)}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 px-3 py-2 text-sm font-semibold sm:col-span-2"
+            >
+              Cerrar
+            </button>
           </div>
         </section>
       </div>

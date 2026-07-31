@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import { cancelInvoiceAction, getInvoiceDetailAction } from "@/app/admin/facturas/actions";
 import {
   correctOrderFiscalCustomerDataAction,
@@ -262,6 +262,22 @@ export function AdminOrdersManager({
     () => filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? orders[0] ?? null,
     [filteredOrders, orders, selectedOrderId],
   );
+  const pricingInconsistencies = useMemo(
+    () =>
+      orders.filter((order) =>
+        order.order_items.some((item) => {
+          const expectedSnapshot =
+            item.applied_price_mode === 'wholesale'
+              ? item.wholesale_price_snapshot
+              : item.retail_price_snapshot;
+          return (
+            item.applied_price_mode !== order.price_mode ||
+            Math.abs(item.unit_price - expectedSnapshot) > 0.005
+          );
+        }),
+      ),
+    [orders],
+  );
 
   function generateInvoice(order: AdminOrderRow) {
     if (orderHasActiveInvoice(order)) {
@@ -460,6 +476,18 @@ export function AdminOrdersManager({
   return (
     <div className="space-y-5">
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
+      {pricingInconsistencies.length > 0 ? (
+        <section className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
+          <div>
+            <p className="font-semibold">Revisión de precio requerida</p>
+            <p className="mt-1">
+              La modalidad de precio de la cabecera no coincide con una o más líneas en{' '}
+              {pricingInconsistencies.map((order) => order.order_number).join(', ')}.
+            </p>
+          </div>
+        </section>
+      ) : null}
       <PaginationControls
         basePath="/admin/pedidos"
         page={page}

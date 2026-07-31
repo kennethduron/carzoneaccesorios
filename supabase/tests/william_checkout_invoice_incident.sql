@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 
 begin;
+select plan(1);
 
 do $$
 begin
@@ -159,6 +160,8 @@ begin
 end;
 $$;
 
+select pass('William checkout, invoice, accounting hold and retry protections remain intact');
+select * from finish();
 rollback;
 
 \echo 'William checkout/invoice incident containment contract: OK'

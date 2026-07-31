@@ -162,6 +162,60 @@ after insert or update of status, error_code
 on public.checkout_requests_v4
 for each row execute function public.checkout_request_state_observer_v1();
 
+create or replace function public.checkout_v4_observe_email_failure_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  saved public.checkout_requests_v4%rowtype;
+begin
+  if new.status <> 'failed'
+     or old.status = 'failed'
+     or coalesce(new.idempotency_key, '') not like 'checkout-v4:customer-order-received:%' then
+    return new;
+  end if;
+
+  select * into saved
+  from public.checkout_requests_v4
+  where order_id = new.related_id;
+
+  if saved.id is not null then
+    insert into public.checkout_observability_events(
+      request_id, event_name, request_key_hash, actor_scope,
+      user_id_hash, customer_id_hash, expected_tier, resolved_tier,
+      commercial_version, total, status, error_code, replay, metadata
+    ) values (
+      saved.id,
+      'checkout_email_failed',
+      public.checkout_hash_text_v1(saved.request_key::text),
+      saved.actor_scope,
+      case when saved.user_id is null then null else public.checkout_hash_text_v1(saved.user_id::text) end,
+      case when saved.customer_id is null then null else public.checkout_hash_text_v1(saved.customer_id::text) end,
+      saved.expected_price_mode,
+      saved.price_mode,
+      saved.commercial_version,
+      saved.total,
+      saved.status,
+      'CHECKOUT_EMAIL_FAILED',
+      false,
+      jsonb_build_object(
+        'queue_id_hash', public.checkout_hash_text_v1(new.id::text),
+        'attempts', new.attempts,
+        'max_attempts', new.max_attempts
+      )
+    );
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger email_queue_observe_checkout_v4_failure
+after update of status on public.email_queue
+for each row execute function public.checkout_v4_observe_email_failure_v1();
+
 create or replace function public.record_checkout_browser_event_v1(
   p_request_key uuid,
   p_recovery_token text,
