@@ -12,6 +12,7 @@
     "security:validate": "npm run security:client-boundary && npm run security:sensitive-artifacts && npm run test:role-hierarchy && npm run test:commercial-credit && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-accountant-fiscal-scope.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-access-and-warehouse-scope.mjs",
     "test:auth-security": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-security-s3.mjs",
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
+    "test:cart-hydration": "node scripts/test-cart-hydration.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
     "test:accounting-reversal-admin-search": "node scripts/test-accounting-reversal-admin-search.mjs",

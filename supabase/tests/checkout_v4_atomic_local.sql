@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(35);
+select plan(40);
 
 create temporary table checkout_v4_test_state (
   key text primary key,
@@ -39,6 +39,29 @@ values
   ('b4100000-0000-4000-8000-000000000002', (select id from public.roles where name = 'cliente'), 'V4 Unlinked', 'v4-unlinked@example.test', true)
 on conflict (id) do update set role_id = excluded.role_id, active = true;
 
+insert into auth.users(
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) values (
+  'b4100000-0000-4000-8000-000000000003',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated', 'authenticated', 'v4-admin@example.test', '', now(),
+  '{}'::jsonb, '{}'::jsonb, now(), now()
+);
+
+insert into public.users(id, role_id, full_name, email, active)
+values (
+  'b4100000-0000-4000-8000-000000000003',
+  (select id from public.roles where name = 'technical_owner'),
+  'V4 Admin', 'v4-admin@example.test', true
+)
+on conflict (id) do update set role_id = excluded.role_id, active = true;
+
+update public.notification_preferences
+set destination_roles = array['technical_owner']::text[],
+    internal_enabled = true,
+    email_enabled = true
+where notification_type = 'order.created';
 insert into public.customers(
   id, user_id, contact_name, email, phone, is_wholesale, wholesale_status,
   wholesale_customer_type, wholesale_first_purchase_completed,
@@ -144,6 +167,39 @@ select ok(exists(select 1 from public.order_items oi join public.orders o on o.i
 select ok(exists(select 1 from public.inventory_reservations r join public.orders o on o.id = r.order_id where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created') and r.status = 'reserved'), 'inventory reservation is created atomically');
 select ok(exists(select 1 from public.payments p join public.orders o on o.id = p.order_id where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created') and p.bank_reference_number = 'V4-GUEST-001'), 'payment metadata is committed atomically');
 select ok(exists(select 1 from public.email_queue q join public.orders o on o.id = q.related_id where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created') and q.status = 'pending'), 'customer email is queued without synchronous delivery');
+select is(
+  (select count(*)::integer from public.email_queue q join public.orders o on o.id = q.related_id
+   where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created')),
+  2,
+  'customer and configured admin emails are queued exactly once'
+);
+select is(
+  (select count(*)::integer from public.email_queue q join public.orders o on o.id = q.related_id
+   where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created')
+     and q.template_key = 'customer.order_received'),
+  1,
+  'customer order email is unique'
+);
+select is(
+  (select count(*)::integer from public.email_queue q join public.orders o on o.id = q.related_id
+   where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created')
+     and q.template_key = 'order.created'),
+  1,
+  'configured admin order email is unique'
+);
+select is(
+  (select count(distinct q.idempotency_key)::integer from public.email_queue q join public.orders o on o.id = q.related_id
+   where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created')),
+  2,
+  'customer and admin outbox rows use distinct durable idempotency keys'
+);
+select is(
+  (select count(*)::integer from public.internal_notifications n join public.orders o on o.id = n.order_id
+   where o.order_number = (select value->>'orderNumber' from checkout_v4_test_state where key = 'guest_created')
+     and n.notification_type = 'order.created'),
+  1,
+  'configured internal order notification is queued exactly once'
+);
 
 select is(
   public.get_checkout_request_status_v1('b4400000-0000-4000-8000-000000000001', repeat('g', 64))->>'status',

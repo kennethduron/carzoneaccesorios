@@ -640,6 +640,16 @@ async function createCheckoutOrderV4Atomic(input: {
   const actorScope = commercial.authenticated ? 'authenticated' : 'guest';
 
   if (commercial.resolutionStatus === 'commercial_context_unavailable') {
+    await writeErrorLog({
+      route: "/checkout",
+      action: "checkout.v4.commercial_context_unavailable",
+      errorMessage: "CHECKOUT_COMMERCIAL_CONTEXT_UNAVAILABLE",
+      metadata: {
+        checkout_version: 4,
+        actor_scope: actorScope,
+        retryable: true,
+      },
+    });
     return {
       ok: false,
       checkoutVersion: 4,
@@ -703,17 +713,30 @@ async function createCheckoutOrderV4Atomic(input: {
     code?: string | null;
     cartFingerprint?: string;
     lines?: Array<{ productId?: string; unitPrice?: unknown }>;
+    affectedProducts?: Array<{ productId?: string; name?: string }>;
     context?: { contextToken?: string; commercialVersion?: unknown; priceMode?: PriceMode };
   };
   if (cart.ok !== true || !cart.cartFingerprint || !Array.isArray(cart.lines)) {
     const code = cart.code || 'CHECKOUT_TEMPORARILY_UNAVAILABLE';
+    const affectedProductNames = Array.isArray(cart.affectedProducts)
+      ? cart.affectedProducts
+          .map((product) => String(product.name ?? '').trim())
+          .filter(Boolean)
+          .slice(0, 10)
+      : [];
+    const message =
+      code === 'CHECKOUT_WHOLESALE_PRICE_UNAVAILABLE' && affectedProductNames.length > 0
+        ? affectedProductNames.length === 1
+          ? `El producto ${affectedProductNames[0]} no tiene un precio mayorista válido. No se creó el pedido y tu carrito se conserva.`
+          : `Los productos ${affectedProductNames.join(", ")} no tienen un precio mayorista válido. No se creó el pedido y tu carrito se conserva.`
+        : checkoutV4Message(code);
     return {
       ok: false,
       checkoutVersion: 4,
       requestStatus: isRetryableCheckoutV4Code(code) ? 'failed_retryable' : 'failed_final',
       code,
       retryAllowed: isRetryableCheckoutV4Code(code),
-      message: checkoutV4Message(code),
+      message,
     };
   }
 
@@ -947,18 +970,40 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, code: "COMMERCIAL_CONTEXT_CHANGED", message: "Actualiza el checkout e inténtalo nuevamente." };
   }
 
+  if (input.expectedPriceMode === "wholesale" && !user) {
+    if (useCheckoutV4) {
+      return {
+        ok: false,
+        checkoutVersion: 4,
+        requestStatus: 'failed_retryable',
+        code: 'CHECKOUT_SESSION_REQUIRED',
+        message: checkoutV4Message('CHECKOUT_SESSION_REQUIRED'),
+        retryAllowed: true,
+      };
+    }
+    return {
+      ok: false,
+      code: "COMMERCIAL_CONTEXT_CHANGED",
+      message: "No pudimos verificar temporalmente su condición comercial. Su carrito se conserva. Actualice la sesión o intente nuevamente.",
+    };
+  }
+
   if (
     input.expectedPriceMode === "wholesale"
     && (
-      !user
-      || input.expectedCommercialVersion === null
+      input.expectedCommercialVersion === null
       || input.expectedContextToken === null
     )
   ) {
     return {
       ok: false,
-      code: "COMMERCIAL_CONTEXT_CHANGED",
-      message: "No pudimos verificar temporalmente su condición comercial. Su carrito se conserva. Actualice la sesión o intente nuevamente.",
+      checkoutVersion: useCheckoutV4 ? 4 : 3,
+      requestStatus: useCheckoutV4 ? 'failed_retryable' : undefined,
+      code: useCheckoutV4 ? 'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED' : "COMMERCIAL_CONTEXT_CHANGED",
+      message: useCheckoutV4
+        ? checkoutV4Message('CHECKOUT_COMMERCIAL_CONTEXT_CHANGED')
+        : "No pudimos verificar temporalmente su condición comercial. Su carrito se conserva. Actualice la sesión o intente nuevamente.",
+      retryAllowed: useCheckoutV4,
     };
   }
 

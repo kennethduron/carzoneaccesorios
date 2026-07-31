@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getCartProductsAction } from "@/app/actions/commercial-context";
 import type { CartItem, Product } from "@/types/commerce";
 import { calculateIncludedTaxBreakdown } from "@/utils/included-tax";
@@ -45,6 +45,7 @@ type CartContextValue = {
   clearInvalidCartItems: () => void;
   clearCartMessage: () => void;
   clearCart: () => void;
+  refreshCart: () => void;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -100,10 +101,12 @@ function writeStoredCart(cart: CartItem[]) {
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
-  const [cart, setCart] = useState<CartItem[]>(readStoredCart);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const cartRef = useRef<CartItem[]>([]);
   const [cartMessage, setCartMessage] = useState("");
   const [resolvedCartProducts, setResolvedCartProducts] = useState<Record<string, Product>>({});
   const [resolvedCartRequestKey, setResolvedCartRequestKey] = useState("");
+  const [cartRefreshVersion, setCartRefreshVersion] = useState(0);
   const { priceMode, commercialContext } = usePriceMode();
   const { findProduct, registerProducts } = useProductRegistry();
   const toast = useToast();
@@ -112,9 +115,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     [cart],
   );
   const commercialSignature = `${commercialContext.contextToken}:${commercialContext.commercialVersion ?? "guest"}`;
-  const cartRequestKey = `${commercialSignature}:${productIdsKey}`;
+  const cartRequestKey = `${commercialSignature}:${productIdsKey}:${cartRefreshVersion}`;
   const isResolvingCart = Boolean(productIdsKey) && resolvedCartRequestKey !== cartRequestKey;
   const previousCommercialSignature = useRef(commercialSignature);
+
+  useEffect(() => {
+    let cancelled = false;
+    const storedCart = readStoredCart();
+    queueMicrotask(() => {
+      if (cancelled) return;
+      cartRef.current = storedCart;
+      setCart(storedCart);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,6 +206,134 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }))
     .filter((item) => item.currentQuantity < item.minimumQuantity);
 
+  const commitCart = useCallback((nextCart: CartItem[]) => {
+    cartRef.current = nextCart;
+    writeStoredCart(nextCart);
+    setCart(nextCart);
+  }, []);
+
+  const addToCart = useCallback((productId: string) => {
+    if (!isUuid(productId)) {
+      const message = "Este producto no está disponible para compra.";
+      setCartMessage(message);
+      toast.error(message);
+      return false;
+    }
+
+    const product = findProduct(productId);
+    if (!product || product.stock <= 0) {
+      const message = "Este producto no tiene stock disponible.";
+      setCartMessage(message);
+      toast.warning(message);
+      return false;
+    }
+
+    const current = cartRef.current;
+    const existing = current.find((item) => item.productId === productId);
+    const currentQuantity = existing?.quantity ?? 0;
+    const minimumQuantity = getWholesaleMinimumQuantity(product);
+    const shouldApplyWholesaleMinimum = requiresWholesaleMinimumQuantity(product, priceMode);
+    const nextQuantity = shouldApplyWholesaleMinimum
+      ? Math.max(currentQuantity + 1, minimumQuantity)
+      : currentQuantity + 1;
+
+    if (nextQuantity > product.stock) {
+      const message = `Solo hay ${product.stock} unidades disponibles.`;
+      setCartMessage(message);
+      toast.warning(message);
+      return false;
+    }
+
+    const nextCart = existing
+      ? current.map((item) =>
+          item.productId === productId ? { productId, quantity: nextQuantity } : item,
+        )
+      : [...current, { productId, quantity: shouldApplyWholesaleMinimum ? minimumQuantity : 1 }];
+    commitCart(nextCart);
+    const message = existing
+      ? shouldApplyWholesaleMinimum && nextQuantity === minimumQuantity
+        ? wholesaleMinimumQuantityMessage(minimumQuantity)
+        : "Cantidad actualizada en el carrito."
+      : shouldApplyWholesaleMinimum
+        ? wholesaleMinimumQuantityMessage(minimumQuantity)
+        : "Producto agregado al carrito.";
+    setCartMessage(message);
+    toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
+    return true;
+  }, [commitCart, findProduct, priceMode, toast]);
+
+  const updateQuantity = useCallback((productId: string, delta: number) => {
+    const product = resolvedCartProducts[productId] ?? null;
+    if (!product) {
+      const message = isResolvingCart
+        ? "Estamos actualizando este producto. Intenta de nuevo."
+        : "Producto no encontrado.";
+      setCartMessage(message);
+      toast.error(message);
+      return false;
+    }
+
+    const current = cartRef.current;
+    const existing = current.find((item) => item.productId === productId);
+    if (!existing) return false;
+    const nextQuantity = Math.max(0, existing.quantity + delta);
+    const minimumQuantity = getWholesaleMinimumQuantity(product);
+    if (
+      requiresWholesaleMinimumQuantity(product, priceMode) &&
+      nextQuantity > 0 &&
+      nextQuantity < minimumQuantity
+    ) {
+      const message = wholesaleMinimumQuantityMessage(minimumQuantity);
+      setCartMessage(message);
+      toast.warning(message);
+      return false;
+    }
+    if (nextQuantity > product.stock) {
+      const message = `Solo hay ${product.stock} unidades disponibles.`;
+      setCartMessage(message);
+      toast.warning(message);
+      return false;
+    }
+
+    const nextCart = current
+      .map((item) =>
+        item.productId === productId ? { productId: item.productId, quantity: nextQuantity } : item,
+      )
+      .filter((item) => item.quantity > 0);
+    commitCart(nextCart);
+    setCartMessage("Cantidad actualizada en el carrito.");
+    return true;
+  }, [commitCart, isResolvingCart, priceMode, resolvedCartProducts, toast]);
+
+  const removeFromCart = useCallback((productId: string) => {
+    commitCart(cartRef.current.filter((item) => item.productId !== productId));
+    toast.info("Producto eliminado del carrito.");
+  }, [commitCart, toast]);
+
+  const clearInvalidCartItems = useCallback(() => {
+    commitCart(
+      cartRef.current.filter(
+        (item) => isUuid(item.productId) && Boolean(resolvedCartProducts[item.productId]),
+      ),
+    );
+    setCartMessage("");
+    toast.info("Productos inválidos eliminados del carrito.");
+  }, [commitCart, resolvedCartProducts, toast]);
+
+  const clearCartMessage = useCallback(() => {
+    setCartMessage("");
+  }, []);
+
+  const clearCart = useCallback(() => {
+    commitCart([]);
+    setCartMessage("");
+  }, [commitCart]);
+
+  const refreshCart = useCallback(() => {
+    setResolvedCartRequestKey("");
+    setCartRefreshVersion((current) => current + 1);
+  }, []);
+
   const value = useMemo<CartContextValue>(
     () => ({
       cart,
@@ -202,159 +346,31 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       tax,
       total,
       cartCount,
-      addToCart(productId) {
-        if (!isUuid(productId)) {
-          const message = "Este producto no está disponible para compra.";
-          setCartMessage(message);
-          toast.error(message);
-          return false;
-        }
-
-        const product = findProduct(productId);
-        if (!product || product.stock <= 0) {
-          const message = "Este producto no tiene stock disponible.";
-          setCartMessage(message);
-          toast.warning(message);
-          return false;
-        }
-
-        let added = false;
-        setCart((current) => {
-          const existing = current.find((item) => item.productId === productId);
-          const currentQuantity = existing?.quantity ?? 0;
-          const minimumQuantity = getWholesaleMinimumQuantity(product);
-          const shouldApplyWholesaleMinimum = requiresWholesaleMinimumQuantity(product, priceMode);
-          const nextQuantity = shouldApplyWholesaleMinimum
-            ? Math.max(currentQuantity + 1, minimumQuantity)
-            : currentQuantity + 1;
-
-          if (nextQuantity > product.stock) {
-            const message = `Solo hay ${product.stock} unidades disponibles.`;
-            setCartMessage(message);
-            toast.warning(message);
-            return current;
-          }
-
-          if (existing) {
-            const nextCart = current.map((item) =>
-              item.productId === productId ? { productId, quantity: nextQuantity } : item,
-            );
-            writeStoredCart(nextCart);
-            const message = shouldApplyWholesaleMinimum && nextQuantity === minimumQuantity
-              ? wholesaleMinimumQuantityMessage(minimumQuantity)
-              : "Cantidad actualizada en el carrito.";
-            setCartMessage(message);
-            toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
-            added = true;
-            return nextCart;
-          }
-          const nextCart = [
-            ...current,
-            { productId, quantity: shouldApplyWholesaleMinimum ? minimumQuantity : 1 },
-          ];
-          writeStoredCart(nextCart);
-          const message = shouldApplyWholesaleMinimum
-            ? wholesaleMinimumQuantityMessage(minimumQuantity)
-            : "Producto agregado al carrito.";
-          setCartMessage(message);
-          toast.success(message, { action: { label: "Ver carrito", href: "/carrito" } });
-          added = true;
-          return nextCart;
-        });
-        return added;
-      },
-      updateQuantity(productId, delta) {
-        let updated = false;
-        setCart((current) => {
-          const product = resolvedCartProducts[productId] ?? null;
-
-          if (!product) {
-            const message = isResolvingCart
-              ? "Estamos actualizando este producto. Intenta de nuevo."
-              : "Producto no encontrado.";
-            setCartMessage(message);
-            toast.error(message);
-            return current;
-          }
-
-          const nextCart = current
-            .map((item) => {
-              if (item.productId !== productId) {
-                return item;
-              }
-
-              const nextQuantity = Math.max(0, item.quantity + delta);
-              const minimumQuantity = getWholesaleMinimumQuantity(product);
-              if (
-                requiresWholesaleMinimumQuantity(product, priceMode) &&
-                nextQuantity > 0 &&
-                nextQuantity < minimumQuantity
-              ) {
-                const message = wholesaleMinimumQuantityMessage(minimumQuantity);
-                setCartMessage(message);
-                toast.warning(message);
-                return item;
-              }
-
-              if (nextQuantity > product.stock) {
-                const message = `Solo hay ${product.stock} unidades disponibles.`;
-                setCartMessage(message);
-                toast.warning(message);
-                return item;
-              }
-
-              setCartMessage("Cantidad actualizada en el carrito.");
-              updated = true;
-              return { productId: item.productId, quantity: nextQuantity };
-            })
-            .filter((item) => item.quantity > 0);
-          writeStoredCart(nextCart);
-          return nextCart;
-        });
-        return updated;
-      },
-      removeFromCart(productId) {
-        setCart((current) => {
-          const nextCart = current.filter((item) => item.productId !== productId);
-          writeStoredCart(nextCart);
-          toast.info("Producto eliminado del carrito.");
-          return nextCart;
-        });
-      },
-      clearInvalidCartItems() {
-        setCart((current) => {
-          const nextCart = current.filter(
-            (item) => isUuid(item.productId) && Boolean(resolvedCartProducts[item.productId]),
-          );
-          writeStoredCart(nextCart);
-          setCartMessage("");
-          toast.info("Productos invalidos eliminados del carrito.");
-          return nextCart;
-        });
-      },
-      clearCartMessage() {
-        setCartMessage("");
-      },
-      clearCart() {
-        writeStoredCart([]);
-        setCart([]);
-        setCartMessage("");
-      },
+      addToCart,
+      updateQuantity,
+      removeFromCart,
+      clearInvalidCartItems,
+      clearCartMessage,
+      clearCart,
+      refreshCart,
     }),
     [
+      addToCart,
       cart,
       cartCount,
       cartMessage,
-      findProduct,
+      clearCart,
+      clearCartMessage,
+      clearInvalidCartItems,
       invalidItemCount,
       isResolvingCart,
-      priceMode,
-      resolvedCartProducts,
+      removeFromCart,
+      refreshCart,
       rows,
       subtotal,
       tax,
-      toast,
       total,
+      updateQuantity,
       wholesaleQuantityIssues,
     ],
   );

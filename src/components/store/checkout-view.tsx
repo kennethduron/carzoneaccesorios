@@ -179,12 +179,13 @@ export function CheckoutView({
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [proofMessage, setProofMessage] = useState("");
   const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [checkoutErrorCode, setCheckoutErrorCode] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [orderNumber, setOrderNumber] = useState("");
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [isPending, startTransition] = useTransition();
   const { priceMode, wholesaleAccount, commercialContext, refreshCommercialContext } = usePriceMode();
-  const { rows, wholesaleQuantityIssues, invalidItemCount, isResolvingCart, subtotal, tax, total: productsTotal, clearCart, clearInvalidCartItems } = useShoppingCart();
+  const { rows, wholesaleQuantityIssues, invalidItemCount, isResolvingCart, subtotal, tax, total: productsTotal, clearCart, clearInvalidCartItems, refreshCart } = useShoppingCart();
   const { createOrder } = useOrders();
   const toast = useToast();
   const requestAttemptRef = useRef<CheckoutRequestAttempt | null>(null);
@@ -569,7 +570,7 @@ export function CheckoutView({
       const requestAttempt = requestAttemptRef.current;
       if (accountInfo.checkoutV4Enabled) saveRecoveryAttempt(requestAttempt);
 
-      toast.loading("Creando pedido...");
+      const checkoutToastId = toast.loading("Creando pedido...");
       const items = rows.map((item) => ({
         productId: item.product.id,
         quantity: item.quantity,
@@ -609,12 +610,14 @@ export function CheckoutView({
       }
 
       if (!result.ok || !result.orderNumber || !result.trackingCode) {
-        if (
+        if (result.code === 'CHECKOUT_SESSION_REQUIRED') {
+          requestAttemptRef.current = null;
+          window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
+        } else if (
           result.code === "COMMERCIAL_CONTEXT_CHANGED" ||
           result.code === 'CHECKOUT_COMMERCIAL_CONTEXT_CHANGED' ||
           result.code === 'CHECKOUT_PRICE_CHANGED' ||
           result.code === 'CHECKOUT_STOCK_CHANGED' ||
-          result.code === 'CHECKOUT_SESSION_REQUIRED' ||
           result.code === 'CHECKOUT_CUSTOMER_LINK_REQUIRED' ||
           result.code === "CHECKOUT_CUSTOMER_CHANGED" ||
           result.code === "CHECKOUT_IDEMPOTENCY_CONFLICT" ||
@@ -629,6 +632,9 @@ export function CheckoutView({
           ]);
           setAccountInfo(nextAccount);
           setCheckout((current) => mergeCheckoutAccount(current, nextAccount));
+          if (result.code === 'CHECKOUT_PRICE_CHANGED' || result.code === 'CHECKOUT_STOCK_CHANGED') {
+            refreshCart();
+          }
         } else if (
           result.requestStatus === 'failed_final' ||
           result.requestStatus === 'conflict' ||
@@ -637,6 +643,8 @@ export function CheckoutView({
           requestAttemptRef.current = null;
           window.sessionStorage.removeItem(checkoutRecoveryStorageKey);
         }
+        toast.dismiss(checkoutToastId);
+        setCheckoutErrorCode(result.code ?? null);
         setCheckoutMessage(result.message);
         toast.error(result.message || "No se pudo crear el pedido. Revisa la información e intenta nuevamente.");
         return;
@@ -705,15 +713,10 @@ export function CheckoutView({
         recovered: result.replayed === true,
       });
       setFieldErrors({});
-      toast.success(
-        requiresCashOnDeliveryReview
-          ? "Pedido recibido. El cargo contra entrega quedará pendiente de confirmación."
-          : checkout.paymentMethod === "Tarjeta"
-          ? "Pedido recibido. Te contactaremos por WhatsApp para enviarte el enlace de pago."
-          : checkout.paymentMethod === "Crédito Comercial"
-          ? "Pedido creado con crédito comercial."
-          : "Pedido creado correctamente. Te contactaremos para confirmar el pago.",
-      );
+      setCheckoutErrorCode(null);
+      // The confirmation dialog is the durable success state. Remove the transient
+      // loading toast so it cannot cover the dialog on small viewports.
+      toast.dismiss(checkoutToastId);
       setProofFile(null);
       setProofFileName("");
       setProofMessage("");
@@ -1115,13 +1118,22 @@ export function CheckoutView({
           </section>
 
           {checkoutMessage ? (
-            <p
+            <div
               className={`rounded-md p-3 text-sm ${
                 orderNumber ? "bg-[#fff1f2] text-[#b91c25]" : "bg-[#fff0ea] text-[#9b341b]"
               }`}
+              role="alert"
             >
-              {checkoutMessage}
-            </p>
+              <p>{checkoutMessage}</p>
+              {checkoutErrorCode === 'CHECKOUT_SESSION_REQUIRED' ? (
+                <Link
+                  href="/login?next=%2Fcheckout"
+                  className="mt-3 inline-flex rounded-md bg-[#9b341b] px-3 py-2 font-semibold text-white"
+                >
+                  Iniciar sesión nuevamente
+                </Link>
+              ) : null}
+            </div>
           ) : null}
 
           <button
@@ -1130,7 +1142,7 @@ export function CheckoutView({
             className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#e4252c] px-4 py-3 text-sm font-semibold text-white"
           >
             <BadgeCheck size={18} />
-            {isPending ? "Creando pedido…" : "Enviar pedido"}
+            {isPending ? "Creando pedido..." : "Enviar pedido"}
           </button>
         </div>
       </div>
@@ -1433,5 +1445,3 @@ function CheckoutTotals({
     </div>
   );
 }
-
-
