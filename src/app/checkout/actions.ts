@@ -445,6 +445,21 @@ export async function createCheckoutOrderAction(formData: FormData): Promise<Che
     return { ok: false, code: "COMMERCIAL_CONTEXT_CHANGED", message: "Actualiza el checkout e inténtalo nuevamente." };
   }
 
+  if (
+    input.expectedPriceMode === "wholesale"
+    && (
+      !user
+      || input.expectedCommercialVersion === null
+      || input.expectedContextToken === null
+    )
+  ) {
+    return {
+      ok: false,
+      code: "COMMERCIAL_CONTEXT_CHANGED",
+      message: "No pudimos verificar temporalmente su condición comercial. Su carrito se conserva. Actualice la sesión o intente nuevamente.",
+    };
+  }
+
   if (user) {
     try {
       const profileSync = await ensureMyPortalCustomerProfile(
