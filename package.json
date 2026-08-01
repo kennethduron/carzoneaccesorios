@@ -24,6 +24,7 @@
     "test:accounting-automation-v2": "node scripts/test-accounting-automation-v2.mjs",
     "test:supplier-payment-late-entry-accounting": "node scripts/test-supplier-payment-late-entry-accounting.mjs",
     "test:supplier-multi-payment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-multi-invoice-payment.mjs",
+    "test:supplier-payment-row-wizard": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-payment-row-wizard.mjs",
     "test:supplier-multi-payment:concurrency": "node scripts/test-supplier-multi-invoice-payment-concurrency.mjs",
     "test:opening-balance-supplier-payment-accounting": "node scripts/test-opening-balance-supplier-payment-accounting.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",

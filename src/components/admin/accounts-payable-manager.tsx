@@ -20,6 +20,11 @@ import {
   type SupplierCreditFormInput,
 } from "@/app/admin/cuentas-por-pagar/actions";
 import { SupplierMultiPaymentWizard } from "@/components/admin/supplier-multi-payment-wizard";
+import {
+  createSupplierPaymentSelectionRequest,
+  isSameSupplierPaymentSelection,
+  type SupplierPaymentWizardSelectionRequest,
+} from "@/components/admin/supplier-payment-wizard-selection";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { SupplierMultiPaymentConfig, SupplierMultiPaymentHistoryItem } from "@/services/supabase/supplier-multi-payment.service";
@@ -119,6 +124,12 @@ export function AccountsPayableManager({
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft>(emptyInvoiceDraft());
   const [payableDraft, setPayableDraft] = useState<PayableDraft>(emptyPayableDraft());
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(emptyPaymentDraft());
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardSelectionRequest, setWizardSelectionRequest] =
+    useState<SupplierPaymentWizardSelectionRequest | null>(null);
+  const wizardOpenRef = useRef(false);
+  const wizardSelectionRef = useRef<SupplierPaymentWizardSelectionRequest | null>(null);
+  const wizardSelectionSequenceRef = useRef(0);
   const [creditDraft, setCreditDraft] = useState<CreditDraft>(emptyCreditDraft());
   const [isPending, startTransition] = useTransition();
   const voidKeysRef = useRef(new Map<string, string>());
@@ -197,8 +208,32 @@ export function AccountsPayableManager({
 
   function selectPayableForPayment(payable: AdminAccountsPayable) {
     if (multiPaymentConfig.enabled) {
-      document.getElementById("supplier-multi-payment-wizard")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      toast.success("Usa Registrar pago para distribuir una sola salida entre una o varias facturas.");
+      if (
+        payable.balance <= 0 ||
+        ["paid", "cancelled"].includes(payable.status)
+      ) {
+        toast.warning("Esta cuenta por pagar ya no tiene un saldo abierto.");
+        return;
+      }
+      if (
+        wizardOpenRef.current &&
+        isSameSupplierPaymentSelection(
+          wizardSelectionRef.current,
+          payable.supplier_id,
+          payable.id,
+        )
+      ) {
+        return;
+      }
+      const request = createSupplierPaymentSelectionRequest(
+        ++wizardSelectionSequenceRef.current,
+        payable.supplier_id,
+        payable.id,
+      );
+      wizardSelectionRef.current = request;
+      wizardOpenRef.current = true;
+      setWizardSelectionRequest(request);
+      setWizardOpen(true);
       return;
     }
     setPaymentDraft({
@@ -209,6 +244,16 @@ export function AccountsPayableManager({
       notes: "",
       idempotency_key: globalThis.crypto.randomUUID(),
     });
+  }
+
+  function changeWizardOpen(nextOpen: boolean) {
+    wizardOpenRef.current = nextOpen;
+    setWizardOpen(nextOpen);
+  }
+
+  function clearWizardSelectionRequest() {
+    wizardSelectionRef.current = null;
+    setWizardSelectionRequest(null);
   }
 
   function voidPayment(paymentId: string) {
@@ -243,7 +288,16 @@ export function AccountsPayableManager({
       </section>
 
       <div id="supplier-multi-payment-wizard">
-        <SupplierMultiPaymentWizard suppliers={suppliers} config={multiPaymentConfig} history={multiPaymentHistory} canManage={canManage} />
+        <SupplierMultiPaymentWizard
+          suppliers={suppliers}
+          config={multiPaymentConfig}
+          history={multiPaymentHistory}
+          canManage={canManage}
+          open={wizardOpen}
+          onOpenChange={changeWizardOpen}
+          selectionRequest={wizardSelectionRequest}
+          onSelectionRequestClear={clearWizardSelectionRequest}
+        />
       </div>
 
       <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4">

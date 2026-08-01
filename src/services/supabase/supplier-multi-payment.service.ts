@@ -11,7 +11,9 @@ import type {
 export type SupplierOpenPayable = {
   id: string;
   supplier_id: string;
+  purchase_id: string | null;
   supplier_invoice_id: string | null;
+  purchase_number: string | null;
   invoice_number: string | null;
   invoice_date: string | null;
   due_date: string | null;
@@ -42,7 +44,7 @@ export type SupplierMultiPaymentHistoryItem = {
 
 type OpenPayableRow = Omit<
   SupplierOpenPayable,
-  "invoice_number" | "invoice_date" | "total_amount" | "paid_amount" | "balance"
+  "purchase_number" | "invoice_number" | "invoice_date" | "total_amount" | "paid_amount" | "balance"
 > & {
   total_amount: unknown;
   paid_amount: unknown;
@@ -50,6 +52,9 @@ type OpenPayableRow = Omit<
   supplier_invoices: {
     invoice_number: string;
     invoice_date: string;
+  } | null;
+  purchases: {
+    purchase_number: string;
   } | null;
 };
 
@@ -103,6 +108,7 @@ export async function getSupplierOpenPayables(
       `
         id,
         supplier_id,
+        purchase_id,
         supplier_invoice_id,
         due_date,
         total_amount,
@@ -110,7 +116,8 @@ export async function getSupplierOpenPayables(
         balance,
         status,
         currency,
-        supplier_invoices(invoice_number, invoice_date)
+        supplier_invoices(invoice_number, invoice_date),
+        purchases(purchase_number)
       `,
     )
     .eq("supplier_id", input.supplier_id)
@@ -119,6 +126,10 @@ export async function getSupplierOpenPayables(
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true })
     .limit(input.page_size + 1);
+
+  if (input.accounts_payable_id) {
+    query = query.eq("id", input.accounts_payable_id);
+  }
 
   if (invoiceIds) {
     query = query.in("supplier_invoice_id", invoiceIds);
@@ -143,7 +154,9 @@ export async function getSupplierOpenPayables(
   const items = pageRows.map((row) => ({
     id: row.id,
     supplier_id: row.supplier_id,
+    purchase_id: row.purchase_id,
     supplier_invoice_id: row.supplier_invoice_id,
+    purchase_number: row.purchases?.purchase_number ?? null,
     invoice_number: row.supplier_invoices?.invoice_number ?? null,
     invoice_date: row.supplier_invoices?.invoice_date ?? null,
     due_date: row.due_date,

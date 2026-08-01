@@ -67,6 +67,7 @@ export const supplierMultiPaymentSchema = z
 export const supplierOpenPayablesQuerySchema = z
   .object({
     supplier_id: z.uuid(),
+    accounts_payable_id: z.uuid().optional(),
     query: z.string().trim().max(120).optional().default(""),
     cursor_due_date: z.iso.date().nullable().optional(),
     cursor_id: z.uuid().nullable().optional(),

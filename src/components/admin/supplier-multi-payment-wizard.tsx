@@ -26,6 +26,10 @@ import type {
 } from "@/services/supabase/supplier-multi-payment.service";
 import type { SupplierOption } from "@/types/purchases";
 import { formatCurrency } from "@/utils/pricing";
+import {
+  isEligibleSupplierPaymentPayable,
+  type SupplierPaymentWizardSelectionRequest,
+} from "@/components/admin/supplier-payment-wizard-selection";
 
 type Step = 1 | 2 | 3 | 4 | 5;
 type PaymentMethod = "cash" | "bank_transfer" | "card_credit" | "card_debit";
@@ -41,6 +45,7 @@ type PersistedDraft = {
   paymentMethod: PaymentMethod | "";
   reference: string;
   notes: string;
+  initialPayableId: string | null;
 };
 
 const storageKey = "supplier_multi_invoice_payment_v1:draft";
@@ -69,6 +74,7 @@ function newDraft(): PersistedDraft {
     paymentMethod: "",
     reference: "",
     notes: "",
+    initialPayableId: null,
   };
 }
 
@@ -106,6 +112,8 @@ function readDraft(): PersistedDraft {
         : "",
       reference: typeof parsed.reference === "string" ? parsed.reference : "",
       notes: typeof parsed.notes === "string" ? parsed.notes : "",
+      initialPayableId:
+        typeof parsed.initialPayableId === "string" ? parsed.initialPayableId : null,
     };
   } catch {
     return newDraft();
@@ -139,15 +147,27 @@ export function SupplierMultiPaymentWizard({
   config,
   history,
   canManage,
+  open,
+  onOpenChange,
+  selectionRequest,
+  onSelectionRequestClear,
 }: {
   suppliers: SupplierOption[];
   config: SupplierMultiPaymentConfig;
   history: SupplierMultiPaymentHistoryItem[];
   canManage: boolean;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectionRequest: SupplierPaymentWizardSelectionRequest | null;
+  onSelectionRequestClear: () => void;
 }) {
   const toast = useToast();
   const receiptRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+  const handledSelectionRequestRef = useRef<number | null>(null);
+  const activeSelectionRequestRef = useRef<number | null>(null);
+  const initialValidatedPayableRef = useRef<SupplierOpenPayable | null>(null);
   const voidKeysRef = useRef(new Map<string, string>());
   const [draft, setDraft] = useState<PersistedDraft | null>(null);
   const [payables, setPayables] = useState<SupplierOpenPayable[]>([]);
@@ -159,12 +179,134 @@ export function SupplierMultiPaymentWizard({
   const [isPending, startTransition] = useTransition();
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [voidReason, setVoidReason] = useState("");
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [validatingInitialSelection, setValidatingInitialSelection] = useState(false);
 
 
   useEffect(() => {
     if (!open || !draft) return;
     localStorage.setItem(storageKey, JSON.stringify(draft));
   }, [draft, open]);
+
+  useEffect(() => {
+    if (!open || focusRequest === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      stepHeadingRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusRequest, open]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      !selectionRequest ||
+      handledSelectionRequestRef.current === selectionRequest.requestId
+    ) {
+      return;
+    }
+
+    handledSelectionRequestRef.current = selectionRequest.requestId;
+    activeSelectionRequestRef.current = selectionRequest.requestId;
+    initialValidatedPayableRef.current = null;
+    localStorage.removeItem(storageKey);
+    void Promise.resolve().then(() => {
+    const supplier = suppliers.find(
+      (item) => item.id === selectionRequest.supplierId && item.is_active,
+    );
+    setDraft({
+      ...newDraft(),
+      step: supplier ? 2 : 1,
+      supplierId: supplier ? selectionRequest.supplierId : "",
+      initialPayableId: supplier ? selectionRequest.accountsPayableId : null,
+    });
+    setPayables([]);
+    setCursor(null);
+    setSearch("");
+    setReceipt(null);
+    setResult(null);
+
+    if (!supplier) {
+      toast.warning(
+        "El proveedor ya no está disponible. Seleccione un proveedor vigente.",
+      );
+      window.requestAnimationFrame(() => {
+        sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        stepHeadingRef.current?.focus({ preventScroll: true });
+      });
+      return;
+    }
+
+    setValidatingInitialSelection(true);
+    return getSupplierOpenPayablesAction({
+      supplier_id: selectionRequest.supplierId,
+      accounts_payable_id: selectionRequest.accountsPayableId,
+      page_size: 1,
+    })
+      .then((response) => {
+        if (activeSelectionRequestRef.current !== selectionRequest.requestId) return;
+        const payable = response.ok ? response.items[0] : null;
+        if (!isEligibleSupplierPaymentPayable(payable, selectionRequest)) {
+          setDraft((current) =>
+            current && current.supplierId === selectionRequest.supplierId
+              ? {
+                  ...current,
+                  selectedIds: [],
+                  selectedPayables: {},
+                  amounts: {},
+                  initialPayableId: null,
+                }
+              : current,
+          );
+          toast.warning(
+            "El saldo seleccionado ya no está abierto. Seleccione un saldo vigente del proveedor.",
+          );
+          return;
+        }
+        setPayables((current) => [
+          payable,
+          ...current.filter((item) => item.id !== payable.id),
+        ]);
+        initialValidatedPayableRef.current = payable;
+        setDraft((current) =>
+          current && current.supplierId === selectionRequest.supplierId
+            ? {
+                ...current,
+                selectedIds: [payable.id],
+                selectedPayables: { [payable.id]: payable },
+                amounts: { [payable.id]: payable.balance.toFixed(2) },
+                initialPayableId: payable.id,
+              }
+            : current,
+        );
+        toast.success(
+          "Saldo preseleccionado. Puede añadir otros saldos abiertos del mismo proveedor.",
+        );
+      })
+      .catch(() => {
+        if (activeSelectionRequestRef.current !== selectionRequest.requestId) return;
+        setDraft((current) =>
+          current && current.supplierId === selectionRequest.supplierId
+            ? {
+                ...current,
+                selectedIds: [],
+                selectedPayables: {},
+                amounts: {},
+                initialPayableId: null,
+              }
+            : current,
+        );
+        toast.warning(
+          "No se pudo validar el saldo seleccionado. Seleccione un saldo vigente del proveedor.",
+        );
+      })
+      .finally(() => {
+        if (activeSelectionRequestRef.current !== selectionRequest.requestId) return;
+        setValidatingInitialSelection(false);
+        setFocusRequest((current) => current + 1);
+      });
+    });
+  }, [open, selectionRequest, suppliers, toast]);
 
   const activeSupplierId = draft?.supplierId ?? "";
   const loadPayables = useCallback(
@@ -190,7 +332,18 @@ export function SupplierMultiPaymentWizard({
         toast.error(response.message);
         return;
       }
-      setPayables((current) => (append ? [...current, ...response.items] : response.items));
+      setPayables((current) => {
+        if (append) return [...current, ...response.items];
+        const initialPayable = initialValidatedPayableRef.current;
+        if (
+          initialPayable &&
+          initialPayable.supplier_id === activeSupplierId &&
+          !response.items.some((item) => item.id === initialPayable.id)
+        ) {
+          return [initialPayable, ...response.items];
+        }
+        return response.items;
+      });
       setDraft((current) => {
         if (!current) return current;
         const refreshed = response.items.filter((payable) =>
@@ -261,7 +414,11 @@ export function SupplierMultiPaymentWizard({
     setSearch("");
     setReceipt(null);
     setResult(null);
-    setOpen(false);
+    activeSelectionRequestRef.current = null;
+    initialValidatedPayableRef.current = null;
+    setValidatingInitialSelection(false);
+    onSelectionRequestClear();
+    onOpenChange(false);
   }
 
   function chooseSupplier(supplierId: string) {
@@ -270,6 +427,7 @@ export function SupplierMultiPaymentWizard({
       selectedIds: [],
       selectedPayables: {},
       amounts: {},
+      initialPayableId: null,
     });
     setPayables([]);
     setCursor(null);
@@ -416,7 +574,7 @@ export function SupplierMultiPaymentWizard({
   }
 
   return (
-    <section className="rounded-xl border border-[#e4252c]/20 bg-white p-4 shadow-sm sm:p-5">
+    <section ref={sectionRef} className="rounded-xl border border-[#e4252c]/20 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-[#b91c25]">
@@ -430,9 +588,18 @@ export function SupplierMultiPaymentWizard({
         <Button
           type="button"
           onClick={() => {
-            setDraft(readDraft());
-            setOpen(true);
+            const openedFromPayableRow = selectionRequest !== null;
+            activeSelectionRequestRef.current = null;
+            initialValidatedPayableRef.current = null;
+            setValidatingInitialSelection(false);
+            onSelectionRequestClear();
+            if (openedFromPayableRow) {
+              localStorage.removeItem(storageKey);
+            }
+            setDraft(openedFromPayableRow ? newDraft() : readDraft());
             setResult(null);
+            onOpenChange(true);
+            setFocusRequest((current) => current + 1);
           }}
           disabled={!canManage}
         >
@@ -445,9 +612,21 @@ export function SupplierMultiPaymentWizard({
         <div className="mt-5 rounded-xl border border-black/10 bg-[#fafafa]">
           <div className="flex items-start justify-between gap-3 border-b border-black/10 p-4">
             <div>
-              <p className="text-sm font-semibold">
+              <h3
+                ref={stepHeadingRef}
+                tabIndex={-1}
+                aria-label={
+                  result
+                    ? "Registrar pago a proveedor. Pago confirmado."
+                    : "Registrar pago a proveedor. Paso " +
+                      (draft?.step ?? 1) +
+                      " de 5" +
+                      (draft?.step === 2 ? ". Selección de saldos." : ".")
+                }
+                className="text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]"
+              >
                 {result ? "Pago confirmado" : `Paso ${draft?.step ?? 1} de 5`}
-              </p>
+              </h3>
               <p className="text-xs text-black/50">
                 Solicitud ••••{draft?.requestKey.slice(-8)}
               </p>
@@ -518,6 +697,53 @@ export function SupplierMultiPaymentWizard({
                         {selectedSupplier?.name} · solo saldos abiertos en HNL.
                       </p>
                     </div>
+                    {validatingInitialSelection ? (
+                      <p
+                        className="flex items-center gap-2 rounded-md bg-white p-3 text-sm text-black/60"
+                        role="status"
+                      >
+                        <Loader2 className="animate-spin" size={16} />
+                        Validando el saldo seleccionado…
+                      </p>
+                    ) : null}
+                    {draft.initialPayableId &&
+                    draft.selectedPayables[draft.initialPayableId]
+                      ? (() => {
+                          const initialPayable =
+                            draft.selectedPayables[draft.initialPayableId];
+                          const origin = initialPayable.supplier_invoice_id
+                            ? "Factura de proveedor"
+                            : initialPayable.purchase_id
+                              ? "Compra sin factura"
+                              : "Saldo inicial o registro manual reconocido";
+                          return (
+                            <div
+                              data-testid="supplier-payment-initial-payable"
+                              className="rounded-lg border border-[#e4252c]/30 bg-[#fff8f8] p-4"
+                            >
+                              <p className="text-xs font-semibold uppercase tracking-wide text-[#b91c25]">
+                                Saldo preseleccionado
+                              </p>
+                              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                                <p><span className="text-black/50">Factura:</span> {initialPayable.invoice_number ?? "Sin factura"}</p>
+                                <p><span className="text-black/50">Compra:</span> {initialPayable.purchase_number ?? "Sin compra"}</p>
+                                <p><span className="text-black/50">Total:</span> {formatCurrency(initialPayable.total_amount)}</p>
+                                <p><span className="text-black/50">Pagado:</span> {formatCurrency(initialPayable.paid_amount)}</p>
+                                <p><span className="text-black/50">Saldo:</span> <strong>{formatCurrency(initialPayable.balance)}</strong></p>
+                                <p>
+                                  <span className="text-black/50">Estado:</span>{" "}
+                                  {initialPayable.status === "partial"
+                                    ? "Parcial"
+                                    : initialPayable.status === "overdue"
+                                      ? "Vencido"
+                                      : "Pendiente"}
+                                </p>
+                                <p className="sm:col-span-2"><span className="text-black/50">Origen:</span> {origin}</p>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      : null}
                     <label className="flex items-center gap-2 rounded-md border border-black/10 bg-white px-3">
                       <Search size={17} className="text-black/45" />
                       <input
@@ -541,7 +767,10 @@ export function SupplierMultiPaymentWizard({
                         </thead>
                         <tbody className="divide-y divide-black/10">
                           {payables.map((payable) => (
-                            <tr key={payable.id}>
+                            <tr
+                              key={payable.id}
+                              className={draft.initialPayableId === payable.id ? "bg-[#fff8f8]" : undefined}
+                            >
                               <td className="px-3 py-3">
                                 <input
                                   type="checkbox"
@@ -550,7 +779,14 @@ export function SupplierMultiPaymentWizard({
                                   aria-label={`Seleccionar ${payable.invoice_number ?? payable.id}`}
                                 />
                               </td>
-                              <td className="px-3 py-3 font-semibold">{payable.invoice_number ?? "Sin factura"}</td>
+                              <td className="px-3 py-3 font-semibold">
+                                {payable.invoice_number ?? "Sin factura"}
+                                {draft.initialPayableId === payable.id ? (
+                                  <span className="ml-2 rounded-full bg-[#e4252c]/10 px-2 py-1 text-[11px] text-[#b91c25]">
+                                    Preseleccionada
+                                  </span>
+                                ) : null}
+                              </td>
                               <td className="px-3 py-3">{dateLabel(payable.invoice_date)}</td>
                               <td className="px-3 py-3">{dateLabel(payable.due_date)}</td>
                               <td className="px-3 py-3">{formatCurrency(payable.balance)}</td>
