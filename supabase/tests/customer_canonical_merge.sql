@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(27);
+select plan(29);
 
 create temporary table customer_merge_test_state(key text primary key,value jsonb not null);
 
@@ -30,9 +30,9 @@ select ok(not coalesce((select permissions ? 'customers:merge' from public.roles
 update public.customer_feature_flags set enabled=true,enabled_at=now(),reason='Enabled only inside rolled-back canonical merge tests.' where key in ('customer_merge_execution_v1','customer_duplicate_prevention_v1');
 select set_config('request.jwt.claims','{"sub":"ca100000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 
-insert into public.customers(id,user_id,business_name,company_name,contact_name,email,phone,tax_id,address,city,status,active,commercial_version) values
-('ca200000-0000-4000-8000-000000000001','ca100000-0000-4000-8000-000000000002','Taller Canonico','Taller Canonico','Ana López',null,null,'08011999123456',null,'Tegucigalpa','active',true,0),
-('ca200000-0000-4000-8000-000000000002',null,'Taller Canonico','Taller Canonico','Ana Lopez','ana@example.test','99-11-22-11','0801-1999-123456','Barrio Centro','Tegucigalpa','active',true,0);
+insert into public.customers(id,user_id,business_name,company_name,contact_name,email,phone,tax_id,address,city,status,active,commercial_version,is_wholesale,wholesale_status,wholesale_customer_type,wholesale_approved_at) values
+('ca200000-0000-4000-8000-000000000001','ca100000-0000-4000-8000-000000000002','Taller Canonico','Taller Canonico','Ana López',null,null,'08011999123456',null,'Tegucigalpa','active',true,0,false,'none','new',null),
+('ca200000-0000-4000-8000-000000000002',null,'Taller Canonico','Taller Canonico','Ana Lopez','ana@example.test','99-11-22-11','0801-1999-123456','Barrio Centro','Tegucigalpa','active',true,0,true,'approved','existing',now());
 
 insert into public.crm_notes(id,customer_id,note_type,note) values ('ca300000-0000-4000-8000-000000000001','ca200000-0000-4000-8000-000000000002','nota','Nota secundaria');
 insert into public.crm_followups(id,customer_id,title,status) values ('ca300000-0000-4000-8000-000000000002','ca200000-0000-4000-8000-000000000002','Seguimiento secundario','pending');
@@ -54,6 +54,8 @@ select 'merge',public.merge_customers_v1(
 select ok((select (value->>'ok')::boolean from customer_merge_test_state where key='merge'),'merge completes atomically');
 select is(public.resolve_customer_root_v1('ca200000-0000-4000-8000-000000000002'),'ca200000-0000-4000-8000-000000000001'::uuid,'secondary resolves to primary');
 select is((select status from public.customers where id='ca200000-0000-4000-8000-000000000002'),'merged','secondary remains physically archived as merged');
+select is((select is_wholesale from public.customers where id='ca200000-0000-4000-8000-000000000001'),true,'approved wholesale state transfers to the canonical customer');
+select ok((select not is_wholesale and wholesale_status='none' from public.customers where id='ca200000-0000-4000-8000-000000000002'),'merged alias has no active wholesale state');
 select is((select email from public.customers where id='ca200000-0000-4000-8000-000000000001'),'ana@example.test','missing email is completed from secondary');
 select is((select phone from public.customers where id='ca200000-0000-4000-8000-000000000001'),'99-11-22-11','missing phone is completed without concatenation');
 select is((select original_customer_id from public.crm_notes where id='ca300000-0000-4000-8000-000000000001'),'ca200000-0000-4000-8000-000000000002'::uuid,'CRM note preserves original customer provenance');

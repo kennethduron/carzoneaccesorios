@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-const [migration, checkout, orderActions, invoiceDocument, accountingDispatcher, draftGenerator] = await Promise.all([
+const [migration, checkoutV4Migration, checkout, orderActions, invoiceDocument, accountingDispatcher, draftGenerator] = await Promise.all([
   read("supabase/migrations/202607220001_unify_checkout_fiscal_calculations.sql"),
-  read("src/app/checkout/actions.ts"),
+  read(String.raw`supabase/migrations/202607280022_checkout_v4_atomic_core.sql`),
+  read(String.raw`src/app/checkout/actions.ts`),
   read("src/app/admin/pedidos/actions.ts"),
   read("src/utils/official-invoice-document.ts"),
   read("src/services/accounting/accounting-event-dispatcher.ts"),
@@ -30,11 +31,12 @@ assert.match(migration, /actor_role not in \('technical_owner', 'business_owner'
 assert.doesNotMatch(migration, /create_internal_sale_v1\s*\(/);
 assert.doesNotMatch(migration, /automation_mode[\s\S]{0,100}(draft_only|auto_post)/);
 
-assert.match(checkout, /rpc\("create_checkout_order_v2"/);
+assert.match(checkout, /create_checkout_order_v4/);
 assert.doesNotMatch(checkout, /applyIncludedTaxFinancialsToOrder/);
 assert.doesNotMatch(checkout, /included_tax_normalization_failed/);
 assert.doesNotMatch(checkout, /wholesaleFinalTotal/);
-assert.match(checkout, /first_wholesale_minimum - wholesaleProductsTotal/);
+assert.match(checkoutV4Migration, /meets_wholesale_minimum/);
+assert.doesNotMatch(checkout, /first_wholesale_minimum - wholesaleProductsTotal/);
 
 assert.match(orderActions, /rpc\("update_checkout_cash_on_delivery_fee_v1"/);
 assert.doesNotMatch(orderActions, /subtotal \+ tax \+ shippingFee \+ fee/);

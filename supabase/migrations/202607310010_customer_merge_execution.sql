@@ -158,11 +158,17 @@ begin
       email=chosen_email,phone=chosen_phone,tax_id=chosen_tax,address=chosen_address,city=chosen_city,
       is_wholesale=case when commercial_source='secondary' then s.is_wholesale else p.is_wholesale end,
       wholesale_status=case when commercial_source='secondary' then s.wholesale_status else p.wholesale_status end,
+      wholesale_requested_at=case when commercial_source='secondary' then s.wholesale_requested_at else p.wholesale_requested_at end,
+      wholesale_request_source=case when commercial_source='secondary' then s.wholesale_request_source else p.wholesale_request_source end,
+      wholesale_approved_at=case when commercial_source='secondary' then s.wholesale_approved_at else p.wholesale_approved_at end,
+      wholesale_approved_notice_seen=case when commercial_source='secondary' then s.wholesale_approved_notice_seen else p.wholesale_approved_notice_seen end,
       wholesale_customer_type=case when commercial_source='secondary' then s.wholesale_customer_type else p.wholesale_customer_type end,
+      wholesale_first_purchase_completed=case when commercial_source='secondary' then s.wholesale_first_purchase_completed else p.wholesale_first_purchase_completed end,
+      wholesale_first_purchase_completed_at=case when commercial_source='secondary' then s.wholesale_first_purchase_completed_at else p.wholesale_first_purchase_completed_at end,
       commercial_version=p.commercial_version+1,updated_at=now()
     where id=primary_root;
 
-    update public.customers set merged_into_customer_id=primary_root,merged_at=now(),merged_by=actor_id,merge_operation_id=op_id,merge_reason=trim(p_reason),active=false,status='merged',user_id=null,commercial_version=commercial_version+1,updated_at=now()
+    update public.customers set merged_into_customer_id=primary_root,merged_at=now(),merged_by=actor_id,merge_operation_id=op_id,merge_reason=trim(p_reason),active=false,status='merged',user_id=null,is_wholesale=false,wholesale_status='none',wholesale_approved_at=null,commercial_version=commercial_version+1,updated_at=now()
     where id=any(family_secondary);
 
     counts_after := public.customer_merge_counts_v1(primary_root,secondary_root);

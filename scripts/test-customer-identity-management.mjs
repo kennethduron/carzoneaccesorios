@@ -43,7 +43,8 @@ assert.match(seed, /customers:update_identity/);
 assert.match(seed, /permissions = permissions - 'customers:update_identity'[\s\S]*'contadora'/i);
 
 assert.match(actions, /customerIdentityRoles[^\n]*technical_owner[^\n]*business_owner[^\n]*admin/);
-assert.match(actions, /portalLinkRoles[^\n]*technical_owner[^\n]*business_owner[^\n]*admin[^\n]*contadora/);
+assert.match(actions, /portalLinkRoles[^\n]*technical_owner[^\n]*business_owner[^\n]*admin/);
+assert.doesNotMatch(actions.match(/portalLinkRoles[^\n]*/)?.[0] ?? String(), /contadora/);
 assert.match(actions, /updateCustomerIdentityAction[\s\S]*customers:update_identity[\s\S]*update_customer_identity_manual/);
 assert.match(actions, /p_expected_updated_at: expected\.value/);
 assert.match(actions, /eq\("roles\.name", "cliente"\)/);

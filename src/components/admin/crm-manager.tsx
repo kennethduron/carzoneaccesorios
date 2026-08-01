@@ -94,6 +94,7 @@ type CrmManagerProps = {
   canLinkPortalAccount?: boolean;
   canEditCustomerIdentity?: boolean;
   canManageWholesale?: boolean;
+  canMergeCustomers?: boolean;
   firstWholesaleMinimum?: number;
   initialCustomerQuery?: string;
   initialCustomerFilter?: AdminCrmCustomerFilter;
@@ -311,6 +312,7 @@ export function CrmManager({
   canLinkPortalAccount = false,
   canEditCustomerIdentity = false,
   canManageWholesale = false,
+  canMergeCustomers = false,
   firstWholesaleMinimum = 10000,
   initialCustomerQuery = "",
   initialCustomerFilter = "clients",
@@ -1308,6 +1310,7 @@ export function CrmManager({
             <DuplicateGroupsPanel
               groups={data.duplicateGroups}
               pending={isPending}
+              canMerge={canMergeCustomers}
               onMerge={requestDuplicateMerge}
               onViewProfile={openCustomerProfile}
             />
@@ -1932,11 +1935,13 @@ function CrmActionDrawer({
 function DuplicateGroupsPanel({
   groups,
   pending,
+  canMerge,
   onMerge,
   onViewProfile,
 }: {
   groups: CrmDuplicateGroup[];
   pending: boolean;
+  canMerge: boolean;
   onMerge: (source: CrmDuplicateCandidate, target: CrmDuplicateCandidate) => void;
   onViewProfile: (customerId: string) => void;
 }) {
@@ -2016,12 +2021,14 @@ function DuplicateGroupsPanel({
                           <Button
                             type="button"
                             variant="ghost"
-                            disabled={pending || !customer.can_merge}
+                            disabled={pending || !canMerge || !customer.can_merge}
                             onClick={() => onMerge(customer, target)}
                           >
                             Unir con principal
                           </Button>
-                          {!customer.can_merge ? (
+                          {!canMerge ? (
+                            <p className="max-w-48 text-xs text-[#7c2d12]">Tu rol puede revisar candidatos, pero no ejecutar uniones.</p>
+                          ) : !customer.can_merge ? (
                             <p className="max-w-48 text-xs text-[#7c2d12]">Tiene historial fiscal; requiere revisión manual.</p>
                           ) : null}
                         </div>
@@ -2516,7 +2523,31 @@ function CustomerProfileSummary({ profile }: { profile: CrmCustomerProfile }) {
         </section>
       </div>
       <CustomerProfilePurchases orders={profile.orders.slice(0, 5)} compact />
+      {(profile.mergeHistory?.length ?? 0) > 0 ? <CustomerMergeHistory history={profile.mergeHistory ?? []} /> : null}
     </div>
+  );
+}
+
+function CustomerMergeHistory({ history }: { history: CrmCustomerProfile["mergeHistory"] }) {
+  return (
+    <section className="rounded-lg border border-black/10 bg-white p-5">
+      <h3 className="font-semibold">Historial de uniones</h3>
+      <p className="mt-1 text-sm text-black/55">Registro auditable de clientes secundarios consolidados en este perfil.</p>
+      <div className="mt-4 space-y-3">
+        {history.map((item) => (
+          <article key={item.id} className="rounded-md bg-[#f4f4f5] p-3 text-sm">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold">{item.secondary_name}</p>
+                <p className="mt-1 text-black/65">{item.reason}</p>
+              </div>
+              <span className="rounded-md bg-white px-2 py-1 text-xs text-black/55">{formatDateTime(item.completed_at)}</span>
+            </div>
+            <p className="mt-2 text-xs text-black/45">{item.executed_by_name ?? "Usuario autorizado"} · {item.executed_role ?? "rol registrado"} · {item.source}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

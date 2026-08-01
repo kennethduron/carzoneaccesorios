@@ -658,7 +658,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
   let customersQuery = supabase
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users!customers_user_id_fkey(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
     ).is("merged_into_customer_id", null);
 
   if (matchedCustomerIds.length > 0) {
@@ -687,7 +687,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
         status,
         completed_at,
         created_at,
-        customers(contact_name, business_name, user_id, users(roles(name)))
+        customers!crm_followups_customer_id_fkey(contact_name, business_name, user_id, users!customers_user_id_fkey(roles(name)))
       `,
       { count: "exact" },
     );
@@ -715,7 +715,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       .returns<FollowupQueryRow[]>(),
     supabase
       .from("crm_notes")
-      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers(contact_name, business_name)")
+      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers!crm_notes_customer_id_fkey(contact_name, business_name)")
       .order("created_at", { ascending: false })
       .limit(50)
       .returns<NoteQueryRow[]>(),
@@ -932,7 +932,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   const { data: customerRow, error: customerError } = await admin
     .from("customers")
     .select(
-      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
+      "id, user_id, business_name, company_name, contact_name, email, phone, tax_id, city, notes, is_wholesale, wholesale_status, wholesale_requested_at, wholesale_request_source, wholesale_approved_at, wholesale_approved_notice_seen, wholesale_customer_type, wholesale_first_purchase_completed, wholesale_first_purchase_completed_at, commercial_version, status, active, lead_status, estimated_value, monthly_amount, created_at, updated_at, users!customers_user_id_fkey(id, email, full_name, phone, active, created_at, updated_at, roles(name))",
     )
     .eq("id", customerId)
     .maybeSingle<CustomerQueryRow>();
@@ -1004,6 +1004,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     { data: followups, error: followupsError },
     { data: wholesaleCodes, error: wholesaleCodesError },
     { data: wholesaleHistory, error: wholesaleHistoryError },
+    { data: mergeHistory, error: mergeHistoryError },
     creditAccount,
     receivables,
   ] = await Promise.all([
@@ -1017,7 +1018,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .returns<CustomerProfileInvoiceRow[]>(),
     admin
       .from("crm_notes")
-      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers(contact_name, business_name)")
+      .select("id, customer_id, user_id, note_type, note, archived_at, created_at, customers!crm_notes_customer_id_fkey(contact_name, business_name)")
       .in("customer_id", familyIds)
       .order("created_at", { ascending: false })
       .limit(30)
@@ -1025,7 +1026,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     admin
       .from("crm_followups")
       .select(
-        "id, customer_id, order_id, assigned_user_id, title, interaction_type, next_action, due_at, priority, phone, notes, estimated_value, monthly_amount, status, completed_at, created_at, customers(contact_name, business_name, user_id, users(roles(name)))",
+        "id, customer_id, order_id, assigned_user_id, title, interaction_type, next_action, due_at, priority, phone, notes, estimated_value, monthly_amount, status, completed_at, created_at, customers!crm_followups_customer_id_fkey(contact_name, business_name, user_id, users!customers_user_id_fkey(roles(name)))",
       )
       .in("customer_id", familyIds)
       .order("created_at", { ascending: false })
@@ -1044,6 +1045,14 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       .in("customer_id", familyIds)
       .order("created_at", { ascending: false })
       .returns<CustomerWholesaleHistoryRow[]>(),
+    admin
+      .from("customer_merge_operations")
+      .select("id, secondary_root_customer_id, reason, source, executed_role, completed_at, secondary:customers!customer_merge_operations_secondary_root_customer_id_fkey(business_name, contact_name), actor:users!customer_merge_operations_executed_by_fkey(full_name)")
+      .eq("primary_root_customer_id", customerId)
+      .eq("status", "completed")
+      .order("completed_at", { ascending: false })
+      .limit(20)
+      .returns<Array<{ id: string; secondary_root_customer_id: string; reason: string; source: string; executed_role: string | null; completed_at: string; secondary: { business_name: string | null; contact_name: string | null } | null; actor: { full_name: string | null } | null }>>(),
     getCustomerCreditAccount(customerId),
     getCustomerReceivables(customerId, 50),
   ]);
@@ -1068,6 +1077,9 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
   }
   if (wholesaleHistoryError) {
     throw new Error(wholesaleHistoryError.message);
+  }
+  if (mergeHistoryError) {
+    throw new Error(mergeHistoryError.message);
   }
 
   const ordersById = new Map<string, CustomerProfileOrderRow>();
@@ -1200,6 +1212,16 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       reason: item.reason,
       previous_commercial_version: item.previous_commercial_version,
       new_commercial_version: item.new_commercial_version,
+    })),
+    mergeHistory: (mergeHistory ?? []).map((item) => ({
+      id: item.id,
+      secondary_customer_id: item.secondary_root_customer_id,
+      secondary_name: item.secondary?.business_name ?? item.secondary?.contact_name ?? "Cliente secundario",
+      reason: item.reason,
+      source: item.source,
+      executed_role: item.executed_role,
+      executed_by_name: item.actor?.full_name ?? null,
+      completed_at: item.completed_at,
     })),
     creditAccount,
     receivables,

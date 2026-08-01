@@ -207,6 +207,17 @@ export type CrmCustomerWholesaleHistoryRow = {
   new_commercial_version?: number;
 };
 
+export type CrmCustomerMergeHistoryRow = {
+  id: string;
+  secondary_customer_id: string;
+  secondary_name: string;
+  reason: string;
+  source: string;
+  executed_role: string | null;
+  executed_by_name: string | null;
+  completed_at: string;
+};
+
 export type CrmCustomerProfile = {
   customer: CrmCustomerOption;
   orders: CrmCustomerOrderProfileRow[];
@@ -215,6 +226,7 @@ export type CrmCustomerProfile = {
   followups: CrmFollowupRow[];
   wholesaleCodes: CrmCustomerWholesaleCodeProfileRow[];
   wholesaleHistory: CrmCustomerWholesaleHistoryRow[];
+  mergeHistory: CrmCustomerMergeHistoryRow[];
   creditAccount: import("@/types/credit").CustomerCreditAccount | null;
   receivables: import("@/types/credit").AccountsReceivableRow[];
 };

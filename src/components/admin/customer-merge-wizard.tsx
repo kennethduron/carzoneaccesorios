@@ -130,12 +130,12 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
     <div className="cz-layer-modal fixed inset-0 z-50 overflow-y-auto bg-black/55 px-3 py-4 sm:px-6 sm:py-8">
       <section className="mx-auto min-h-[calc(100vh-2rem)] w-full max-w-5xl rounded-xl bg-white text-[#080808] shadow-2xl sm:min-h-0">
         <header className="flex items-start justify-between gap-4 border-b border-black/10 p-4 sm:p-6">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#b91c25]">Unificación canónica</p>
             <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Consolidar clientes sin perder historial</h2>
             <p className="mt-1 text-sm text-black/55">La vista previa, los riesgos y los totales se calculan en el servidor.</p>
           </div>
-          <button type="button" onClick={onCancel} aria-label="Cerrar" className="rounded-md p-2 hover:bg-black/5"><X size={20} /></button>
+          <button type="button" onClick={onCancel} aria-label="Cerrar" className="shrink-0 rounded-md p-2 hover:bg-black/5"><X size={20} /></button>
         </header>
 
         <nav className="grid grid-cols-5 border-b border-black/10" aria-label="Pasos de unificación">

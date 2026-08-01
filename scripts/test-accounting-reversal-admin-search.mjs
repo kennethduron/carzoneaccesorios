@@ -55,7 +55,7 @@ const checkoutProductValidation = source.checkout.slice(
 assert.match(source.checkout, /^"use server";/);
 assert.match(checkoutProductValidation, /getSupabaseAdminClient\(\)/);
 assert.match(checkoutProductValidation, /\.from\("products"\)/);
-assert.match(source.checkout, /getPortalCommercialContext\(\)/);
+assert.match(source.checkout, /getPortalCommercialContextV2\(/);
 assert.doesNotMatch(source.checkout, /formData\.get\("priceMode"\)/);
 assert.doesNotMatch(source.purchasesPage, /getPurchaseProductOptions/);
 assert.doesNotMatch(source.purchasesUi, /products\.map\(\(product\).*<option/);
