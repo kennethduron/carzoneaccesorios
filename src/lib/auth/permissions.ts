@@ -5,6 +5,7 @@ export const protectedTechnicalEmail = "kennethduron.paz@gmail.com";
 export const allPermissions: Permission[] = [
   "customers:link_portal_account",
   "customers:update_identity",
+  "customers:merge",
   "admin:access",
   "products:read",
   "products:create",
@@ -232,6 +233,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
   business_owner: [
     "customers:link_portal_account",
     "customers:update_identity",
+    "customers:merge",
     "admin:access",
     "products:manage",
     "inventory:read",

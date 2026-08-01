@@ -11,6 +11,7 @@ export type AppRole =
 export type Permission =
   | "customers:link_portal_account"
   | "customers:update_identity"
+  | "customers:merge"
   | "admin:access"
   | "products:read"
   | "products:create"

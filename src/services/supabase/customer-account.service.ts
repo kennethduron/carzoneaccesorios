@@ -353,15 +353,31 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
 
 async function getCustomerIdsForAccount(userId: string) {
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin.from("customers").select("id").eq("user_id", userId).returns<Array<{ id: string }>>();
+  const { data, error } = await admin
+    .from("customers")
+    .select("id")
+    .eq("user_id", userId)
+    .is("merged_into_customer_id", null)
+    .returns<Array<{ id: string }>>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map((row) => row.id);
-}
+  const families = await Promise.all(
+    (data ?? []).map(async (row) => {
+      const { data: family, error: familyError } = await admin.rpc("get_customer_family_ids_v1", {
+        p_customer_id: row.id,
+      });
+      if (familyError) {
+        throw new Error(familyError.message);
+      }
+      return ((family ?? []) as Array<{ customer_id: string }>).map((member) => member.customer_id);
+    }),
+  );
 
+  return Array.from(new Set(families.flat()));
+}
 async function getCustomerOrderFilters(userId: string) {
   const customerIds = await getCustomerIdsForAccount(userId);
   const filters = [`user_id.eq.${userId}`];

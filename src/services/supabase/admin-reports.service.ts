@@ -557,7 +557,8 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
 
   let customersQuery = supabase
     .from("customers")
-    .select("id, business_name, contact_name, email, phone, tax_id, is_wholesale, created_at", { count: "exact" });
+    .select("id, business_name, contact_name, email, phone, tax_id, is_wholesale, created_at", { count: "exact" })
+    .is("merged_into_customer_id", null);
 
   if (filters.customer) {
     const search = like(filters.customer);

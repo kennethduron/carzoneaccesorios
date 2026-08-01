@@ -38,7 +38,6 @@ import {
   deleteCustomerAccountPermanentlyAction,
   deleteTestAccountAction,
   getCustomerProfileAction,
-  mergeDuplicateCustomerAction,
   reactivateCustomerAccountAction,
   reactivateWholesaleAccessAction,
   rejectWholesaleRequestAction,
@@ -55,6 +54,7 @@ import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { CustomerPortalLinkWorkspace } from "@/components/admin/customer-portal-link-workspace";
 import { CustomerIdentitySection } from "@/components/admin/customer-identity-section";
+import { CustomerMergeWizard } from "@/components/admin/customer-merge-wizard";
 import { CustomerProfileWholesale as CustomerProfileWholesalePanel } from "@/components/admin/customer-profile-wholesale";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { ContactActions } from "@/components/contact-actions";
@@ -1015,24 +1015,6 @@ export function CrmManager({
     }
   }
 
-  function confirmDuplicateMerge() {
-    if (!mergeRequest) {
-      return;
-    }
-
-    const { source, target } = mergeRequest;
-    startTransition(async () => {
-      const result = await mergeDuplicateCustomerAction({ sourceCustomerId: source.id, targetCustomerId: target.id });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message || "Cliente duplicado unificado correctamente. El historial fue movido al perfil principal.");
-        setMergeRequest(null);
-      } else {
-        toast.error(result.message || "No se pudo unificar el cliente duplicado.");
-      }
-    });
-  }
-
   return (
     <div className="space-y-5">
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref={basePath} /> : null}
@@ -1554,11 +1536,16 @@ export function CrmManager({
         />
       ) : null}
       {mergeRequest ? (
-        <DuplicateMergeConfirmModal
-          request={mergeRequest}
-          pending={isPending}
+        <CustomerMergeWizard
+          source={mergeRequest.source}
+          target={mergeRequest.target}
           onCancel={() => setMergeRequest(null)}
-          onConfirm={confirmDuplicateMerge}
+          onComplete={(resultMessage) => {
+            setMessage(resultMessage);
+            toast.success(resultMessage);
+            setMergeRequest(null);
+            router.refresh();
+          }}
         />
       ) : null}
     </div>
@@ -2135,56 +2122,6 @@ function PermanentDeleteAccountModal({
           <Button type="button" variant="secondary" disabled={pending || !canConfirm} onClick={onConfirm}>
             <Trash2 size={16} />
             {pending ? "Eliminando..." : "Eliminar permanentemente"}
-          </Button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function DuplicateMergeConfirmModal({
-  request,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  request: DuplicateMergeRequest;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div className="cz-layer-modal fixed inset-0 grid place-items-center bg-black/45 px-4 py-6">
-      <section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 text-[#080808] shadow-xl">
-        <h2 className="text-xl font-semibold">Unificar cliente duplicado</h2>
-        <p className="mt-2 text-sm leading-6 text-black/65">
-          Este registro se unirá al cliente principal. Sus pedidos, notas, seguimientos y estado mayorista se moverán al perfil principal.
-          No se eliminarán facturas ni historial fiscal.
-        </p>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <div className="rounded-lg border border-[#e4252c]/25 bg-[#fff1f2] p-4">
-            <p className="text-xs font-semibold uppercase text-[#b91c25]">Cliente principal</p>
-            <DuplicateCustomerSummary customer={request.target} />
-            <p className="mt-3 text-xs text-black/55">Este será el perfil que conservará el historial unificado.</p>
-          </div>
-          <div className="rounded-lg border border-black/10 bg-[#f4f4f5] p-4">
-            <p className="text-xs font-semibold uppercase text-black/50">Registro duplicado</p>
-            <DuplicateCustomerSummary customer={request.source} />
-            <p className="mt-3 text-xs text-black/55">Este registro quedará inactivo después de mover su historial.</p>
-          </div>
-        </div>
-
-        <div className="mt-4 rounded-md border border-[#f59e0b]/30 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-          Si el registro duplicado tiene facturas, el backend bloquea la unificación automática para proteger el historial fiscal.
-        </div>
-
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>
-            Cancelar
-          </Button>
-          <Button type="button" variant="dark" disabled={pending} onClick={onConfirm}>
-            {pending ? "Unificando..." : "Unificar cliente"}
           </Button>
         </div>
       </section>

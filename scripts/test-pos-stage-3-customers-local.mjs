@@ -219,7 +219,10 @@ try {
     assert.ifError(error);
     actorCustomer = data;
   }
-  const { error: wholesaleError } = await admin.from("customers").update({ is_wholesale: true, wholesale_status: "approved" }).eq("id", actorCustomer.id);
+  const { error: wholesaleError } = await admin
+    .from("customers")
+    .update({ is_wholesale: true, wholesale_status: "approved", wholesale_approved_at: new Date().toISOString() })
+    .eq("id", actorCustomer.id);
   assert.ifError(wholesaleError);
   const approved = await rpc(adminActor.client, "evaluate_wholesale_eligibility_v1", {
     target_customer_id: actorCustomer.id,
@@ -228,7 +231,7 @@ try {
   assert.ifError(approved.error);
   assert.equal(approved.data[0].pricing_mode, "wholesale");
   assert.equal(Number(approved.data[0].missing_amount), 0);
-  const { error: suspendedError } = await admin.from("customers").update({ wholesale_status: "suspended" }).eq("id", actorCustomer.id);
+  const { error: suspendedError } = await admin.from("customers").update({ is_wholesale: false, wholesale_status: "suspended" }).eq("id", actorCustomer.id);
   assert.ifError(suspendedError);
   const suspended = await rpc(adminActor.client, "resolve_customer_pricing_mode_v1", { target_customer_id: actorCustomer.id });
   assert.ifError(suspended.error);

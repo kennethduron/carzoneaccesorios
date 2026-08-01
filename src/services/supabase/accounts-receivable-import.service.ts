@@ -265,13 +265,16 @@ async function fetchCustomerMatches(rows: HistoricalReceivableNormalizedRow[]) {
   const queries: Array<PromiseLike<{ data: CustomerLookupRow[] | null; error: { message: string } | null }>> = [];
 
   if (emails.length > 0) {
-    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id").in("email", emails).returns<CustomerLookupRow[]>());
+    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id")
+        .is("merged_into_customer_id", null).in("email", emails).returns<CustomerLookupRow[]>());
   }
   if (phones.length > 0) {
-    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id").in("phone", phones).returns<CustomerLookupRow[]>());
+    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id")
+        .is("merged_into_customer_id", null).in("phone", phones).returns<CustomerLookupRow[]>());
   }
   if (taxIds.length > 0) {
-    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id").in("tax_id", taxIds).returns<CustomerLookupRow[]>());
+    queries.push(admin.from("customers").select("id, business_name, company_name, contact_name, email, phone, tax_id")
+        .is("merged_into_customer_id", null).in("tax_id", taxIds).returns<CustomerLookupRow[]>());
   }
   for (const name of names.slice(0, 30)) {
     const pattern = `%${name.replace(/[%,()]/g, " ").trim()}%`;
@@ -279,6 +282,7 @@ async function fetchCustomerMatches(rows: HistoricalReceivableNormalizedRow[]) {
       admin
         .from("customers")
         .select("id, business_name, company_name, contact_name, email, phone, tax_id")
+        .is("merged_into_customer_id", null)
         .or(`business_name.ilike.${pattern},company_name.ilike.${pattern},contact_name.ilike.${pattern}`)
         .limit(3)
         .returns<CustomerLookupRow[]>(),
@@ -474,6 +478,7 @@ export async function getCustomerAssignmentOptions(customerIds: string[]): Promi
   const { data, error } = await admin
     .from("customers")
     .select("id, business_name, company_name, contact_name, email, phone, tax_id")
+        .is("merged_into_customer_id", null)
     .in("id", customerIds)
     .returns<CustomerLookupRow[]>();
 
