@@ -118,6 +118,63 @@ export type SaleFinancialSnapshot = {
   total_final: number;
 };
 
+export type OrderPriceReviewStatus =
+  | "none"
+  | "authorized_manual_override"
+  | "action_required"
+  | "legacy_information";
+
+export type AuthorizedPriceAdjustment = {
+  auditId: string;
+  orderItemId: string;
+  actorName: string | null;
+  actorRole: string;
+  adjustedAt: string;
+  versionAfter: number | null;
+  automaticUnitPrice: number;
+  previousUnitPrice: number;
+  finalUnitPrice: number;
+  note: string | null;
+};
+
+export type OrderPriceReview = {
+  status: OrderPriceReviewStatus;
+  reasons: string[];
+  invoiceConsistent: boolean | null;
+  legitimateModeFallbackItemIds: string[];
+  adjustments: AuthorizedPriceAdjustment[];
+};
+
+export type OrderPriceFeatureFlags = {
+  orderPriceReviewV2: boolean;
+  orderPriceConfirmationModalV1: boolean;
+};
+
+export type OrderPriceAdjustmentLinePreview = {
+  orderItemId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  automaticUnitPrice: number;
+  previousUnitPrice: number;
+  finalUnitPrice: number;
+  unitDifference: number;
+  totalDifference: number;
+  unitCost: number;
+  resultingUnitMargin: number;
+  aboveAutomaticPrice: boolean;
+};
+
+export type OrderPriceAdjustmentPreview = {
+  orderId: string;
+  expectedVersion: number;
+  requestKey: string;
+  lines: OrderPriceAdjustmentLinePreview[];
+  previousFinancials: SaleFinancialSnapshot;
+  nextFinancials: SaleFinancialSnapshot;
+  orderTotalDifference: number;
+};
+
 export type AdminOrderRow = {
   id: string;
   order_number: string;
@@ -192,4 +249,5 @@ export type AdminOrderRow = {
   receivable_payment_received_reference: string | null;
   receivable_payment_recorded_by: string | null;
   accounting_traceability: AccountingTraceabilitySummary | null;
+  price_review: OrderPriceReview;
 };

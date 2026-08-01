@@ -1,11 +1,17 @@
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getOrderAccountingTraceabilityBatch } from "@/services/supabase/accounting-traceability.service";
 import { getFiscalCorrectionHistory } from "@/services/supabase/fiscal-corrections.service";
-import type { AdminOrderItem, AdminOrderRow } from "@/types/orders";
+import {
+  emptyOrderPriceReview,
+  getOrderPriceFeatureFlags,
+  getOrderPriceReviewBatch,
+} from "@/services/supabase/order-price-review.service";
+import type { AdminOrderItem, AdminOrderRow, OrderPriceFeatureFlags } from "@/types/orders";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
 
 export type AdminOrdersPage = {
   orders: AdminOrderRow[];
+  featureFlags: OrderPriceFeatureFlags;
   total: number;
   page: number;
   pageSize: number;
@@ -60,6 +66,7 @@ type OrderQueryRow = Omit<
   | "fiscal_customer_phone"
   | "fiscal_customer_email"
   | "fiscal_customer_address"
+  | "price_review"
 > & {
   subtotal: unknown;
   tax: unknown;
@@ -190,6 +197,7 @@ function normalizeOrder(row: OrderQueryRow): AdminOrderRow {
     receivable_payment_received_reference: receivable?.payment_received_reference ?? null,
     receivable_payment_recorded_by: receivable?.payment_recorded_by ?? null,
     accounting_traceability: null,
+    price_review: emptyOrderPriceReview,
     order_items: (row.order_items ?? []).map((item) => ({
       ...item,
       quantity: toNumber(item.quantity),
@@ -336,6 +344,8 @@ export async function getAdminOrdersPage({
   }
 
   const orders = (data ?? []).map(normalizeOrder);
+  const featureFlags = await getOrderPriceFeatureFlags();
+  const priceReviews = await getOrderPriceReviewBatch(orders, featureFlags);
   const correctionHistories = await Promise.all(
     orders.map((order) =>
       getFiscalCorrectionHistory({
@@ -361,7 +371,9 @@ export async function getAdminOrdersPage({
       ...order,
       fiscal_correction_history: correctionHistories[index],
       accounting_traceability: traceabilityByOrderId.get(order.id) ?? null,
+      price_review: priceReviews.get(order.id) ?? emptyOrderPriceReview,
     })),
+    featureFlags,
     total: count ?? 0,
     page,
     pageSize,
