@@ -54,7 +54,39 @@ export async function previewCustomerMergeAction(input: unknown): Promise<Custom
     p_secondary_customer_id: parsed.data.secondaryCustomerId,
   });
   if (error) return { ok: false, ...databaseError(error.message) };
-  return { ok: true, message: "Vista previa actualizada.", preview: data as CustomerMergePreview };
+  const preview = data as CustomerMergePreview;
+  const [
+    { data: historyDetails, error: historyError },
+    { data: executionFlag, error: flagError },
+  ] = await Promise.all([
+    supabase.rpc("get_customer_merge_history_details_v1", {
+      p_primary_customer_id: preview.primaryCustomerId,
+      p_secondary_customer_id: preview.secondaryCustomerId,
+      p_preview_hash: preview.previewHash,
+      p_expected_primary_commercial_version: preview.primaryCommercialVersion,
+      p_expected_secondary_commercial_version: preview.secondaryCommercialVersion,
+    }),
+    supabase
+      .from("customer_feature_flags")
+      .select("enabled")
+      .eq("key", "customer_merge_execution_v1")
+      .maybeSingle<{ enabled: boolean }>(),
+  ]);
+  if (historyError) return { ok: false, ...databaseError(historyError.message) };
+  if (flagError) {
+    return {
+      ok: false,
+      code: "CUSTOMER_MERGE_FLAG_UNAVAILABLE",
+      message: "No se pudo confirmar el estado de ejecución. Actualiza la vista previa.",
+    };
+  }
+  return {
+    ok: true,
+    message: "Vista previa y consecuencias actualizadas.",
+    preview,
+    historyDetails: historyDetails as CustomerMergeActionResult["historyDetails"],
+    executionEnabled: executionFlag?.enabled === true,
+  };
 }
 
 export async function executeCustomerMergeAction(input: unknown): Promise<CustomerMergeActionResult> {

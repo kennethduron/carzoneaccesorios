@@ -11,6 +11,7 @@
     "security:sensitive-artifacts": "node scripts/security-sensitive-artifacts.mjs",
     "security:validate": "npm run security:client-boundary && npm run security:sensitive-artifacts && npm run test:role-hierarchy && npm run test:commercial-credit && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-accountant-fiscal-scope.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-access-and-warehouse-scope.mjs",
     "test:auth-security": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-security-s3.mjs",
+    "test:auth-session-handling": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-session-handling.mjs",
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
     "test:cart-hydration": "node scripts/test-cart-hydration.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
@@ -55,7 +56,8 @@
     "configure:supabase-auth-resend-smtp": "node scripts/configure-supabase-auth-resend-smtp.mjs",
     "test:supabase-auth-smtp-structure": "node scripts/test-supabase-auth-smtp-structure.mjs",
     "test:supabase-auth-email:remote": "node scripts/test-supabase-auth-email-remote.mjs",
-    "test:customer-canonical-merge": "node scripts/test-customer-canonical-merge.mjs"
+    "test:customer-canonical-merge": "node scripts/test-customer-canonical-merge.mjs",
+    "test:customer-merge-wizard-details": "node scripts/test-customer-merge-wizard-details.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

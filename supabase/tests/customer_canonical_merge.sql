@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(29);
+select plan(37);
 
 create temporary table customer_merge_test_state(key text primary key,value jsonb not null);
 
@@ -47,6 +47,27 @@ select is((select (value->'counts'->>'receivables')::integer from customer_merge
 select is((select value->'financialTotals'->>'receivableOpenBalance' from customer_merge_test_state where key='preview'),'1000.00','preview derives open receivable balance');
 
 insert into customer_merge_test_state
+select 'details', public.get_customer_merge_history_details_v1(
+  'ca200000-0000-4000-8000-000000000001',
+  'ca200000-0000-4000-8000-000000000002',
+  (select value->>'previewHash' from customer_merge_test_state where key='preview'),
+  0,
+  0
+);
+select is((select value->>'previewHash' from customer_merge_test_state where key='details'),(select value->>'previewHash' from customer_merge_test_state where key='preview'),'details remain tied to the canonical preview hash');
+select ok((select value->'items' @> '[{"category":"crm_note","action":"move_to_primary"}]'::jsonb from customer_merge_test_state where key='details'),'details mark the CRM note for server-authoritative reassignment');
+select ok((select value->'items' @> '[{"category":"crm_followup","action":"move_to_primary"}]'::jsonb from customer_merge_test_state where key='details'),'details mark the followup for server-authoritative reassignment');
+select ok((select value->'items' @> '[{"category":"receivable","action":"move_to_primary"}]'::jsonb from customer_merge_test_state where key='details'),'details identify the concrete receivable action');
+select is((select (value->'summary'->'receivables'->>'count')::integer from customer_merge_test_state where key='details'),1,'details return the receivable integrity summary');
+select ok((select value->'assurances' @> '[{"code":"invoice"}]'::jsonb from customer_merge_test_state where key='details'),'details return immutable business assurances');
+select throws_ok(
+  $$select public.get_customer_merge_history_details_v1('ca200000-0000-4000-8000-000000000001','ca200000-0000-4000-8000-000000000002',repeat('0',64),0,0)$$,
+  '40001',
+  'CUSTOMER_MERGE_PREVIEW_STALE',
+  'details reject a stale preview hash'
+);
+
+insert into customer_merge_test_state
 select 'merge',public.merge_customers_v1(
   'customer-merge-fixture-a-v1','ca200000-0000-4000-8000-000000000001','ca200000-0000-4000-8000-000000000002',0,0,
   (select value->>'previewHash' from customer_merge_test_state where key='preview'),'{}','{}','{}','Canonical complementary fixture merge','crm'
@@ -76,6 +97,7 @@ select ok(public.preview_customer_merge_v1('ca200000-0000-4000-8000-000000000005
 
 select set_config('request.jwt.claims','{"sub":"ca100000-0000-4000-8000-000000000004","role":"authenticated"}',true);
 select throws_ok($$select public.preview_customer_merge_v1('ca200000-0000-4000-8000-000000000003','ca200000-0000-4000-8000-000000000004')$$,'42501','CUSTOMER_MERGE_PREVIEW_FORBIDDEN','seller cannot invoke preview directly');
+select throws_ok($$select public.get_customer_merge_history_details_v1('ca200000-0000-4000-8000-000000000003','ca200000-0000-4000-8000-000000000004',repeat('0',64),0,0)$$,'42501','CUSTOMER_MERGE_DETAILS_FORBIDDEN','seller cannot invoke merge details');
 
 select * from finish();
 rollback;

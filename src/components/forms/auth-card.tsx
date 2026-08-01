@@ -81,6 +81,14 @@ export function AuthCard({ mode }: AuthCardProps) {
       return null;
     }
 
+    if (searchParams.get("reason") === "session_expired") {
+      return {
+        text: "Su sesión expiró. Inicie sesión nuevamente.",
+        tone: "info" as const,
+        canResend: false,
+      };
+    }
+
     if (searchParams.get("confirmed")) {
       return {
         text: "Correo electrónico confirmado correctamente. Ya puedes iniciar sesión.",

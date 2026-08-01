@@ -210,7 +210,7 @@ export async function getAdminSecurity(profile: AuthProfile): Promise<AdminSecur
     supabase.from("roles").select("name, permissions").order("name").returns<RoleQueryRow[]>(),
     admin
       .from("users")
-      .select("id, email, username, full_name, phone, active, created_at, updated_at, roles(name), customers(id)")
+      .select("id, email, username, full_name, phone, active, created_at, updated_at, roles(name), customers:customers!customers_user_id_fkey(id)")
       .order("created_at", { ascending: false })
       .limit(200)
       .returns<UserQueryRow[]>(),

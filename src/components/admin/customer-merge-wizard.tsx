@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, LoaderCircle, ShieldCheck, X } from "lucide-react";
 import { executeCustomerMergeAction, previewCustomerMergeAction } from "@/app/admin/crm/customer-merge-actions";
+import { CustomerMergeConfirmationSummary } from "@/components/admin/customer-merge-confirmation";
+import { CustomerMergeHistory } from "@/components/admin/customer-merge-history";
 import { Button } from "@/components/ui";
 import type { CrmDuplicateCandidate } from "@/types/crm";
-import type { CustomerMergeDecision, CustomerMergePreview } from "@/types/customer-merge";
+import type { CustomerMergeDecision, CustomerMergeHistoryDetails, CustomerMergePreview } from "@/types/customer-merge";
 import { formatCurrency } from "@/utils/pricing";
 
 type Props = {
@@ -44,6 +46,8 @@ function display(value: string | null) {
 export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<CustomerMergePreview | null>(null);
+  const [historyDetails, setHistoryDetails] = useState<CustomerMergeHistoryDetails | null>(null);
+  const [executionEnabled, setExecutionEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,11 +62,13 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
     previewCustomerMergeAction({ primaryCustomerId: target.id, secondaryCustomerId: source.id }).then((result) => {
       if (!active) return;
       setLoading(false);
-      if (!result.ok || !result.preview) {
+      if (!result.ok || !result.preview || !result.historyDetails) {
         setError(result.message);
         return;
       }
       setPreview(result.preview);
+      setHistoryDetails(result.historyDetails);
+      setExecutionEnabled(result.executionEnabled === true);
       const defaults: Record<string, CustomerMergeDecision> = {};
       for (const field of result.preview.identity) {
         if (field.state === "conflict") {
@@ -87,7 +93,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
   const commercialComplete = !preview?.requiredDecisions.includes("credit") || Boolean(creditSource);
   const wholesaleComplete = !preview?.requiredDecisions.includes("commercial") || Boolean(commercialSource);
   const canSubmit = Boolean(
-    preview?.allowed && requiredIdentityComplete && commercialComplete && wholesaleComplete && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
+    preview?.allowed && historyDetails && executionEnabled && requiredIdentityComplete && commercialComplete && wholesaleComplete && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
   );
 
   function choose(field: string, sourceChoice: "primary" | "secondary") {
@@ -197,25 +203,25 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
                 </div>
               ) : null}
 
-              {step === 3 ? (
-                <div className="space-y-5">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {Object.entries(preview.counts).map(([key, value]) => <div key={key} className="rounded-lg border border-black/10 p-3"><p className="text-xs text-black/50">{key}</p><p className="mt-1 text-xl font-semibold">{Number(value).toLocaleString("es-HN")}</p></div>)}
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <PlanCard title="Se reasignará" items={preview.relationPlan.reassign} />
-                    <PlanCard title="Permanecerá histórico e inmutable" items={preview.relationPlan.preserveHistorical} protected />
-                  </div>
-                  <div className="rounded-lg border border-black/10 p-4 text-xs text-black/55">
-                    <p className="font-semibold text-black/75">Huellas protegidas</p>
-                    <p className="mt-2 break-all">Fiscal: {preview.fiscalHashes.invoices}</p>
-                    <p className="mt-1 break-all">Contable: {preview.accountingHashes.publishedEntries}</p>
-                  </div>
-                </div>
-              ) : null}
-
+              {step === 3 && historyDetails ? <CustomerMergeHistory details={historyDetails} /> : null}
               {step === 4 ? (
                 <div className="space-y-5">
+                  {historyDetails ? (
+                    <CustomerMergeConfirmationSummary
+                      source={source}
+                      target={target}
+                      preview={preview}
+                      details={historyDetails}
+                      identityDecisions={identityDecisions}
+                      creditSource={creditSource}
+                      commercialSource={commercialSource}
+                    />
+                  ) : null}
+                  {!executionEnabled ? (
+                    <div className="rounded-lg border border-[#f59e0b]/40 bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
+                      La revisión está disponible, pero la ejecución de uniones permanece desactivada. No se generará ninguna request key.
+                    </div>
+                  ) : null}
                   <div className="rounded-lg border border-[#22c55e]/30 bg-[#f0fdf4] p-4"><p className="flex items-center gap-2 font-semibold text-[#166534]"><ShieldCheck size={19} /> Confirmación transaccional</p><p className="mt-2 text-sm text-[#166534]">Facturas emitidas, partidas publicadas, eventos financieros e inventario no se reescriben. Cualquier invariante distinta produce rollback total.</p></div>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Razón de la unión</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={1000} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder="Describe la evidencia y autorización empresarial (mínimo 10 caracteres)." /></label>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Escribe el nombre del cliente principal</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder={target.display_name} /><span className="mt-1 block text-xs text-black/50">Confirmación requerida: {target.display_name}</span></label>
@@ -254,8 +260,4 @@ function CommercialChoice({ title, primary, secondary, value, onChange }: { titl
 function creditLabel(value: Record<string, unknown> | null) {
   if (!value) return "Sin crédito";
   return `${value.is_credit_enabled ? "Activo" : "Inactivo"} · ${formatCurrency(Number(value.credit_limit ?? 0))} · ${value.terms_days ?? 0} días`;
-}
-
-function PlanCard({ title, items, protected: isProtected }: { title: string; items: string[]; protected?: boolean }) {
-  return <div className={`rounded-lg border p-4 ${isProtected ? "border-[#22c55e]/30 bg-[#f0fdf4]" : "border-black/10"}`}><p className="font-semibold">{title}</p><ul className="mt-2 space-y-1 text-sm text-black/60">{items.map((item) => <li key={item}>• {item}</li>)}</ul></div>;
 }

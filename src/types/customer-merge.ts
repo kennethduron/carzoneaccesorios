@@ -41,6 +41,69 @@ export type CustomerMergePreview = {
   relationPlan: { reassign: string[]; preserveHistorical: string[] };
 };
 
+export type CustomerMergeHistoryAction =
+  | "move_to_primary"
+  | "remain_historical"
+  | "preserve_immutable"
+  | "resolve_through_alias"
+  | "archive_with_secondary"
+  | "no_change"
+  | "blocked";
+
+export type CustomerMergeHistoryItem = {
+  category:
+    | "order"
+    | "invoice"
+    | "payment"
+    | "receivable"
+    | "receivable_payment"
+    | "accounting_entry"
+    | "inventory_reservation"
+    | "inventory_movement"
+    | "crm_note"
+    | "crm_followup"
+    | "checkout_request";
+  id: string;
+  reference: string;
+  title: string;
+  date: string;
+  status: string;
+  statusLabel: string;
+  amount: number | null;
+  currency: "HNL" | null;
+  sourceCustomerId: string | null;
+  sourceCustomerLabel: string;
+  action: CustomerMergeHistoryAction;
+  actionLabel: string;
+  visibilityAfterMerge: "visible_from_primary" | "owned_by_primary" | "unchanged";
+  protected: boolean;
+  details: Record<string, unknown>;
+};
+
+export type CustomerMergeHistoryMetric = {
+  state: "available" | "empty" | "not_applicable" | "not_authorized" | "query_failed";
+  count: number;
+  total?: number;
+  originalTotal?: number;
+  openBalance?: number;
+  debit?: number;
+  credit?: number;
+  quantity?: number;
+};
+
+export type CustomerMergeHistoryDetails = {
+  presentationVersion: number;
+  primaryCustomerId: string;
+  secondaryCustomerId: string;
+  primaryCommercialVersion: number;
+  secondaryCommercialVersion: number;
+  previewHash: string;
+  items: CustomerMergeHistoryItem[];
+  summary: Record<string, CustomerMergeHistoryMetric>;
+  archiveConsequence: { action: "archive_with_secondary"; label: string };
+  assurances: Array<{ code: string; label: string }>;
+};
+
 export type CustomerMergeDecision = {
   primaryValueSource: "primary" | "secondary";
   preserveOtherAsAlternate?: boolean;
@@ -66,5 +129,7 @@ export type CustomerMergeActionResult = {
   message: string;
   code?: string;
   preview?: CustomerMergePreview;
+  historyDetails?: CustomerMergeHistoryDetails;
+  executionEnabled?: boolean;
   result?: Record<string, unknown>;
 };
