@@ -1,4 +1,4 @@
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 
 export type FiscalLogoNormalizationErrorCode =
   | "invalid_format"
@@ -186,7 +186,7 @@ export async function normalizeFiscalLogo(
   input: Buffer,
   options: NormalizeFiscalLogoOptions,
 ): Promise<FiscalLogoNormalizationResult> {
-  let metadata: sharp.Metadata;
+  let metadata: Metadata;
   try {
     metadata = await sharp(input, {
       animated: false,
