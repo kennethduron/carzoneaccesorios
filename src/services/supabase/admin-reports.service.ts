@@ -14,6 +14,12 @@ import type {
   ReportReceivablePayment,
 } from "@/types/reports";
 import { normalizeAdditionalFees } from "@/utils/financial-summary";
+import {
+  normalizeReportsPageSize,
+  parsePositivePage,
+  planReportsPagination,
+  readReportsSourcePage,
+} from "@/utils/admin-reports-pagination";
 
 function toNumber(value: unknown) {
   return Number(value ?? 0);
@@ -21,20 +27,6 @@ function toNumber(value: unknown) {
 
 function cleanText(value: unknown) {
   return String(value ?? "").trim();
-}
-
-function normalizePage(value: unknown) {
-  const page = Number(value);
-  return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-}
-
-function normalizePageSize(value: unknown) {
-  const pageSize = Number(value);
-  if (!Number.isFinite(pageSize) || pageSize <= 0) {
-    return 50;
-  }
-
-  return Math.min(Math.floor(pageSize), 100);
 }
 
 function dateStart(value: string) {
@@ -362,17 +354,20 @@ function intersectOrderIds(left: string[] | null, right: string[] | null) {
 }
 
 export async function getAdminReports(input: ReportFilters = {}): Promise<AdminReportsData> {
+  return getAdminReportsAttempt(input, 0);
+}
+
+async function getAdminReportsAttempt(input: ReportFilters, attempt: number): Promise<AdminReportsData> {
   const supabase = getSupabaseAdminClient();
-  const page = normalizePage(input.page);
-  const pageSize = normalizePageSize(input.pageSize);
+  const requestedPage = parsePositivePage(input.page);
+  const pageSize = normalizeReportsPageSize(input.pageSize);
   const filters = normalizeFilters(input);
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
   const itemOrderIds = await findOrderIdsByItemFilters(filters);
   const invoiceOrderIds = await findOrderIdsByInvoiceFilters(filters);
   const filteredOrderIds = intersectOrderIds(itemOrderIds, invoiceOrderIds);
 
   if (filteredOrderIds?.length === 0) {
+    const pagination = planReportsPagination(requestedPage, pageSize, 0);
     return {
       orders: [],
       invoices: [],
@@ -381,13 +376,14 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
       payments: [],
       receivablePayments: [],
       totalRecords: 0,
-      page,
-      pageSize,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
       filters,
     };
   }
 
-  let ordersQuery = supabase
+  const buildQueries = () => {
+    let ordersQuery = supabase
     .from("orders")
     .select(
       `
@@ -630,48 +626,94 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
     receivablePaymentsQuery = receivablePaymentsQuery.in("order_id", filteredOrderIds);
   }
 
-  const [
-    { data: orders, error: ordersError, count: ordersTotal },
-    { data: invoices, error: invoicesError, count: invoicesTotal },
-    { data: products, error: productsError, count: productsTotal },
-    { data: customers, error: customersError, count: customersTotal },
-    { data: payments, error: paymentsError, count: paymentsTotal },
-    { data: receivablePayments, error: receivablePaymentsError, count: receivablePaymentsTotal },
-  ] = await Promise.all([
-    ordersQuery.order("created_at", { ascending: false }).range(from, to).returns<OrderQueryRow[]>(),
-    invoicesQuery
-      .order("invoice_date", { ascending: false, nullsFirst: false })
-      .order("issued_at", { ascending: false, nullsFirst: false })
-      .range(from, to).returns<InvoiceQueryRow[]>(),
-    productsQuery.order("name", { ascending: true }).range(from, to).returns<ProductQueryRow[]>(),
-    customersQuery.order("created_at", { ascending: false }).range(from, to).returns<ReportCustomer[]>(),
-    paymentsQuery.order("created_at", { ascending: false }).range(from, to).returns<PaymentQueryRow[]>(),
-    receivablePaymentsQuery.order("received_at", { ascending: false }).range(from, to).returns<ReceivablePaymentQueryRow[]>(),
+    return { ordersQuery, invoicesQuery, productsQuery, customersQuery, paymentsQuery, receivablePaymentsQuery };
+  };
+
+  const countQueries = buildQueries();
+  const countResults = await Promise.all([
+    countQueries.ordersQuery.limit(0),
+    countQueries.invoicesQuery.limit(0),
+    countQueries.productsQuery.limit(0),
+    countQueries.customersQuery.limit(0),
+    countQueries.paymentsQuery.limit(0),
+    countQueries.receivablePaymentsQuery.limit(0),
   ]);
 
-  if (ordersError) {
-    throw new Error(ordersError.message);
+  const countError = countResults.find((result) => result.error)?.error;
+  if (countError) {
+    throw new Error(countError.message);
   }
 
-  if (invoicesError) {
-    throw new Error(invoicesError.message);
+  const [ordersTotal, invoicesTotal, productsTotal, customersTotal, paymentsTotal, receivablePaymentsTotal] =
+    countResults.map((result) => result.count ?? 0);
+  const totalRecords = Math.max(
+    ordersTotal,
+    invoicesTotal,
+    productsTotal,
+    customersTotal,
+    paymentsTotal,
+    receivablePaymentsTotal,
+  );
+  const pagination = planReportsPagination(requestedPage, pageSize, totalRecords);
+  const reportQueries = buildQueries();
+
+  const [ordersRead, invoicesRead, productsRead, customersRead, paymentsRead, receivablePaymentsRead] =
+    await Promise.all([
+      readReportsSourcePage<OrderQueryRow>(ordersTotal, pagination, (from, to) =>
+        reportQueries.ordersQuery.order("created_at", { ascending: false }).range(from, to).returns<OrderQueryRow[]>(),
+      ),
+      readReportsSourcePage<InvoiceQueryRow>(invoicesTotal, pagination, (from, to) =>
+        reportQueries.invoicesQuery
+          .order("invoice_date", { ascending: false, nullsFirst: false })
+          .order("issued_at", { ascending: false, nullsFirst: false })
+          .range(from, to)
+          .returns<InvoiceQueryRow[]>(),
+      ),
+      readReportsSourcePage<ProductQueryRow>(productsTotal, pagination, (from, to) =>
+        reportQueries.productsQuery.order("name", { ascending: true }).range(from, to).returns<ProductQueryRow[]>(),
+      ),
+      readReportsSourcePage<ReportCustomer>(customersTotal, pagination, (from, to) =>
+        reportQueries.customersQuery.order("created_at", { ascending: false }).range(from, to).returns<ReportCustomer[]>(),
+      ),
+      readReportsSourcePage<PaymentQueryRow>(paymentsTotal, pagination, (from, to) =>
+        reportQueries.paymentsQuery.order("created_at", { ascending: false }).range(from, to).returns<PaymentQueryRow[]>(),
+      ),
+      readReportsSourcePage<ReceivablePaymentQueryRow>(receivablePaymentsTotal, pagination, (from, to) =>
+        reportQueries.receivablePaymentsQuery
+          .order("received_at", { ascending: false })
+          .range(from, to)
+          .returns<ReceivablePaymentQueryRow[]>(),
+      ),
+    ]);
+
+  const pageReads = [ordersRead, invoicesRead, productsRead, customersRead, paymentsRead, receivablePaymentsRead];
+  const rangeInvalidated = pageReads.some((result) => result.rangeInvalidated);
+  const pageBecameEmpty = pagination.page > 1 && pageReads.every((result) => result.rows.length === 0);
+
+  if (rangeInvalidated || pageBecameEmpty) {
+    if (attempt === 0) {
+      return getAdminReportsAttempt(input, 1);
+    }
+
+    if (pagination.page > 1 && attempt === 1) {
+      return getAdminReportsAttempt({ ...input, page: 1 }, 2);
+    }
+
+    throw new Error("Report pagination changed repeatedly while loading. Please retry.");
   }
 
-  if (productsError) {
-    throw new Error(productsError.message);
+  const readError = pageReads.find((result) => result.error)?.error;
+  if (readError) {
+    throw new Error(readError.message);
   }
 
-  if (customersError) {
-    throw new Error(customersError.message);
-  }
-
-  if (paymentsError) {
-    throw new Error(paymentsError.message);
-  }
-
-  if (receivablePaymentsError) {
-    throw new Error(receivablePaymentsError.message);
-  }
+  const orders = ordersRead.rows;
+  const invoices = invoicesRead.rows;
+  const products = productsRead.rows;
+  const customers = customersRead.rows;
+  const payments = paymentsRead.rows;
+  const receivablePayments = receivablePaymentsRead.rows;
+  const page = pagination.page;
 
   const invoiceOrderIdsForPayments = [...new Set((invoices ?? []).map((invoice) => invoice.order_id))];
   let invoicePayments: PaymentQueryRow[] = [];
@@ -713,9 +755,13 @@ export async function getAdminReports(input: ReportFilters = {}): Promise<AdminR
 }
 
 export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<AdminReportsData> {
+  return getAdminFiscalReportsAttempt(input, 0);
+}
+
+async function getAdminFiscalReportsAttempt(input: ReportFilters, attempt: number): Promise<AdminReportsData> {
   const supabase = await getSupabaseServerClient();
-  const page = normalizePage(input.page);
-  const pageSize = normalizePageSize(input.pageSize);
+  const requestedPage = parsePositivePage(input.page);
+  const pageSize = normalizeReportsPageSize(input.pageSize);
   const filters = normalizeFilters({
     ...input,
     product: "",
@@ -723,10 +769,9 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
     paymentMethod: "all",
     orderStatus: "all",
   });
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
 
-  let invoicesQuery = supabase
+  const buildInvoicesQuery = () => {
+    let invoicesQuery = supabase
     .from("invoices")
     .select(
       `
@@ -801,15 +846,42 @@ export async function getAdminFiscalReports(input: ReportFilters = {}): Promise<
     invoicesQuery = invoicesQuery.or(`customer_name.ilike.${search},customer_email.ilike.${search},customer_phone.ilike.${search},customer_rtn.ilike.${search}`);
   }
 
-  const { data: invoices, error: invoicesError, count } = await invoicesQuery
-    .order("invoice_date", { ascending: false, nullsFirst: false })
-    .order("issued_at", { ascending: false, nullsFirst: false })
-    .range(from, to)
-    .returns<InvoiceQueryRow[]>();
+    return invoicesQuery;
+  };
 
-  if (invoicesError) {
-    throw new Error(invoicesError.message);
+  const countResult = await buildInvoicesQuery().limit(0);
+  if (countResult.error) {
+    throw new Error(countResult.error.message);
   }
+
+  const count = countResult.count ?? 0;
+  const pagination = planReportsPagination(requestedPage, pageSize, count);
+  const invoicesRead = await readReportsSourcePage<InvoiceQueryRow>(count, pagination, (from, to) =>
+    buildInvoicesQuery()
+      .order("invoice_date", { ascending: false, nullsFirst: false })
+      .order("issued_at", { ascending: false, nullsFirst: false })
+      .range(from, to)
+      .returns<InvoiceQueryRow[]>(),
+  );
+
+  if (invoicesRead.rangeInvalidated || (pagination.page > 1 && invoicesRead.rows.length === 0)) {
+    if (attempt === 0) {
+      return getAdminFiscalReportsAttempt(input, 1);
+    }
+
+    if (pagination.page > 1 && attempt === 1) {
+      return getAdminFiscalReportsAttempt({ ...input, page: 1 }, 2);
+    }
+
+    throw new Error("Fiscal report pagination changed repeatedly while loading. Please retry.");
+  }
+
+  if (invoicesRead.error) {
+    throw new Error(invoicesRead.error.message);
+  }
+
+  const invoices = invoicesRead.rows;
+  const page = pagination.page;
 
   return {
     orders: [],

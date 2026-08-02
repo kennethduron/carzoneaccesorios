@@ -10,9 +10,10 @@ type PaginationControlsProps = {
   label: string;
   params?: Record<string, string | number | null | undefined>;
   pageParam?: string;
+  pageSizeParam?: number;
 };
 
-export function PaginationControls({ basePath, page, pageSize, total, label, params = {}, pageParam = "page" }: PaginationControlsProps) {
+export function PaginationControls({ basePath, page, pageSize, total, label, params = {}, pageParam = "page", pageSizeParam }: PaginationControlsProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const firstItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastItem = Math.min(page * pageSize, total);
@@ -25,6 +26,10 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
         search.set(key, String(value));
       }
     });
+
+    if (pageSizeParam) {
+      search.set("pageSize", String(pageSizeParam));
+    }
 
     if (nextPage > 1) {
       search.set(pageParam, String(nextPage));

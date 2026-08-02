@@ -10,6 +10,12 @@ import { getAdminFiscalReports, getAdminReports } from "@/services/supabase/admi
 import type { AppRole } from "@/types/auth";
 import type { ReportFilters, ReportPaymentMethod } from "@/types/reports";
 import { getFiscalAlerts } from "@/utils/fiscal";
+import {
+  buildAdminReportsUrl,
+  hasCanonicalReportsPagination,
+  normalizeReportsPageSize,
+  parsePositivePage,
+} from "@/utils/admin-reports-pagination";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +47,8 @@ export default async function AdminReportsPage({
 
   const params = await searchParams;
   const filters: ReportFilters = {
-    page: Number(readParam(params.page) ?? 1),
-    pageSize: 50,
+    page: parsePositivePage(params.page),
+    pageSize: normalizeReportsPageSize(params.pageSize),
     startDate: readParam(params.startDate),
     endDate: readParam(params.endDate),
     customer: readParam(params.customer),
@@ -55,10 +61,15 @@ export default async function AdminReportsPage({
     orderStatus: readParam(params.orderStatus) as ReportFilters["orderStatus"],
   };
 
-  const [reports, fiscalSettings] = await Promise.all([
-    accessMode === "fiscal" ? getAdminFiscalReports(filters) : getAdminReports(filters),
-    accessMode === "full" || accessMode === "fiscal" ? getFiscalSettings() : Promise.resolve(null),
-  ]);
+  const reports = accessMode === "fiscal" ? await getAdminFiscalReports(filters) : await getAdminReports(filters);
+
+  if (!hasCanonicalReportsPagination(params, reports.page, reports.pageSize)) {
+    redirect(buildAdminReportsUrl(params, reports.page, reports.pageSize));
+  }
+
+  const fiscalSettings = accessMode === "full" || accessMode === "fiscal"
+    ? await getFiscalSettings()
+    : null;
   const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, reports.invoices) : [];
 
   return (

@@ -76,11 +76,11 @@ assert.match(
   /export type ReportReceivablePayment = \{[\s\S]*?order_id:\s*string\s*\|\s*null;[\s\S]*?\n\};/,
 );
 assert.match(service, /order_id:\s*row\.order_id/);
-assert.match(service, /receivablePaymentsQuery\.order\("received_at", \{ ascending: false \}\)/);
+assert.match(service, /reportQueries\.receivablePaymentsQuery[\s\S]*?\.order\("received_at", \{ ascending: false \}\)/);
 assert.match(dashboard, /buildReceivablePaymentReportRow\(payment/);
 assert.doesNotMatch(dashboard, /payment\.order_id\.slice/);
-assert.match(dashboard, /buildCsv\(currentReport\.columns, visibleReportRows\)/);
-assert.match(dashboard, /buildExcelTable\(currentReport\.label, currentReport\.columns, visibleReportRows\)/);
+assert.match(dashboard, /buildAdminReportCsv\(currentReport\.columns, visibleReportRows\)/);
+assert.match(dashboard, /buildAdminReportExcelTable\(currentReport\.label, currentReport\.columns, visibleReportRows\)/);
 assert.match(dashboard, /rows:\s*visibleReportRows\.map/);
 assert.match(dashboard, /generateAdminReportPdf\(\{/);
 assert.match(reportsPdf, /body:\s*input\.rows/);

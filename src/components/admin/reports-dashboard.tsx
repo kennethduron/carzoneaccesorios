@@ -15,7 +15,9 @@ import type { AdminReportsData, ReportAccessMode, ReportOrder } from "@/types/re
 import { invoiceNumberValue } from "@/utils/fiscal";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatHnDate, formatHnMonth } from "@/utils/format";
+import { buildAdminReportCsv, buildAdminReportExcelTable } from "@/utils/admin-report-tabular-export";
 import { generateAdminReportPdf, ReportsPdfBrandingError } from "@/utils/admin-reports-pdf";
+import { defaultAdminReportsPageSize } from "@/utils/admin-reports-pagination";
 import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -166,42 +168,6 @@ function downloadBlob(content: string, fileName: string, type: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
-}
-
-function csvEscape(value: string | number) {
-  return `"${String(value).replaceAll('"', '""')}"`;
-}
-
-function buildCsv(columns: string[], rows: ReportRow[]) {
-  return [columns.map(csvEscape).join(","), ...rows.map((row) => columns.map((column) => csvEscape(row[column] ?? "")).join(","))].join("\n");
-}
-
-function htmlEscape(value: string | number) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function buildExcelTable(title: string, columns: string[], rows: ReportRow[]) {
-  const header = columns.map((column) => `<th>${htmlEscape(column)}</th>`).join("");
-  const body = rows
-    .map((row) => `<tr>${columns.map((column) => `<td>${htmlEscape(row[column] ?? "")}</td>`).join("")}</tr>`)
-    .join("");
-
-  return `
-    <html>
-      <head><meta charset="utf-8" /></head>
-      <body>
-        <h1>${htmlEscape(title)}</h1>
-        <table border="1">
-          <thead><tr>${header}</tr></thead>
-          <tbody>${body}</tbody>
-        </table>
-      </body>
-    </html>
-  `;
 }
 
 function reportParams(filters: AdminReportsData["filters"]) {
@@ -885,7 +851,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     }
 
     downloadBlob(
-      buildCsv(currentReport.columns, visibleReportRows),
+      buildAdminReportCsv(currentReport.columns, visibleReportRows),
       `car-zone-${currentReport.key}.csv`,
       "text/csv;charset=utf-8",
     );
@@ -897,7 +863,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     }
 
     downloadBlob(
-      buildExcelTable(currentReport.label, currentReport.columns, visibleReportRows),
+      buildAdminReportExcelTable(currentReport.label, currentReport.columns, visibleReportRows),
       `car-zone-${currentReport.key}.xls`,
       "application/vnd.ms-excel;charset=utf-8",
     );
@@ -940,6 +906,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         total={data.totalRecords}
         label="registros filtrados"
         params={reportParams(data.filters)}
+        pageSizeParam={data.pageSize === defaultAdminReportsPageSize ? undefined : data.pageSize}
       />
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -968,6 +935,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
           <h2 className="font-semibold">Filtros globales</h2>
         </div>
         <form className="grid gap-3 lg:grid-cols-4">
+          {data.pageSize !== defaultAdminReportsPageSize ? <input type="hidden" name="pageSize" value={data.pageSize} /> : null}
           <Field label="Fecha inicial">
             <Input name="startDate" type="date" defaultValue={data.filters.startDate} />
           </Field>
