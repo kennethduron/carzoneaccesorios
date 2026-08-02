@@ -16,6 +16,7 @@
     "test:cart-hydration": "node scripts/test-cart-hydration.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
+    "test:admin-reports-historical-payments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-reports-historical-payments.mjs",
     "test:accounting-reversal-admin-search": "node scripts/test-accounting-reversal-admin-search.mjs",
     "test:invoice-logo": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-invoice-logo.mjs",
     "test:invoice-logo:pdf": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-invoice-logo-pdf.mjs",

@@ -165,7 +165,7 @@ export type ReportReceivablePayment = {
   customer_id: string;
   customer_name: string;
   customer_email: string | null;
-  order_id: string;
+  order_id: string | null;
   order_number: string | null;
   original_amount: number;
   total_paid: number;

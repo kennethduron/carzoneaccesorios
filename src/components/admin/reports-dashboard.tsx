@@ -3,6 +3,10 @@
 import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, Printer, Search } from "lucide-react";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+import {
+  buildReceivablePaymentReportRow,
+  reportRowMatchesSearch,
+} from "@/components/admin/report-receivable-payment";
 import { Button, Input } from "@/components/ui";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { InvoiceStatus } from "@/types/invoices";
@@ -216,6 +220,7 @@ function reportParams(filters: AdminReportsData["filters"]) {
 export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechnicalExports }: ReportsDashboardProps) {
   const [activeReport, setActiveReport] = useState<ReportKey>(accessMode === "fiscal" ? "invoiceDetails" : accessMode === "full" ? "soldProductsDetail" : "topProducts");
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [reportSearch, setReportSearch] = useState("");
   const canExport = accessMode === "full" || accessMode === "fiscal";
 
   const paymentByOrder = useMemo(() => {
@@ -770,19 +775,14 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         columns: ["Cliente", "Pedido", "Total original", "Total abonado", "Saldo pendiente", "Estado", "Fecha de vencimiento", "Método de abono", "Referencia", "Fecha de abono", "Monto de abono"],
         rows: data.receivablePayments
           .filter((payment) => !payment.voided_at)
-          .map((payment) => ({
-            Cliente: payment.customer_name,
-            Pedido: payment.order_number ?? payment.order_id.slice(0, 8),
-            "Total original": formatCurrency(payment.original_amount),
-            "Total abonado": formatCurrency(payment.total_paid),
-            "Saldo pendiente": formatCurrency(payment.balance_due),
-            Estado: receivableStatusLabels[payment.receivable_status] ?? "Abierto",
-            "Fecha de vencimiento": formatDate(payment.due_date),
-            "Método de abono": reportPaymentLabel(payment.payment_method),
-            Referencia: payment.reference ?? "-",
-            "Fecha de abono": formatDate(payment.received_at),
-            "Monto de abono": formatCurrency(payment.amount),
-          })),
+          .map((payment) =>
+            buildReceivablePaymentReportRow(payment, {
+              currency: formatCurrency,
+              date: formatDate,
+              paymentMethod: reportPaymentLabel,
+              status: (status) => receivableStatusLabels[status] ?? "Abierto",
+            }),
+          ),
         financial: true,
       },
       {
@@ -871,6 +871,10 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
   ]);
 
   const currentReport = reportDefinitions.find((report) => report.key === activeReport) ?? reportDefinitions[0];
+  const visibleReportRows = useMemo(
+    () => currentReport.rows.filter((row) => reportRowMatchesSearch(row, reportSearch)),
+    [currentReport.rows, reportSearch],
+  );
 
   function exportCsv() {
     if (!canExport || !canUseTechnicalExports) {
@@ -878,7 +882,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     }
 
     downloadBlob(
-      buildCsv(currentReport.columns, currentReport.rows),
+      buildCsv(currentReport.columns, visibleReportRows),
       `car-zone-${currentReport.key}.csv`,
       "text/csv;charset=utf-8",
     );
@@ -890,7 +894,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
     }
 
     downloadBlob(
-      buildExcelTable(currentReport.label, currentReport.columns, currentReport.rows),
+      buildExcelTable(currentReport.label, currentReport.columns, visibleReportRows),
       `car-zone-${currentReport.key}.xls`,
       "application/vnd.ms-excel;charset=utf-8",
     );
@@ -915,7 +919,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
       autoTable(doc, {
         startY: 30,
         head: [currentReport.columns],
-        body: currentReport.rows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
+        body: visibleReportRows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
         styles: { fontSize: currentReport.columns.length > 8 ? 6 : 8, cellWidth: "wrap" },
         headStyles: { fillColor: [36, 106, 115] },
       });
@@ -1092,6 +1096,16 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
         ))}
       </div>
 
+      <label className="block rounded-lg border border-black/10 bg-white p-4">
+        <span className="mb-1 block text-xs font-medium uppercase text-black/50">Buscar en el reporte activo</span>
+        <Input
+          type="search"
+          value={reportSearch}
+          onChange={(event) => setReportSearch(event.target.value)}
+          placeholder="Cliente, pedido, Cuenta histórica, referencia, fecha, monto o método"
+        />
+      </label>
+
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
         <div className="flex flex-col justify-between gap-3 border-b border-black/10 p-5 sm:flex-row sm:items-center">
           <div>
@@ -1101,13 +1115,13 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
             </div>
             <p className="mt-1 text-sm text-black/55">{currentReport.description}</p>
           </div>
-          <p className="text-sm font-medium text-black/50">{currentReport.rows.length.toLocaleString("es-HN")} filas</p>
+          <p className="text-sm font-medium text-black/50">{visibleReportRows.length.toLocaleString("es-HN")} filas</p>
         </div>
         <div className="grid gap-3 p-3 md:hidden">
-          {currentReport.rows.length === 0 ? (
+          {visibleReportRows.length === 0 ? (
             <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/50">No hay datos para este reporte.</p>
           ) : (
-            currentReport.rows.map((row, index) => {
+            visibleReportRows.map((row, index) => {
               const [titleColumn, ...detailColumns] = currentReport.columns;
               const visibleDetails = detailColumns.slice(0, 8);
 
@@ -1142,14 +1156,14 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
-              {currentReport.rows.length === 0 ? (
+              {visibleReportRows.length === 0 ? (
                 <tr>
                   <td className="px-4 py-6 text-center text-black/50" colSpan={currentReport.columns.length}>
                     No hay datos para este reporte.
                   </td>
                 </tr>
               ) : (
-                currentReport.rows.map((row, index) => (
+                visibleReportRows.map((row, index) => (
                   <tr key={`${currentReport.key}-${index}`}>
                     {currentReport.columns.map((column) => (
                       <td key={column} className="whitespace-pre-line px-4 py-3 align-top">
