@@ -70,6 +70,7 @@ const [dashboard, service, reportTypes] = await Promise.all([
   readFile(new URL("../src/types/reports.ts", import.meta.url), "utf8"),
 ]);
 
+const reportsPdf = await readFile(new URL("../src/utils/admin-reports-pdf.ts", import.meta.url), "utf8");
 assert.match(
   reportTypes,
   /export type ReportReceivablePayment = \{[\s\S]*?order_id:\s*string\s*\|\s*null;[\s\S]*?\n\};/,
@@ -80,7 +81,9 @@ assert.match(dashboard, /buildReceivablePaymentReportRow\(payment/);
 assert.doesNotMatch(dashboard, /payment\.order_id\.slice/);
 assert.match(dashboard, /buildCsv\(currentReport\.columns, visibleReportRows\)/);
 assert.match(dashboard, /buildExcelTable\(currentReport\.label, currentReport\.columns, visibleReportRows\)/);
-assert.match(dashboard, /body:\s*visibleReportRows\.map/);
+assert.match(dashboard, /rows:\s*visibleReportRows\.map/);
+assert.match(dashboard, /generateAdminReportPdf\(\{/);
+assert.match(reportsPdf, /body:\s*input\.rows/);
 assert.match(dashboard, /<PaginationControls/);
 assert.match(dashboard, /name="paymentMethod"/);
 assert.match(dashboard, /name="startDate"/);

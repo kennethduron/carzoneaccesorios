@@ -8,12 +8,14 @@ import {
   reportRowMatchesSearch,
 } from "@/components/admin/report-receivable-payment";
 import { Button, Input } from "@/components/ui";
+import { useToast } from "@/contexts/toast-context";
 import type { FiscalSettings } from "@/types/fiscal";
 import type { InvoiceStatus } from "@/types/invoices";
 import type { AdminReportsData, ReportAccessMode, ReportOrder } from "@/types/reports";
 import { invoiceNumberValue } from "@/utils/fiscal";
 import { additionalFeesTotal } from "@/utils/financial-summary";
 import { formatHnDate, formatHnMonth } from "@/utils/format";
+import { generateAdminReportPdf, ReportsPdfBrandingError } from "@/utils/admin-reports-pdf";
 import { detailedPaymentMethodLabels, paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -221,6 +223,7 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
   const [activeReport, setActiveReport] = useState<ReportKey>(accessMode === "fiscal" ? "invoiceDetails" : accessMode === "full" ? "soldProductsDetail" : "topProducts");
   const [exportingPdf, setExportingPdf] = useState(false);
   const [reportSearch, setReportSearch] = useState("");
+  const toast = useToast();
   const canExport = accessMode === "full" || accessMode === "fiscal";
 
   const paymentByOrder = useMemo(() => {
@@ -907,23 +910,22 @@ export function ReportsDashboard({ data, fiscalSettings, accessMode, canUseTechn
 
     setExportingPdf(true);
     try {
-      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-        import("jspdf"),
-        import("jspdf-autotable"),
-      ]);
-      const doc = new jsPDF({ orientation: currentReport.columns.length > 5 ? "landscape" : "portrait" });
-      doc.setFontSize(16);
-      doc.text(`Car Zone Accesorios - ${currentReport.label}`, 14, 16);
-      doc.setFontSize(9);
-      doc.text(`Rango: ${data.filters.startDate || "inicio"} a ${data.filters.endDate || "hoy"}`, 14, 23);
-      autoTable(doc, {
-        startY: 30,
-        head: [currentReport.columns],
-        body: visibleReportRows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
-        styles: { fontSize: currentReport.columns.length > 8 ? 6 : 8, cellWidth: "wrap" },
-        headStyles: { fillColor: [36, 106, 115] },
+      const { doc } = await generateAdminReportPdf({
+        reportKey: currentReport.key,
+        reportLabel: currentReport.label,
+        columns: currentReport.columns,
+        rows: visibleReportRows.map((row) => currentReport.columns.map((column) => String(row[column] ?? ""))),
+        startDate: data.filters.startDate,
+        endDate: data.filters.endDate,
+        logoUrl: fiscalSettings?.logo_url,
       });
       doc.save(`car-zone-${currentReport.key}.pdf`);
+    } catch (error) {
+      toast.error(
+        error instanceof ReportsPdfBrandingError
+          ? error.message
+          : "No se pudo generar el PDF del reporte. Intenta nuevamente.",
+      );
     } finally {
       setExportingPdf(false);
     }
