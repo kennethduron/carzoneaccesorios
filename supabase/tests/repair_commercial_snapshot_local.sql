@@ -287,6 +287,8 @@ $$;
 
 rollback;
 
+select plan(1);
+
 do $$
 begin
   if exists (select 1 from public.orders where order_number = 'REPAIR-ORDER-001')
@@ -295,5 +297,8 @@ begin
   end if;
 end;
 $$;
+
+select pass('Commercial snapshot repair transaction and zero-residue contract');
+select * from finish();
 
 \echo 'Commercial snapshot repair transaction, replay, conflict, preservation, audit and zero-residue checks passed.'

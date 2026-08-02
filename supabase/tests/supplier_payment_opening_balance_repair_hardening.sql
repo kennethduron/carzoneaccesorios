@@ -1,7 +1,8 @@
 \set ON_ERROR_STOP on
 
 begin;
-\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql
+select plan(1);
+\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql.inc
 
 create or replace function pg_temp.expect_repair_error(
   case_name text,
@@ -549,6 +550,9 @@ begin
   end if;
 end;
 $$;
+
+select pass('Supplier payment opening-balance repair hardening contract');
+select * from finish();
 
 rollback;
 

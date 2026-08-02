@@ -2,7 +2,7 @@
 
 begin;
 select no_plan();
-\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql
+\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql.inc
 
 insert into public.accounting_opening_balance_batches (
   id, journal_entry_id, control_line_id, control_account_id, batch_key,

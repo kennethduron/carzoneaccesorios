@@ -2,7 +2,7 @@
 
 begin;
 select plan(1);
-\ir fixtures/edgar_opening_balance_supplier_payment_repair_fixture.sql
+\ir fixtures/edgar_opening_balance_supplier_payment_repair_fixture.sql.inc
 
 create or replace function pg_temp.repair_key()
 returns text

@@ -2,6 +2,8 @@
 
 begin;
 
+select plan(1);
+
 do $$
 begin
   if public.supplier_payment_accounting_occurred_at(
@@ -680,6 +682,9 @@ begin
   ) then raise exception 'The payable changed.'; end if;
 end;
 $$;
+
+select pass('Supplier payment late-entry accounting transactional contract');
+select * from finish();
 
 rollback;
 

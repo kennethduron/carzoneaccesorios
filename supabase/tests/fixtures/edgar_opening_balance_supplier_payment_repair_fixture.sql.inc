@@ -1,4 +1,4 @@
-\ir supplier_payment_opening_balance_repair_fixture.sql
+\ir supplier_payment_opening_balance_repair_fixture.sql.inc
 
 -- Extend the local-only opening-balance fixture with the exact audited Edgar
 -- payment and the already-completed CROMOS reference repair.

@@ -400,6 +400,8 @@ reset role;
 
 rollback;
 
+select plan(1);
+
 do $$
 begin
   if exists (select 1 from auth.users where email like 'order_terms_%@example.invalid')
@@ -409,4 +411,7 @@ begin
   end if;
 end;
 $$;
+
+select pass('Fiscal V2 rollback, replay, recovery, correlativo and zero-residue contract');
+select * from finish();
 \echo 'FISCAL_V2 local rollback, request replay, existing-invoice recovery, correlativo and zero-residue checks passed.'

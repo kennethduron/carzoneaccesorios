@@ -2,6 +2,8 @@
 
 begin;
 
+select plan(1);
+
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -198,6 +200,9 @@ rollback to savepoint technical_failure_contract;
 
 -- The production-specific exact repair is covered by
 -- supplier_payment_opening_balance_repair_hardening.sql.
+
+select pass('Accounting automation V2 resilience contract');
+select * from finish();
 
 rollback;
 

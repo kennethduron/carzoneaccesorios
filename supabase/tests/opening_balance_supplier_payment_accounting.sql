@@ -2,7 +2,7 @@
 
 begin;
 select plan(1);
-\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql
+\ir fixtures/supplier_payment_opening_balance_repair_fixture.sql.inc
 
 -- This transaction reconstructs the protected 26-payable opening batch.
 insert into public.accounting_opening_balance_batches (
