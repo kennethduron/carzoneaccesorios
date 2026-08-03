@@ -236,6 +236,8 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
 
   function executeFormAction(action: PendingFormAction) {
     setPendingFormAction(null);
+    setForm(initialForm);
+    setFormMessage("");
     if (action.kind === "select") {
       void loadContext(action.customerId, true);
       return;

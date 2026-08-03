@@ -60,6 +60,7 @@ assert.match(customer, /contextRevisionRef\.current/);
 assert.match(customer, /aria-label="Quitar cliente seleccionado"/);
 assert.match(customer, /title="Quitar cliente"/);
 assert.match(customer, /onCustomerContextChange\?\.\(null\)/);
+assert.match(customer, /setPendingFormAction\(null\);\s+setForm\(initialForm\);\s+setFormMessage\(""\);/);
 
 assert.doesNotMatch(searchRoute, /includeInactive/);
 assert.match(customerService, /p_include_inactive: false/);
