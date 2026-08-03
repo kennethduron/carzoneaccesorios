@@ -1,5 +1,6 @@
 import "server-only";
 
+import { applyPosDraftInventoryModes } from "@/lib/pos/inventory-mode";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   PosChargeCapabilities,
@@ -153,18 +154,7 @@ async function enrichDraftInventoryModes(
     ((data ?? []) as Array<{ product_id: string; tracks_inventory: boolean }>)
       .map((row) => [row.product_id, row.tracks_inventory]),
   );
-  return {
-    ...draft,
-    items: draft.items.map((item) => {
-      const tracksInventory = modes.get(item.productId) ?? true;
-      return tracksInventory ? { ...item, tracksInventory } : {
-        ...item,
-        tracksInventory,
-        stockStatus: "available" as const,
-        validationStatus: "valid" as const,
-      };
-    }),
-  };
+  return applyPosDraftInventoryModes(draft, modes);
 }
 
 export async function searchPosProducts(input: { query: string; customerId: string; expectedCustomerCommercialVersion: number; categoryId?: string | null; brand?: string | null; includeUnavailable: boolean; limit: number; offset: number }): Promise<PosProductSearchPage> {
