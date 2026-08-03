@@ -54,6 +54,11 @@ select public.route_accounting_fact_v2(
 );
 
 update public.accounting_outbox_v2
+set accounting_date = (now() at time zone 'America/Tegucigalpa')::date,
+    accounting_date_source = 'resilience_test_explicit_date'
+where source_id = '93000000-0000-4000-8000-000000000001';
+
+update public.accounting_outbox_v2
 set status = 'processing', lease_until = now() + interval '15 minutes',
     locked_by = 'other-worker', attempt_count = 1
 where source_id = '93000000-0000-4000-8000-000000000001';
@@ -94,12 +99,14 @@ $$;
 -- partially-created draft.
 insert into public.accounting_outbox_v2 (
   feature_key, topic, source_type, source_id, event_purpose, posting_version,
-  scenario, idempotency_key, occurred_at, cutover_at, status, actor_id
+  scenario, idempotency_key, occurred_at, cutover_at, status, actor_id,
+  accounting_date, accounting_date_source
 ) values (
   'sales_draft_v2', 'sales.recognized', 'order',
   '93000000-0000-4000-8000-000000000002', 'sale_recognized', 'v2',
   'resilience_backoff', 'resilience-backoff-v2', now(), now() - interval '1 minute',
-  'queued', null
+  'queued', null, (now() at time zone 'America/Tegucigalpa')::date,
+  'resilience_test_explicit_date'
 );
 update public.accounting_feature_flags set updated_by = null where key = 'sales_draft_v2';
 

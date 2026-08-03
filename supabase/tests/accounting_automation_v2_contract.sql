@@ -122,13 +122,15 @@ insert into public.products (
 
 insert into public.orders (
   id, order_number, user_id, customer_name, phone, delivery_address,
-  payment_method, price_mode, subtotal, tax, shipping_total, total, status
+  payment_method, price_mode, subtotal, tax, shipping_total, total, status,
+  requested_invoice_date
 ) values (
   '83000000-0000-4000-8000-000000000002',
   'V2-ORDER-001',
   '81000000-0000-4000-8000-000000000001',
   'Cliente fixture V2', '99999999', 'Direccion fixture',
-  'bank_transfer', 'retail', 869.57, 130.43, 0, 1000, 'recibido'
+  'bank_transfer', 'retail', 869.57, 130.43, 0, 1000, 'recibido',
+  (now() at time zone 'America/Tegucigalpa')::date
 );
 
 insert into public.order_items (
@@ -199,6 +201,29 @@ begin
     select 1 from public.journal_entries
     where source_type = 'financial_event' and status <> 'borrador'
   ) then raise exception 'A V2 worker published a journal entry.'; end if;
+end;
+$$;
+
+do $$
+declare expected_date date;
+begin
+  select requested_invoice_date into strict expected_date
+  from public.orders
+  where id = '83000000-0000-4000-8000-000000000002';
+  if exists (
+    select 1
+    from public.accounting_outbox_v2 box
+    left join public.financial_events event on event.id = box.financial_event_id
+    left join public.journal_entries entry on entry.id = box.journal_entry_id
+    where box.source_type in ('order', 'inventory_movement')
+      and (
+        box.accounting_date is distinct from expected_date
+        or event.accounting_date is distinct from expected_date
+        or entry.entry_date is distinct from expected_date
+      )
+  ) then
+    raise exception 'Sale/COGS did not preserve one canonical document date through outbox, event and draft.';
+  end if;
 end;
 $$;
 

@@ -18,7 +18,7 @@ begin
       '2026-07-29 14:08:18+00',
       '2026-07-28 20:30:00+00'
     ) <> '2026-07-29 14:08:18+00'::timestamptz
-  then raise exception 'A late-recorded payment did not route at created_at.'; end if;
+  then raise exception 'A late-recorded payment did not retain technical routing eligibility.'; end if;
 
   if public.supplier_payment_accounting_occurred_at(
       '2026-07-13 06:00:00+00',
@@ -32,7 +32,7 @@ begin
       '2026-07-29 14:08:18+00',
       '2026-07-28 20:30:00+00'
     ) <> '2026-07-29 14:08:18+00'::timestamptz
-  then raise exception 'A null paid_at did not safely fall back to created_at.'; end if;
+  then raise exception 'A null paid_at did not retain technical routing eligibility.'; end if;
 end;
 $$;
 
@@ -161,7 +161,7 @@ insert into public.journal_entries (
   created_by, posted_by, posted_at
 ) values (
   'a5000000-0000-4000-8000-000000000001',
-  'LATE-AP-RECOGNITION', date '2026-07-28',
+  'LATE-AP-RECOGNITION', date '2026-07-12',
   'Reconocimiento CxP fixture', 'borrador', 'financial_event',
   'a6000000-0000-4000-8000-000000000001',
   'a1000000-0000-4000-8000-000000000001',
@@ -261,13 +261,13 @@ begin
   );
 
   if preview_row->>'classification' <> 'eligible_late_recorded'
-    or preview_row->>'proposed_journal_date' <> '2026-07-29'
+    or preview_row->>'proposed_journal_date' <> '2026-07-13'
     or preview_row->>'routing_origin' <> 'late_recorded_supplier_payment'
     or (preview_row->>'amount')::numeric <> 3200
     or (preview_row->>'balanced')::boolean is not true
     or preview_row->'preview_lines'->0->>'side' <> 'debit'
     or preview_row->'preview_lines'->1->>'side' <> 'credit'
-    or preview_row->'payable_recognition'->>'entry_date' <> '2026-07-28'
+    or preview_row->'payable_recognition'->>'entry_date' <> '2026-07-12'
     or char_length(preview_row->>'expected_fingerprint') <> 64
   then raise exception 'Late payment preview is not canonical: %', preview_row; end if;
 
@@ -405,7 +405,7 @@ begin
     select 1
     from public.journal_entries entry
     where entry.id = draft_id
-      and entry.entry_date = date '2026-07-29'
+      and entry.entry_date = date '2026-07-13'
       and entry.status = 'borrador'
       and entry.posted_at is null
       and entry.posted_by is null
@@ -473,7 +473,7 @@ insert into public.journal_entries (
   created_by, posted_by, posted_at
 ) values (
   'a5000000-0000-4000-8000-000000000002',
-  'LATE-AP-RECOGNITION-2', date '2026-07-28',
+  'LATE-AP-RECOGNITION-2', date '2026-07-12',
   'Reconocimiento CxP fixture 2', 'borrador', 'financial_event',
   'a6000000-0000-4000-8000-000000000003',
   'a1000000-0000-4000-8000-000000000001',

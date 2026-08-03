@@ -443,8 +443,8 @@ begin
     or edgar->>'classification' <> 'eligible_late_recorded'
     or kool->>'recognition_origin' <> 'opening_balance_control'
     or edgar->>'recognition_origin' <> 'opening_balance_control'
-    or kool->>'proposed_journal_date' <> '2026-07-30'
-    or edgar->>'proposed_journal_date' <> '2026-07-30'
+    or kool->>'proposed_journal_date' <> '2026-07-17'
+    or edgar->>'proposed_journal_date' <> '2026-07-16'
     or old_edgar->>'classification' <> 'already_accounted'
     or (kool->>'total_debit')::numeric <> 11746.50
     or (edgar->>'total_credit')::numeric <> 7500

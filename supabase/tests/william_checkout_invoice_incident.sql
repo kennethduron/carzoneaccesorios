@@ -52,14 +52,16 @@ where key = 'sales_draft_v2';
 insert into public.accounting_outbox_v2 (
   id, feature_key, topic, source_type, source_id, event_purpose,
   posting_version, scenario, idempotency_key, occurred_at, cutover_at,
-  status, actor_id
+  status, actor_id, accounting_date, accounting_date_source
 ) values (
   'a2000000-0000-4000-8000-000000000001',
   'sales_draft_v2', 'sales.recognized', 'order',
   'a3000000-0000-4000-8000-000000000001', 'sale_recognized',
   'v2', 'unsupported_incident_fixture', 'william-incident-worker-fixture-v1',
   now(), now() - interval '1 minute', 'queued',
-  'a1000000-0000-4000-8000-000000000001'
+  'a1000000-0000-4000-8000-000000000001',
+  (now() at time zone 'America/Tegucigalpa')::date,
+  'incident_test_explicit_date'
 );
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
