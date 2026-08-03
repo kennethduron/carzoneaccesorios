@@ -341,12 +341,16 @@ export function CrmManager({
   const [profileCustomerId, setProfileCustomerId] = useState<string | null>(null);
   const [customerProfile, setCustomerProfile] = useState<CrmCustomerProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [profileRefreshing, setProfileRefreshing] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
   const openedInitialCustomerRef = useRef<string | null>(null);
+  const profileCustomerIdRef = useRef<string | null>(null);
+  const profileRequestRevisionRef = useRef(0);
+  const profileMutationLocksRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (focus !== "customers") return;
@@ -373,15 +377,18 @@ export function CrmManager({
   useEffect(() => {
     if (!initialCustomerId || openedInitialCustomerRef.current === initialCustomerId) return;
     openedInitialCustomerRef.current = initialCustomerId;
+    const requestRevision = ++profileRequestRevisionRef.current;
     let active = true;
+    profileCustomerIdRef.current = initialCustomerId;
     setSelectedCustomerId(initialCustomerId);
     setProfileCustomerId(initialCustomerId);
     setCustomerProfile(null);
     setProfileError(null);
+    setProfileRefreshing(false);
     setProfileLoading(true);
 
     void getCustomerProfileAction(initialCustomerId).then((result) => {
-      if (!active) return;
+      if (!active || requestRevision !== profileRequestRevisionRef.current || profileCustomerIdRef.current !== initialCustomerId) return;
       if (result.ok && result.profile) {
         setCustomerProfile(result.profile);
       } else {
@@ -701,7 +708,9 @@ export function CrmManager({
 
   async function approveWholesaleCustomer(customerOrId: CrmCustomerOption | string, wholesaleCustomerType: WholesaleCustomerType) {
     const customer = typeof customerOrId === "string"
-      ? data.customers.find((item) => item.id === customerOrId)
+      ? customerProfile?.customer.id === customerOrId
+        ? customerProfile.customer
+        : data.customers.find((item) => item.id === customerOrId)
       : customerOrId;
     if (!customer) {
       toast.error("No pudimos cargar las condiciones comerciales del cliente.");
@@ -718,7 +727,7 @@ export function CrmManager({
     });
     if (!confirmed) return;
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await approveWholesaleRequestAction({
         requestKey: crypto.randomUUID(),
         customerId: customer.id,
@@ -727,18 +736,12 @@ export function CrmManager({
         expectedWholesaleStatus: "pending",
         expectedRequestedAt: customer.wholesale_requested_at,
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else {
-        toast.error(result.message);
-      }
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
   function grantWholesaleCustomer(customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType, reason: string) {
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await grantWholesaleAccessDirectlyAction({
         requestKey: crypto.randomUUID(),
         customerId: customer.id,
@@ -748,13 +751,7 @@ export function CrmManager({
         expectedRequestedAt: customer.wholesale_requested_at,
         reason,
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else {
-        toast.error(result.message);
-      }
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
@@ -768,7 +765,7 @@ export function CrmManager({
     });
     if (!confirmed) return;
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await changeWholesaleCustomerTypeAction({
         requestKey: crypto.randomUUID(),
         customerId: customer.id,
@@ -776,11 +773,7 @@ export function CrmManager({
         expectedWholesaleStatus: customer.wholesale_status,
         wholesaleCustomerType,
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else toast.error(result.message);
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
@@ -794,16 +787,12 @@ export function CrmManager({
     });
     if (!confirmed) return;
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await rejectWholesaleRequestAction({
         requestKey: crypto.randomUUID(), customerId: customer.id,
         expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "pending",
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else toast.error(result.message);
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
@@ -817,16 +806,12 @@ export function CrmManager({
     });
     if (!confirmed) return;
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await suspendWholesaleAccessAction({
         requestKey: crypto.randomUUID(), customerId: customer.id,
         expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "approved",
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else toast.error(result.message);
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
@@ -840,20 +825,15 @@ export function CrmManager({
     });
     if (!confirmed) return;
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await reactivateWholesaleAccessAction({
         requestKey: crypto.randomUUID(), customerId: customer.id,
         expectedCommercialVersion: customer.commercial_version, expectedWholesaleStatus: "suspended",
       });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        await openCustomerProfile(customer.id);
-      } else toast.error(result.message);
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
   async function suspendCustomer(customer: CrmCustomerOption) {
-    closeActiveCustomerWindows(customer.id);
     const confirmed = await toast.confirm({
       title: "Suspender cliente",
       message: `¿Suspender cuenta de ${customerDisplayName(customer)}? El cliente real no se elimina; solo queda inactivo.`,
@@ -866,19 +846,13 @@ export function CrmManager({
       return;
     }
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await suspendCustomerAccountAction(customer.id);
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message || "Cuenta suspendida correctamente.");
-      } else {
-        toast.error(result.message || "No se pudo suspender la cuenta.");
-      }
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
   async function reactivateCustomer(customer: CrmCustomerOption) {
-    closeActiveCustomerWindows(customer.id);
     const confirmed = await toast.confirm({
       title: "Reactivar cliente",
       message: `¿Reactivar cuenta de ${customerDisplayName(customer)}? El cliente volverá a quedar activo para atención y operaciones.`,
@@ -891,14 +865,9 @@ export function CrmManager({
       return;
     }
 
-    startTransition(async () => {
+    startCustomerProfileMutation(customer.id, async (profileWasOpen) => {
       const result = await reactivateCustomerAccountAction(customer.id);
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message || "Cuenta reactivada correctamente.");
-      } else {
-        toast.error(result.message || "No se pudo reactivar la cuenta.");
-      }
+      await reconcileCustomerProfileMutation(customer.id, profileWasOpen, result);
     });
   }
 
@@ -975,11 +944,107 @@ export function CrmManager({
     setMergeRequest({ source, target });
   }
 
+  function applyCanonicalCustomerProfile(profile: CrmCustomerProfile) {
+    if (profileCustomerIdRef.current !== profile.customer.id) return false;
+    profileRequestRevisionRef.current += 1;
+    setCustomerProfile((current) => {
+      if (current && current.customer.id !== profile.customer.id) return current;
+      if (current && profile.customer.commercial_version < current.customer.commercial_version) return current;
+      return profile;
+    });
+    setProfileError(null);
+    setProfileLoading(false);
+    setProfileRefreshing(false);
+    return true;
+  }
+
+  async function refreshCustomerProfile(customerId: string) {
+    if (profileCustomerIdRef.current !== customerId) return false;
+    const requestRevision = ++profileRequestRevisionRef.current;
+    setProfileError(null);
+    setProfileRefreshing(true);
+
+    try {
+      const result = await getCustomerProfileAction(customerId);
+      if (requestRevision !== profileRequestRevisionRef.current || profileCustomerIdRef.current !== customerId) return false;
+      if (result.ok && result.profile) {
+        setCustomerProfile(result.profile);
+        setProfileError(null);
+        return true;
+      }
+      setProfileError(result.message || "No se pudo actualizar el perfil del cliente.");
+      return false;
+    } catch {
+      if (requestRevision === profileRequestRevisionRef.current && profileCustomerIdRef.current === customerId) {
+        setProfileError("No se pudo actualizar el perfil del cliente. Inténtalo nuevamente.");
+      }
+      return false;
+    } finally {
+      if (requestRevision === profileRequestRevisionRef.current && profileCustomerIdRef.current === customerId) {
+        setProfileRefreshing(false);
+      }
+    }
+  }
+
+  function startCustomerProfileMutation(
+    customerId: string,
+    task: (profileWasOpen: boolean) => Promise<void>,
+  ) {
+    const lockKey = customerId;
+    if (profileMutationLocksRef.current.has(lockKey)) return;
+    const profileWasOpen = profileCustomerIdRef.current === customerId;
+    profileMutationLocksRef.current.add(lockKey);
+    startTransition(async () => {
+      try {
+        await task(profileWasOpen);
+      } catch {
+        toast.error("No se pudo completar el cambio. El perfil conserva la última información disponible.");
+      } finally {
+        profileMutationLocksRef.current.delete(lockKey);
+      }
+    });
+  }
+
+  async function reconcileCustomerProfileMutation(
+    customerId: string,
+    profileWasOpen: boolean,
+    result: { ok: boolean; message: string; code?: string; profile?: CrmCustomerProfile | null },
+  ) {
+    setMessage(result.message);
+    if (!result.ok) {
+      if (profileCustomerIdRef.current === customerId && ["VERSION_CONFLICT", "STATUS_CONFLICT", "REQUEST_CHANGED"].includes(result.code ?? "")) {
+        await refreshCustomerProfile(customerId);
+      }
+      toast.error(result.message);
+      return;
+    }
+
+    let reconciled = false;
+    if (profileCustomerIdRef.current === customerId) {
+      reconciled = result.profile ? applyCanonicalCustomerProfile(result.profile) : await refreshCustomerProfile(customerId);
+    } else if (!profileWasOpen && profileCustomerIdRef.current === null) {
+      reconciled = await openCustomerProfile(customerId);
+    }
+
+    toast.success(result.message);
+    if (profileWasOpen && profileCustomerIdRef.current === customerId && !reconciled) {
+      toast.error("Los cambios se guardaron, pero no pudimos actualizar el perfil. Puedes intentarlo nuevamente.");
+    }
+    router.refresh();
+  }
+
   async function openCustomerProfile(customerId: string, updateUrl = true) {
+    if (profileCustomerIdRef.current === customerId && customerProfile?.customer.id === customerId) {
+      return refreshCustomerProfile(customerId);
+    }
+
+    const requestRevision = ++profileRequestRevisionRef.current;
+    profileCustomerIdRef.current = customerId;
     setSelectedCustomerId(customerId);
     setProfileCustomerId(customerId);
     setCustomerProfile(null);
     setProfileError(null);
+    setProfileRefreshing(false);
     setProfileLoading(true);
 
     if (updateUrl && focus === "customers") {
@@ -988,20 +1053,39 @@ export function CrmManager({
       router.replace(`${basePath}?${params.toString()}`, { scroll: false });
     }
 
-    const result = await getCustomerProfileAction(customerId);
+    let result;
+    try {
+      result = await getCustomerProfileAction(customerId);
+    } catch {
+      if (requestRevision !== profileRequestRevisionRef.current || profileCustomerIdRef.current !== customerId) return false;
+      const errorMessage = "No se pudo cargar el perfil del cliente. Inténtalo nuevamente.";
+      setProfileError(errorMessage);
+      setProfileLoading(false);
+      toast.error(errorMessage);
+      return false;
+    }
+    if (requestRevision !== profileRequestRevisionRef.current || profileCustomerIdRef.current !== customerId) return false;
     if (result.ok && result.profile) {
       setCustomerProfile(result.profile);
-    } else {
-      setProfileError(result.message || "No se pudo cargar el perfil del cliente.");
-      toast.error(result.message || "No se pudo cargar el perfil del cliente.");
+      setProfileError(null);
+      setProfileLoading(false);
+      return true;
     }
 
+    const errorMessage = result.message || "No se pudo cargar el perfil del cliente.";
+    setProfileError(errorMessage);
     setProfileLoading(false);
+    toast.error(errorMessage);
+    return false;
   }
 
   function closeCustomerProfile() {
+    profileRequestRevisionRef.current += 1;
+    profileCustomerIdRef.current = null;
     setProfileCustomerId(null);
     setProfileError(null);
+    setProfileLoading(false);
+    setProfileRefreshing(false);
     if (focus === "customers") {
       const params = new URLSearchParams(currentSearchParams.toString());
       params.delete("customerId");
@@ -1322,6 +1406,7 @@ export function CrmManager({
             profile={customerProfile}
             fallbackCustomer={data.customers.find((customer) => customer.id === profileCustomerId) ?? selectedCustomer}
             loading={profileLoading}
+            refreshing={profileRefreshing}
             error={profileError}
             pending={isPending}
             canManageCredit={canManageCredit}
@@ -1329,7 +1414,8 @@ export function CrmManager({
             canEditCustomerIdentity={canEditCustomerIdentity}
             canManageWholesale={canManageWholesale}
             firstWholesaleMinimum={firstWholesaleMinimum}
-            onProfileUpdated={setCustomerProfile}
+            onProfileUpdated={applyCanonicalCustomerProfile}
+            onRefreshRequested={refreshCustomerProfile}
             onClose={closeCustomerProfile}
             onApproveWholesale={approveWholesaleCustomer}
             onGrantWholesale={grantWholesaleCustomer}
@@ -1503,6 +1589,7 @@ export function CrmManager({
           profile={customerProfile}
           fallbackCustomer={data.customers.find((customer) => customer.id === profileCustomerId) ?? selectedCustomer}
           loading={profileLoading}
+          refreshing={profileRefreshing}
           error={profileError}
           pending={isPending}
           canManageCredit={canManageCredit}
@@ -1510,7 +1597,8 @@ export function CrmManager({
           canEditCustomerIdentity={canEditCustomerIdentity}
           canManageWholesale={canManageWholesale}
           firstWholesaleMinimum={firstWholesaleMinimum}
-          onProfileUpdated={setCustomerProfile}
+          onProfileUpdated={applyCanonicalCustomerProfile}
+          onRefreshRequested={refreshCustomerProfile}
           onClose={closeCustomerProfile}
           onApproveWholesale={approveWholesaleCustomer}
           onGrantWholesale={grantWholesaleCustomer}
@@ -2214,6 +2302,7 @@ function CustomerProfileDrawer({
   profile,
   fallbackCustomer,
   loading,
+  refreshing,
   error,
   pending,
   canManageCredit,
@@ -2222,6 +2311,7 @@ function CustomerProfileDrawer({
   canManageWholesale,
   firstWholesaleMinimum,
   onProfileUpdated,
+  onRefreshRequested,
   onClose,
   onApproveWholesale,
   onGrantWholesale,
@@ -2241,6 +2331,7 @@ function CustomerProfileDrawer({
   profile: CrmCustomerProfile | null;
   fallbackCustomer: CrmCustomerOption | null;
   loading: boolean;
+  refreshing: boolean;
   error: string | null;
   pending: boolean;
   canManageCredit: boolean;
@@ -2249,6 +2340,7 @@ function CustomerProfileDrawer({
   canManageWholesale: boolean;
   firstWholesaleMinimum: number;
   onProfileUpdated: (profile: CrmCustomerProfile) => void;
+  onRefreshRequested: (customerId: string) => Promise<boolean>;
   onClose: () => void;
   onApproveWholesale: (customer: CrmCustomerOption | string, wholesaleCustomerType: WholesaleCustomerType) => void;
   onGrantWholesale: (customer: CrmCustomerOption, wholesaleCustomerType: WholesaleCustomerType, reason: string) => void;
@@ -2303,6 +2395,7 @@ function CustomerProfileDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={customer?.profile_kind === "internal" ? "Perfil de usuario interno" : "Perfil completo del cliente"}
+        aria-busy={pending || refreshing}
         className="ml-auto flex h-full w-full flex-col bg-[#f4f4f5] text-[#080808] shadow-2xl md:max-w-[min(1180px,96vw)]"
         onClick={(event) => event.stopPropagation()}
       >
@@ -2326,6 +2419,11 @@ function CustomerProfileDrawer({
                       <span className="rounded-md bg-[#fff7ed] px-2 py-1 text-[#7c2d12]">Solicitud mayorista</span>
                     ) : null}
                   </>
+                ) : null}
+                {pending || refreshing ? (
+                  <span role="status" className="rounded-md bg-[#fff7ed] px-2 py-1 font-semibold text-[#7c2d12]">
+                    {pending ? "Guardando cambios..." : "Actualizando perfil..."}
+                  </span>
                 ) : null}
               </div>
             </div>
@@ -2375,14 +2473,31 @@ function CustomerProfileDrawer({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-          {loading ? (
+          {error && profile ? (
+            <div role="alert" className="mb-4 flex flex-col gap-3 rounded-lg border border-[#e4252c]/25 bg-white p-4 text-sm text-[#b91c25] sm:flex-row sm:items-center sm:justify-between">
+              <span>{error}</span>
+              {customer ? (
+                <Button type="button" variant="ghost" disabled={refreshing} onClick={() => void onRefreshRequested(customer.id)}>
+                  Reintentar actualización
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          {loading && !profile ? (
             <div className="space-y-3">
               <div className="h-24 animate-pulse rounded-lg bg-white" />
               <div className="h-44 animate-pulse rounded-lg bg-white" />
               <div className="h-32 animate-pulse rounded-lg bg-white" />
             </div>
-          ) : error ? (
-            <div className="rounded-lg border border-[#e4252c]/25 bg-white p-5 text-sm text-[#b91c25]">{error}</div>
+          ) : error && !profile ? (
+            <div role="alert" className="flex flex-col gap-3 rounded-lg border border-[#e4252c]/25 bg-white p-5 text-sm text-[#b91c25] sm:flex-row sm:items-center sm:justify-between">
+              <span>{error}</span>
+              {customer ? (
+                <Button type="button" variant="ghost" disabled={refreshing} onClick={() => void onRefreshRequested(customer.id)}>
+                  Reintentar actualización
+                </Button>
+              ) : null}
+            </div>
           ) : customer && profile ? (
             <>
               {visibleActiveTab === "resumen" ? <CustomerProfileSummary profile={profile} /> : null}
@@ -2408,6 +2523,7 @@ function CustomerProfileDrawer({
                 <CustomerProfileCredit
                   profile={profile}
                   onProfileUpdated={onProfileUpdated}
+                  onRefreshRequested={onRefreshRequested}
                 />
               ) : null}
               {customer.profile_kind === "customer" && visibleActiveTab === "mayorista" ? (
@@ -2815,9 +2931,11 @@ function CustomerProfileCrm({
 function CustomerProfileCredit({
   profile,
   onProfileUpdated,
+  onRefreshRequested,
 }: {
   profile: CrmCustomerProfile;
   onProfileUpdated: (profile: CrmCustomerProfile) => void;
+  onRefreshRequested: (customerId: string) => Promise<boolean>;
 }) {
   const account = profile.creditAccount;
   const toast = useToast();
@@ -2863,9 +2981,10 @@ function CustomerProfileCredit({
         return;
       }
 
-      const refreshed = await getCustomerProfileAction(profile.customer.id);
-      if (refreshed.ok && refreshed.profile) {
-        onProfileUpdated(refreshed.profile);
+      if (result.profile) {
+        onProfileUpdated(result.profile);
+      } else {
+        await onRefreshRequested(profile.customer.id);
       }
       toast.success(result.message);
     });
@@ -2943,10 +3062,7 @@ function CustomerProfileCredit({
       }
 
       setPaymentDraft((current) => (current ? { ...current, idempotencyKey: newCreditPaymentIdempotencyKey(selectedReceivable.id) } : current));
-      const refreshed = await getCustomerProfileAction(profile.customer.id);
-      if (refreshed.ok && refreshed.profile) {
-        onProfileUpdated(refreshed.profile);
-      }
+      await onRefreshRequested(profile.customer.id);
       setSelectedReceivable(null);
       setPaymentDraft(null);
       toast.success(result.message);

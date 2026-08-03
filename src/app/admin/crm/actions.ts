@@ -32,6 +32,7 @@ type CrmMutationResult = {
   commercialVersion?: number;
   firstPurchaseMinimum?: number;
   deletion_block?: DeletionBlock;
+  profile?: CrmCustomerProfile | null;
 };
 
 export type CustomerIdentityMutationResult = CrmMutationResult & {
@@ -798,7 +799,7 @@ export async function saveCustomerCommercialCreditAction(input: {
   termsDays: number;
   status: "active" | "suspended";
   notes?: string;
-}) {
+}): Promise<CrmMutationResult> {
   const viewer = await requirePermission("admin:access");
   const customerId = uuidLike(input.customerId, "Cliente");
   const canManage =
@@ -890,6 +891,7 @@ export async function saveCustomerCommercialCreditAction(input: {
   return {
     ok: true,
     message: input.isCreditEnabled ? "Crédito comercial activado correctamente." : "Crédito comercial desactivado correctamente.",
+    profile: await loadCanonicalCustomerProfile(customerId.value),
   };
 }
 
@@ -1123,6 +1125,14 @@ function revalidateWholesaleViews() {
   revalidatePath("/checkout");
 }
 
+async function loadCanonicalCustomerProfile(customerId: string) {
+  try {
+    return await getAdminCustomerProfile(customerId);
+  } catch {
+    return null;
+  }
+}
+
 async function runWholesaleGrant(
   rawInput: WholesaleGrantActionInput,
   source: "customer_request" | "admin_direct_grant",
@@ -1188,6 +1198,7 @@ async function runWholesaleGrant(
     commercialVersion: result.commercialVersion,
     firstPurchaseMinimum: result.firstPurchaseMinimum,
     message: `${source === "customer_request" ? "Solicitud mayorista aprobada correctamente" : "Acceso mayorista otorgado correctamente"} como ${typeLabel}. ${detail}`,
+    profile: await loadCanonicalCustomerProfile(parsed.data.customerId),
   };
 }
 
@@ -1248,6 +1259,7 @@ async function runWholesaleTransition(rawInput: WholesaleTransitionActionInput):
     code: result.code,
     commercialVersion: result.commercialVersion,
     message: messages[parsed.data.operation],
+    profile: await loadCanonicalCustomerProfile(parsed.data.customerId),
   };
 }
 
@@ -1339,7 +1351,11 @@ export async function suspendCustomerAccountAction(customerId: string): Promise<
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");
 
-  return { ok: true, message: "Cuenta suspendida correctamente." };
+  return {
+    ok: true,
+    message: "Cuenta suspendida correctamente.",
+    profile: await loadCanonicalCustomerProfile(customer.value),
+  };
 }
 
 export async function reactivateCustomerAccountAction(customerId: string): Promise<CrmMutationResult> {
@@ -1407,7 +1423,11 @@ export async function reactivateCustomerAccountAction(customerId: string): Promi
   revalidatePath("/admin/crm");
   revalidatePath("/admin/clientes");
 
-  return { ok: true, message: "Cuenta reactivada correctamente." };
+  return {
+    ok: true,
+    message: "Cuenta reactivada correctamente.",
+    profile: await loadCanonicalCustomerProfile(customer.value),
+  };
 }
 
 export async function mergeDuplicateCustomerAction(input: MergeDuplicateCustomerInput): Promise<CrmMutationResult> {
