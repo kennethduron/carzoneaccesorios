@@ -5,6 +5,7 @@ import { join } from "node:path";
 const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
 const migration = read("supabase/migrations/202607280001_pos_customer_commercial_rules.sql");
+const completionMigration = read("supabase/migrations/202608030001_pos_customer_commercial_profile.sql");
 const types = read("src/types/point-of-sale.ts");
 const service = read("src/services/supabase/pos-customer.service.ts");
 const requestAuth = read("src/lib/auth/pos-customer-request.ts");
@@ -64,6 +65,11 @@ for (const name of [
 
 assert.match(service, /server-only/);
 assert.match(service, /get_pos_customer_context_v1/);
+assert.match(service, /save_pos_customer_commercial_profile_v1/);
+assert.match(completionMigration, /save_pos_customer_commercial_profile_v1/);
+assert.match(completionMigration, /set_customer_commercial_credit/);
+assert.match(completionMigration, /grant_customer_wholesale_access_v1/);
+assert.match(completionMigration, /return_customer_to_retail_v1/);
 assert.match(service, /evaluate_wholesale_eligibility_v1/);
 assert.match(requestAuth, /hasDatabasePosPermission/);
 assert.match(requestAuth, /hasPosPermission\(profile, "pos:access"\)/);
@@ -74,7 +80,11 @@ assert.match(workspace, /aria-activedescendant/);
 assert.match(workspace, /event\.key === "Enter"/);
 assert.match(workspace, /event\.key === "Escape"/);
 assert.match(workspace, /Cargar más/);
-assert.match(workspace, /solo lectura/i);
+assert.match(workspace, /Editar configuración comercial/i);
+assert.match(workspace, /Habilitar crédito comercial/i);
+assert.match(workspace, /Mayorista/i);
+assert.doesNotMatch(workspace, /Evaluar elegibilidad mayorista/i);
+assert.doesNotMatch(workspace, /Crédito \(solo lectura\)/i);
 assert.match(workspace, /siguiente etapa/i);
 assert.doesNotMatch(workspace, /finalizar venta|cobrar ahora|emitir factura/i);
 
