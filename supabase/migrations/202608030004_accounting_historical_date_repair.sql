@@ -4,7 +4,7 @@
 
 begin;
 
-create table public.accounting_entry_date_repair_batches (
+create table if not exists public.accounting_entry_date_repair_batches (
   manifest_hash text primary key check (manifest_hash ~ '^[0-9a-f]{64}$'),
   migration_name text not null unique,
   expected_count integer not null check (expected_count > 0),
@@ -19,7 +19,7 @@ create table public.accounting_entry_date_repair_batches (
   created_at timestamptz not null default clock_timestamp()
 );
 
-create table public.accounting_entry_date_repair_manifest (
+create table if not exists public.accounting_entry_date_repair_manifest (
   manifest_hash text not null references public.accounting_entry_date_repair_batches(manifest_hash) on delete restrict,
   journal_entry_id uuid not null,
   financial_event_id uuid not null,
@@ -43,7 +43,7 @@ create table public.accounting_entry_date_repair_manifest (
   unique (journal_entry_id)
 );
 
-create table public.accounting_entry_date_repairs (
+create table if not exists public.accounting_entry_date_repairs (
   id uuid primary key default gen_random_uuid(),
   manifest_hash text not null references public.accounting_entry_date_repair_batches(manifest_hash) on delete restrict,
   migration_name text not null,
@@ -77,6 +77,8 @@ alter table public.accounting_entry_date_repair_batches enable row level securit
 alter table public.accounting_entry_date_repair_manifest enable row level security;
 alter table public.accounting_entry_date_repairs enable row level security;
 
+drop policy if exists accounting_entry_date_repairs_authorized_read
+  on public.accounting_entry_date_repairs;
 create policy accounting_entry_date_repairs_authorized_read
   on public.accounting_entry_date_repairs for select
   using (
@@ -102,6 +104,8 @@ $$;
 revoke all on function public.guard_accounting_entry_date_repairs_append_only_v1()
   from public, anon, authenticated, service_role;
 
+drop trigger if exists accounting_entry_date_repairs_append_only
+  on public.accounting_entry_date_repairs;
 create trigger accounting_entry_date_repairs_append_only
 before update or delete on public.accounting_entry_date_repairs
 for each row execute function public.guard_accounting_entry_date_repairs_append_only_v1();
@@ -138,7 +142,7 @@ insert into public.accounting_entry_date_repair_batches (
   '45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857',
   '202608030004_accounting_historical_date_repair.sql',
   37, 134905.59, 134905.59, 'approved'
-);
+) on conflict (manifest_hash) do nothing;
 
 -- MANIFEST_VALUES_START
 insert into public.accounting_entry_date_repair_manifest (
@@ -180,7 +184,447 @@ insert into public.accounting_entry_date_repair_manifest (
   ('45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857', 'f3f57273-a206-4c47-b934-6a2fca783b28'::uuid, '91271a82-1c1d-486b-b444-98da49893d9b'::uuid, '9e2393a3-aa2e-43cf-b437-062960b4626f'::uuid, 'supplier_payment', '6a9b4063-a65e-4128-adfd-6e7b1ddce261'::uuid, 'supplier_payment', '6a9b4063-a65e-4128-adfd-6e7b1ddce261', '2026-07-29'::date, null, null, '2026-07-13'::date, 'supplier_payments.paid_at', 3200.00, 3200.00, 2, 'ee9f5ab81228abdd6200556ff616344ad2743fc3c3c48a27529c4bfd45399002', '404cfc610f91cc3780c8cfe7a09f24f809fab98f4a054866226cef0ee4d51265', 'B'),
   ('45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857', 'f7e497d6-38a7-4af5-a537-c94a54599d8d'::uuid, '9461d15b-e4df-4ef6-be1b-a1884f6833d5'::uuid, 'd245f934-9084-404a-8306-72e17a3be9d0'::uuid, 'inventory_movement', '5378f525-0965-4297-ae21-868b88433b08'::uuid, 'sale_cogs', '000-001-01-00001021', '2026-07-31'::date, null, null, '2026-07-14'::date, 'invoices.invoice_date', 150.00, 150.00, 2, '93ff5d9abdcb4ddaf8387d948c3efc150b45755e50727d2935ad9d4638207e6a', 'f8b661a94100fdf3eb41ccf4701315c5603af2da76d2bb4916079359b6f4e5b8', 'B'),
   ('45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857', 'f8650f19-7837-4796-9b11-f59456656e29'::uuid, 'ca203a59-92ce-425a-8308-82b02e7e231b'::uuid, '3ec7c0f9-76d8-4a74-b7d8-6c8fa2db8f59'::uuid, 'order', 'b0a09603-f40d-49a1-8469-a91cdc1407df'::uuid, 'customer_invoice', '000-001-01-00001019', '2026-07-28'::date, null, null, '2026-07-15'::date, 'invoices.invoice_date', 11000.00, 11000.00, 3, '353ff2135a95b34c98c3ac18298efd5ba710cf48a89cf7117363741ec88789ef', '254901ed9fa661b1b3abea4121e0e490483d30b997c96b7d2c18e6f185ff2e51', 'B'),
-  ('45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857', 'f9ddec33-2a73-4f28-880d-fb093f3dabaf'::uuid, 'd493e025-66ca-4720-a528-f57a7427976a'::uuid, '5477d8ac-5e37-4564-8789-a12feaf4f23b'::uuid, 'inventory_movement', 'cad270d7-9550-401a-bd2f-12c49323b9be'::uuid, 'sale_cogs', '000-001-01-00001021', '2026-07-31'::date, null, null, '2026-07-14'::date, 'invoices.invoice_date', 927.53, 927.53, 2, 'e2b014d55db168c60d3991137857c31db0b251ca69bd303c526b3715e515d8cc', '3bd8ccdfea92f27139197bdbd664cbb632d56933b02191fb33c5b62160e3aabe', 'B');
+  ('45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857', 'f9ddec33-2a73-4f28-880d-fb093f3dabaf'::uuid, 'd493e025-66ca-4720-a528-f57a7427976a'::uuid, '5477d8ac-5e37-4564-8789-a12feaf4f23b'::uuid, 'inventory_movement', 'cad270d7-9550-401a-bd2f-12c49323b9be'::uuid, 'sale_cogs', '000-001-01-00001021', '2026-07-31'::date, null, null, '2026-07-14'::date, 'invoices.invoice_date', 927.53, 927.53, 2, 'e2b014d55db168c60d3991137857c31db0b251ca69bd303c526b3715e515d8cc', '3bd8ccdfea92f27139197bdbd664cbb632d56933b02191fb33c5b62160e3aabe', 'B')
+on conflict (manifest_hash, journal_entry_id) do nothing;
 -- MANIFEST_VALUES_END
+
+do $repair$
+declare
+  target_hash constant text := '45456813ee199442eacc31dd7ea94e8692c2b781b62bbd5b10bc20359e8cd857';
+  target_migration constant text := '202608030004_accounting_historical_date_repair.sql';
+  batch public.accounting_entry_date_repair_batches%rowtype;
+  item record;
+  matched_count integer;
+  total_entries bigint;
+  actual_count integer;
+  actual_debit numeric(14,2);
+  actual_credit numeric(14,2);
+  actual_line_count integer;
+  actual_line_debit numeric(14,2);
+  actual_line_credit numeric(14,2);
+  actual_line_hash text;
+  manifest_outbox_count integer;
+  migration_role name := current_user;
+  transaction_marker text := txid_current()::text;
+  strict_guard_definition text;
+  supplier_observer_definition text;
+  opening_observer_definition text;
+  captured_guard_hash_before text;
+  captured_guard_hash_after text;
+  supplier_observer_hash_before text;
+  opening_observer_hash_before text;
+  guard_rejected boolean := false;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(
+    'accounting_historical_date_repair:' || target_hash, 0
+  ));
+
+  select * into batch
+  from public.accounting_entry_date_repair_batches
+  where manifest_hash = target_hash
+  for update;
+  if batch.manifest_hash is null
+    or batch.migration_name <> target_migration
+    or batch.expected_count <> 37
+    or batch.expected_debit <> 134905.59
+    or batch.expected_credit <> 134905.59
+  then
+    raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_BATCH_MISMATCH';
+  end if;
+
+  select count(*) into matched_count
+  from public.accounting_entry_date_repair_manifest manifest
+  join public.journal_entries entry on entry.id = manifest.journal_entry_id
+  where manifest.manifest_hash = target_hash;
+  select count(*) into total_entries from public.journal_entries;
+  if matched_count = 0 and total_entries = 0 then
+    raise notice 'ACCOUNTING_DATE_REPAIR_LOCAL_EMPTY_SCHEMA_SKIP';
+    return;
+  end if;
+
+  lock table public.journal_entries in access exclusive mode;
+  lock table public.journal_entry_lines in share mode;
+  lock table public.financial_events in share row exclusive mode;
+  lock table public.accounting_outbox_v2 in share row exclusive mode;
+  lock table public.orders, public.invoices, public.inventory_movements,
+    public.supplier_payments, public.suppliers, public.accounting_periods in share mode;
+
+  if batch.status = 'applied' then
+    if (select count(*) from public.accounting_entry_date_repairs audit
+        where audit.manifest_hash = target_hash and audit.action = 'repair') = 37
+      and not exists (
+        select 1
+        from public.accounting_entry_date_repair_manifest manifest
+        join public.journal_entries entry on entry.id = manifest.journal_entry_id
+        join public.financial_events event on event.id = manifest.financial_event_id
+        left join public.accounting_outbox_v2 box
+          on box.id = manifest.accounting_outbox_id
+        where manifest.manifest_hash = target_hash
+          and (entry.entry_date is distinct from manifest.new_accounting_date
+            or event.accounting_date is distinct from manifest.new_accounting_date
+            or (manifest.accounting_outbox_id is not null
+              and (box.accounting_date is distinct from manifest.new_accounting_date
+                or box.accounting_date_source is distinct from manifest.accounting_date_source))
+            or public.accounting_entry_date_repair_line_hash_v1(entry.id)
+              <> manifest.line_hash)
+      )
+    then
+      raise notice 'ACCOUNTING_DATE_REPAIR_ALREADY_APPLIED';
+      return;
+    end if;
+    raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_APPLIED_STATE_MISMATCH';
+  end if;
+  if batch.status <> 'approved' then
+    raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_BATCH_STATE_INVALID';
+  end if;
+  if exists (select 1 from public.accounting_entry_date_repairs
+    where manifest_hash = target_hash) then
+    raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_UNEXPECTED_PRIOR_AUDIT';
+  end if;
+
+  select count(*), round(coalesce(sum(debit_total), 0), 2),
+    round(coalesce(sum(credit_total), 0), 2),
+    count(accounting_outbox_id)
+  into actual_count, actual_debit, actual_credit, manifest_outbox_count
+  from public.accounting_entry_date_repair_manifest
+  where manifest_hash = target_hash;
+  if actual_count <> 37
+    or actual_debit <> 134905.59
+    or actual_credit <> 134905.59
+    or actual_debit <> actual_credit
+    or manifest_outbox_count <> 32
+  then
+    raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_MANIFEST_TOTAL_MISMATCH';
+  end if;
+
+  for item in
+    select manifest.*, entry.status, entry.source_type entry_source_type,
+      entry.source_id entry_source_id, entry.reversed_entry_id,
+      event.source_type event_source_type, event.source_id event_source_id,
+      event.event_purpose, event.accounting_date event_accounting_date,
+      box.id current_outbox_id, box.status outbox_status,
+      box.source_type outbox_source_type, box.source_id outbox_source_id,
+      box.event_purpose outbox_event_purpose,
+      box.financial_event_id outbox_event_id,
+      box.journal_entry_id outbox_entry_id,
+      box.accounting_date outbox_accounting_date
+    from public.accounting_entry_date_repair_manifest manifest
+    join public.journal_entries entry on entry.id = manifest.journal_entry_id
+    join public.financial_events event on event.id = manifest.financial_event_id
+    left join public.accounting_outbox_v2 box
+      on box.id = manifest.accounting_outbox_id
+    where manifest.manifest_hash = target_hash
+    order by manifest.journal_entry_id
+    for update of entry, event
+  loop
+    select count(*), round(coalesce(sum(line.debit), 0), 2),
+      round(coalesce(sum(line.credit), 0), 2)
+    into actual_line_count, actual_line_debit, actual_line_credit
+    from public.journal_entry_lines line
+    where line.journal_entry_id = item.journal_entry_id;
+    actual_line_hash := public.accounting_entry_date_repair_line_hash_v1(
+      item.journal_entry_id
+    );
+
+    if item.status <> 'publicada'
+      or item.entry_source_type <> 'financial_event'
+      or item.entry_source_id <> item.financial_event_id::text
+      or item.event_source_type <> item.source_type
+      or item.event_source_id <> item.source_id::text
+      or item.reversed_entry_id is not null
+      or exists (
+        select 1 from public.journal_entries reversal
+        where reversal.source_type = 'journal_reversal'
+          and reversal.source_id = item.journal_entry_id::text
+      )
+      or item.old_entry_date is distinct from (
+        select entry_date from public.journal_entries where id = item.journal_entry_id
+      )
+      or item.event_accounting_date is distinct from item.old_event_accounting_date
+      or actual_line_count <> item.line_count
+      or actual_line_debit <> item.debit_total
+      or actual_line_credit <> item.credit_total
+      or actual_line_debit <> actual_line_credit
+      or actual_line_hash <> item.line_hash
+      or public.resolve_canonical_accounting_date_v1(
+        item.source_type, item.source_id, item.event_purpose
+      ) is distinct from item.new_accounting_date
+      or public.is_date_in_closed_accounting_period(item.new_accounting_date)
+      or item.source_type not in ('order', 'inventory_movement', 'supplier_payment')
+      or item.document_number = '0090915'
+      or (item.accounting_outbox_id is not null and (
+        item.current_outbox_id is null
+        or item.outbox_status <> 'completed'
+        or item.outbox_source_type <> item.source_type
+        or item.outbox_source_id <> item.source_id
+        or item.outbox_event_purpose <> item.event_purpose
+        or item.outbox_event_id <> item.financial_event_id
+        or item.outbox_entry_id <> item.journal_entry_id
+        or item.outbox_accounting_date is distinct from item.old_outbox_accounting_date
+      ))
+      or (item.source_type = 'supplier_payment' and exists (
+        select 1
+        from public.supplier_payments payment
+        join public.suppliers supplier on supplier.id = payment.supplier_id
+        where payment.id = item.source_id and supplier.name ilike '%CROMOS%'
+      ))
+    then
+      raise exception using errcode = '23514',
+        message = 'ACCOUNTING_DATE_REPAIR_PRECONDITION_FAILED',
+        detail = item.journal_entry_id::text;
+    end if;
+  end loop;
+
+  create temporary table accounting_entry_date_repair_before
+  on commit drop
+  as
+  select manifest.journal_entry_id, manifest.financial_event_id,
+    manifest.accounting_outbox_id,
+    to_jsonb(entry) entry_row, to_jsonb(event) event_row,
+    case when box.id is null then null else to_jsonb(box) end outbox_row
+  from public.accounting_entry_date_repair_manifest manifest
+  join public.journal_entries entry on entry.id = manifest.journal_entry_id
+  join public.financial_events event on event.id = manifest.financial_event_id
+  left join public.accounting_outbox_v2 box
+    on box.id = manifest.accounting_outbox_id
+  where manifest.manifest_hash = target_hash;
+
+  select pg_get_functiondef('public.guard_journal_entry_status()'::regprocedure),
+    encode(extensions.digest(pg_get_functiondef(
+      'public.guard_journal_entry_status()'::regprocedure), 'sha256'), 'hex'),
+    pg_get_functiondef('public.observe_supplier_payment_outbox_v2()'::regprocedure),
+    pg_get_functiondef(
+      'public.observe_opening_balance_supplier_payment_completion_v1()'::regprocedure
+    )
+  into strict_guard_definition, captured_guard_hash_before,
+    supplier_observer_definition, opening_observer_definition;
+  supplier_observer_hash_before := encode(extensions.digest(
+    supplier_observer_definition, 'sha256'), 'hex');
+  opening_observer_hash_before := encode(extensions.digest(
+    opening_observer_definition, 'sha256'), 'hex');
+  if strict_guard_definition is null
+    or supplier_observer_definition is null
+    or opening_observer_definition is null
+  then
+    raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_GUARD_DEFINITION_MISSING';
+  end if;
+
+  perform set_config('app.accounting_date_repair_manifest_hash', target_hash, true);
+  perform set_config('app.accounting_date_repair_transaction', transaction_marker, true);
+
+  execute format($ddl$
+    create or replace function public.guard_journal_entry_status()
+    returns trigger
+    language plpgsql
+    as $restricted_guard$
+    begin
+      if tg_op = 'UPDATE'
+        and current_user = %L
+        and current_setting('app.accounting_date_repair_manifest_hash', true) = %L
+        and current_setting('app.accounting_date_repair_transaction', true) = txid_current()::text
+        and (to_jsonb(new) - 'entry_date') is not distinct from (to_jsonb(old) - 'entry_date')
+        and exists (
+          select 1
+          from public.accounting_entry_date_repair_manifest manifest
+          where manifest.manifest_hash = %L
+            and manifest.journal_entry_id = old.id
+            and old.status = 'publicada'
+            and old.entry_date = manifest.old_entry_date
+            and new.entry_date = manifest.new_accounting_date
+        )
+      then
+        return new;
+      end if;
+
+      if tg_op = 'DELETE' then
+        if old.status <> 'borrador' then
+          raise exception 'Las partidas publicadas no se eliminan. Debes registrar un reverso.';
+        end if;
+        return old;
+      end if;
+      if old.status in ('reversada', 'anulada') then
+        raise exception 'Esta partida ya no admite cambios.';
+      end if;
+      if old.status = 'publicada' then
+        if new.status = 'reversada'
+          and new.reversed_entry_id is not null
+          and new.entry_number = old.entry_number
+          and new.entry_date = old.entry_date
+          and new.description = old.description
+          and coalesce(new.source_type, '') = coalesce(old.source_type, '')
+          and coalesce(new.source_id, '') = coalesce(old.source_id, '')
+          and new.created_by = old.created_by
+          and new.posted_by = old.posted_by
+          and new.posted_at = old.posted_at
+        then
+          return new;
+        end if;
+        raise exception 'Las partidas publicadas no se editan. Debes registrar un reverso.';
+      end if;
+      return new;
+    end;
+    $restricted_guard$
+  $ddl$, migration_role, target_hash, target_hash);
+
+  execute $observer$
+    create or replace function public.observe_supplier_payment_outbox_v2()
+    returns trigger language plpgsql security definer
+    set search_path = public, pg_temp
+    as $body$ begin return new; end; $body$
+  $observer$;
+  execute $observer$
+    create or replace function public.observe_opening_balance_supplier_payment_completion_v1()
+    returns trigger language plpgsql security definer
+    set search_path = public, pg_temp
+    as $body$ begin return new; end; $body$
+  $observer$;
+
+  update public.financial_events event
+  set accounting_date = manifest.new_accounting_date
+  from public.accounting_entry_date_repair_manifest manifest
+  where manifest.manifest_hash = target_hash
+    and event.id = manifest.financial_event_id;
+
+  update public.accounting_outbox_v2 box
+  set accounting_date = manifest.new_accounting_date,
+      accounting_date_source = manifest.accounting_date_source
+  from public.accounting_entry_date_repair_manifest manifest
+  where manifest.manifest_hash = target_hash
+    and manifest.accounting_outbox_id is not null
+    and box.id = manifest.accounting_outbox_id;
+
+  update public.journal_entries entry
+  set entry_date = manifest.new_accounting_date
+  from public.accounting_entry_date_repair_manifest manifest
+  where manifest.manifest_hash = target_hash
+    and entry.id = manifest.journal_entry_id;
+
+  execute strict_guard_definition;
+  execute supplier_observer_definition;
+  execute opening_observer_definition;
+  perform set_config('app.accounting_date_repair_manifest_hash', '', true);
+  perform set_config('app.accounting_date_repair_transaction', '', true);
+
+  captured_guard_hash_after := encode(extensions.digest(pg_get_functiondef(
+    'public.guard_journal_entry_status()'::regprocedure), 'sha256'), 'hex');
+  if captured_guard_hash_after <> captured_guard_hash_before
+    or encode(extensions.digest(pg_get_functiondef(
+      'public.observe_supplier_payment_outbox_v2()'::regprocedure), 'sha256'), 'hex')
+      <> supplier_observer_hash_before
+    or encode(extensions.digest(pg_get_functiondef(
+      'public.observe_opening_balance_supplier_payment_completion_v1()'::regprocedure
+    ), 'sha256'), 'hex') <> opening_observer_hash_before
+  then
+    raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_GUARD_RESTORE_FAILED';
+  end if;
+
+  if exists (
+    select 1
+    from public.accounting_entry_date_repair_manifest manifest
+    join public.journal_entries entry on entry.id = manifest.journal_entry_id
+    join public.financial_events event on event.id = manifest.financial_event_id
+    left join public.accounting_outbox_v2 box on box.id = manifest.accounting_outbox_id
+    join pg_temp.accounting_entry_date_repair_before before_row
+      on before_row.journal_entry_id = manifest.journal_entry_id
+    where manifest.manifest_hash = target_hash
+      and (entry.entry_date is distinct from manifest.new_accounting_date
+        or event.accounting_date is distinct from manifest.new_accounting_date
+        or (manifest.accounting_outbox_id is not null and (
+          box.accounting_date is distinct from manifest.new_accounting_date
+          or box.accounting_date_source is distinct from manifest.accounting_date_source
+        ))
+        or public.accounting_entry_date_repair_line_hash_v1(entry.id) <> manifest.line_hash
+        or (to_jsonb(entry) - 'entry_date' - 'updated_at')
+          is distinct from (before_row.entry_row - 'entry_date' - 'updated_at')
+        or (to_jsonb(event) - 'accounting_date' - 'updated_at')
+          is distinct from (before_row.event_row - 'accounting_date' - 'updated_at')
+        or (manifest.accounting_outbox_id is not null
+          and (to_jsonb(box) - 'accounting_date' - 'accounting_date_source' - 'updated_at')
+            is distinct from (before_row.outbox_row - 'accounting_date' - 'accounting_date_source' - 'updated_at')))
+  ) then
+    raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_POSTCONDITION_FAILED';
+  end if;
+
+  insert into public.accounting_entry_date_repairs (
+    manifest_hash, migration_name, action,
+    journal_entry_id, financial_event_id, accounting_outbox_id,
+    source_type, source_id, document_number,
+    old_entry_date, new_entry_date,
+    old_event_accounting_date, new_event_accounting_date,
+    old_outbox_accounting_date, new_outbox_accounting_date,
+    debit_total, credit_total, line_count, line_hash, source_hash,
+    reason, before_state, after_state, executed_by
+  )
+  select manifest.manifest_hash, target_migration, 'repair',
+    manifest.journal_entry_id, manifest.financial_event_id,
+    manifest.accounting_outbox_id, manifest.source_type, manifest.source_id,
+    manifest.document_number, manifest.old_entry_date, manifest.new_accounting_date,
+    manifest.old_event_accounting_date, manifest.new_accounting_date,
+    manifest.old_outbox_accounting_date,
+    case when manifest.accounting_outbox_id is null then null
+      else manifest.new_accounting_date end,
+    manifest.debit_total, manifest.credit_total, manifest.line_count,
+    manifest.line_hash, manifest.source_hash,
+    'Corrección de fecha contable canónica: el flujo V2 utilizó una fecha técnica en lugar de la fecha efectiva del documento.',
+    jsonb_build_object(
+      'entry_date', before_row.entry_row->'entry_date',
+      'event_accounting_date', before_row.event_row->'accounting_date',
+      'outbox_accounting_date', before_row.outbox_row->'accounting_date',
+      'entry_status', before_row.entry_row->'status',
+      'entry_description', before_row.entry_row->'description',
+      'entry_source_type', before_row.entry_row->'source_type',
+      'entry_source_id', before_row.entry_row->'source_id',
+      'posted_at', before_row.entry_row->'posted_at',
+      'line_hash', manifest.line_hash
+    ),
+    jsonb_build_object(
+      'entry_date', entry.entry_date,
+      'event_accounting_date', event.accounting_date,
+      'outbox_accounting_date', box.accounting_date,
+      'entry_status', entry.status,
+      'entry_description', entry.description,
+      'entry_source_type', entry.source_type,
+      'entry_source_id', entry.source_id,
+      'posted_at', entry.posted_at,
+      'line_hash', public.accounting_entry_date_repair_line_hash_v1(entry.id)
+    ), migration_role
+  from public.accounting_entry_date_repair_manifest manifest
+  join pg_temp.accounting_entry_date_repair_before before_row
+    on before_row.journal_entry_id = manifest.journal_entry_id
+  join public.journal_entries entry on entry.id = manifest.journal_entry_id
+  join public.financial_events event on event.id = manifest.financial_event_id
+  left join public.accounting_outbox_v2 box on box.id = manifest.accounting_outbox_id
+  where manifest.manifest_hash = target_hash;
+
+  if (select count(*) from public.accounting_entry_date_repairs
+      where manifest_hash = target_hash and action = 'repair') <> 37 then
+    raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_AUDIT_COUNT_MISMATCH';
+  end if;
+
+  update public.accounting_entry_date_repair_batches
+  set status = 'applied', strict_guard_hash_before = captured_guard_hash_before,
+      strict_guard_hash_after = captured_guard_hash_after,
+      executed_by = migration_role, executed_at = clock_timestamp()
+  where manifest_hash = target_hash;
+
+  begin
+    update public.journal_entries
+    set description = description || ' [ACCOUNTING-GUARD-RESTORE-CHECK]'
+    where id = (
+      select journal_entry_id from public.accounting_entry_date_repair_manifest
+      where manifest_hash = target_hash order by journal_entry_id limit 1
+    );
+  exception when others then
+    if sqlerrm like 'Las partidas publicadas no se editan.%' then
+      guard_rejected := true;
+    else
+      raise;
+    end if;
+  end;
+  if not guard_rejected then
+    raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_STRICT_GUARD_NOT_ACTIVE';
+  end if;
+end;
+$repair$;
 
 commit;
