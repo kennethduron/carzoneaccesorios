@@ -1,18 +1,15 @@
 import { authorizePosCustomerRequest } from "@/lib/auth/pos-customer-request";
+import { hasEffectivePermission } from "@/lib/auth/permissions";
+import { parsePosCustomerInput } from "@/lib/validation/pos-customer";
 import {
   getPosCustomerContext,
   PosCustomerServiceError,
   updatePosCustomer,
 } from "@/services/supabase/pos-customer.service";
-import type { PosCustomerUpdateInput } from "@/types/point-of-sale";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ customerId: string }> };
-
-function nullableText(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
 
 function responseForError(error: unknown, fallback: string) {
   const serviceError = error instanceof PosCustomerServiceError ? error : null;
@@ -35,6 +32,10 @@ export async function GET(_request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   const auth = await authorizePosCustomerRequest("pos:customers:update");
   if (auth.response) return auth.response;
+  if (!hasEffectivePermission(auth.profile!.role, auth.profile!.permissions, "wholesale:manage", auth.profile!.email)
+    || !hasEffectivePermission(auth.profile!.role, auth.profile!.permissions, "credit:manage", auth.profile!.email)) {
+    return Response.json({ message: "Acceso denegado." }, { status: 403 });
+  }
   const { customerId } = await context.params;
 
   let body: Record<string, unknown>;
@@ -44,22 +45,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     return Response.json({ message: "La solicitud no contiene JSON valido." }, { status: 400 });
   }
 
-  const input: PosCustomerUpdateInput = {
-    customerId,
-    requestKey: typeof body.requestKey === "string" ? body.requestKey : "",
-    expectedCommercialVersion: Number(body.expectedCommercialVersion),
-    contactName: typeof body.contactName === "string" ? body.contactName.trim() : "",
-    phone: typeof body.phone === "string" ? body.phone.trim() : "",
-    email: nullableText(body.email),
-    businessName: nullableText(body.businessName),
-    taxId: nullableText(body.taxId),
-    address: nullableText(body.address),
-    city: nullableText(body.city),
-    commercialNotes: nullableText(body.commercialNotes),
-  };
+  const parsed = parsePosCustomerInput(body, { customerId, mode: "update" });
+  if (!parsed.ok) return Response.json({ message: parsed.message }, { status: 400 });
 
   try {
-    const result = await updatePosCustomer(input);
+    const result = await updatePosCustomer(parsed.value);
     return Response.json(result, { status: result.ok ? 200 : 409, headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return responseForError(error, "No se pudo actualizar el cliente.");

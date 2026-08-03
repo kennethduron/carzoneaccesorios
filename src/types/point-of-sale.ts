@@ -146,6 +146,7 @@ export type PosCustomerType = "retail" | "wholesale";
 export type PosWholesaleStatus = "none" | "pending" | "approved" | "rejected" | "suspended";
 export type PosCustomerStatus = "active" | "inactive";
 export type PosCustomerCreditStatus = "not_enabled" | "active" | "on_hold" | "suspended";
+export type PosCustomerCreditMode = "none" | "unchanged" | "active" | "suspended" | "disabled";
 
 export type PosCustomerSearchResult = {
   customerId: string;
@@ -168,23 +169,25 @@ export type PosCustomerSearchPage = {
 };
 
 export type PosCustomerCreditSummary = {
+  accountExists: boolean;
   status: PosCustomerCreditStatus;
   enabled: boolean;
   creditLimit: number;
+  termsDays: number;
+  notes: string | null;
   openBalance: number;
   availableCredit: number;
   overdueBalance: number;
   receivableCount: number;
   canUseCredit: boolean;
   reason: string;
-  readOnly: true;
 };
 
 export type PosCustomerContext = {
   customerId: string;
   displayName: string;
   businessName: string | null;
-  phone: string;
+  phone: string | null;
   email: string | null;
   taxId: string | null;
   address: string | null;
@@ -215,13 +218,19 @@ export type PosWholesaleEligibility = {
 export type PosCustomerWriteInput = {
   requestKey: string;
   contactName: string;
-  phone: string;
+  phone: string | null;
   email: string | null;
   businessName: string | null;
   taxId: string | null;
   address: string | null;
   city: string | null;
   commercialNotes: string | null;
+  customerType: PosCustomerType;
+  creditMode: PosCustomerCreditMode;
+  creditLimit: number;
+  creditTermsDays: number;
+  creditNotes: string | null;
+  changeReason: string;
 };
 
 export type PosCustomerUpdateInput = PosCustomerWriteInput & {
@@ -231,7 +240,7 @@ export type PosCustomerUpdateInput = PosCustomerWriteInput & {
 
 export type PosCustomerWriteResult = {
   ok: boolean;
-  status: "created" | "updated" | "duplicate" | "version_conflict";
+  status: "created" | "updated" | "duplicate" | "possible_duplicate" | "version_conflict";
   message: string;
   customerId: string;
   commercialVersion: number;

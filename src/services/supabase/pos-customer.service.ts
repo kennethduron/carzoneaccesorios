@@ -30,7 +30,7 @@ type ContextRow = {
   customer_id: string;
   display_name: string;
   business_name: string | null;
-  phone: string;
+  phone: string | null;
   email: string | null;
   tax_id: string | null;
   address: string | null;
@@ -55,6 +55,12 @@ type ContextRow = {
   order_count: number | string;
   invoice_count: number | string;
   total_billed: number | string;
+};
+
+type CreditConfigurationRow = {
+  account_exists: boolean;
+  terms_days: number | string;
+  credit_notes: string | null;
 };
 
 type EligibilityRow = {
@@ -88,6 +94,7 @@ function safeMessage(code: string | undefined, fallback: string) {
   if (code === "P0002") return "No se encontro el cliente.";
   if (code === "22023") return "La solicitud contiene datos invalidos.";
   if (code === "55000") return "La operacion todavia esta en proceso. Intenta nuevamente.";
+  if (code === "PT409") return "La configuración comercial cambió. Recarga el cliente e intenta de nuevo.";
   return fallback;
 }
 
@@ -131,10 +138,16 @@ export async function searchPosCustomers(input: {
 
 export async function getPosCustomerContext(customerId: string): Promise<PosCustomerContext> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase
-    .rpc("get_pos_customer_context_v1", { target_customer_id: customerId })
-    .single<ContextRow>();
+  const [contextResponse, configurationResponse] = await Promise.all([
+    supabase.rpc("get_pos_customer_context_v1", { target_customer_id: customerId }).single<ContextRow>(),
+    supabase.rpc("get_pos_customer_credit_configuration_v1", { target_customer_id: customerId }).single<CreditConfigurationRow>(),
+  ]);
+  const { data, error } = contextResponse;
   if (error || !data) throwRpcError(error, "No se pudo cargar el contexto del cliente.");
+  if (configurationResponse.error || !configurationResponse.data) {
+    throwRpcError(configurationResponse.error, "No se pudo cargar la configuración de crédito.");
+  }
+  const configuration = configurationResponse.data;
 
   return {
     customerId: data.customer_id,
@@ -154,16 +167,20 @@ export async function getPosCustomerContext(customerId: string): Promise<PosCust
     hasPortalAccount: Boolean(data.has_portal_account),
     customerStatus: data.customer_status,
     credit: {
+      accountExists: Boolean(configuration.account_exists),
       status: data.credit_status,
       enabled: Boolean(data.credit_enabled),
       creditLimit: numberValue(data.credit_limit),
+      termsDays: numberValue(configuration.terms_days) || 30,
+      notes: configuration.credit_notes,
       openBalance: numberValue(data.open_balance),
       availableCredit: numberValue(data.available_credit),
       overdueBalance: numberValue(data.overdue_balance),
       receivableCount: numberValue(data.receivable_count),
       canUseCredit: Boolean(data.can_use_credit),
-      reason: data.credit_reason,
-      readOnly: true,
+      reason: data.credit_status === "active"
+        ? "Crédito comercial activo; el servidor lo revalidará al confirmar la venta."
+        : data.credit_reason,
     },
     summary: {
       orderCount: numberValue(data.order_count),
@@ -199,6 +216,8 @@ export async function evaluatePosWholesaleEligibility(
 
 function writeRpcInput(input: PosCustomerWriteInput) {
   return {
+    p_customer_id: null,
+    p_expected_commercial_version: null,
     p_request_key: input.requestKey,
     p_contact_name: input.contactName,
     p_phone: input.phone,
@@ -208,19 +227,25 @@ function writeRpcInput(input: PosCustomerWriteInput) {
     p_address: input.address,
     p_city: input.city,
     p_commercial_notes: input.commercialNotes,
+    p_customer_type: input.customerType,
+    p_credit_mode: input.creditMode,
+    p_credit_limit: input.creditLimit,
+    p_credit_terms_days: input.creditTermsDays,
+    p_credit_notes: input.creditNotes,
+    p_change_reason: input.changeReason,
   };
 }
 
 export async function createPosCustomer(input: PosCustomerWriteInput): Promise<PosCustomerWriteResult> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("create_pos_customer_v1", writeRpcInput(input));
+  const { data, error } = await supabase.rpc("save_pos_customer_commercial_profile_v1", writeRpcInput(input));
   if (error || !data) throwRpcError(error, "No se pudo crear el cliente.");
   return data as unknown as PosCustomerWriteResult;
 }
 
 export async function updatePosCustomer(input: PosCustomerUpdateInput): Promise<PosCustomerWriteResult> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("update_pos_customer_v1", {
+  const { data, error } = await supabase.rpc("save_pos_customer_commercial_profile_v1", {
     ...writeRpcInput(input),
     p_customer_id: input.customerId,
     p_expected_commercial_version: input.expectedCommercialVersion,

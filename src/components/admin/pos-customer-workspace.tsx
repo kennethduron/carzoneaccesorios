@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  BadgeDollarSign,
   Building2,
   ChevronDown,
   CircleUserRound,
@@ -25,7 +24,6 @@ import type {
   PosCustomerSearchPage,
   PosCustomerSearchResult,
   PosCustomerWriteResult,
-  PosWholesaleEligibility,
 } from "@/types/point-of-sale";
 import { formatCurrency } from "@/utils/pricing";
 
@@ -38,6 +36,12 @@ type CustomerForm = {
   address: string;
   city: string;
   commercialNotes: string;
+  customerType: "retail" | "wholesale";
+  creditEnabled: boolean;
+  creditStatus: "active" | "suspended";
+  creditLimit: string;
+  creditTermsDays: string;
+  creditNotes: string;
 };
 
 const emptyForm: CustomerForm = {
@@ -49,18 +53,30 @@ const emptyForm: CustomerForm = {
   address: "",
   city: "",
   commercialNotes: "",
+  customerType: "retail",
+  creditEnabled: false,
+  creditStatus: "active",
+  creditLimit: "",
+  creditTermsDays: "30",
+  creditNotes: "",
 };
 
 function contextToForm(context: PosCustomerContext): CustomerForm {
   return {
     contactName: context.displayName,
-    phone: context.phone,
+    phone: context.phone ?? "",
     email: context.email ?? "",
     businessName: context.businessName ?? "",
     taxId: context.taxId ?? "",
     address: context.address ?? "",
     city: context.city ?? "",
     commercialNotes: context.commercialNotes ?? "",
+    customerType: context.customerType,
+    creditEnabled: context.credit.enabled,
+    creditStatus: context.credit.status === "suspended" ? "suspended" : "active",
+    creditLimit: context.credit.creditLimit > 0 ? String(context.credit.creditLimit) : "",
+    creditTermsDays: String(context.credit.termsDays),
+    creditNotes: context.credit.notes ?? "",
   };
 }
 
@@ -100,9 +116,6 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   const [initialForm, setInitialForm] = useState<CustomerForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState("");
-  const [eligibilityAmount, setEligibilityAmount] = useState("");
-  const [eligibility, setEligibility] = useState<PosWholesaleEligibility | null>(null);
-  const [eligibilityLoading, setEligibilityLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestSignatureRef = useRef("");
   const listboxId = "pos-customer-results";
@@ -180,8 +193,6 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       });
       const selected = await readJson<PosCustomerContext>(response);
       setContext(selected);
-      setEligibility(null);
-      setEligibilityAmount("");
       setPanelMode("closed");
       setForm(contextToForm(selected));
       setInitialForm(contextToForm(selected));
@@ -244,7 +255,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
 
   async function saveCustomer(event: React.FormEvent) {
     event.preventDefault();
-    if (saving || !form.contactName.trim() || !form.phone.trim()) return;
+    if (saving || !form.contactName.trim()) return;
     setSaving(true);
     setFormMessage("");
     const requestKey = crypto.randomUUID();
@@ -257,6 +268,14 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       address: form.address || null,
       city: form.city || null,
       commercialNotes: form.commercialNotes || null,
+      customerType: form.customerType,
+      creditMode: form.creditEnabled
+        ? form.creditStatus
+        : panelMode === "edit" && context?.credit.accountExists ? "disabled" : "none",
+      creditLimit: Number(form.creditLimit || 0),
+      creditTermsDays: Number(form.creditTermsDays || 30),
+      creditNotes: form.creditNotes || null,
+      changeReason: "Configurado desde Punto de Venta.",
       ...(panelMode === "edit" && context
         ? { expectedCommercialVersion: context.commercialVersion }
         : {}),
@@ -273,7 +292,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       });
       const result = (await response.json()) as PosCustomerWriteResult & { message?: string };
       if (!response.ok) {
-        if (result.customerId && (result.status === "duplicate" || result.status === "version_conflict")) {
+        if (result.customerId && (["duplicate", "possible_duplicate", "version_conflict"] as string[]).includes(result.status)) {
           setFormMessage(result.message);
           await loadContext(result.customerId);
           return;
@@ -289,33 +308,12 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
     }
   }
 
-  async function evaluateEligibility() {
-    if (!context || eligibilityLoading) return;
-    const amount = Number(eligibilityAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setFormMessage("Ingresa un monto de mercaderia valido.");
-      return;
-    }
-    setEligibilityLoading(true);
-    setFormMessage("");
-    try {
-      const params = new URLSearchParams({ merchandiseFinal: String(amount) });
-      const response = await fetch(`/api/admin/pos/customers/${context.customerId}/eligibility?${params}`);
-      setEligibility(await readJson<PosWholesaleEligibility>(response));
-    } catch (error) {
-      setFormMessage(error instanceof Error ? error.message : "No se pudo evaluar la elegibilidad.");
-    } finally {
-      setEligibilityLoading(false);
-    }
-  }
-
   function clearSelection() {
     if (!confirmDiscard()) return;
     setContext(null);
     setPanelMode("closed");
     setForm(emptyForm);
     setInitialForm(emptyForm);
-    setEligibility(null);
     setFormMessage("");
   }
 
@@ -332,7 +330,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
             </p>
           </div>
           <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#c91f26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
-            <Plus size={18} /> Cliente rápido
+            <Plus size={18} /> Nuevo cliente
           </button>
         </div>
       </section>
@@ -419,12 +417,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           {!contextLoading && panelMode === "closed" && context ? (
             <CustomerContextPanel
               context={context}
-              eligibilityAmount={eligibilityAmount}
-              eligibility={eligibility}
-              eligibilityLoading={eligibilityLoading}
               message={formMessage}
-              onEligibilityAmount={setEligibilityAmount}
-              onEvaluate={() => void evaluateEligibility()}
               onEdit={openEdit}
               onClear={clearSelection}
             />
@@ -474,25 +467,48 @@ function CustomerFormPanel({
   return (
     <form onSubmit={onSubmit}>
       <div className="flex items-start justify-between gap-3">
-        <div><p className="text-sm font-semibold text-[#e4252c]">{mode === "create" ? "Alta rápida" : "Edición controlada"}</p><h2 className="text-xl font-semibold">{mode === "create" ? "Nuevo cliente minorista" : "Editar cliente"}</h2></div>
+        <div><p className="text-sm font-semibold text-[#e4252c]">{mode === "create" ? "Alta rápida integral" : "Configuración comercial"}</p><h2 className="text-xl font-semibold">{mode === "create" ? "Nuevo cliente" : "Editar configuración comercial"}</h2></div>
         <button type="button" onClick={onCancel} aria-label="Cerrar formulario" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/10 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={18} /></button>
       </div>
-      <p className="mt-2 text-sm leading-6 text-black/55">No crea cuenta del portal, crédito, solicitud mayorista, pedido ni venta.</p>
+      <p className="mt-2 text-sm leading-6 text-black/55">Crea o actualiza un perfil interno en el CRM. No crea usuario ni acceso al portal, pedido o venta.</p>
       {dirty ? <p className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"><AlertTriangle size={16} /> Hay cambios sin guardar.</p> : null}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <FormField label="Nombre *"><input required maxLength={160} value={form.contactName} onChange={field("contactName")} className="pos-input" /></FormField>
-        <FormField label="Teléfono *"><input required maxLength={40} inputMode="tel" value={form.phone} onChange={field("phone")} className="pos-input" /></FormField>
+      <fieldset className="mt-4">
+        <legend className="text-sm font-semibold uppercase tracking-wide text-black/50">Información básica</legend>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <FormField label="Nombre o razón social *"><input required maxLength={160} value={form.contactName} onChange={field("contactName")} className="pos-input" /></FormField>
+        <FormField label="Teléfono"><input maxLength={40} inputMode="tel" value={form.phone} onChange={field("phone")} className="pos-input" /></FormField>
         <FormField label="Correo"><input maxLength={254} inputMode="email" type="email" value={form.email} onChange={field("email")} className="pos-input" /></FormField>
         <FormField label="Empresa"><input maxLength={160} value={form.businessName} onChange={field("businessName")} className="pos-input" /></FormField>
         <FormField label="RTN"><input maxLength={40} value={form.taxId} onChange={field("taxId")} className="pos-input" /></FormField>
         <FormField label="Ciudad"><input maxLength={120} value={form.city} onChange={field("city")} className="pos-input" /></FormField>
         <FormField label="Dirección" wide><textarea maxLength={500} rows={3} value={form.address} onChange={field("address")} className="pos-input resize-y py-3" /></FormField>
         <FormField label="Notas comerciales no sensibles" wide><textarea maxLength={1000} rows={3} value={form.commercialNotes} onChange={field("commercialNotes")} className="pos-input resize-y py-3" /></FormField>
-      </div>
+        </div>
+      </fieldset>
+      {!form.phone.trim() && !form.email.trim() && !form.taxId.trim() ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Puedes crear el perfil solo con el nombre. Completa teléfono, correo o RTN después para facilitar la identificación.</p> : null}
+
+      <fieldset className="mt-5 rounded-xl border border-black/10 p-4">
+        <legend className="px-1 text-sm font-semibold">Tipo de cliente</legend>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {(["retail", "wholesale"] as const).map((customerType) => <label key={customerType} className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm font-semibold ${form.customerType === customerType ? "border-[#e4252c] bg-red-50" : "border-black/10"}`}><input type="radio" name="customerType" value={customerType} checked={form.customerType === customerType} onChange={() => onChange({ ...form, customerType })} className="size-4 accent-[#e4252c]" />{customerType === "retail" ? "Minorista" : "Mayorista"}</label>)}
+        </div>
+        <p className="mt-2 text-xs leading-5 text-black/50">{form.customerType === "wholesale" ? "Quedará aprobado y activo por el rol autorizado, con historial comercial." : "Usará precio detalle salvo un precio manual autorizado."}</p>
+      </fieldset>
+
+      <fieldset className="mt-4 rounded-xl border border-black/10 p-4">
+        <legend className="px-1 text-sm font-semibold">Crédito comercial</legend>
+        <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={form.creditEnabled} onChange={(event) => onChange({ ...form, creditEnabled: event.target.checked })} className="size-5 accent-[#e4252c]" /> Habilitar crédito comercial</label>
+        {form.creditEnabled ? <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <FormField label="Límite de crédito *"><input required type="number" inputMode="decimal" min="0.01" max="9999999999.99" step="0.01" value={form.creditLimit} onChange={field("creditLimit")} className="pos-input" /></FormField>
+          <FormField label="Plazo en días *"><input required type="number" inputMode="numeric" min="1" max="365" step="1" value={form.creditTermsDays} onChange={field("creditTermsDays")} className="pos-input" /></FormField>
+          {mode === "edit" ? <FormField label="Estado"><select value={form.creditStatus} onChange={(event) => onChange({ ...form, creditStatus: event.target.value as "active" | "suspended" })} className="pos-input"><option value="active">Activo</option><option value="suspended">Suspendido</option></select></FormField> : null}
+          <FormField label="Notas o condiciones" wide><textarea maxLength={1000} rows={2} value={form.creditNotes} onChange={field("creditNotes")} className="pos-input resize-y py-3" /></FormField>
+        </div> : <p className="mt-1 text-xs text-black/50">{mode === "create" ? "No se creará una cuenta de crédito." : "Al guardar, el crédito existente quedará deshabilitado; el historial y las CxC no cambian."}</p>}
+      </fieldset>
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold">Cancelar</button>
-        <button type="submit" disabled={saving || !form.contactName.trim() || !form.phone.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <LoaderCircle size={18} className="animate-spin" /> : <UserRoundCheck size={18} />}{mode === "create" ? "Crear cliente" : "Guardar cambios"}</button>
+        <button type="submit" disabled={saving || !form.contactName.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <LoaderCircle size={18} className="animate-spin" /> : <UserRoundCheck size={18} />}{mode === "create" ? "Crear y seleccionar" : "Guardar configuración"}</button>
       </div>
     </form>
   );
@@ -500,22 +516,12 @@ function CustomerFormPanel({
 
 function CustomerContextPanel({
   context,
-  eligibilityAmount,
-  eligibility,
-  eligibilityLoading,
   message,
-  onEligibilityAmount,
-  onEvaluate,
   onEdit,
   onClear,
 }: {
   context: PosCustomerContext;
-  eligibilityAmount: string;
-  eligibility: PosWholesaleEligibility | null;
-  eligibilityLoading: boolean;
   message: string;
-  onEligibilityAmount: (value: string) => void;
-  onEvaluate: () => void;
   onEdit: () => void;
   onClear: () => void;
 }) {
@@ -528,7 +534,7 @@ function CustomerContextPanel({
           <p className="mt-1 break-words text-sm text-black/55">{[context.businessName, context.phone, context.email].filter(Boolean).join(" · ")}</p>
         </div>
         <div className="flex shrink-0 gap-2">
-          <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c]"><Pencil size={16} /> Editar</button>
+          <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c]"><Pencil size={16} /> Editar configuración comercial</button>
           <button type="button" onClick={onClear} aria-label="Quitar selección" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/15 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={17} /></button>
         </div>
       </div>
@@ -544,21 +550,14 @@ function CustomerContextPanel({
         <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta vinculada" : "Sin cuenta vinculada"} detail="La creación rápida no genera usuarios Auth ni invitaciones.">
           {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación administrativa</Link> : null}
         </InfoCard>
-        <InfoCard icon={CreditCard} title="Crédito (solo lectura)" value={context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado"} detail={context.credit.reason}>
+        <InfoCard icon={CreditCard} title="Crédito comercial" value={context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado"} detail={context.credit.reason}>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><Metric label="Límite" value={formatCurrency(context.credit.creditLimit)} /><Metric label="Disponible" value={formatCurrency(context.credit.availableCredit)} /><Metric label="Saldo abierto" value={formatCurrency(context.credit.openBalance)} /><Metric label="Vencido" value={formatCurrency(context.credit.overdueBalance)} /></div>
+          <p className="mt-2 text-xs text-black/50">Plazo: {context.credit.termsDays} días{context.credit.notes ? ` · ${context.credit.notes}` : ""}</p>
         </InfoCard>
         <InfoCard icon={Building2} title="Resumen comercial" value={`${context.summary.orderCount.toLocaleString("es-HN")} pedidos`} detail={`${context.summary.invoiceCount.toLocaleString("es-HN")} facturas · ${formatCurrency(context.summary.totalBilled)} facturado`} />
         <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="La confirmación releerá el estado vigente desde la base de datos." />
       </div>
 
-      <div className="mt-4 rounded-xl border border-black/10 bg-[#fafafa] p-4">
-        <div className="flex items-start gap-3"><BadgeDollarSign className="mt-0.5 shrink-0 text-[#e4252c]" size={20} /><div><h3 className="font-semibold">Evaluar elegibilidad mayorista</h3><p className="mt-1 text-sm leading-6 text-black/55">Usa solo mercadería final con ISV incluido; excluye entrega, COD y cargos externos. No aprueba ni modifica al cliente.</p></div></div>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input aria-label="Monto final de mercadería" inputMode="decimal" min="0" step="0.01" type="number" value={eligibilityAmount} onChange={(event) => onEligibilityAmount(event.target.value)} placeholder="L 0.00" className="pos-input sm:max-w-56" />
-          <button type="button" disabled={eligibilityLoading} onClick={onEvaluate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{eligibilityLoading ? <LoaderCircle size={17} className="animate-spin" /> : null} Evaluar</button>
-        </div>
-        {eligibility ? <div className={`mt-3 rounded-lg p-3 text-sm ${eligibility.eligible ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-950"}`}><p className="font-semibold">{eligibility.pricingMode === "wholesale" ? "Precio mayorista vigente" : eligibility.eligible ? "Elegible para revisión mayorista" : `Faltan ${formatCurrency(eligibility.missingAmount)}`}</p><p className="mt-1 leading-6">{eligibility.recommendedAction}</p><p className="mt-1 text-xs">Umbral: {formatCurrency(eligibility.thresholdAmount)} · Evaluado: {formatCurrency(eligibility.evaluatedAmount)}</p></div> : null}
-      </div>
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
     </div>
   );
