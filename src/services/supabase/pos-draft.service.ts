@@ -72,6 +72,12 @@ function numberValue(value: unknown) {
 }
 
 function throwRpcError(error: { code?: string; message?: string; details?: string } | null, fallback: string): never {
+  if (error?.message === "POS_CUSTOMER_SUSPENDED") {
+    throw new PosDraftServiceError(
+      "Este cliente está suspendido y no puede utilizarse para una nueva venta.",
+      "POS_CUSTOMER_SUSPENDED",
+    );
+  }
   const code = error?.code ?? "POS_DRAFT_OPERATION_FAILED";
   let context: { currentVersion?: number; status?: string; updatedAt?: string } = {};
   if (code === "PT409" && error?.details) {
@@ -94,6 +100,7 @@ const confirmationMessages: Record<string, string> = {
   POS_DRAFT_CHANGED: "El borrador cambio. Recarga y revisa antes de confirmar.",
   POS_PERMISSION_DENIED: "No tienes permiso para confirmar ventas POS.",
   POS_CUSTOMER_INVALID: "El cliente ya no esta disponible para esta venta.",
+  POS_CUSTOMER_SUSPENDED: "Este cliente está suspendido y no puede utilizarse para una nueva venta.",
   POS_PRODUCT_INACTIVE: "Un producto ya no esta activo.",
   POS_INSUFFICIENT_STOCK: "El inventario cambio y ya no hay existencias suficientes.",
   POS_PRICE_CHANGED: "Un precio, impuesto o condicion comercial cambio. Guarda y revisa de nuevo.",
@@ -215,7 +222,7 @@ export async function getPosChargeCapabilities(): Promise<PosChargeCapabilities>
 
 export async function createPosDraft(requestKey: string, customerId: string) {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("create_pos_sale_draft_v1", { p_request_key: requestKey, p_customer_id: customerId });
+  const { data, error } = await supabase.rpc("create_selectable_pos_sale_draft_v1", { p_request_key: requestKey, p_customer_id: customerId });
   if (error || !data) throwRpcError(error, "No se pudo crear el borrador.");
   return data as unknown as PosSaleDraft;
 }
@@ -267,7 +274,7 @@ export async function confirmPosSale(input: PosConfirmationInput) {
   const paymentPayload = input.payment.method === "cash"
     ? { method: input.payment.method, amount_tendered: input.payment.amountTendered }
     : input.payment;
-  const { data, error } = await supabase.rpc("confirm_pos_sale_v1", {
+  const { data, error } = await supabase.rpc("confirm_selectable_pos_sale_v1", {
     p_draft_id: input.draftId,
     p_request_key: input.requestKey,
     p_expected_draft_version: input.expectedDraftVersion,

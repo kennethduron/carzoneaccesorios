@@ -13,8 +13,11 @@ type RouteContext = { params: Promise<{ customerId: string }> };
 
 function responseForError(error: unknown, fallback: string) {
   const serviceError = error instanceof PosCustomerServiceError ? error : null;
-  const status = serviceError?.code === "42501" ? 403 : serviceError?.code === "P0002" ? 404 : serviceError?.code === "22023" ? 400 : 500;
-  return Response.json({ message: serviceError?.message ?? fallback }, { status });
+  const status = serviceError?.code === "42501" ? 403
+    : serviceError?.code === "P0002" ? 404
+      : serviceError?.code === "POS_CUSTOMER_SUSPENDED" || serviceError?.code === "PT409" ? 409
+        : serviceError?.code === "22023" ? 400 : 500;
+  return Response.json({ code: serviceError?.code, message: serviceError?.message ?? fallback }, { status });
 }
 
 export async function GET(_request: Request, context: RouteContext) {

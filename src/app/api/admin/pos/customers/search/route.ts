@@ -16,10 +16,8 @@ export async function GET(request: Request) {
   const query = (url.searchParams.get("q") ?? "").trim().replace(/\s+/g, " ").slice(0, 160);
   const limit = Math.max(1, boundedInteger(url.searchParams.get("limit"), 25, 50));
   const offset = boundedInteger(url.searchParams.get("offset"), 0, 10000);
-  const includeInactive = url.searchParams.get("includeInactive") === "true";
-
   try {
-    const payload = await searchPosCustomers({ query, limit, offset, includeInactive });
+    const payload = await searchPosCustomers({ query, limit, offset });
     return Response.json(payload, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     const denied = error instanceof PosCustomerServiceError && error.code === "42501";

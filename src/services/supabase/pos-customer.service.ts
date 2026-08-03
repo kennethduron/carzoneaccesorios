@@ -90,6 +90,7 @@ function numberValue(value: unknown) {
 }
 
 function safeMessage(code: string | undefined, fallback: string) {
+  if (code === "POS_CUSTOMER_SUSPENDED") return "Este cliente está suspendido y no puede utilizarse para una nueva venta.";
   if (code === "42501") return "Acceso denegado.";
   if (code === "P0002") return "No se encontro el cliente.";
   if (code === "22023") return "La solicitud contiene datos invalidos.";
@@ -99,6 +100,9 @@ function safeMessage(code: string | undefined, fallback: string) {
 }
 
 function throwRpcError(error: { code?: string; message?: string } | null, fallback: string): never {
+  if (error?.message === "POS_CUSTOMER_SUSPENDED") {
+    throw new PosCustomerServiceError(safeMessage("POS_CUSTOMER_SUSPENDED", fallback), "POS_CUSTOMER_SUSPENDED");
+  }
   const code = error?.code ?? "POS_CUSTOMER_OPERATION_FAILED";
   throw new PosCustomerServiceError(safeMessage(code, fallback), code);
 }
@@ -107,19 +111,20 @@ export async function searchPosCustomers(input: {
   query: string;
   limit: number;
   offset: number;
-  includeInactive?: boolean;
 }): Promise<PosCustomerSearchPage> {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("search_pos_customers_v1", {
     p_query: input.query,
     p_limit: input.limit,
     p_offset: input.offset,
-    p_include_inactive: input.includeInactive ?? false,
+    p_include_inactive: false,
   });
   if (error) throwRpcError(error, "No se pudo buscar clientes.");
 
   const rows = (data ?? []) as unknown as SearchRow[];
-  const results: PosCustomerSearchResult[] = rows.map((row) => ({
+  const results: PosCustomerSearchResult[] = rows.filter((row) =>
+    row.customer_status === "active" && row.wholesale_status !== "suspended",
+  ).map((row) => ({
     customerId: row.customer_id,
     displayName: row.display_name,
     businessName: row.business_name,
@@ -139,7 +144,7 @@ export async function searchPosCustomers(input: {
 export async function getPosCustomerContext(customerId: string): Promise<PosCustomerContext> {
   const supabase = await getSupabaseServerClient();
   const [contextResponse, configurationResponse] = await Promise.all([
-    supabase.rpc("get_pos_customer_context_v1", { target_customer_id: customerId }).single<ContextRow>(),
+    supabase.rpc("get_selectable_pos_customer_context_v1", { target_customer_id: customerId }).single<ContextRow>(),
     supabase.rpc("get_pos_customer_credit_configuration_v1", { target_customer_id: customerId }).single<CreditConfigurationRow>(),
   ]);
   const { data, error } = contextResponse;
@@ -148,6 +153,12 @@ export async function getPosCustomerContext(customerId: string): Promise<PosCust
     throwRpcError(configurationResponse.error, "No se pudo cargar la configuración de crédito.");
   }
   const configuration = configurationResponse.data;
+  if (data.customer_status !== "active" || data.wholesale_status === "suspended") {
+    throw new PosCustomerServiceError(
+      "Este cliente está suspendido y no puede utilizarse para una nueva venta.",
+      "POS_CUSTOMER_SUSPENDED",
+    );
+  }
 
   return {
     customerId: data.customer_id,
@@ -179,7 +190,7 @@ export async function getPosCustomerContext(customerId: string): Promise<PosCust
       receivableCount: numberValue(data.receivable_count),
       canUseCredit: Boolean(data.can_use_credit),
       reason: data.credit_status === "active"
-        ? "Crédito comercial activo; el servidor lo revalidará al confirmar la venta."
+        ? "Crédito comercial activo. El disponible se verificará nuevamente al confirmar."
         : data.credit_reason,
     },
     summary: {
