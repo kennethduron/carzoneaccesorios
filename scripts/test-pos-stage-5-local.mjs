@@ -11,7 +11,8 @@ const anonKey = process.env.SUPABASE_ANON_KEY;
 if (!serviceKey || !anonKey) throw new Error("Define local Supabase service and anon keys.");
 
 const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-const marker = `POS5-${Date.now()}`;
+const markerPrefix = process.env.POS_TEST_MARKER_PREFIX ?? "POS5";
+const marker = `${markerPrefix}-${Date.now()}`;
 const password = process.env.POS_STAGE5_TEST_PASSWORD ?? `Cz-${crypto.randomUUID()}!a9`;
 const today = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Tegucigalpa", year: "numeric", month: "2-digit", day: "2-digit",
@@ -142,20 +143,20 @@ const replayArgs = {
   p_expected_draft_version: replayDraft.version, p_invoice_date: today,
   p_payment_payload: { method: "cash", amount_tendered: 115 },
 };
-const doubleClick = await Promise.all([
-  rpc(firstClient, "confirm_pos_sale_v1", replayArgs),
-  rpc(secondClient, "confirm_pos_sale_v1", replayArgs),
-]);
+const clickCount = markerPrefix === "POS-STAGE6-LOCAL-ONLY" ? 10 : 2;
+const doubleClick = await Promise.all(Array.from({ length: clickCount }, (_, index) =>
+  rpc(index % 2 === 0 ? firstClient : secondClient, "confirm_pos_sale_v1", replayArgs)
+));
 assert.equal(
   doubleClick.filter((entry) => !entry.error).length,
-  2,
+  clickCount,
   JSON.stringify(doubleClick.map((entry) => entry.error && {
     code: entry.error.code,
     message: entry.error.message,
   })),
 );
 assert.equal(new Set(doubleClick.map((entry) => entry.data.order_id)).size, 1);
-assert.equal(doubleClick.filter((entry) => entry.data.replayed).length, 1);
+assert.equal(doubleClick.filter((entry) => entry.data.replayed).length, clickCount - 1);
 
 const lastProduct = bySuffix("LAST");
 const [lastDraftA, lastDraftB] = await Promise.all([
