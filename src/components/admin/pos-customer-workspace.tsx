@@ -323,12 +323,12 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
     <div className="space-y-4">
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[#e4252c]">Etapa 3 · Clientes y reglas comerciales</p>
+          <div className="hidden">
+            <p className="text-sm font-semibold text-[#e4252c]">Clientes y reglas comerciales</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Punto de Venta</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-              Busca, selecciona o crea un cliente. El modo de precio, mayoreo y crédito se resuelven en el servidor.
-              Esta etapa no crea ventas, pedidos, facturas ni movimientos de inventario.
+              Busca, selecciona o crea un cliente. El modo de precio, mayoreo y crédito se resuelven en el servidor
+              y se revalidan de forma atómica al confirmar la venta.
             </p>
           </div>
           <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#c91f26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
@@ -548,7 +548,7 @@ function CustomerContextPanel({
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><Metric label="Límite" value={formatCurrency(context.credit.creditLimit)} /><Metric label="Disponible" value={formatCurrency(context.credit.availableCredit)} /><Metric label="Saldo abierto" value={formatCurrency(context.credit.openBalance)} /><Metric label="Vencido" value={formatCurrency(context.credit.overdueBalance)} /></div>
         </InfoCard>
         <InfoCard icon={Building2} title="Resumen comercial" value={`${context.summary.orderCount.toLocaleString("es-HN")} pedidos`} detail={`${context.summary.invoiceCount.toLocaleString("es-HN")} facturas · ${formatCurrency(context.summary.totalBilled)} facturado`} />
-        <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="La selección es informativa; una futura venta releerá el estado desde la base de datos." />
+        <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="La confirmación releerá el estado vigente desde la base de datos." />
       </div>
 
       <div className="mt-4 rounded-xl border border-black/10 bg-[#fafafa] p-4">

@@ -218,6 +218,7 @@ const emptyProduct: EditableProductInput = {
   wholesale_price: 0,
   wholesale_min_quantity: 1,
   tax_category: "standard",
+  tracks_inventory: true,
   is_new: false,
   status: "active",
   active: true,
@@ -249,6 +250,7 @@ function toFormProduct(product: ProductAdminRow): EditableProductInput {
     wholesale_price: product.wholesale_price,
     wholesale_min_quantity: product.wholesale_min_quantity,
     tax_category: product.tax_category,
+    tracks_inventory: product.tracks_inventory,
     is_new: product.is_new,
     status: product.status,
     active: product.active,
@@ -1245,6 +1247,7 @@ export function ProductManager({
           retail_price: numberValue(row.retail_price ?? row.precio_detalle ?? "0"),
           wholesale_price: numberValue(row.wholesale_price ?? row.precio_mayorista ?? "0"),
           tax_category: parseProductTaxCategory(row.tax_category || row.clasificacion_fiscal || "standard"),
+          tracks_inventory: true,
           wholesale_min_quantity: numberValue(row.wholesale_min_quantity ?? row.cantidad_minima_mayorista ?? row["cantidad_mínima_mayorista"] ?? "1"),
           is_new: ["true", "1", "si", "sí", "yes"].includes(String(row.is_new ?? row.producto_nuevo ?? "false").trim().toLowerCase()),
           status: (row.status as ProductStatus) || (row.estado as ProductStatus) || "active",
@@ -1499,6 +1502,7 @@ export function ProductManager({
             retail_price: retailPrice,
             wholesale_price: wholesalePrice,
             tax_category: parseProductTaxCategory(readExcelCell(row, ["Clasificacion fiscal"])),
+            tracks_inventory: true,
             wholesale_min_quantity: wholesaleMinQuantity,
             is_new: parseYesNo(readExcelCell(row, ["Producto nuevo"])),
             status: statusValue,
@@ -2759,6 +2763,12 @@ function ProductEditor({
                     <option value="exempt">Exento</option>
                   </select>
                 </Field>
+                <Field label="Control de inventario" help="Desactivalo solo para servicios que no descuentan existencias.">
+                  <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-black/15 px-3 text-sm">
+                    <input type="checkbox" checked={product.tracks_inventory} onChange={(event) => onField("tracks_inventory", event.target.checked)} />
+                    Descontar existencias al vender
+                  </label>
+                </Field>
               </div>
               {decimalValueForSave(product.wholesale_price, 0) > decimalValueForSave(product.retail_price, 0) ? (
                 <p className="rounded-md bg-[#fff0ea] px-3 py-2 text-sm font-medium text-[#9b341b]">
@@ -3042,6 +3052,12 @@ function ProductEditor({
                   <option value="standard">Gravado (ISV incluido)</option>
                   <option value="exempt">Exento</option>
                 </select>
+              </Field>
+              <Field label="Control de inventario">
+                <label className="inline-flex min-h-11 items-center gap-2 rounded-md border border-black/15 px-3 text-sm">
+                  <input type="checkbox" checked={product.tracks_inventory} onChange={(event) => onField("tracks_inventory", event.target.checked)} />
+                  Descontar existencias al vender
+                </label>
               </Field>
             </div>
             </div>

@@ -14,6 +14,10 @@ export type OfficialInvoiceItem = {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  taxCategory?: "standard" | "exempt" | null;
+  taxableBase?: number | null;
+  taxAmount?: number | null;
+  exemptAmount?: number | null;
 };
 
 export type OfficialInvoiceInput = {
@@ -623,15 +627,25 @@ export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
   const smallOrderFee = roundMoney(invoice.smallOrderFee ?? 0);
   // subtotal is already the persisted taxable base after discounts. Reapplying
   // discountTotal here would make the PDF diverge from the order and invoice.
-  const taxableBase = roundMoney(Math.max(0, invoice.subtotal));
+  const hasLineTaxSnapshots = invoice.items.length > 0
+    && invoice.items.every((item) => item.taxCategory === "standard" || item.taxCategory === "exempt");
+  const taxableBase = hasLineTaxSnapshots
+    ? roundMoney(invoice.items.reduce((sum, item) => sum + (item.taxableBase ?? 0), 0))
+    : roundMoney(Math.max(0, invoice.subtotal));
+  const exemptBase = hasLineTaxSnapshots
+    ? roundMoney(invoice.items.reduce((sum, item) => sum + (item.exemptAmount ?? 0), 0))
+    : invoice.tax > 0 ? 0 : taxableBase;
+  const tax15 = hasLineTaxSnapshots
+    ? roundMoney(invoice.items.reduce((sum, item) => sum + (item.taxAmount ?? 0), 0))
+    : invoice.tax;
 
   return {
     subtotal: invoice.subtotal,
     exonerated: 0,
-    exempt: invoice.tax > 0 ? 0 : taxableBase,
-    taxable15: invoice.tax > 0 ? taxableBase : 0,
+    exempt: exemptBase,
+    taxable15: hasLineTaxSnapshots ? taxableBase : invoice.tax > 0 ? taxableBase : 0,
     taxable18: 0,
-    tax15: invoice.tax,
+    tax15,
     tax18: 0,
     discountTotal,
     total: invoice.total,

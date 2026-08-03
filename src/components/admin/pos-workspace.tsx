@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, LoaderCircle, PlusCircle, RefreshCw } from "lucide-react";
 import { PosActiveDrafts } from "@/components/admin/pos-active-drafts";
 import { PosCart } from "@/components/admin/pos-cart";
+import { PosConfirmationPanel } from "@/components/admin/pos-confirmation-panel";
 import { PosCustomerWorkspace } from "@/components/admin/pos-customer-workspace";
 import { PosDeliveryFields, type PosDeliveryState } from "@/components/admin/pos-delivery-fields";
 import { PosDraftStatus, type PosSaveState } from "@/components/admin/pos-draft-status";
 import { PosDraftSummary } from "@/components/admin/pos-draft-summary";
 import { PosProductSearch } from "@/components/admin/pos-product-search";
-import type { PosCustomerContext } from "@/types/point-of-sale";
+import type { PosConfirmationResult, PosCustomerContext } from "@/types/point-of-sale";
 import type { PosActiveDraftSummary, PosChargeCapabilities, PosDraftApiError, PosDraftItem, PosProductSearchResult, PosSaleDraft } from "@/types/pos-drafts";
 
 const storedDraftKey = "car-zone-pos-stage4-draft-id";
@@ -30,10 +31,11 @@ function draftDelivery(draft: PosSaleDraft): PosDeliveryState {
   return { mode: draft.deliveryMode, address: draft.deliveryAddress ?? "", notes: draft.deliveryNotes ?? "", internalNotes: draft.internalNotes ?? "" };
 }
 
-export function PosWorkspace() {
+export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const [customer, setCustomer] = useState<PosCustomerContext | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PosSaleDraft | null>(null);
+  const [confirmedResult, setConfirmedResult] = useState<PosConfirmationResult | null>(null);
   const [items, setItems] = useState<PosDraftItem[]>([]);
   const [delivery, setDelivery] = useState<PosDeliveryState>(emptyDelivery);
   const [status, setStatus] = useState<PosSaveState>("idle");
@@ -56,6 +58,7 @@ export function PosWorkspace() {
     }
     dirtyRef.current = false; setIsDirty(false); pendingSaveKeyRef.current = null;
     setDraft(next); setItems(next.items); setDelivery(draftDelivery(next));
+    setConfirmedResult(null);
     setSelectedCustomerId(next.customerId); setStatus("saved"); setMessage(recoveredMessage);
     window.sessionStorage.setItem(storedDraftKey, next.draftId);
   }, []);
@@ -73,6 +76,14 @@ export function PosWorkspace() {
     if (dirtyRef.current && !window.confirm("Hay cambios pendientes. Recargar otro borrador los descartara. Continuar?")) return;
     try {
       const recovered = await jsonResponse<PosSaleDraft>(await fetch(`/api/admin/pos/drafts/${draftId}`, { headers: { Accept: "application/json" }, cache: "no-store" }));
+      if (recovered.status === "confirmed") {
+        const confirmation = await jsonResponse<PosConfirmationResult>(await fetch(`/api/admin/pos/drafts/${draftId}/confirm`, { headers: { Accept: "application/json" }, cache: "no-store" }));
+        dirtyRef.current = false; setIsDirty(false); setDraft(recovered); setItems(recovered.items);
+        setDelivery(draftDelivery(recovered)); setSelectedCustomerId(recovered.customerId);
+        setConfirmedResult(confirmation); setStatus("saved"); setMessage("Venta confirmada recuperada.");
+        window.sessionStorage.removeItem(storedDraftKey);
+        return;
+      }
       applyDraft(recovered, recoveredMessage);
     } catch (error) {
       window.sessionStorage.removeItem(storedDraftKey); setStatus("error");
@@ -161,7 +172,7 @@ export function PosWorkspace() {
     const existing = items.find((item) => item.productId === product.productId);
     if (existing) { markItems(items.map((item) => item.productId === product.productId ? { ...item, quantity: Math.min(9999, item.quantity + 1) } : item)); return; }
     const now = new Date().toISOString();
-    markItems([...items, { productId: product.productId, productSalesVersion: product.productSalesVersion, sku: product.sku, internalCode: product.internalCode, productName: product.productName, brand: product.brand, categoryName: product.categoryName, imageUrl: product.imageUrl, pricingSource: product.pricingSource, baseUnitPrice: product.baseUnitPrice, finalUnitPrice: product.baseUnitPrice, priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: product.taxCategory, includedTaxRate: product.includedTaxRate, lineMerchandiseGross: product.baseUnitPrice, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: product.taxCategory === "exempt" ? product.baseUnitPrice : 0, availableStock: product.availableStock, stockObservedAt: now, stockStatus: product.availableStock <= 0 ? "insufficient" : product.availableStock <= product.lowStockThreshold ? "low" : "available", validationStatus: product.availableStock <= 0 ? "warning" : "valid", costFloorValidated: false, costValidationVersion: 1, costValidatedAt: now }]);
+    markItems([...items, { productId: product.productId, productSalesVersion: product.productSalesVersion, sku: product.sku, internalCode: product.internalCode, productName: product.productName, brand: product.brand, categoryName: product.categoryName, imageUrl: product.imageUrl, pricingSource: product.pricingSource, baseUnitPrice: product.baseUnitPrice, finalUnitPrice: product.baseUnitPrice, priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: product.taxCategory, includedTaxRate: product.includedTaxRate, lineMerchandiseGross: product.baseUnitPrice, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: product.taxCategory === "exempt" ? product.baseUnitPrice : 0, availableStock: product.availableStock, tracksInventory: product.tracksInventory, stockObservedAt: now, stockStatus: product.tracksInventory === false ? "available" : product.availableStock <= 0 ? "insufficient" : product.availableStock <= product.lowStockThreshold ? "low" : "available", validationStatus: product.tracksInventory === false || product.availableStock > 0 ? "valid" : "warning", costFloorValidated: false, costValidationVersion: 1, costValidatedAt: now }]);
   }
 
   async function abandonDraft() {
@@ -171,6 +182,30 @@ export function PosWorkspace() {
       await jsonResponse<PosSaleDraft>(await fetch(`/api/admin/pos/drafts/${draft.draftId}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestKey, expectedVersion: draft.version }) }));
       pendingAbandonKeyRef.current = null; window.sessionStorage.removeItem(storedDraftKey); dirtyRef.current = false; setIsDirty(false); setDraft(null); setItems([]); setDelivery(emptyDelivery); setStatus("idle"); setMessage("Borrador abandonado logicamente."); await loadActiveDrafts();
     } catch (error) { setStatus(error instanceof PosApiError && error.code === "PT409" ? "conflict" : "error"); setMessage(error instanceof Error ? error.message : "No se pudo abandonar."); }
+  }
+
+  function acceptConfirmation(result: PosConfirmationResult) {
+    dirtyRef.current = false;
+    setIsDirty(false);
+    setConfirmedResult(result);
+    setStatus("saved");
+    setMessage(result.replayed ? "Venta confirmada recuperada." : "Venta confirmada sin efectos duplicados.");
+    window.sessionStorage.removeItem(storedDraftKey);
+    void loadActiveDrafts();
+  }
+
+  function startNewSale() {
+    dirtyRef.current = false;
+    setIsDirty(false);
+    setDraft(null);
+    setConfirmedResult(null);
+    setItems([]);
+    setDelivery(emptyDelivery);
+    setStatus("idle");
+    setMessage("Lista para una nueva venta.");
+    pendingSaveKeyRef.current = null;
+    pendingAbandonKeyRef.current = null;
+    window.sessionStorage.removeItem(storedDraftKey);
   }
 
   const provisional = useMemo(() => items.reduce((totals, item) => {
@@ -186,11 +221,11 @@ export function PosWorkspace() {
   const compatibleCustomer = Boolean(customer && draft?.customerId === customer.customerId && draft.customerCommercialVersion === customer.commercialVersion);
 
   return <div className="min-w-0 space-y-4">
-    <section className="rounded-xl border border-black/10 bg-gradient-to-r from-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">Fase 1 · Etapa 4</p><h1 className="text-2xl font-semibold">Preparar venta como borrador</h1><p className="mt-1 text-sm text-black/60">Sin pedido, factura, pago, reserva, movimiento de inventario ni asiento contable.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => void openDraft(draft.draftId, "Version mas reciente cargada. Revisa antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft ? <button type="button" onClick={() => void abandonDraft()} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 bg-white px-3 text-sm font-semibold"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
+    <section className="rounded-xl border border-black/10 bg-gradient-to-r from-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">POS · Etapa 5</p><h1 className="text-2xl font-semibold">Venta atomica en tienda</h1><p className="mt-1 text-sm text-black/60">Pedido, factura, cobro, inventario y borradores contables se confirman en una sola operacion.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => void openDraft(draft.draftId, "Version mas reciente cargada. Revisa antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => void abandonDraft()} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 bg-white px-3 text-sm font-semibold"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
 
     <PosCustomerWorkspace selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
     <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => void openDraft(draftId)} />
 
-    {!draft ? <section className="rounded-xl border border-dashed border-black/15 bg-white p-6 text-center"><h2 className="font-semibold">Inicia el borrador despues de seleccionar el cliente</h2><p className="mt-1 text-sm text-black/55">El servidor fijara el modo de precio y la version comercial.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Crear borrador</button></section> : <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]"><div className="min-w-0 space-y-4"><PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} /><PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} /></div><div className="min-w-0 space-y-4 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-2rem)] lg:flex-col lg:gap-4 lg:space-y-0"><div className="lg:min-h-0 lg:overflow-y-auto lg:rounded-xl"><PosCart items={items} onChange={markItems} onClear={() => markItems([])} /></div><PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} disabled={!isDirty || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} /></div></div>}
+    {!draft ? <section className="rounded-xl border border-dashed border-black/15 bg-white p-6 text-center"><h2 className="font-semibold">Inicia el borrador despues de seleccionar el cliente</h2><p className="mt-1 text-sm text-black/55">El servidor fijara el modo de precio y la version comercial.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Crear borrador</button></section> : confirmedResult && customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]"><div className="min-w-0 space-y-4"><PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} /><PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} /></div><div className="min-w-0 space-y-4 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-2rem)] lg:flex-col lg:gap-4 lg:space-y-0"><div className="lg:min-h-0 lg:overflow-y-auto lg:rounded-xl"><PosCart items={items} onChange={markItems} onClear={() => markItems([])} /></div><PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} disabled={!isDirty || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />{customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : null}</div></div>}
   </div>;
 }

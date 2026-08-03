@@ -121,6 +121,7 @@ type ProductDbPayload = {
   wholesale_price: number;
   wholesale_min_quantity: number;
   tax_category: ProductTaxCategory;
+  tracks_inventory: boolean;
   is_new: boolean;
   status: ProductStatus;
   active: boolean;
@@ -241,6 +242,7 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     wholesale_price: positiveNumber(input.wholesale_price),
     wholesale_min_quantity: Math.max(1, positiveInteger(input.wholesale_min_quantity, 1)),
     tax_category: input.tax_category,
+    tracks_inventory: Boolean(input.tracks_inventory),
     is_new: Boolean(input.is_new),
     status,
     active: status === "active" && input.active,

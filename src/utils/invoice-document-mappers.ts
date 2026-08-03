@@ -44,6 +44,10 @@ export function adminInvoiceToOfficialInvoice(invoice: AdminInvoiceDetail): Offi
       quantity: item.quantity,
       unitPrice: item.unit_price,
       lineTotal: item.line_total,
+      taxCategory: item.tax_category_snapshot,
+      taxableBase: item.taxable_base_snapshot,
+      taxAmount: item.tax_amount_snapshot,
+      exemptAmount: item.exempt_amount_snapshot,
     })),
   };
 }

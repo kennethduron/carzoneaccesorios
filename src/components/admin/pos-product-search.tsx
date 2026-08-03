@@ -17,6 +17,9 @@ function productAvailability(product: PosProductSearchResult) {
     const label = product.productStatus === "inactive" ? "Inactivo" : product.productStatus === "archived" ? "Archivado" : "Borrador";
     return { label, className: "text-slate-600", available: false };
   }
+  if (product.tracksInventory === false) {
+    return { label: "Servicio · sin control de inventario", className: "text-blue-700", available: true };
+  }
   if (product.autoDisabledByStock || product.availableStock <= 0) return { label: "Agotado", className: "text-red-700", available: false };
   if (product.availableStock <= product.lowStockThreshold) return { label: `Stock bajo · ${product.availableStock} disponible`, className: "text-amber-700", available: true };
   return { label: `Disponible ${product.availableStock}`, className: "text-emerald-700", available: true };

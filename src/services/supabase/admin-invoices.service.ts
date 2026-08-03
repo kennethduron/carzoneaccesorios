@@ -58,12 +58,15 @@ type PaymentQueryRow = {
   status: string | null;
 };
 
-type InvoiceItemQueryRow = Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot"> & {
+type InvoiceItemQueryRow = Omit<AdminInvoiceItem, "quantity" | "unit_price" | "line_total" | "retail_price_snapshot" | "wholesale_price_snapshot" | "taxable_base_snapshot" | "tax_amount_snapshot" | "exempt_amount_snapshot"> & {
   quantity: unknown;
   unit_price: unknown;
   line_total: unknown;
   retail_price_snapshot: unknown;
   wholesale_price_snapshot: unknown;
+  taxable_base_snapshot: unknown;
+  tax_amount_snapshot: unknown;
+  exempt_amount_snapshot: unknown;
 };
 
 type InvoiceDetailQueryRow = InvoiceQueryRow & {
@@ -131,6 +134,9 @@ function normalizeItems(items: InvoiceItemQueryRow[] | null): AdminInvoiceItem[]
     line_total: toNumber(item.line_total),
     retail_price_snapshot: toNumber(item.retail_price_snapshot),
     wholesale_price_snapshot: toNumber(item.wholesale_price_snapshot),
+    taxable_base_snapshot: item.taxable_base_snapshot === null ? null : toNumber(item.taxable_base_snapshot),
+    tax_amount_snapshot: item.tax_amount_snapshot === null ? null : toNumber(item.tax_amount_snapshot),
+    exempt_amount_snapshot: item.exempt_amount_snapshot === null ? null : toNumber(item.exempt_amount_snapshot),
   }));
 }
 
@@ -324,7 +330,11 @@ export async function getAdminInvoiceDetail(
         unit_price,
         line_total,
         retail_price_snapshot,
-        wholesale_price_snapshot
+        wholesale_price_snapshot,
+        tax_category_snapshot,
+        taxable_base_snapshot,
+        tax_amount_snapshot,
+        exempt_amount_snapshot
       )
     `,
     )

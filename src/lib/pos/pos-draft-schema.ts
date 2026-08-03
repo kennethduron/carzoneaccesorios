@@ -1,6 +1,7 @@
 export {
   abandonPosDraftSchema,
   createPosDraftSchema,
+  confirmPosSaleSchema,
   firstZodMessage,
   posProductSearchSchema,
   savePosDraftSchema,

@@ -21,9 +21,9 @@ export default async function PointOfSalePage() {
   if (!allowed) redirect("/sin-permiso");
 
   return (
-    <AdminShell title="Punto de Venta · Clientes">
+    <AdminShell title="Punto de Venta">
       <main className="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 lg:px-6">
-        <PosWorkspace />
+        <PosWorkspace operatorName={profile.full_name ?? profile.username ?? profile.email ?? "Usuario autorizado"} />
       </main>
     </AdminShell>
   );

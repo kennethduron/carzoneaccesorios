@@ -15,6 +15,8 @@ export type PosPermission =
   | "pos:drafts:abandon"
   | "pos:products:search"
   | "pos:price_override"
+  | "pos:confirm_sale"
+  | "pos:reprint_documents"
   | "customers:read_commercial"
   | "customers:read_credit";
 

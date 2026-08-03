@@ -37,6 +37,7 @@ export type ProductAdminRow = {
   wholesale_price: number;
   wholesale_min_quantity: number;
   tax_category: ProductTaxCategory;
+  tracks_inventory: boolean;
   product_sales_version: number;
   is_new: boolean;
   status: ProductStatus;
@@ -73,6 +74,7 @@ export type ProductFormInput = {
   wholesale_price: number;
   wholesale_min_quantity: number;
   tax_category: ProductTaxCategory;
+  tracks_inventory: boolean;
   is_new: boolean;
   status: ProductStatus;
   active: boolean;

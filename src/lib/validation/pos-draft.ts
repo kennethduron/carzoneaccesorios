@@ -30,6 +30,33 @@ export const abandonPosDraftSchema = z.object({
   expectedVersion: z.number().int().positive(),
 }).strict();
 
+const invoiceDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const confirmationPaymentSchema = z.discriminatedUnion("method", [
+  z.object({
+    method: z.literal("cash"),
+    amountTendered: z.number().finite().nonnegative().max(999_999_999_999.99),
+  }).strict(),
+  z.object({
+    method: z.literal("bank_transfer"),
+    verified: z.literal(true),
+    reference: z.string().trim().min(1).max(200),
+  }).strict(),
+  z.object({
+    method: z.literal("card"),
+    verified: z.literal(true),
+    reference: z.string().trim().max(200).nullable(),
+  }).strict(),
+  z.object({ method: z.literal("commercial_credit") }).strict(),
+]);
+
+export const confirmPosSaleSchema = z.object({
+  requestKey: z.string().uuid(),
+  expectedDraftVersion: z.number().int().positive(),
+  invoiceDate: invoiceDateSchema,
+  payment: confirmationPaymentSchema,
+}).strict();
+
 export const posProductSearchSchema = z.object({
   query: z.string().trim().max(120).transform((value) => value.replace(/\s+/g, " ")),
   customerId: z.string().uuid(),

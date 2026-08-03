@@ -25,7 +25,5 @@ export function PosDraftSummary({ draft, pending, merchandiseGross, taxableGross
     <div className="flex justify-between border-t pt-3 text-lg"><span className="font-semibold">Total</span><strong>{formatCurrency(merchandiseGross)}</strong></div>
     <div className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-xs text-emerald-900"><ShieldCheck className="shrink-0" size={17} /><span>Borrador de venta — aún no afecta inventario, facturación ni contabilidad.</span></div>
     <button type="button" disabled={disabled} onClick={onSave} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50"><Save size={17} /> Guardar borrador</button>
-    <button type="button" disabled aria-describedby="stage5-help" className="mt-2 hidden min-h-11 w-full rounded-lg bg-slate-200 text-sm font-semibold text-slate-500 sm:block">Continuar al cierre</button>
-    <p id="stage5-help" className="mt-1 hidden text-center text-xs text-black/45 sm:block">Disponible en la Etapa 5</p>
   </section>;
 }

@@ -58,6 +58,10 @@ export type AdminInvoiceItem = {
   line_total: number;
   retail_price_snapshot: number;
   wholesale_price_snapshot: number;
+  tax_category_snapshot: "standard" | "exempt" | null;
+  taxable_base_snapshot: number | null;
+  tax_amount_snapshot: number | null;
+  exempt_amount_snapshot: number | null;
 };
 
 export type AdminInvoiceRow = {

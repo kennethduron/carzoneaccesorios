@@ -256,6 +256,7 @@ export type PosProductSearchResult = {
   active: boolean;
   autoDisabledByStock: boolean;
   availableStock: number;
+  tracksInventory?: boolean;
   lowStockThreshold: number;
   imageUrl: string | null;
 };
@@ -289,6 +290,7 @@ export type PosDraftItem = {
   lineTaxAmount: number;
   lineExemptAmount: number;
   availableStock: number;
+  tracksInventory?: boolean;
   stockObservedAt: string;
   stockStatus: "available" | "low" | "insufficient";
   validationStatus: "valid" | "warning" | "blocked";
@@ -303,7 +305,7 @@ export type PosSaleDraft = {
   customerId: string;
   customerCommercialVersion: number;
   pricingMode: "retail" | "wholesale";
-  status: "active" | "abandoned" | "expired";
+  status: "active" | "confirmed" | "abandoned" | "expired";
   version: number;
   deliveryMode: PosDeliveryMode;
   deliveryAddress: string | null;
@@ -366,4 +368,37 @@ export type PosActiveDraftSummary = {
   total: number;
   updatedAt: string;
   expiresAt: string;
+};
+
+export type PosConfirmationPaymentInput =
+  | { method: "cash"; amountTendered: number }
+  | { method: "bank_transfer"; verified: true; reference: string }
+  | { method: "card"; verified: true; reference: string | null }
+  | { method: "commercial_credit" };
+
+export type PosConfirmationInput = {
+  draftId: string;
+  requestKey: string;
+  expectedDraftVersion: number;
+  invoiceDate: string;
+  payment: PosConfirmationPaymentInput;
+};
+
+export type PosConfirmationResult = {
+  status: "confirmed";
+  replayed: boolean;
+  draftId: string;
+  orderId: string;
+  orderNumber: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  paymentId: string | null;
+  receivableId: string | null;
+  total: number;
+  paymentMethod: PosPaymentMethod;
+  amountTendered: number | null;
+  changeDue: number | null;
+  invoiceDate: string;
+  receiptReference: string;
+  accountingStatus: string;
 };
