@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, LoaderCircle, PlusCircle, RefreshCw, ShoppingCart } from "lucide-react";
 import { PosActiveDrafts } from "@/components/admin/pos-active-drafts";
 import { PosCart } from "@/components/admin/pos-cart";
+import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import { PosConfirmationPanel } from "@/components/admin/pos-confirmation-panel";
 import { PosCustomerWorkspace } from "@/components/admin/pos-customer-workspace";
 import { PosDeliveryFields, type PosDeliveryState } from "@/components/admin/pos-delivery-fields";
@@ -33,6 +34,11 @@ function draftDelivery(draft: PosSaleDraft): PosDeliveryState {
   return { mode: draft.deliveryMode, address: draft.deliveryAddress ?? "", notes: draft.deliveryNotes ?? "", internalNotes: draft.internalNotes ?? "" };
 }
 
+type WorkspaceDialog =
+  | { kind: "open-draft"; draftId: string; recoveredMessage: string }
+  | { kind: "abandon" }
+  | { kind: "change-customer"; customer: PosCustomerContext | null };
+
 export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const [customer, setCustomer] = useState<PosCustomerContext | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -47,11 +53,15 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const [capabilities, setCapabilities] = useState<PosChargeCapabilities | null>(null);
   const [activeDrafts, setActiveDrafts] = useState<PosActiveDraftSummary[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(true);
+  const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialog | null>(null);
+  const [operationPending, setOperationPending] = useState(false);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const pendingSaveKeyRef = useRef<string | null>(null);
   const pendingAbandonKeyRef = useRef<string | null>(null);
   const changeRevisionRef = useRef(0);
+  const draftRequestRevisionRef = useRef(0);
+  const operationLockRef = useRef(false);
   const cartPanelRef = useRef<HTMLDivElement | null>(null);
 
   const applyDraft = useCallback((next: PosSaleDraft, recoveredMessage = "") => {
@@ -63,6 +73,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     dirtyRef.current = false; setIsDirty(false); pendingSaveKeyRef.current = null;
     changeRevisionRef.current = 0;
     setDraft(next); setItems(next.items); setDelivery(draftDelivery(next));
+    setCustomer((current) => next.customerId === current?.customerId && next.customerCommercialVersion === current.commercialVersion ? current : null);
     setConfirmedResult(null);
     setSelectedCustomerId(next.customerId); setStatus("saved"); setMessage(recoveredMessage);
     window.sessionStorage.setItem(storedDraftKey, next.draftId);
@@ -78,11 +89,13 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   }, []);
 
   const openDraft = useCallback(async (draftId: string, recoveredMessage = "Borrador recuperado.") => {
-    if (dirtyRef.current && !window.confirm("Hay cambios pendientes. Recargar otro borrador los descartara. Continuar?")) return;
+    const requestRevision = ++draftRequestRevisionRef.current;
     try {
       const recovered = await jsonResponse<PosSaleDraft>(await fetch(`/api/admin/pos/drafts/${draftId}`, { headers: { Accept: "application/json" }, cache: "no-store" }));
+      if (requestRevision !== draftRequestRevisionRef.current) return;
       if (recovered.status === "confirmed") {
         const confirmation = await jsonResponse<PosConfirmationResult>(await fetch(`/api/admin/pos/drafts/${draftId}/confirm`, { headers: { Accept: "application/json" }, cache: "no-store" }));
+        if (requestRevision !== draftRequestRevisionRef.current) return;
         dirtyRef.current = false; setIsDirty(false); setDraft(recovered); setItems(recovered.items);
         setDelivery(draftDelivery(recovered)); setSelectedCustomerId(recovered.customerId);
         setConfirmedResult(confirmation); setStatus("saved"); setMessage("Venta confirmada recuperada.");
@@ -91,20 +104,29 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       }
       applyDraft(recovered, recoveredMessage);
     } catch (error) {
+      if (requestRevision !== draftRequestRevisionRef.current) return;
       window.sessionStorage.removeItem(storedDraftKey); setStatus("error");
       setMessage(error instanceof Error ? error.message : "No se pudo recuperar el borrador.");
     }
   }, [applyDraft]);
+
+  const requestOpenDraft = useCallback((draftId: string, recoveredMessage = "Borrador recuperado.") => {
+    if (dirtyRef.current) {
+      setWorkspaceDialog({ kind: "open-draft", draftId, recoveredMessage });
+      return;
+    }
+    void openDraft(draftId, recoveredMessage);
+  }, [openDraft]);
 
   useEffect(() => {
     void fetch("/api/admin/pos/capabilities", { headers: { Accept: "application/json" }, cache: "no-store" }).then((response) => jsonResponse<PosChargeCapabilities>(response)).then(setCapabilities).catch(() => setCapabilities(noCharges));
     const timer = window.setTimeout(() => {
       void loadActiveDrafts();
       const draftId = window.sessionStorage.getItem(storedDraftKey);
-      if (draftId) void openDraft(draftId);
+      if (draftId) requestOpenDraft(draftId);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadActiveDrafts, openDraft]);
+  }, [loadActiveDrafts, requestOpenDraft]);
 
   useEffect(() => {
     const offline = () => { if (dirtyRef.current) setStatus("offline"); };
@@ -120,16 +142,24 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   }, []);
 
   const acceptCustomer = useCallback((next: PosCustomerContext | null) => {
-    if (!next) { if (!draft) { setCustomer(null); setSelectedCustomerId(null); } return; }
+    if (!next) {
+      if (!draft) {
+        draftRequestRevisionRef.current += 1;
+        setCustomer(null);
+        setSelectedCustomerId(null);
+        setMessage("");
+        return;
+      }
+      setWorkspaceDialog({ kind: "change-customer", customer: null });
+      return;
+    }
     if (draft && next.customerId !== draft.customerId) {
-      if (!window.confirm("Cambiar el cliente recalculara precios y condiciones comerciales al guardar. Continuar?")) { setSelectedCustomerId(draft.customerId); return; }
-      dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus("dirty");
-      changeRevisionRef.current += 1;
-      setMessage("Cliente cambiado. Los precios base se resolveran nuevamente en el servidor.");
+      setWorkspaceDialog({ kind: "change-customer", customer: next });
+      return;
     } else if (draft && next.commercialVersion !== draft.customerCommercialVersion) {
       dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus("dirty");
       changeRevisionRef.current += 1;
-      setMessage("Las condiciones comerciales cambiaron. El servidor revalidara todo el carrito.");
+      setMessage("Las condiciones comerciales cambiaron. Revise los productos y precios antes de continuar.");
     }
     setCustomer(next); setSelectedCustomerId(next.customerId);
   }, [draft]);
@@ -139,7 +169,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     setCreating(true); setMessage("");
     try {
       const created = await jsonResponse<PosSaleDraft>(await fetch("/api/admin/pos/drafts", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ requestKey: crypto.randomUUID(), customerId: customer.customerId }) }));
-      applyDraft(created, "Borrador no economico creado."); await loadActiveDrafts();
+      applyDraft(created, "Venta en preparación creada."); await loadActiveDrafts();
     } catch (error) { setStatus("error"); setMessage(error instanceof Error ? error.message : "No se pudo crear el borrador."); }
     finally { setCreating(false); }
   }
@@ -148,7 +178,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const markDelivery = useCallback((next: PosDeliveryState) => { setDelivery(next); changeRevisionRef.current += 1; dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus(navigator.onLine ? "dirty" : "offline"); setMessage(""); }, []);
 
   const saveDraft = useCallback(async () => {
-    if (!draft || !customer || !dirtyRef.current || savingRef.current) return;
+    if (!draft || !customer || !dirtyRef.current || savingRef.current || operationLockRef.current) return;
     if (!navigator.onLine) { setStatus("offline"); return; }
     savingRef.current = true; setStatus("saving");
     const savingRevision = changeRevisionRef.current;
@@ -208,13 +238,39 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     markItems([...items, { productId: product.productId, productSalesVersion: product.productSalesVersion, sku: product.sku, internalCode: product.internalCode, productName: product.productName, brand: product.brand, categoryName: product.categoryName, imageUrl: product.imageUrl, pricingSource: product.pricingSource, baseUnitPrice: product.baseUnitPrice, finalUnitPrice: product.baseUnitPrice, priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: product.taxCategory, includedTaxRate: product.includedTaxRate, lineMerchandiseGross: product.baseUnitPrice, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: product.taxCategory === "exempt" ? product.baseUnitPrice : 0, availableStock: product.availableStock, tracksInventory: product.tracksInventory, stockObservedAt: now, stockStatus: product.tracksInventory === false ? "available" : product.availableStock <= 0 ? "insufficient" : product.availableStock <= product.lowStockThreshold ? "low" : "available", validationStatus: product.tracksInventory === false || product.availableStock > 0 ? "valid" : "warning", costFloorValidated: false, costValidationVersion: 1, costValidatedAt: now }]);
   }
 
-  async function abandonDraft() {
-    if (!draft || !window.confirm("Abandonar este borrador? No se creara ninguna venta.")) return;
+  async function abandonDraft(nextCustomer?: PosCustomerContext | null) {
+    if (!draft || operationPending) return;
+    if (savingRef.current) {
+      setMessage("Espere a que termine el guardado antes de abandonar esta venta.");
+      return;
+    }
+    operationLockRef.current = true;
+    setOperationPending(true);
     const requestKey = pendingAbandonKeyRef.current ?? crypto.randomUUID(); pendingAbandonKeyRef.current = requestKey;
     try {
       await jsonResponse<PosSaleDraft>(await fetch(`/api/admin/pos/drafts/${draft.draftId}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestKey, expectedVersion: draft.version }) }));
-      pendingAbandonKeyRef.current = null; window.sessionStorage.removeItem(storedDraftKey); dirtyRef.current = false; setIsDirty(false); setDraft(null); setItems([]); setDelivery(emptyDelivery); setStatus("idle"); setMessage("Borrador abandonado logicamente."); await loadActiveDrafts();
+      draftRequestRevisionRef.current += 1;
+      changeRevisionRef.current += 1;
+      pendingAbandonKeyRef.current = null;
+      window.sessionStorage.removeItem(storedDraftKey);
+      dirtyRef.current = false;
+      setIsDirty(false);
+      setDraft(null);
+      setItems([]);
+      setDelivery(emptyDelivery);
+      setStatus("idle");
+      setMessage("La venta en preparación fue descartada.");
+      if (workspaceDialog?.kind === "change-customer") {
+        setCustomer(nextCustomer ?? null);
+        setSelectedCustomerId(nextCustomer?.customerId ?? null);
+      }
+      setWorkspaceDialog(null);
+      await loadActiveDrafts();
     } catch (error) { setStatus(error instanceof PosApiError && error.code === "PT409" ? "conflict" : "error"); setMessage(error instanceof Error ? error.message : "No se pudo abandonar."); }
+    finally {
+      operationLockRef.current = false;
+      setOperationPending(false);
+    }
   }
 
   function acceptConfirmation(result: PosConfirmationResult) {
@@ -256,12 +312,12 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const provisionalTotal = provisional.merchandise + (draft?.shippingFee ?? 0) + (draft?.codFee ?? 0) + (draft?.otherCharge ?? 0);
 
   return <div className="min-w-0 space-y-4 pb-20 lg:pb-0">
-    <section className="rounded-xl border border-black/10 bg-gradient-to-r from-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">POS · Etapa 5</p><h1 className="text-2xl font-semibold">Venta atomica en tienda</h1><p className="mt-1 text-sm text-black/60">Pedido, factura, cobro, inventario y borradores contables se confirman en una sola operacion.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => void openDraft(draft.draftId, "Version mas reciente cargada. Revisa antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => void abandonDraft()} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 bg-white px-3 text-sm font-semibold"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
+    <section className="rounded-xl border border-black/10 bg-gradient-to-r from-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">Nueva venta</p><h1 className="text-2xl font-semibold">Prepare y facture una venta</h1><p className="mt-1 text-sm text-black/60">Agregue productos, revise los totales y seleccione el método de pago.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => requestOpenDraft(draft.draftId, "Se cargó la información más reciente. Revísela antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => setWorkspaceDialog({ kind: "abandon" })} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 bg-white px-3 text-sm font-semibold"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
 
     <PosCustomerWorkspace selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
-    <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => void openDraft(draftId)} />
+    <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => requestOpenDraft(draftId)} />
 
-    {!draft ? <section className="rounded-xl border border-dashed border-black/15 bg-white p-6 text-center"><h2 className="font-semibold">Inicia el borrador después de seleccionar el cliente</h2><p className="mt-1 text-sm text-black/55">El servidor fijará el modo de precio y la versión comercial.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Crear borrador</button></section>
+    {!draft ? <section className="rounded-xl border border-dashed border-black/15 bg-white p-6 text-center"><h2 className="font-semibold">Seleccione un cliente para comenzar</h2><p className="mt-1 text-sm text-black/55">Los precios y condiciones comerciales se cargarán automáticamente.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
       : confirmedResult && customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} />
       : <>
         <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
@@ -269,8 +325,8 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
-          <div ref={cartPanelRef} className="min-w-0 scroll-mt-4 space-y-4 lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-2rem)] lg:flex-col lg:gap-4 lg:space-y-0">
-            <div className="lg:min-h-0 lg:overflow-y-auto lg:rounded-xl"><PosCart items={items} onChange={markItems} onClear={() => markItems([])} /></div>
+          <div ref={cartPanelRef} className="min-w-0 scroll-mt-4 space-y-4">
+            <div className="lg:min-h-72 lg:max-h-[85vh] lg:overflow-y-auto lg:overscroll-contain lg:rounded-xl"><PosCart items={items} onChange={markItems} onClear={() => markItems([])} /></div>
             <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} disabled={!isDirty || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
             {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : null}
           </div>
@@ -280,5 +336,29 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
           <span>{formatCurrency(provisionalTotal)}</span>
         </button>
       </>}
+    {workspaceDialog ? <PosConfirmationDialog
+      title={workspaceDialog.kind === "open-draft" ? "Descartar cambios" : workspaceDialog.kind === "abandon" ? "Abandonar borrador" : "Cambiar cliente"}
+      description={workspaceDialog.kind === "open-draft"
+        ? "Los cambios pendientes no se han guardado. Si continúa, se cargará el borrador seleccionado."
+        : workspaceDialog.kind === "abandon"
+          ? "El borrador dejará de estar disponible para continuar esta venta. No se generará pedido, factura, cobro ni movimiento de inventario."
+          : items.length
+            ? "El carrito actual pertenece a este cliente. Para evitar precios, crédito o historial incorrectos, debe conservarlo o abandonar el borrador antes de seleccionar otro cliente."
+            : "Este borrador está asociado al cliente actual. ¿Desea abandonarlo y quitar el cliente?"}
+      confirmLabel={workspaceDialog.kind === "open-draft" ? "Cargar borrador" : workspaceDialog.kind === "change-customer" ? "Abandonar borrador y quitar cliente" : "Abandonar borrador"}
+      cancelLabel={workspaceDialog.kind === "open-draft" ? "Volver" : workspaceDialog.kind === "change-customer" ? "Continuar con este cliente" : "Volver"}
+      pending={operationPending}
+      onCancel={() => setWorkspaceDialog(null)}
+      onConfirm={() => {
+        if (workspaceDialog.kind === "open-draft") {
+          dirtyRef.current = false;
+          setIsDirty(false);
+          setWorkspaceDialog(null);
+          void openDraft(workspaceDialog.draftId, workspaceDialog.recoveredMessage);
+        } else {
+          void abandonDraft(workspaceDialog.kind === "change-customer" ? workspaceDialog.customer : undefined);
+        }
+      }}
+    /> : null}
   </div>;
 }

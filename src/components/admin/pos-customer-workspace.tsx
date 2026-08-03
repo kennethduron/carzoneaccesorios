@@ -19,6 +19,7 @@ import {
   UserRoundCheck,
   X,
 } from "lucide-react";
+import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import type {
   PosCustomerContext,
   PosCustomerSearchPage,
@@ -81,10 +82,23 @@ function contextToForm(context: PosCustomerContext): CustomerForm {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const payload = (await response.json()) as T & { message?: string };
-  if (!response.ok) throw new Error(payload.message ?? "No se pudo completar la solicitud.");
+  const payload = (await response.json()) as T & { code?: string; message?: string };
+  if (!response.ok) throw new PosCustomerApiError(payload.message ?? "No se pudo completar la solicitud.", payload.code);
   return payload;
 }
+
+class PosCustomerApiError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = "PosCustomerApiError";
+  }
+}
+
+type PendingFormAction =
+  | { kind: "select"; customerId: string }
+  | { kind: "create" }
+  | { kind: "close" }
+  | { kind: "clear" };
 
 function statusLabel(status: PosCustomerContext["wholesaleStatus"]) {
   if (status === "approved") return "Mayorista aprobado";
@@ -116,15 +130,14 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   const [initialForm, setInitialForm] = useState<CustomerForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+  const [pendingFormAction, setPendingFormAction] = useState<PendingFormAction | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const contextRevisionRef = useRef(0);
   const requestSignatureRef = useRef("");
   const listboxId = "pos-customer-results";
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
-
-  useEffect(() => {
-    onCustomerContextChange?.(context);
-  }, [context, onCustomerContextChange]);
+  const visibleContext = selectedCustomerId && context?.customerId === selectedCustomerId ? context : null;
 
   useEffect(() => {
     if (!dirty) return;
@@ -132,8 +145,6 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
     window.addEventListener("beforeunload", protect);
     return () => window.removeEventListener("beforeunload", protect);
   }, [dirty]);
-
-  const confirmDiscard = useCallback(() => !dirty || window.confirm("Hay cambios sin guardar. ¿Quieres descartarlos?"), [dirty]);
 
   const runSearch = useCallback(async (searchQuery: string, offset = 0, append = false) => {
     const normalized = searchQuery.trim().replace(/\s+/g, " ");
@@ -184,7 +195,8 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const loadContext = useCallback(async (customerId: string) => {
+  const loadContext = useCallback(async (customerId: string, requestSelection = false) => {
+    const revision = ++contextRevisionRef.current;
     setContextLoading(true);
     setSearchMessage("");
     try {
@@ -192,29 +204,76 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
         headers: { Accept: "application/json" },
       });
       const selected = await readJson<PosCustomerContext>(response);
+      if (revision !== contextRevisionRef.current) return;
+      if (requestSelection) {
+        onCustomerContextChange?.(selected);
+        return;
+      }
       setContext(selected);
       setPanelMode("closed");
       setForm(contextToForm(selected));
       setInitialForm(contextToForm(selected));
       setResults([]);
       setQuery("");
+      onCustomerContextChange?.(selected);
     } catch (error) {
+      if (revision !== contextRevisionRef.current) return;
       setSearchMessage(error instanceof Error ? error.message : "No se pudo cargar el cliente.");
     } finally {
-      setContextLoading(false);
+      if (revision === contextRevisionRef.current) setContextLoading(false);
     }
-  }, []);
+  }, [onCustomerContextChange]);
 
   useEffect(() => {
-    if (!selectedCustomerId || selectedCustomerId === context?.customerId) return;
-    const timer = window.setTimeout(() => void loadContext(selectedCustomerId), 0);
+    if (!selectedCustomerId) {
+      contextRevisionRef.current += 1;
+      return;
+    }
+    if (selectedCustomerId === context?.customerId) return;
+    const timer = window.setTimeout(() => void loadContext(selectedCustomerId, false), 0);
     return () => window.clearTimeout(timer);
   }, [context?.customerId, loadContext, selectedCustomerId]);
 
+  function executeFormAction(action: PendingFormAction) {
+    setPendingFormAction(null);
+    if (action.kind === "select") {
+      void loadContext(action.customerId, true);
+      return;
+    }
+    if (action.kind === "create") {
+      setPanelMode("create");
+      setForm(emptyForm);
+      setInitialForm(emptyForm);
+      setFormMessage("");
+      return;
+    }
+    if (action.kind === "clear") {
+      contextRevisionRef.current += 1;
+      onCustomerContextChange?.(null);
+      if (!onCustomerContextChange) setContext(null);
+      return;
+    }
+    setPanelMode("closed");
+    if (context) {
+      const next = contextToForm(context);
+      setForm(next);
+      setInitialForm(next);
+    }
+  }
+
+  function requestFormAction(action: PendingFormAction) {
+    if (dirty) {
+      setPendingFormAction(action);
+      return;
+    }
+    executeFormAction(action);
+  }
+
   const selectCustomer = useCallback((customer: PosCustomerSearchResult) => {
-    if (!confirmDiscard()) return;
-    void loadContext(customer.customerId);
-  }, [confirmDiscard, loadContext]);
+    requestFormAction({ kind: "select", customerId: customer.customerId });
+  // requestFormAction intentionally uses the current form state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, loadContext]);
 
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "ArrowDown") {
@@ -236,12 +295,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   }
 
   function openCreate() {
-    if (!confirmDiscard()) return;
-    setPanelMode("create");
-    setContext(null);
-    setForm(emptyForm);
-    setInitialForm(emptyForm);
-    setFormMessage("");
+    requestFormAction({ kind: "create" });
   }
 
   function openEdit() {
@@ -299,7 +353,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
         }
         throw new Error(result.message ?? "No se pudo guardar el cliente.");
       }
-      await loadContext(result.customerId);
+      await loadContext(result.customerId, panelMode === "create");
       setFormMessage(result.idempotentReplay ? "Operacion recuperada correctamente." : result.message);
     } catch (error) {
       setFormMessage(error instanceof Error ? error.message : "No se pudo guardar el cliente.");
@@ -309,12 +363,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   }
 
   function clearSelection() {
-    if (!confirmDiscard()) return;
-    setContext(null);
-    setPanelMode("closed");
-    setForm(emptyForm);
-    setInitialForm(emptyForm);
-    setFormMessage("");
+    requestFormAction({ kind: "clear" });
   }
 
   return (
@@ -325,8 +374,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
             <p className="text-sm font-semibold text-[#e4252c]">Clientes y reglas comerciales</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Punto de Venta</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-              Busca, selecciona o crea un cliente. El modo de precio, mayoreo y crédito se resuelven en el servidor
-              y se revalidan de forma atómica al confirmar la venta.
+              Busque, seleccione o cree un cliente para preparar una nueva venta.
             </p>
           </div>
           <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#c91f26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
@@ -403,30 +451,23 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
               message={formMessage}
               onChange={setForm}
               onSubmit={saveCustomer}
-              onCancel={() => {
-                if (!confirmDiscard()) return;
-                setPanelMode("closed");
-                if (context) {
-                  const next = contextToForm(context);
-                  setForm(next);
-                  setInitialForm(next);
-                }
-              }}
+              onCancel={() => requestFormAction({ kind: "close" })}
             />
           ) : null}
-          {!contextLoading && panelMode === "closed" && context ? (
+          {!contextLoading && panelMode === "closed" && visibleContext ? (
             <CustomerContextPanel
-              context={context}
+              context={visibleContext}
               message={formMessage}
               onEdit={openEdit}
               onClear={clearSelection}
             />
           ) : null}
-          {!contextLoading && panelMode === "closed" && !context ? (
+          {!contextLoading && panelMode === "closed" && !visibleContext ? (
             <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-black/15 bg-[#fafafa] p-6 text-center">
               <CircleUserRound size={38} className="text-black/25" />
               <h2 className="mt-3 text-lg font-semibold">Selecciona un cliente</h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-black/55">El detalle comercial, precio resuelto, portal y crédito se cargan solamente después de seleccionar un resultado.</p>
+              {searchMessage ? <p role="alert" className="mt-3 max-w-md rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{searchMessage}</p> : null}
             </div>
           ) : null}
         </section>
@@ -438,8 +479,16 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           <FutureStageCard icon={ShoppingCart} title="Carrito" />
           <FutureStageCard icon={CreditCard} title="Pago y cierre" />
         </div>
-        <p className="mt-3 text-center text-xs font-medium text-black/50">Disponibles en la siguiente etapa. No hay acciones de venta habilitadas aquí.</p>
+        <p className="mt-3 text-center text-xs font-medium text-black/50">Estas funciones no están disponibles para este perfil.</p>
       </section> : null}
+      {pendingFormAction ? <PosConfirmationDialog
+        title="Descartar cambios"
+        description="Los datos ingresados no se han guardado. Si continúa, se perderán estos cambios."
+        confirmLabel="Descartar cambios"
+        cancelLabel="Continuar editando"
+        onCancel={() => setPendingFormAction(null)}
+        onConfirm={() => executeFormAction(pendingFormAction)}
+      /> : null}
     </div>
   );
 }
@@ -470,7 +519,7 @@ function CustomerFormPanel({
         <div><p className="text-sm font-semibold text-[#e4252c]">{mode === "create" ? "Alta rápida integral" : "Configuración comercial"}</p><h2 className="text-xl font-semibold">{mode === "create" ? "Nuevo cliente" : "Editar configuración comercial"}</h2></div>
         <button type="button" onClick={onCancel} aria-label="Cerrar formulario" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/10 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={18} /></button>
       </div>
-      <p className="mt-2 text-sm leading-6 text-black/55">Crea o actualiza un perfil interno en el CRM. No crea usuario ni acceso al portal, pedido o venta.</p>
+      <p className="mt-2 text-sm leading-6 text-black/55">Guarde los datos comerciales del cliente. Esta acción no crea pedidos ni ventas.</p>
       {dirty ? <p className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"><AlertTriangle size={16} /> Hay cambios sin guardar.</p> : null}
       <fieldset className="mt-4">
         <legend className="text-sm font-semibold uppercase tracking-wide text-black/50">Información básica</legend>
@@ -535,19 +584,18 @@ function CustomerContextPanel({
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c]"><Pencil size={16} /> Editar configuración comercial</button>
-          <button type="button" onClick={onClear} aria-label="Quitar selección" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/15 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={17} /></button>
+          <button type="button" onClick={onClear} aria-label="Quitar cliente seleccionado" title="Quitar cliente" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/15 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={17} /></button>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(context.wholesaleStatus)}`}>{statusLabel(context.wholesaleStatus)}</span>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${context.pricingMode === "wholesale" ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-slate-100 text-slate-700 ring-slate-200"}`}>Precio {context.pricingMode === "wholesale" ? "mayorista" : "minorista"}</span>
-        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">Versión {context.commercialVersion}</span>
       </div>
       <p className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-6 text-black/65">{context.pricingReason}</p>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta vinculada" : "Sin cuenta vinculada"} detail="La creación rápida no genera usuarios Auth ni invitaciones.">
+        <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta vinculada" : "Sin cuenta vinculada"} detail="Crear el perfil no habilita acceso al portal ni envía invitaciones.">
           {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación administrativa</Link> : null}
         </InfoCard>
         <InfoCard icon={CreditCard} title="Crédito comercial" value={context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado"} detail={context.credit.reason}>
@@ -555,7 +603,7 @@ function CustomerContextPanel({
           <p className="mt-2 text-xs text-black/50">Plazo: {context.credit.termsDays} días{context.credit.notes ? ` · ${context.credit.notes}` : ""}</p>
         </InfoCard>
         <InfoCard icon={Building2} title="Resumen comercial" value={`${context.summary.orderCount.toLocaleString("es-HN")} pedidos`} detail={`${context.summary.invoiceCount.toLocaleString("es-HN")} facturas · ${formatCurrency(context.summary.totalBilled)} facturado`} />
-        <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="La confirmación releerá el estado vigente desde la base de datos." />
+        <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="El estado se verificará nuevamente al confirmar." />
       </div>
 
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
@@ -576,5 +624,5 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function FutureStageCard({ icon: Icon, title }: { icon: React.ComponentType<{ size?: number }>; title: string }) {
-  return <div className="flex min-h-20 items-center gap-3 rounded-lg border border-black/10 bg-white p-3 text-black/45"><span className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100"><Icon size={19} /></span><div><p className="font-semibold text-black/60">{title}</p><p className="text-xs">Siguiente etapa</p></div></div>;
+  return <div className="flex min-h-20 items-center gap-3 rounded-lg border border-black/10 bg-white p-3 text-black/45"><span className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-slate-100"><Icon size={19} /></span><div><p className="font-semibold text-black/60">{title}</p><p className="text-xs">No disponible</p></div></div>;
 }
