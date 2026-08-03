@@ -8,7 +8,7 @@ const password = process.env.POS_VISUAL_PASSWORD;
 assert.ok(serviceKey && anonKey && password, "Local keys and POS_VISUAL_PASSWORD are required.");
 assert.match(url, /^http:\/\/(127\.0\.0\.1|localhost):54321$/, "Visual fixtures are local-only.");
 
-const marker = "POS-CUSTOMER-CART-LOCAL-ONLY-VISUAL";
+const marker = "POS-FINAL-UX-LOCAL-ONLY-VISUAL";
 const email = `${marker.toLowerCase()}@example.test`;
 const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const permissions = [
@@ -63,6 +63,11 @@ const created = await operator.rpc("save_pos_customer_commercial_profile_v1", {
 assert.ifError(created.error);
 assert.equal(created.data.ok, true);
 
+assert.ifError((await admin.from("customers").insert([
+  { contact_name: `${marker} Cliente suspendido`, source: "pos", lead_status: "cliente", active: true, status: "active", wholesale_status: "suspended" },
+  { contact_name: `${marker} Cliente inactivo`, source: "pos", lead_status: "cliente", active: false, status: "inactive", wholesale_status: "none" },
+])).error);
+
 const { data: category, error: categoryError } = await admin.from("categories").select("id").eq("active", true).limit(1).single();
 assert.ifError(categoryError);
 const products = [
@@ -79,6 +84,13 @@ const products = [
     description: "Servicio visual sin inventario", stock: 0, reserved_stock: 0, cost_price: 100,
     retail_price: 500, wholesale_price: 450, wholesale_min_quantity: 1,
     tax_category: "exempt", tracks_inventory: false, status: "active", active: true,
+  },
+  {
+    category_id: category.id, sku: `${marker}-EXEMPT`, internal_code: `${marker}-003`,
+    slug: `${marker.toLowerCase()}-exempt`, name: `${marker} Kit de limpieza`, brand: "Car Zone",
+    description: "Producto visual exento", stock: 12, reserved_stock: 0, cost_price: 75,
+    retail_price: 260, wholesale_price: 230, wholesale_min_quantity: 1,
+    tax_category: "exempt", tracks_inventory: true, status: "active", active: true,
   },
 ];
 assert.ifError((await admin.from("products").insert(products)).error);

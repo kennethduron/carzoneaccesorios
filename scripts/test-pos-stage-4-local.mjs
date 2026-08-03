@@ -64,8 +64,8 @@ try {
   const categoryFiltered = await rpc(owner.client, "search_pos_products_v1", { p_query: "", p_customer_id: customerId, p_expected_customer_commercial_version: customer.commercial_version, p_category_id: category.id, p_limit: 25, p_offset: 0 }); assert.ifError(categoryFiltered.error); assert.ok(categoryFiltered.data.length > 0); assert.ok(categoryFiltered.data.every((row) => row.category_id === category.id));
 
   const createKey = crypto.randomUUID();
-  const created = await rpc(owner.client, "create_pos_sale_draft_v1", { p_request_key: createKey, p_customer_id: customerId }); assert.ifError(created.error); draftId = created.data.draftId; draftIds.push(draftId);
-  const replay = await rpc(owner.client, "create_pos_sale_draft_v1", { p_request_key: createKey, p_customer_id: customerId }); assert.ifError(replay.error); assert.equal(replay.data.draftId, draftId); assert.equal(replay.data.idempotentReplay, true);
+  const created = await rpc(owner.client, "create_selectable_pos_sale_draft_v1", { p_request_key: createKey, p_customer_id: customerId }); assert.ifError(created.error); draftId = created.data.draftId; draftIds.push(draftId);
+  const replay = await rpc(owner.client, "create_selectable_pos_sale_draft_v1", { p_request_key: createKey, p_customer_id: customerId }); assert.ifError(replay.error); assert.equal(replay.data.draftId, draftId); assert.equal(replay.data.idempotentReplay, true);
   const product = volume[0];
   const { data: savedProduct, error: savedProductError } = await admin.from("products").select("id, product_sales_version, stock, reserved_stock").eq("sku", product.sku).single(); assert.ifError(savedProductError);
   const stockBefore = { stock: savedProduct.stock, reservedStock: savedProduct.reserved_stock };
@@ -140,7 +140,7 @@ try {
   const abandoned = await rpc(owner.client, "abandon_pos_sale_draft_v1", { p_request_key: abandonKey, p_draft_id: draftId, p_expected_version: 6 }); assert.ifError(abandoned.error); assert.equal(abandoned.data.status, "abandoned"); assert.equal(abandoned.data.version, 7);
   const abandonedReplay = await rpc(owner.client, "abandon_pos_sale_draft_v1", { p_request_key: abandonKey, p_draft_id: draftId, p_expected_version: 6 }); assert.ifError(abandonedReplay.error); assert.equal(abandonedReplay.data.idempotentReplay, true);
 
-  const expiring = await rpc(owner.client, "create_pos_sale_draft_v1", { p_request_key: crypto.randomUUID(), p_customer_id: customerId }); assert.ifError(expiring.error); draftIds.push(expiring.data.draftId);
+  const expiring = await rpc(owner.client, "create_selectable_pos_sale_draft_v1", { p_request_key: crypto.randomUUID(), p_customer_id: customerId }); assert.ifError(expiring.error); draftIds.push(expiring.data.draftId);
   const { error: expireUpdateError } = await admin.from("pos_sale_drafts").update({ expires_at: new Date(Date.now() - 60_000).toISOString() }).eq("id", expiring.data.draftId); assert.ifError(expireUpdateError);
   const expired = await rpc(owner.client, "get_pos_sale_draft_v1", { p_draft_id: expiring.data.draftId }); assert.ifError(expired.error); assert.equal(expired.data.status, "expired");
 

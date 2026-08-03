@@ -6,6 +6,7 @@ const root = process.cwd();
 const read = (path) => readFileSync(join(root, path), "utf8");
 const migration = read("supabase/migrations/202607280001_pos_customer_commercial_rules.sql");
 const completionMigration = read("supabase/migrations/202608030001_pos_customer_commercial_profile.sql");
+const operationalUxMigration = read("supabase/migrations/202608030002_pos_final_operational_ux_guards.sql");
 const types = read("src/types/point-of-sale.ts");
 const service = read("src/services/supabase/pos-customer.service.ts");
 const requestAuth = read("src/lib/auth/pos-customer-request.ts");
@@ -14,7 +15,6 @@ const page = read("src/app/admin/pos/page.tsx");
 
 for (const contract of [
   "search_pos_customers_v1",
-  "get_pos_customer_context_v1",
   "create_pos_customer_v1",
   "update_pos_customer_v1",
   "resolve_customer_pricing_mode_v1",
@@ -25,6 +25,7 @@ for (const contract of [
 ]) {
   assert.match(migration, new RegExp(contract), `Missing DB contract: ${contract}`);
 }
+assert.match(operationalUxMigration, /get_selectable_pos_customer_context_v1/);
 
 for (const permission of [
   "pos:access",
@@ -64,7 +65,7 @@ for (const name of [
 }
 
 assert.match(service, /server-only/);
-assert.match(service, /get_pos_customer_context_v1/);
+assert.match(service, /get_selectable_pos_customer_context_v1/);
 assert.match(service, /save_pos_customer_commercial_profile_v1/);
 assert.match(completionMigration, /save_pos_customer_commercial_profile_v1/);
 assert.match(completionMigration, /set_customer_commercial_credit/);

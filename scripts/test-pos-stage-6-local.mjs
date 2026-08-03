@@ -95,7 +95,7 @@ assert.ifError((await admin.from("accounting_mappings").insert({
 })).error);
 
 async function createDraft(customerId, commercialVersion, finalUnitPrice = null) {
-  const created = await actor.rpc("create_pos_sale_draft_v1", {
+  const created = await actor.rpc("create_selectable_pos_sale_draft_v1", {
     p_request_key: crypto.randomUUID(), p_customer_id: customerId,
   });
   assert.ifError(created.error);
@@ -121,7 +121,7 @@ for (const payment of [
   { method: "card", verified: true, reference: `${marker}-CARD` },
 ]) {
   const draft = await createDraft(existingCustomer.data.id, existingCustomer.data.commercial_version);
-  const confirmed = await actor.rpc("confirm_pos_sale_v1", {
+  const confirmed = await actor.rpc("confirm_selectable_pos_sale_v1", {
     p_draft_id: draft.draftId, p_request_key: crypto.randomUUID(),
     p_expected_draft_version: draft.version, p_invoice_date: today, p_payment_payload: payment,
   });
@@ -130,7 +130,7 @@ for (const payment of [
 }
 
 const manualDraft = await createDraft(existingCustomer.data.id, existingCustomer.data.commercial_version, 150);
-const manualConfirmed = await actor.rpc("confirm_pos_sale_v1", {
+const manualConfirmed = await actor.rpc("confirm_selectable_pos_sale_v1", {
   p_draft_id: manualDraft.draftId, p_request_key: crypto.randomUUID(),
   p_expected_draft_version: manualDraft.version, p_invoice_date: today,
   p_payment_payload: { method: "cash", amount_tendered: 150 },
@@ -165,7 +165,7 @@ const [creditDraftA, creditDraftB] = await Promise.all([
 ]);
 const creditStarted = performance.now();
 const creditResults = await Promise.all([creditDraftA, creditDraftB].map((draft) =>
-  actor.rpc("confirm_pos_sale_v1", {
+  actor.rpc("confirm_selectable_pos_sale_v1", {
     p_draft_id: draft.draftId, p_request_key: crypto.randomUUID(),
     p_expected_draft_version: draft.version, p_invoice_date: today,
     p_payment_payload: { method: "commercial_credit" },

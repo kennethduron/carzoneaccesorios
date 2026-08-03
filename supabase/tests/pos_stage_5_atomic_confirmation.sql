@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(40);
+select plan(41);
 
 insert into public.roles(name, description, permissions)
 values (
@@ -180,7 +180,7 @@ from public.products
 where id in ('a5300000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000002');
 
 insert into pos5_state
-select 'cash_result', public.confirm_pos_sale_v1(
+select 'cash_result', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000001',
   'a5500000-0000-4000-8000-000000000001', 1,
   (now() at time zone 'America/Tegucigalpa')::date,
@@ -201,7 +201,7 @@ select ok(exists(select 1 from public.invoice_items where invoice_id = ((select 
 select ok(exists(select 1 from public.invoice_items where invoice_id = ((select value->>'invoice_id' from pos5_state where key = 'cash_result')::uuid) and tax_category_snapshot = 'exempt' and exempt_amount_snapshot = 100), 'exempt line snapshot reaches invoice');
 
 insert into pos5_state
-select 'cash_replay', public.confirm_pos_sale_v1(
+select 'cash_replay', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000001',
   'a5500000-0000-4000-8000-000000000001', 1,
   (now() at time zone 'America/Tegucigalpa')::date,
@@ -212,16 +212,17 @@ select is((select value->>'order_id' from pos5_state where key = 'cash_replay'),
 select is((select count(*)::integer from public.invoices i join public.orders o on o.id = i.order_id where o.pos_draft_id = 'a5400000-0000-4000-8000-000000000001'), 1, 'replay does not consume another correlativo');
 
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000001','a5500000-0000-4000-8000-000000000001',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',251))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000001','a5500000-0000-4000-8000-000000000001',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',251))$$,
   'PT409', 'POS_REQUEST_KEY_CONFLICT', 'same request key rejects a changed payload'
 );
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000001','a5500000-0000-4000-8000-000000000099',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','card','verified',true))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000001','a5500000-0000-4000-8000-000000000099',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','card','verified',true))$$,
   'PT409', 'POS_DRAFT_ALREADY_CONFIRMED', 'confirmed draft rejects a different payload'
 );
 
 select ok(not has_function_privilege('anon', 'public.confirm_pos_sale_v1(uuid,uuid,bigint,date,jsonb)', 'execute'), 'anonymous cannot execute confirmation');
-select ok(has_function_privilege('authenticated', 'public.confirm_pos_sale_v1(uuid,uuid,bigint,date,jsonb)', 'execute'), 'authenticated may invoke guarded RPC');
+select ok(not has_function_privilege('authenticated', 'public.confirm_pos_sale_v1(uuid,uuid,bigint,date,jsonb)', 'execute'), 'authenticated cannot bypass customer eligibility');
+select ok(has_function_privilege('authenticated', 'public.confirm_selectable_pos_sale_v1(uuid,uuid,bigint,date,jsonb)', 'execute'), 'authenticated may invoke guarded RPC');
 select ok(not has_table_privilege('authenticated', 'public.pos_sale_confirmation_context', 'select'), 'authenticated cannot inspect internal confirmation context');
 select is((select count(*)::integer from public.pos_sale_confirmation_context), 0, 'transactional confirmation context is removed');
 
@@ -231,7 +232,7 @@ select is(
   'confirmed sale can be recovered after a lost response'
 );
 select is(
-  (public.confirm_pos_sale_v1(
+  (public.confirm_selectable_pos_sale_v1(
     'a5400000-0000-4000-8000-000000000001',
     'a5500000-0000-4000-8000-000000000002', 1,
     (now() at time zone 'America/Tegucigalpa')::date,
@@ -247,7 +248,7 @@ select pg_temp.pos5_single_line_draft(
   'a5300000-0000-4000-8000-000000000003'
 );
 insert into pos5_state
-select 'credit_result', public.confirm_pos_sale_v1(
+select 'credit_result', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000002',
   'a5500000-0000-4000-8000-000000000010', 1,
   (now() at time zone 'America/Tegucigalpa')::date,
@@ -262,27 +263,27 @@ select is((select invoice_id::text from public.accounts_receivable where order_i
 
 select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000003','a5200000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000001');
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000020',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',114.99))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000020',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',114.99))$$,
   '22023', 'POS_AMOUNT_TENDERED_INSUFFICIENT', 'cash below total is rejected'
 );
 select is((select count(*)::integer from public.orders where pos_draft_id = 'a5400000-0000-4000-8000-000000000003'), 0, 'insufficient cash leaves no order');
 
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000021',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','bank_transfer','verified',true))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000021',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','bank_transfer','verified',true))$$,
   '22023', 'POS_TRANSFER_REFERENCE_REQUIRED', 'verified transfer still requires a reference'
 );
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000022',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','card','verified',false))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000022',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','card','verified',false))$$,
   '22023', 'POS_CARD_CONFIGURATION_INVALID', 'unverified generic card is rejected'
 );
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000023',1,(now() at time zone 'America/Tegucigalpa')::date + 1,jsonb_build_object('method','cash','amount_tendered',115))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000023',1,(now() at time zone 'America/Tegucigalpa')::date + 1,jsonb_build_object('method','cash','amount_tendered',115))$$,
   '22023', 'POS_FISCAL_DATE_INVALID', 'future Honduras invoice date is rejected'
 );
 
 update public.products set retail_price = 116 where id = 'a5300000-0000-4000-8000-000000000001';
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000024',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',116))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000024',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',116))$$,
   'PT409', 'POS_PRICE_CHANGED', 'price version change blocks confirmation'
 );
 select is((select count(*)::integer from public.orders where pos_draft_id = 'a5400000-0000-4000-8000-000000000003'), 0, 'price conflict leaves no economic rows');
@@ -293,7 +294,7 @@ on conflict (name) do update set permissions = excluded.permissions;
 update public.users set role_id = (select id from public.roles where name = 'contadora')
 where id = 'a5100000-0000-4000-8000-000000000001';
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000025',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',116))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000003','a5500000-0000-4000-8000-000000000025',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',116))$$,
   '42501', 'POS_PERMISSION_DENIED', 'non-authorized role cannot confirm even with permission text'
 );
 update public.users set role_id = (select id from public.roles where name = 'admin')
@@ -309,7 +310,7 @@ end $$;
 create trigger pos5_forced_rollback before update on public.pos_sale_drafts
 for each row execute function pg_temp.pos5_fail_confirmation();
 select throws_ok(
-  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000004','a5500000-0000-4000-8000-000000000030',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',100))$$,
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000004','a5500000-0000-4000-8000-000000000030',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',100))$$,
   'P0001', 'POS5_FORCED_ROLLBACK', 'late failure rolls back the whole economic transaction'
 );
 drop trigger pos5_forced_rollback on public.pos_sale_drafts;

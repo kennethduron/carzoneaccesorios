@@ -23,7 +23,7 @@ async function rpc(client, name, args) {
 }
 
 async function createSavedDraft(client, customer, product, quantity = 1) {
-  const created = await rpc(client, "create_pos_sale_draft_v1", {
+  const created = await rpc(client, "create_selectable_pos_sale_draft_v1", {
     p_request_key: crypto.randomUUID(), p_customer_id: customer.id,
   });
   assert.ifError(created.error);
@@ -145,7 +145,7 @@ const replayArgs = {
 };
 const clickCount = markerPrefix === "POS-STAGE6-LOCAL-ONLY" ? 10 : 2;
 const doubleClick = await Promise.all(Array.from({ length: clickCount }, (_, index) =>
-  rpc(index % 2 === 0 ? firstClient : secondClient, "confirm_pos_sale_v1", replayArgs)
+  rpc(index % 2 === 0 ? firstClient : secondClient, "confirm_selectable_pos_sale_v1", replayArgs)
 ));
 assert.equal(
   doubleClick.filter((entry) => !entry.error).length,
@@ -164,12 +164,12 @@ const [lastDraftA, lastDraftB] = await Promise.all([
   createSavedDraft(secondClient, customer, lastProduct),
 ]);
 const lastUnit = await Promise.all([
-  rpc(firstClient, "confirm_pos_sale_v1", {
+  rpc(firstClient, "confirm_selectable_pos_sale_v1", {
     p_draft_id: lastDraftA.draftId, p_request_key: crypto.randomUUID(),
     p_expected_draft_version: lastDraftA.version, p_invoice_date: today,
     p_payment_payload: { method: "cash", amount_tendered: 115 },
   }),
-  rpc(secondClient, "confirm_pos_sale_v1", {
+  rpc(secondClient, "confirm_selectable_pos_sale_v1", {
     p_draft_id: lastDraftB.draftId, p_request_key: crypto.randomUUID(),
     p_expected_draft_version: lastDraftB.version, p_invoice_date: today,
     p_payment_payload: { method: "cash", amount_tendered: 115 },
@@ -195,7 +195,7 @@ assert.equal(stockAfter.data.stock, 0);
 const bulkProducts = insertedProducts
   .filter((product) => product.sku.includes(`${marker}-CATALOG-`))
   .slice(0, 20);
-const bulkCreated = await rpc(firstClient, "create_pos_sale_draft_v1", {
+const bulkCreated = await rpc(firstClient, "create_selectable_pos_sale_draft_v1", {
   p_request_key: crypto.randomUUID(), p_customer_id: customer.id,
 });
 assert.ifError(bulkCreated.error);
@@ -212,7 +212,7 @@ const bulkSaved = await rpc(firstClient, "save_pos_sale_draft_v1", {
 });
 assert.ifError(bulkSaved.error);
 const started = performance.now();
-const bulkConfirmed = await rpc(firstClient, "confirm_pos_sale_v1", {
+const bulkConfirmed = await rpc(firstClient, "confirm_selectable_pos_sale_v1", {
   p_draft_id: bulkSaved.data.draftId, p_request_key: crypto.randomUUID(),
   p_expected_draft_version: bulkSaved.data.version, p_invoice_date: today,
   p_payment_payload: { method: "cash", amount_tendered: 2300 },

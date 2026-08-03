@@ -130,8 +130,8 @@ try {
 
   const concurrentPhone = "+1 202 555 0199";
   const concurrentCalls = await Promise.all([
-    rpc(adminActor.client, "create_pos_customer_v1", { ...createInput, p_request_key: crypto.randomUUID(), p_email: `${marker}-race-a@example.test`, p_phone: concurrentPhone, p_tax_id: null }),
-    rpc(adminActor.client, "create_pos_customer_v1", { ...createInput, p_request_key: crypto.randomUUID(), p_email: `${marker}-race-b@example.test`, p_phone: concurrentPhone, p_tax_id: null }),
+    rpc(adminActor.client, "create_pos_customer_v1", { ...createInput, p_request_key: crypto.randomUUID(), p_contact_name: `${marker} Race`, p_email: `${marker}-race-a@example.test`, p_phone: concurrentPhone, p_tax_id: null }),
+    rpc(adminActor.client, "create_pos_customer_v1", { ...createInput, p_request_key: crypto.randomUUID(), p_contact_name: `${marker} Race`, p_email: `${marker}-race-b@example.test`, p_phone: concurrentPhone, p_tax_id: null }),
   ]);
   concurrentCalls.forEach(({ error }) => assert.ifError(error));
   assert.deepEqual(concurrentCalls.map(({ data }) => data.status).sort(), ["created", "duplicate"]);
@@ -148,7 +148,7 @@ try {
   assert.ok(searched.data.some((row) => row.customer_id === created.data.customerId));
   assert.ok(searched.data.every((row) => !("tax_id" in row) && !("user_id" in row) && !("address" in row)));
 
-  const context = await rpc(adminActor.client, "get_pos_customer_context_v1", { target_customer_id: created.data.customerId });
+  const context = await rpc(adminActor.client, "get_selectable_pos_customer_context_v1", { target_customer_id: created.data.customerId });
   assert.ifError(context.error);
   assert.equal(context.data[0].pricing_mode, "retail");
   assert.equal(context.data[0].credit_status, "not_enabled");
@@ -246,7 +246,7 @@ try {
     status: "suspended",
   });
   assert.ifError(creditError);
-  const creditContext = await rpc(adminActor.client, "get_pos_customer_context_v1", { target_customer_id: created.data.customerId });
+  const creditContext = await rpc(adminActor.client, "get_selectable_pos_customer_context_v1", { target_customer_id: created.data.customerId });
   assert.ifError(creditContext.error);
   assert.equal(creditContext.data[0].credit_status, "suspended");
   assert.equal(creditContext.data[0].can_use_credit, false);
