@@ -170,6 +170,25 @@ export type JournalEntryInput = {
   lines: JournalEntryLineInput[];
 };
 
+export type JournalReversalInput = {
+  entryId: string;
+  reason: string;
+  effectiveDate: string;
+  requestKey: string;
+  expectedVersion: number;
+};
+
+export type JournalReversalResult = {
+  ok: true;
+  original_entry_id: string;
+  original_version: number;
+  reversal_entry_id: string;
+  entry_number: string;
+  effective_date: string;
+  created_at: string;
+  status: "publicada";
+};
+
 export type JournalDraftUpdateInput = {
   id: string;
   expected_version: number;
@@ -233,6 +252,7 @@ export type AccountingPageData = {
   summary: AccountingDashboardSummary;
   accounts: AccountingAccount[];
   accountHierarchyOptions: AccountingAccountHierarchyOption[];
+  closedPeriods: Array<Pick<AccountingPeriod, "id" | "name" | "start_date" | "end_date" | "status">>;
   journalEntries: JournalEntry[];
   accountPage: number;
   accountPageSize: number;

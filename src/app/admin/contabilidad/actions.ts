@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { writeAuditLog } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/session";
+import {
+  accountingReversalSchema,
+  firstAccountingReversalValidationMessage,
+} from "@/lib/validation/accounting-reversal";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { scanFinancialEventsDryRun } from "@/services/accounting/financial-event-engine";
 import { generateJournalDraftFromFinancialEvent } from "@/services/accounting/journal-draft-generator";
@@ -19,11 +23,16 @@ import {
   validateAccountingAccountParent,
 } from "@/services/supabase/accounting-account.service";
 import { isAccountingAutomationMode, isAccountingMappingType } from "@/services/supabase/accounting-config.service";
+import {
+  accountingReversalErrorMessage,
+  reverseJournalEntryWithEffectiveDate,
+} from "@/services/supabase/accounting-reversal.service";
 import type {
   AccountingAccountInput,
   JournalDraftUpdateInput,
   JournalEntryInput,
   JournalEntryLineInput,
+  JournalReversalInput,
 } from "@/types/accounting";
 import type { ChartOfAccountsImportActionState } from "@/types/accounting-catalog";
 import type { AccountingMappingInput, AutomationMode } from "@/types/financial-center";
@@ -34,6 +43,11 @@ type AccountingMutationResult = {
   message: string;
   version?: number;
   journalEntryId?: string;
+  reversalEntryId?: string;
+  entryNumber?: string;
+  effectiveDate?: string;
+  createdAt?: string;
+  status?: "publicada";
 };
 
 type FinancialEventScanActionResult = AccountingMutationResult & {
@@ -873,36 +887,54 @@ export async function postJournalEntryAction(entryId: string, expectedVersion: n
   return { ok: true, message: "Partida publicada correctamente.", version: result?.version };
 }
 
-export async function reverseJournalEntryAction(entryId: string, reason: string): Promise<AccountingMutationResult> {
+export async function reverseJournalEntryAction(input: JournalReversalInput): Promise<AccountingMutationResult> {
   const profile = await requirePermission("accounting:reverse");
-  const normalizedReason = cleanText(reason).replace(/\s+/g, " ").slice(0, 501);
-  if (normalizedReason.length < 10 || normalizedReason.length > 500) {
-    return { ok: false, message: "El motivo de la reversión debe tener entre 10 y 500 caracteres." };
+  const parsed = accountingReversalSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: firstAccountingReversalValidationMessage(parsed.error) };
   }
+
   const requestContext = await accountingRequestContext();
-  const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("reverse_journal_entry", {
-    target_entry_id: entryId,
-    p_reversal_reason: normalizedReason,
-    actor_ip: requestContext.actorIp,
-    actor_user_agent: requestContext.userAgent,
+  const { data, error } = await reverseJournalEntryWithEffectiveDate({
+    ...parsed.data,
+    actorIp: requestContext.actorIp,
+    actorUserAgent: requestContext.userAgent,
   });
+
   if (error) {
     await writeAuditLog({
       tableName: "journal_entries",
-      recordId: entryId,
-      action: "accounting_journal_reversal_rejected",
-      newData: { actor_id: profile.id, actor_role: profile.role, reason: normalizedReason, error_code: error.code ?? null },
+      recordId: parsed.data.entryId,
+      action: "accounting_journal_reversal_v2_rejected",
+      newData: {
+        actor_id: profile.id,
+        actor_role: profile.role,
+        effective_date: parsed.data.effectiveDate,
+        request_key: parsed.data.requestKey,
+        error_code: error.code ?? null,
+      },
       ipAddress: requestContext.actorIp,
       userAgent: requestContext.userAgent,
     });
+    return { ok: false, message: accountingReversalErrorMessage(error) };
   }
-  if (error) return { ok: false, message: accountingRpcMessage(error, "No se pudo reversar la partida.") };
+
+  if (!data) {
+    return { ok: false, message: accountingReversalErrorMessage(null) };
+  }
 
   revalidatePath("/admin/contabilidad");
   revalidatePath("/admin/libro-mayor");
   revalidatePath("/admin/balance-comprobacion");
   revalidatePath("/admin/balance-general");
   revalidatePath("/admin/estado-resultados");
-  return { ok: true, message: "Partida reversada correctamente." };
+  return {
+    ok: true,
+    message: `Partida reversada correctamente con fecha efectiva ${data.effective_date}.`,
+    reversalEntryId: data.reversal_entry_id,
+    entryNumber: data.entry_number,
+    effectiveDate: data.effective_date,
+    createdAt: data.created_at,
+    status: data.status,
+  };
 }

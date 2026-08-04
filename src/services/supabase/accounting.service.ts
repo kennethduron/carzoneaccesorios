@@ -169,6 +169,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     { count: journalEntriesThisMonth, error: monthError },
     { count: draftEntries, error: draftError },
     latestEntry,
+    { data: closedPeriods, error: closedPeriodsError },
   ] = await Promise.all([
     supabase
       .from("accounting_accounts")
@@ -197,6 +198,11 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
       .select("id", { count: "exact", head: true })
       .eq("status", "borrador"),
     getLatestEntry(),
+    supabase
+      .from("accounting_periods")
+      .select("id, name, start_date, end_date, status")
+      .eq("status", "closed")
+      .order("start_date", { ascending: true }),
   ]);
 
   if (accountsError) throw new Error(accountsError.message);
@@ -204,6 +210,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
   if (journalError) throw new Error(journalError.message);
   if (monthError) throw new Error(monthError.message);
   if (draftError) throw new Error(draftError.message);
+  if (closedPeriodsError) throw new Error(closedPeriodsError.message);
 
   const entryIds = (journalRows ?? []).map((entry) => entry.id);
   const linesByEntry = await getLinesByEntryIds(entryIds);
@@ -222,6 +229,7 @@ export async function getAccountingPageData(input: AccountingPageInput = {}): Pr
     accounts: accounts ?? [],
     accountHierarchyOptions,
     journalEntries,
+    closedPeriods: closedPeriods ?? [],
     accountPage,
     accountPageSize,
     accountTotal: accountTotal ?? 0,

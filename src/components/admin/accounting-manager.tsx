@@ -17,6 +17,7 @@ import { ParentAccountCombobox } from "@/components/admin/parent-account-combobo
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
+import { formatCivilDate } from "@/lib/civil-date";
 import { buildJournalEntryViewerHref } from "@/lib/accounting-navigation";
 import type {
   AccountingAccount,
@@ -157,8 +158,11 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
     lines: [emptyLine(), emptyLine()],
   });
   const [message, setMessage] = useState("");
-  const [reversalTargetId, setReversalTargetId] = useState<string | null>(null);
+  const [reversalTarget, setReversalTarget] = useState<JournalEntry | null>(null);
   const [reversalReason, setReversalReason] = useState("");
+  const [reversalEffectiveDate, setReversalEffectiveDate] = useState("");
+  const [reversalRequestKey, setReversalRequestKey] = useState("");
+  const [reversalReviewConfirmed, setReversalReviewConfirmed] = useState(false);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const canWriteAccounts = canManage || canCreate;
@@ -270,25 +274,61 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
     });
   }
 
-  function reverseEntry(entryId: string) {
-    setReversalTargetId(entryId);
+  function reverseEntry(entry: JournalEntry) {
+    setReversalTarget(entry);
     setReversalReason("");
+    setReversalEffectiveDate("");
+    setReversalRequestKey(crypto.randomUUID());
+    setReversalReviewConfirmed(false);
+  }
+
+  function closeReversalDialog() {
+    if (isPending) return;
+    setReversalTarget(null);
+    setReversalReason("");
+    setReversalEffectiveDate("");
+    setReversalRequestKey("");
+    setReversalReviewConfirmed(false);
   }
 
   function confirmReversal() {
-    if (!reversalTargetId) return;
+    if (!reversalTarget) return;
+    if (!reversalEffectiveDate) {
+      toast.error("Seleccione la fecha efectiva de la reversión.");
+      return;
+    }
+    const closedPeriod = data.closedPeriods.find(
+      (period) => reversalEffectiveDate >= period.start_date && reversalEffectiveDate <= period.end_date,
+    );
+    if (closedPeriod) {
+      toast.error("No se puede registrar la reversión en esa fecha porque el período contable está cerrado.");
+      return;
+    }
     const normalizedReason = reversalReason.trim().replace(/\s+/g, " ");
     if (normalizedReason.length < 10 || normalizedReason.length > 500) {
       toast.error("El motivo de la reversión debe tener entre 10 y 500 caracteres.");
       return;
     }
+    if (!reversalReviewConfirmed) {
+      setReversalReviewConfirmed(true);
+      return;
+    }
     startTransition(async () => {
-      const result = await reverseJournalEntryAction(reversalTargetId, normalizedReason);
+      const result = await reverseJournalEntryAction({
+        entryId: reversalTarget.id,
+        reason: normalizedReason,
+        effectiveDate: reversalEffectiveDate,
+        requestKey: reversalRequestKey,
+        expectedVersion: reversalTarget.version,
+      });
       setMessage(result.message);
       if (result.ok) {
         toast.success(result.message);
-        setReversalTargetId(null);
+        setReversalTarget(null);
         setReversalReason("");
+        setReversalEffectiveDate("");
+        setReversalRequestKey("");
+        setReversalReviewConfirmed(false);
       } else {
         toast.error(result.message);
       }
@@ -663,25 +703,42 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
       ) : null}
 
       {message ? <p className="rounded-xl border border-black/10 bg-white p-3 text-sm text-black/65">{message}</p> : null}
-      {reversalTargetId ? (
+      {reversalTarget ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 px-4 py-6" role="presentation">
-          <section role="dialog" aria-modal="true" aria-labelledby="reversal-dialog-title" className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+          <section role="dialog" aria-modal="true" aria-labelledby="reversal-dialog-title" aria-describedby="reversal-dialog-description" className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold uppercase text-[#b91c25]">Acción contable irreversible</p>
-                <h2 id="reversal-dialog-title" className="mt-1 text-xl font-semibold">Reversar partida publicada</h2>
+                <h2 id="reversal-dialog-title" className="mt-1 text-xl font-semibold">Revertir partida</h2>
               </div>
-              <button type="button" aria-label="Cerrar" disabled={isPending} onClick={() => setReversalTargetId(null)} className="grid size-11 place-items-center rounded-md border border-black/10"><X size={18} /></button>
+              <button type="button" aria-label="Cerrar" disabled={isPending} onClick={closeReversalDialog} className="grid size-11 place-items-center rounded-md border border-black/10"><X size={18} /></button>
             </div>
-            <p className="mt-3 text-sm leading-6 text-black/60">Se creará una nueva partida con débitos y créditos invertidos. La original permanecerá visible como reversada.</p>
+            <div id="reversal-dialog-description" className="mt-3 rounded-lg bg-black/[0.03] p-3 text-sm leading-6 text-black/65">
+              <p><strong>Partida original:</strong> {reversalTarget.entry_number}</p>
+              <p><strong>Fecha contable original:</strong> {formatCivilDate(reversalTarget.entry_date)}</p>
+              <p className="mt-1">Se creará una nueva partida con débitos y créditos invertidos. La original permanecerá visible como reversada.</p>
+            </div>
+            <label className="mt-4 block text-sm font-semibold">
+              Fecha efectiva de la reversión
+              <Input type="date" required max={todayKey()} value={reversalEffectiveDate} onChange={(event) => { setReversalEffectiveDate(event.target.value); setReversalReviewConfirmed(false); }} className="mt-1 font-normal" />
+            </label>
+            {reversalEffectiveDate && data.closedPeriods.some((period) => reversalEffectiveDate >= period.start_date && reversalEffectiveDate <= period.end_date) ? (
+              <p role="alert" className="mt-2 text-sm font-medium text-[#b91c25]">No se puede registrar la reversión en esa fecha porque el período contable está cerrado.</p>
+            ) : null}
             <label className="mt-4 block text-sm font-semibold">
               Motivo de la reversión
-              <textarea autoFocus rows={4} maxLength={500} value={reversalReason} onChange={(event) => setReversalReason(event.target.value)} className="mt-1 w-full rounded-lg border border-black/15 px-3 py-2 font-normal outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15" placeholder="Explique por qué debe reversarse esta partida (mínimo 10 caracteres)." />
+              <textarea rows={4} maxLength={500} value={reversalReason} onChange={(event) => { setReversalReason(event.target.value); setReversalReviewConfirmed(false); }} className="mt-1 w-full rounded-lg border border-black/15 px-3 py-2 font-normal outline-none focus:border-[#e4252c] focus:ring-2 focus:ring-[#e4252c]/15" placeholder="Explique por qué debe reversarse esta partida (mínimo 10 caracteres)." />
             </label>
             <p className="mt-1 text-xs text-black/45">{reversalReason.trim().length}/500 caracteres</p>
+            {reversalReviewConfirmed ? (
+              <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+                <p>Esta reversión se registrará contablemente el <strong>{formatCivilDate(reversalEffectiveDate)}</strong>.</p>
+                <p>La fecha técnica de creación quedará registrada en el historial de auditoría.</p>
+              </div>
+            ) : null}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="ghost" disabled={isPending} onClick={() => setReversalTargetId(null)}>Cancelar</Button>
-              <Button type="button" variant="dark" disabled={isPending || reversalReason.trim().length < 10} onClick={confirmReversal}><RotateCcw size={16} />{isPending ? "Reversando…" : "Confirmar reversión"}</Button>
+              <Button type="button" variant="ghost" disabled={isPending} onClick={closeReversalDialog}>Cancelar</Button>
+              <Button type="button" variant="dark" disabled={isPending || !reversalEffectiveDate || reversalReason.trim().length < 10} onClick={confirmReversal}><RotateCcw size={16} />{isPending ? "Reversando…" : reversalReviewConfirmed ? "Confirmar reversión" : "Revisar reversión"}</Button>
             </div>
           </section>
         </div>
@@ -798,7 +855,7 @@ function FocusedJournalEntry({
   canReverse: boolean;
   onPost: (entryId: string, expectedVersion: number) => void;
   onRecalculate: (entryId: string, expectedVersion: number) => void;
-  onReverse: (entryId: string) => void;
+  onReverse: (entry: JournalEntry) => void;
   onClose?: () => void;
   isPending: boolean;
 }) {
@@ -925,7 +982,7 @@ function JournalEntries({
   canReverse: boolean;
   onPost: (entryId: string, expectedVersion: number) => void;
   onRecalculate: (entryId: string, expectedVersion: number) => void;
-  onReverse: (entryId: string) => void;
+  onReverse: (entry: JournalEntry) => void;
   onCloseFocusedEntry?: () => void;
   isPending: boolean;
 }) {
@@ -1150,7 +1207,7 @@ function EntryActions({
   canReverse: boolean;
   onPost: (entryId: string, expectedVersion: number) => void;
   onRecalculate: (entryId: string, expectedVersion: number) => void;
-  onReverse: (entryId: string) => void;
+  onReverse: (entry: JournalEntry) => void;
   isPending: boolean;
   compact?: boolean;
 }) {
@@ -1178,7 +1235,7 @@ function EntryActions({
         </Button>
       ) : null}
       {canReverse && entry.status === "publicada" && !isReversalEntry(entry) && !entry.reversed_entry_id ? (
-        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onReverse(entry.id)}>
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onReverse(entry)}>
           <RotateCcw size={16} />
           Reversar
         </Button>
