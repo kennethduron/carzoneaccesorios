@@ -26,6 +26,7 @@ import type {
 } from "@/services/supabase/supplier-multi-payment.service";
 import type { SupplierOption } from "@/types/purchases";
 import { formatCurrency } from "@/utils/pricing";
+import { formatCivilDate, isCivilDate, todayCivilDate } from "@/lib/civil-date";
 import {
   isEligibleSupplierPaymentPayable,
   type SupplierPaymentWizardSelectionRequest,
@@ -35,6 +36,7 @@ type Step = 1 | 2 | 3 | 4 | 5;
 type PaymentMethod = "cash" | "bank_transfer" | "card_credit" | "card_debit";
 
 type PersistedDraft = {
+  version: 2;
   requestKey: string;
   step: Step;
   supplierId: string;
@@ -42,13 +44,15 @@ type PersistedDraft = {
   selectedPayables: Record<string, SupplierOpenPayable>;
   amounts: Record<string, string>;
   paidDate: string;
+  reviewedPaidDate: string | null;
   paymentMethod: PaymentMethod | "";
   reference: string;
   notes: string;
   initialPayableId: string | null;
 };
 
-const storageKey = "supplier_multi_invoice_payment_v1:draft";
+const storageKey = "supplier_multi_invoice_payment_v2:draft";
+const legacyStorageKey = "supplier_multi_invoice_payment_v1:draft";
 const methodLabels: Record<PaymentMethod, string> = {
   cash: "Efectivo",
   bank_transfer: "Transferencia bancaria",
@@ -57,13 +61,12 @@ const methodLabels: Record<PaymentMethod, string> = {
 };
 
 function todayValue() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Tegucigalpa",
-  }).format(new Date());
+  return todayCivilDate();
 }
 
 function newDraft(): PersistedDraft {
   return {
+    version: 2,
     requestKey: globalThis.crypto.randomUUID(),
     step: 1,
     supplierId: "",
@@ -71,6 +74,7 @@ function newDraft(): PersistedDraft {
     selectedPayables: {},
     amounts: {},
     paidDate: todayValue(),
+    reviewedPaidDate: null,
     paymentMethod: "",
     reference: "",
     notes: "",
@@ -84,12 +88,15 @@ function readDraft(): PersistedDraft {
     if (!value) return newDraft();
     const parsed = JSON.parse(value) as Partial<PersistedDraft>;
     if (
+      parsed.version !== 2 ||
       typeof parsed.requestKey !== "string" ||
-      !/^[0-9a-f-]{36}$/i.test(parsed.requestKey)
+      !/^[0-9a-f-]{36}$/i.test(parsed.requestKey) ||
+      !isCivilDate(parsed.paidDate)
     ) {
       return newDraft();
     }
     return {
+      version: 2,
       requestKey: parsed.requestKey,
       step: [1, 2, 3, 4, 5].includes(Number(parsed.step))
         ? (Number(parsed.step) as Step)
@@ -106,7 +113,12 @@ function readDraft(): PersistedDraft {
         typeof parsed.amounts === "object" && parsed.amounts
           ? (parsed.amounts as Record<string, string>)
           : {},
-      paidDate: typeof parsed.paidDate === "string" ? parsed.paidDate : todayValue(),
+      paidDate: parsed.paidDate,
+      reviewedPaidDate:
+        isCivilDate(parsed.reviewedPaidDate) &&
+        parsed.reviewedPaidDate === parsed.paidDate
+          ? parsed.reviewedPaidDate
+          : null,
       paymentMethod: Object.keys(methodLabels).includes(parsed.paymentMethod ?? "")
         ? (parsed.paymentMethod as PaymentMethod)
         : "",
@@ -136,10 +148,7 @@ function maskReference(reference: string) {
 }
 
 function dateLabel(value: string | null) {
-  if (!value) return "Sin fecha";
-  return new Intl.DateTimeFormat("es-HN", { dateStyle: "medium" }).format(
-    new Date(`${value.slice(0, 10)}T00:00:00-06:00`),
-  );
+  return formatCivilDate(value);
 }
 
 export function SupplierMultiPaymentWizard({
@@ -408,6 +417,7 @@ export function SupplierMultiPaymentWizard({
 
   function resetAndClose() {
     localStorage.removeItem(storageKey);
+    localStorage.removeItem(legacyStorageKey);
     setDraft(null);
     setPayables([]);
     setCursor(null);
@@ -491,6 +501,10 @@ export function SupplierMultiPaymentWizard({
       return;
     }
     if (draft.step === 4) {
+      if (!isCivilDate(draft.paidDate)) {
+        toast.error("Selecciona una fecha efectiva válida.");
+        return;
+      }
       if (!draft.paymentMethod || !selectedAccount) {
         toast.error("Selecciona un método con cuenta financiera configurada.");
         return;
@@ -499,22 +513,35 @@ export function SupplierMultiPaymentWizard({
         toast.error("La referencia es obligatoria para una transferencia.");
         return;
       }
+      updateDraft({ step: 5, reviewedPaidDate: draft.paidDate });
+      return;
     }
     updateDraft({ step: Math.min(5, draft.step + 1) as Step });
   }
 
   function previousStep() {
     if (!draft || draft.step === 1) return;
-    updateDraft({ step: (draft.step - 1) as Step });
+    updateDraft({
+      step: (draft.step - 1) as Step,
+      reviewedPaidDate: draft.step === 5 ? null : draft.reviewedPaidDate,
+    });
   }
 
   function submit() {
     if (!draft || !applicationsValid || !draft.paymentMethod || isPending) return;
+    if (
+      !isCivilDate(draft.reviewedPaidDate) ||
+      draft.reviewedPaidDate !== draft.paidDate
+    ) {
+      toast.error("La fecha cambió después de la revisión. Vuelve a confirmarla.");
+      updateDraft({ step: 4, reviewedPaidDate: null });
+      return;
+    }
     const payload = {
       request_key: draft.requestKey,
       supplier_id: draft.supplierId,
       payment_method: draft.paymentMethod,
-      paid_date: draft.paidDate,
+      paid_date: draft.reviewedPaidDate,
       reference: draft.reference || null,
       notes: draft.notes || null,
       applications: selected.map((payable) => ({
@@ -538,6 +565,7 @@ export function SupplierMultiPaymentWizard({
         return;
       }
       localStorage.removeItem(storageKey);
+      localStorage.removeItem(legacyStorageKey);
       setResult(response.result);
       toast.success(response.message);
     });
@@ -595,6 +623,7 @@ export function SupplierMultiPaymentWizard({
             onSelectionRequestClear();
             if (openedFromPayableRow) {
               localStorage.removeItem(storageKey);
+              localStorage.removeItem(legacyStorageKey);
             }
             setDraft(openedFromPayableRow ? newDraft() : readDraft());
             setResult(null);
@@ -897,7 +926,12 @@ export function SupplierMultiPaymentWizard({
                           type="date"
                           max={todayValue()}
                           value={draft.paidDate}
-                          onChange={(event) => updateDraft({ paidDate: event.target.value })}
+                          onChange={(event) =>
+                            updateDraft({
+                              paidDate: event.target.value,
+                              reviewedPaidDate: null,
+                            })
+                          }
                         />
                       </label>
                       <label className="grid gap-1 text-sm font-semibold">
@@ -959,7 +993,9 @@ export function SupplierMultiPaymentWizard({
                     <div className="grid gap-3 rounded-lg border border-black/10 bg-white p-4 text-sm">
                       <p><span className="text-black/50">Proveedor:</span> {selectedSupplier?.name}</p>
                       <p><span className="text-black/50">Método:</span> {draft.paymentMethod ? methodLabels[draft.paymentMethod] : "—"}</p>
-                      <p><span className="text-black/50">Fecha:</span> {dateLabel(draft.paidDate)}</p>
+                      <p className="font-semibold">
+                        Fecha efectiva del pago: {dateLabel(draft.reviewedPaidDate)}
+                      </p>
                       <p><span className="text-black/50">Referencia:</span> {maskReference(draft.reference)}</p>
                       <p><span className="text-black/50">Cuenta:</span> {selectedAccount ? `${selectedAccount.accountCode} — ${selectedAccount.accountName}` : "—"}</p>
                     </div>

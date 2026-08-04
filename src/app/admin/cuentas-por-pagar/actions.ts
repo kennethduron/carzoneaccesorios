@@ -33,9 +33,14 @@ import {
 import type { HistoricalPayableImportActionState } from "@/types/accounts-payable-import";
 import type { AccountsPayableStatus, SupplierInvoiceStatus } from "@/types/purchases";
 import type { SupplierPaymentRepairResult } from "@/types/supplier-payment-accounting-repair";
+import { isCivilDate } from "@/lib/civil-date";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const supplierPurchaseMismatchMessage =
+  "La compra seleccionada pertenece a otro proveedor. Seleccione una compra del mismo proveedor antes de continuar.";
+const supplierPaymentMismatchMessage =
+  "No se pudo registrar el pago porque la factura está vinculada a una compra de otro proveedor. No se aplicó ningún cambio.";
 
 export type SupplierInvoiceFormInput = {
   id?: string;
@@ -93,11 +98,79 @@ function toMoney(value: unknown) {
 }
 
 function invoiceErrorMessage(message: string) {
+  if (isSupplierPurchaseMismatch(message)) {
+    return supplierPurchaseMismatchMessage;
+  }
   if (message.includes("supplier_invoices_supplier_invoice_active_unique") || message.includes("supplier_invoices_supplier_invoice_number_key")) {
     return "Ya existe una factura activa con ese número para este proveedor.";
   }
 
   return "No se pudo guardar la factura de proveedor.";
+}
+
+function isSupplierPurchaseMismatch(message: string) {
+  return (
+    message.includes("SUPPLIER_PURCHASE_MISMATCH") ||
+    message.includes("compra no corresponde al proveedor") ||
+    message.includes("compra y la cuenta por pagar no son coherentes") ||
+    message.includes("compra pertenece a otro proveedor")
+  );
+}
+
+async function ensureSupplierRelationship(input: {
+  supplierId: string;
+  purchaseId: string | null;
+  supplierInvoiceId?: string | null;
+}) {
+  const admin = getSupabaseAdminClient();
+
+  if (input.purchaseId) {
+    if (!uuidPattern.test(input.purchaseId)) {
+      throw new Error("La compra seleccionada no es válida.");
+    }
+    const { data: purchase, error } = await admin
+      .from("purchases")
+      .select("id, supplier_id, status")
+      .eq("id", input.purchaseId)
+      .maybeSingle<{ id: string; supplier_id: string; status: string }>();
+
+    if (error || !purchase || purchase.status === "cancelled") {
+      throw new Error("La compra seleccionada no existe o está anulada.");
+    }
+    if (purchase.supplier_id !== input.supplierId) {
+      throw new Error(
+        "SUPPLIER_PURCHASE_MISMATCH: " + supplierPurchaseMismatchMessage,
+      );
+    }
+  }
+
+  if (input.supplierInvoiceId) {
+    if (!uuidPattern.test(input.supplierInvoiceId)) {
+      throw new Error("La factura seleccionada no es válida.");
+    }
+    const { data: invoice, error } = await admin
+      .from("supplier_invoices")
+      .select("id, supplier_id, purchase_id, status")
+      .eq("id", input.supplierInvoiceId)
+      .maybeSingle<{
+        id: string;
+        supplier_id: string;
+        purchase_id: string | null;
+        status: SupplierInvoiceStatus;
+      }>();
+
+    if (error || !invoice || invoice.status === "cancelled") {
+      throw new Error("La factura seleccionada no existe o está anulada.");
+    }
+    if (
+      invoice.supplier_id !== input.supplierId ||
+      invoice.purchase_id !== input.purchaseId
+    ) {
+      throw new Error(
+        "SUPPLIER_PURCHASE_MISMATCH: " + supplierPurchaseMismatchMessage,
+      );
+    }
+  }
 }
 
 async function findActivePayableConflict(input: { supplierInvoiceId: string | null; purchaseId: string | null; excludeId?: string | null }) {
@@ -180,8 +253,15 @@ export async function saveSupplierInvoiceAction(input: SupplierInvoiceFormInput)
 
   try {
     await ensureActiveSupplier(supplierId);
+    await ensureSupplierRelationship({ supplierId, purchaseId });
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Proveedor inválido." };
+    const message = error instanceof Error ? error.message : "Proveedor inválido.";
+    return {
+      ok: false,
+      message: isSupplierPurchaseMismatch(message)
+        ? supplierPurchaseMismatchMessage
+        : message,
+    };
   }
 
   const admin = getSupabaseAdminClient();
@@ -310,8 +390,19 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
 
   try {
     await ensureActiveSupplier(supplierId);
+    await ensureSupplierRelationship({
+      supplierId,
+      purchaseId,
+      supplierInvoiceId: invoiceId,
+    });
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "Proveedor inválido." };
+    const message = error instanceof Error ? error.message : "Proveedor inválido.";
+    return {
+      ok: false,
+      message: isSupplierPurchaseMismatch(message)
+        ? supplierPurchaseMismatchMessage
+        : message,
+    };
   }
 
   const admin = getSupabaseAdminClient();
@@ -356,7 +447,14 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
       .select("id, total_amount, status")
       .single();
 
-    if (error) return { ok: false, message: "No se pudo actualizar la cuenta por pagar." };
+    if (error) {
+      return {
+        ok: false,
+        message: isSupplierPurchaseMismatch(error.message)
+          ? supplierPurchaseMismatchMessage
+          : "No se pudo actualizar la cuenta por pagar.",
+      };
+    }
 
     await writeAuditLog({ tableName: "accounts_payable", recordId: data.id, action: "accounts_payable.update", newData: { total_amount: data.total_amount, status: data.status } });
     revalidatePath("/admin/cuentas-por-pagar");
@@ -369,7 +467,14 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
     .select("id, supplier_invoice_id, total_amount, status")
     .single();
 
-  if (error) return { ok: false, message: "No se pudo crear la cuenta por pagar." };
+  if (error) {
+    return {
+      ok: false,
+      message: isSupplierPurchaseMismatch(error.message)
+        ? supplierPurchaseMismatchMessage
+        : "No se pudo crear la cuenta por pagar.",
+    };
+  }
 
   if (invoiceId) {
     await admin
@@ -426,6 +531,12 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
   if (!idempotencyKey || !uuidPattern.test(idempotencyKey)) {
     return { ok: false, message: "La clave segura del pago no es válida. Vuelve a abrir el formulario." };
   }
+  if (!isCivilDate(paidAt)) {
+    return {
+      ok: false,
+      message: "Selecciona una fecha efectiva válida para el pago.",
+    };
+  }
 
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("register_supplier_payment_v2", {
@@ -438,7 +549,12 @@ export async function registerSupplierPaymentAction(input: SupplierPaymentFormIn
   });
 
   if (error) {
-    return { ok: false, message: error.message || "No se pudo registrar el pago." };
+    return {
+      ok: false,
+      message: isSupplierPurchaseMismatch(error.message)
+        ? supplierPaymentMismatchMessage
+        : error.message || "No se pudo registrar el pago.",
+    };
   }
 
   const row = Array.isArray(data) ? data[0] : data;
@@ -781,6 +897,10 @@ function supplierMultiPaymentErrorMessage(error: unknown) {
     typeof error.message === "string"
       ? error.message
       : "";
+
+  if (isSupplierPurchaseMismatch(message)) {
+    return supplierPaymentMismatchMessage;
+  }
 
   if (message.includes("clave de solicitud")) {
     return "La solicitud ya fue usada con datos distintos. Cancela el borrador y vuelve a iniciar.";

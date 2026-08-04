@@ -74,6 +74,109 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
+class SupplierPurchaseMismatchError extends Error {
+  code = "23514";
+
+  constructor() {
+    super(
+      "SUPPLIER_PURCHASE_MISMATCH: La compra seleccionada pertenece a otro proveedor.",
+    );
+    this.name = "SupplierPurchaseMismatchError";
+  }
+}
+
+async function assertSupplierPaymentApplicationsIntegrity(
+  input: SupplierMultiPaymentInput,
+) {
+  const admin = getSupabaseAdminClient();
+  const payableIds = input.applications.map(
+    (application) => application.accounts_payable_id,
+  );
+  const { data: payables, error } = await admin
+    .from("accounts_payable")
+    .select("id, supplier_id, purchase_id, supplier_invoice_id")
+    .in("id", payableIds)
+    .returns<
+      Array<{
+        id: string;
+        supplier_id: string;
+        purchase_id: string | null;
+        supplier_invoice_id: string | null;
+      }>
+    >();
+
+  if (error || (payables ?? []).length !== payableIds.length) {
+    throw new Error("Una cuenta por pagar ya no existe.");
+  }
+
+  const invoiceIds = [
+    ...new Set(
+      (payables ?? [])
+        .map((payable) => payable.supplier_invoice_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const purchaseIds = [
+    ...new Set(
+      (payables ?? [])
+        .map((payable) => payable.purchase_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const [invoiceResult, purchaseResult] = await Promise.all([
+    invoiceIds.length
+      ? admin
+          .from("supplier_invoices")
+          .select("id, supplier_id, purchase_id, status")
+          .in("id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
+    purchaseIds.length
+      ? admin
+          .from("purchases")
+          .select("id, supplier_id, status")
+          .in("id", purchaseIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (invoiceResult.error || purchaseResult.error) {
+    throw new Error("No se pudo validar la relación comercial del pago.");
+  }
+
+  const invoiceById = new Map(
+    (invoiceResult.data ?? []).map((invoice) => [invoice.id, invoice]),
+  );
+  const purchaseById = new Map(
+    (purchaseResult.data ?? []).map((purchase) => [purchase.id, purchase]),
+  );
+
+  for (const payable of payables ?? []) {
+    if (payable.supplier_id !== input.supplier_id) {
+      throw new SupplierPurchaseMismatchError();
+    }
+    if (payable.supplier_invoice_id) {
+      const invoice = invoiceById.get(payable.supplier_invoice_id);
+      if (
+        !invoice ||
+        invoice.status === "cancelled" ||
+        invoice.supplier_id !== payable.supplier_id ||
+        invoice.purchase_id !== payable.purchase_id
+      ) {
+        throw new SupplierPurchaseMismatchError();
+      }
+    }
+    if (payable.purchase_id) {
+      const purchase = purchaseById.get(payable.purchase_id);
+      if (
+        !purchase ||
+        purchase.status === "cancelled" ||
+        purchase.supplier_id !== payable.supplier_id
+      ) {
+        throw new SupplierPurchaseMismatchError();
+      }
+    }
+  }
+}
+
 export async function getSupplierOpenPayables(
   input: SupplierOpenPayablesQuery,
 ): Promise<{
@@ -254,6 +357,7 @@ export async function getSupplierMultiPaymentConfig(): Promise<SupplierMultiPaym
 export async function registerSupplierMultiPayment(
   input: SupplierMultiPaymentInput,
 ): Promise<SupplierMultiPaymentRpcResult> {
+  await assertSupplierPaymentApplicationsIntegrity(input);
   const supabase = await getSupabaseServerClient();
   const parameters = {
     p_request_key: input.request_key,

@@ -30,6 +30,7 @@ import { useToast } from "@/contexts/toast-context";
 import type { SupplierMultiPaymentConfig, SupplierMultiPaymentHistoryItem } from "@/services/supabase/supplier-multi-payment.service";
 import type { AdminAccountsPayable, AdminSupplierCredit, AdminSupplierInvoice, PayablesSummary, SupplierOption } from "@/types/purchases";
 import { formatCurrency } from "@/utils/pricing";
+import { todayCivilDate } from "@/lib/civil-date";
 
 const payableLabels: Record<string, string> = { pending: "Pendiente", partial: "Parcial", paid: "Pagado", cancelled: "Anulado", overdue: "Vencido" };
 const invoiceLabels: Record<string, string> = { draft: "Borrador", received: "Recibida", posted_to_ap: "En cuentas por pagar", cancelled: "Anulada", paid: "Pagada" };
@@ -44,7 +45,7 @@ type PaymentDraft = SupplierPaymentFormInput;
 type CreditDraft = SupplierCreditFormInput;
 
 function todayValue() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Tegucigalpa" }).format(new Date());
+  return todayCivilDate();
 }
 
 function emptyInvoiceDraft(): InvoiceDraft {
@@ -135,6 +136,34 @@ export function AccountsPayableManager({
   const voidKeysRef = useRef(new Map<string, string>());
 
   const invoiceById = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
+  const invoicePurchaseOptions = useMemo(
+    () =>
+      purchases.filter(
+        (purchase) =>
+          purchase.supplier_id === invoiceDraft.supplier_id &&
+          purchase.status !== "cancelled",
+      ),
+    [invoiceDraft.supplier_id, purchases],
+  );
+  const payablePurchaseOptions = useMemo(
+    () =>
+      purchases.filter(
+        (purchase) =>
+          purchase.supplier_id === payableDraft.supplier_id &&
+          purchase.status !== "cancelled",
+      ),
+    [payableDraft.supplier_id, purchases],
+  );
+  const payableInvoiceOptions = useMemo(
+    () =>
+      invoices.filter(
+        (invoice) =>
+          invoice.status !== "cancelled" &&
+          (!payableDraft.supplier_id ||
+            invoice.supplier_id === payableDraft.supplier_id),
+      ),
+    [invoices, payableDraft.supplier_id],
+  );
 
   const visiblePayables = useMemo(() => {
     const needle = normalize(query.trim());
@@ -203,6 +232,23 @@ export function AccountsPayableManager({
       total_amount: invoice?.total ?? payableDraft.total_amount,
       due_date: invoice?.due_date ?? payableDraft.due_date,
       currency: invoice?.currency ?? payableDraft.currency,
+    });
+  }
+
+  function selectSupplierForInvoice(supplierId: string) {
+    setInvoiceDraft({
+      ...invoiceDraft,
+      supplier_id: supplierId,
+      purchase_id: "",
+    });
+  }
+
+  function selectSupplierForPayable(supplierId: string) {
+    setPayableDraft({
+      ...payableDraft,
+      supplier_id: supplierId,
+      purchase_id: "",
+      supplier_invoice_id: "",
     });
   }
 
@@ -317,8 +363,8 @@ export function AccountsPayableManager({
 
           <div className="min-w-0 space-y-4">
             <FormPanel title={invoiceDraft.id ? "Editar factura de proveedor" : "Registrar factura de proveedor"} onReset={() => setInvoiceDraft(emptyInvoiceDraft())} showReset={Boolean(invoiceDraft.id)}>
-              <Field label="Proveedor"><select value={invoiceDraft.supplier_id} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-              <Field label="Compra opcional"><select value={invoiceDraft.purchase_id ?? ""} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin compra</option>{purchases.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number}</option>)}</select></Field>
+              <Field label="Proveedor"><select value={invoiceDraft.supplier_id} onChange={(event) => selectSupplierForInvoice(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
+              <Field label="Compra opcional"><select value={invoiceDraft.purchase_id ?? ""} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending || !invoiceDraft.supplier_id}><option value="">Sin compra</option>{invoicePurchaseOptions.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number}</option>)}</select>{invoiceDraft.supplier_id && invoicePurchaseOptions.length === 0 ? <span className="text-xs font-normal text-black/50">Este proveedor no tiene compras compatibles.</span> : null}</Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Número de factura"><Input value={invoiceDraft.invoice_number} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, invoice_number: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de factura"><Input type="date" value={invoiceDraft.invoice_date} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, invoice_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
               <Field label="Fecha de vencimiento"><Input type="date" value={invoiceDraft.due_date ?? ""} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, due_date: event.target.value })} disabled={!canManage || isPending} /></Field>
               <div className="grid gap-3 sm:grid-cols-3"><Field label="Subtotal"><Input type="number" min="0" step="0.01" value={invoiceDraft.subtotal} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, subtotal: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Impuesto"><Input type="number" min="0" step="0.01" value={invoiceDraft.tax_amount ?? 0} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, tax_amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Descuento"><Input type="number" min="0" step="0.01" value={invoiceDraft.discount_amount ?? 0} onChange={(event) => setInvoiceDraft({ ...invoiceDraft, discount_amount: event.target.value })} disabled={!canManage || isPending} /></Field></div>
@@ -328,9 +374,9 @@ export function AccountsPayableManager({
             </FormPanel>
 
             <FormPanel title={payableDraft.id ? "Editar cuenta por pagar" : "Crear cuenta por pagar"} onReset={() => setPayableDraft(emptyPayableDraft())} showReset={Boolean(payableDraft.id)}>
-              <Field label="Factura opcional"><select value={payableDraft.supplier_invoice_id ?? ""} onChange={(event) => selectInvoiceForPayable(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin factura</option>{invoices.filter((invoice) => invoice.status !== "cancelled").map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} - {invoice.supplier_name}</option>)}</select></Field>
-              <Field label="Proveedor"><select value={payableDraft.supplier_id} onChange={(event) => setPayableDraft({ ...payableDraft, supplier_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
-              <Field label="Compra opcional"><select value={payableDraft.purchase_id ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin compra</option>{purchases.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number}</option>)}</select></Field>
+              <Field label="Factura opcional"><select value={payableDraft.supplier_invoice_id ?? ""} onChange={(event) => selectInvoiceForPayable(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin factura</option>{payableInvoiceOptions.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} - {invoice.supplier_name}</option>)}</select></Field>
+              <Field label="Proveedor"><select value={payableDraft.supplier_id} onChange={(event) => selectSupplierForPayable(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
+              <Field label="Compra opcional"><select value={payableDraft.purchase_id ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending || !payableDraft.supplier_id}><option value="">Sin compra</option>{payablePurchaseOptions.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number}</option>)}</select>{payableDraft.supplier_id && payablePurchaseOptions.length === 0 ? <span className="text-xs font-normal text-black/50">Este proveedor no tiene compras compatibles.</span> : null}</Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Total"><Input type="number" min="0.01" step="0.01" value={payableDraft.total_amount} onChange={(event) => setPayableDraft({ ...payableDraft, total_amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Vencimiento"><Input type="date" value={payableDraft.due_date ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, due_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
               <Field label="Notas"><textarea value={payableDraft.notes ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
               <Button type="button" onClick={() => runAction(saveAccountsPayableAction(payableDraft), () => setPayableDraft(emptyPayableDraft()))} disabled={!canManage || isPending}><PlusCircle size={16} />Guardar cuenta</Button>
