@@ -47,7 +47,7 @@ create table if not exists public.accounting_entry_date_repairs (
   id uuid primary key default gen_random_uuid(),
   manifest_hash text not null references public.accounting_entry_date_repair_batches(manifest_hash) on delete restrict,
   migration_name text not null,
-  action text not null check (action in ('repair', 'rollback')),
+  action text not null check (action in ('repair', 'rollback', 'reapply')),
   journal_entry_id uuid not null references public.journal_entries(id) on delete restrict,
   financial_event_id uuid not null references public.financial_events(id) on delete restrict,
   accounting_outbox_id uuid references public.accounting_outbox_v2(id) on delete restrict,
@@ -214,6 +214,7 @@ declare
   supplier_observer_hash_before text;
   opening_observer_hash_before text;
   guard_rejected boolean := false;
+  audit_action text := 'repair';
 begin
   perform pg_advisory_xact_lock(hashtextextended(
     'accounting_historical_date_repair:' || target_hash, 0
@@ -274,12 +275,26 @@ begin
     end if;
     raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_APPLIED_STATE_MISMATCH';
   end if;
-  if batch.status <> 'approved' then
+  if batch.status not in ('approved', 'rolled_back') then
     raise exception using errcode = '55000', message = 'ACCOUNTING_DATE_REPAIR_BATCH_STATE_INVALID';
   end if;
-  if exists (select 1 from public.accounting_entry_date_repairs
-    where manifest_hash = target_hash) then
+  if batch.status = 'approved' and exists (
+    select 1 from public.accounting_entry_date_repairs
+    where manifest_hash = target_hash
+  ) then
     raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_UNEXPECTED_PRIOR_AUDIT';
+  end if;
+  if batch.status = 'rolled_back' then
+    if (select count(*) from public.accounting_entry_date_repairs
+        where manifest_hash = target_hash and action = 'repair') <> 37
+      or (select count(*) from public.accounting_entry_date_repairs
+        where manifest_hash = target_hash and action = 'rollback') <> 37
+      or exists (select 1 from public.accounting_entry_date_repairs
+        where manifest_hash = target_hash and action = 'reapply')
+    then
+      raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_REAPPLY_AUDIT_STATE_INVALID';
+    end if;
+    audit_action := 'reapply';
   end if;
 
   select count(*), round(coalesce(sum(debit_total), 0), 2),
@@ -555,7 +570,7 @@ begin
     debit_total, credit_total, line_count, line_hash, source_hash,
     reason, before_state, after_state, executed_by
   )
-  select manifest.manifest_hash, target_migration, 'repair',
+  select manifest.manifest_hash, target_migration, audit_action,
     manifest.journal_entry_id, manifest.financial_event_id,
     manifest.accounting_outbox_id, manifest.source_type, manifest.source_id,
     manifest.document_number, manifest.old_entry_date, manifest.new_accounting_date,
@@ -597,7 +612,7 @@ begin
   where manifest.manifest_hash = target_hash;
 
   if (select count(*) from public.accounting_entry_date_repairs
-      where manifest_hash = target_hash and action = 'repair') <> 37 then
+      where manifest_hash = target_hash and action = audit_action) <> 37 then
     raise exception using errcode = '23514', message = 'ACCOUNTING_DATE_REPAIR_AUDIT_COUNT_MISMATCH';
   end if;
 
