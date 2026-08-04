@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 const migration = read("supabase/migrations/202608040003_accounting_reversal_effective_date_v2.sql");
-const repair = read("supabase/pending-migrations/202608040004_repair_technical_duplicate_reversal_dates.sql");
+const repair = read("supabase/migrations/202608040004_repair_technical_duplicate_reversal_dates.sql");
 const retirement = read("supabase/pending-migrations/202608040005_retire_legacy_accounting_reversal_rpc.sql");
 const action = read("src/app/admin/contabilidad/actions.ts");
 const service = read("src/services/supabase/accounting-reversal.service.ts");
@@ -54,8 +54,8 @@ for (const id of [
   "a0994cc6-90f9-4d0e-8711-adbdde18049e",
 ]) assert.match(repair, new RegExp(id));
 
-assert.match(repair, /authorization_reference constant text := 'AUTHORIZATION_PENDING'/);
-assert.match(repair, /ACCOUNTING_WRITTEN_AUTHORIZATION_REQUIRED/);
+assert.match(repair, /authorization_reference constant text := 'ACCOUNTING_AND_OWNER_AUTHORIZATION_CONFIRMED_2026-08-04'/);
+assert.doesNotMatch(repair, /ACCOUNTING_WRITTEN_AUTHORIZATION_REQUIRED/);
 assert.match(repair, /get diagnostics affected_rows = row_count/);
 assert.match(repair, /if affected_rows <> 2/);
 assert.match(repair, /guard_hash_after <> guard_hash_before/);

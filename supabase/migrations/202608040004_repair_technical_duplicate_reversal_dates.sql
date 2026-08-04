@@ -1,4 +1,4 @@
--- PENDING WRITTEN ACCOUNTING AUTHORIZATION. DO NOT APPLY AS-IS.
+-- Written accounting and owner authorization confirmed on 2026-08-04.
 -- Forward-only repair of two technical duplicate reversals; no lines or economic records change.
 
 begin;
@@ -49,7 +49,7 @@ for each row execute function public.guard_accounting_technical_reversal_date_re
 
 do $repair$
 declare
-  authorization_reference constant text := 'AUTHORIZATION_PENDING';
+  authorization_reference constant text := 'ACCOUNTING_AND_OWNER_AUTHORIZATION_CONFIRMED_2026-08-04';
   authorization_date constant date := '2026-07-31'::date;
   previous_date constant date := '2026-08-03'::date;
   guard_definition text;
@@ -58,10 +58,29 @@ declare
   migration_role name := current_user;
   transaction_marker text := txid_current()::text;
   affected_rows integer;
+  target_count integer;
   item record;
 begin
-  if authorization_reference = 'AUTHORIZATION_PENDING' then
-    raise exception 'ACCOUNTING_WRITTEN_AUTHORIZATION_REQUIRED' using errcode = '42501';
+
+  select count(*) into target_count
+  from public.journal_entries
+  where id in (
+    'dcf4d9ef-3d2c-4182-b525-bdfc329fa362'::uuid,
+    '2be246f3-458a-45bf-bb28-04abfc293d52'::uuid,
+    '717b01ae-2c84-4d65-8a31-b08094f83256'::uuid,
+    '90d8668c-fd9b-4bcb-baa9-9382f32393f1'::uuid,
+    '32c7e93e-6a5b-4105-9c04-5047489df945'::uuid,
+    'a0994cc6-90f9-4d0e-8711-adbdde18049e'::uuid
+  );
+
+  -- A pristine local database has no production incident to repair. A nonempty
+  -- database with an incomplete target set is always a failed precondition.
+  if target_count = 0 and not exists (select 1 from public.journal_entries) then
+    return;
+  end if;
+  if target_count <> 6 then
+    raise exception 'ACCOUNTING_REVERSAL_DATE_REPAIR_TARGET_SET_MISMATCH'
+      using errcode = '55000';
   end if;
 
   if public.is_date_in_closed_accounting_period(authorization_date)
