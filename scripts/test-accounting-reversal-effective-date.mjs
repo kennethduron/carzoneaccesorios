@@ -5,7 +5,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 const migration = read("supabase/migrations/202608040003_accounting_reversal_effective_date_v2.sql");
 const repair = read("supabase/migrations/202608040004_repair_technical_duplicate_reversal_dates.sql");
-const retirement = read("supabase/pending-migrations/202608040005_retire_legacy_accounting_reversal_rpc.sql");
+const retirement = read("supabase/migrations/202608040005_retire_legacy_accounting_reversal_rpc.sql");
 const action = read("src/app/admin/contabilidad/actions.ts");
 const service = read("src/services/supabase/accounting-reversal.service.ts");
 const validation = read("src/lib/validation/accounting-reversal.ts");

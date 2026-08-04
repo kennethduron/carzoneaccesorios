@@ -82,9 +82,28 @@ set
   posted_at = now()
 where id = '30000000-0000-0000-0000-000000000001';
 
-select public.reverse_journal_entry(
+do $$
+begin
+  perform public.reverse_journal_entry(
+    '30000000-0000-0000-0000-000000000001',
+    'Legacy V1 must require an explicit effective date',
+    '127.0.0.1',
+    'supabase-local-contract-test'
+  );
+  raise exception 'Legacy V1 accepted a reversal without effective date';
+exception when sqlstate '22023' then
+  if sqlerrm <> 'REVERSAL_EFFECTIVE_DATE_REQUIRED: use reverse_journal_entry_v2' then
+    raise;
+  end if;
+end;
+$$;
+
+select public.reverse_journal_entry_v2(
   '30000000-0000-0000-0000-000000000001',
   'Corrección contable validada por prueba automatizada',
+  (now() at time zone 'America/Tegucigalpa')::date,
+  '30000000-0000-0000-0000-000000000010'::uuid,
+  (select version from public.journal_entries where id = '30000000-0000-0000-0000-000000000001'),
   '127.0.0.1',
   'supabase-local-contract-test'
 );
@@ -195,9 +214,12 @@ begin
   end if;
 
   begin
-    perform public.reverse_journal_entry(
+    perform public.reverse_journal_entry_v2(
       reversal.id,
       'Este intento de reversar una reversa debe rechazarse',
+      (now() at time zone 'America/Tegucigalpa')::date,
+      '30000000-0000-0000-0000-000000000011'::uuid,
+      reversal.version,
       '127.0.0.1',
       'supabase-local-contract-test'
     );
