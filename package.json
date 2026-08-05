@@ -25,6 +25,7 @@
     "test:receivable-payment-accounting": "node scripts/test-receivable-payment-accounting-outbox.mjs",
     "test:receivable-payment-accounting:local": "node scripts/test-receivable-payment-accounting-local.mjs",
     "test:accounting-automation-v2": "node scripts/test-accounting-automation-v2.mjs",
+    "test:sale-cod-fee-accounting": "node scripts/accounting/test-sale-cod-fee-implementation.mjs",
     "test:supplier-payment-late-entry-accounting": "node scripts/test-supplier-payment-late-entry-accounting.mjs",
     "test:supplier-multi-payment": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-multi-invoice-payment.mjs",
     "test:supplier-purchase-integrity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-purchase-integrity.mjs",

@@ -304,6 +304,10 @@ function eventStatusText(event: FinancialEvent) {
     return "Omitido (control)";
   }
 
+  if (event.status === "skipped" && event.validation_errors.includes("SUPERSEDED_BY_CANONICAL_V2_EVENT")) {
+    return "Omitido (cubierto por V2)";
+  }
+
   if (inventoryEventPurposes.has(event.event_purpose)) {
     if (event.status === "pending") return "Movimiento pendiente";
     if (event.status === "ready") return "Movimiento listo";
@@ -322,6 +326,20 @@ function validationIssueLabel(issue: string) {
   if (issue.includes("costo del producto")) return "Costo del producto faltante";
   if (issue.includes("Merma") || issue.includes("merma")) return "Merma de inventario";
   return null;
+}
+
+function pendingConceptMessage(missingKey: string | null | undefined) {
+  if (missingKey === "revenue:sale_cod_fee") {
+    return "Cuenta contable pendiente: Ventas por contraentrega. Falta configurar la cuenta autorizada.";
+  }
+  if (missingKey) return "Falta configurar una cuenta contable requerida para este documento.";
+  return null;
+}
+
+function formatAccountingDate(value: string | null | undefined) {
+  const parts = value?.split("-");
+  if (!parts || parts.length !== 3) return null;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
 function canGenerateDraftForEvent(event: FinancialEvent) {
@@ -835,10 +853,11 @@ export function FinancialCenterManager({
                     const amount = eventAmount(event);
                     const detail = eventDetail(event);
                     const sourceNumber = snapshotText(event.source_snapshot, ["source_number", "order_number", "purchase_number", "invoice_number", "supplier_payment_id", "accounts_payable_id", "inventory_movement_id"]);
+                    const pendingConcept = pendingConceptMessage(event.outbox?.missing_key);
                     const issues = [
                       ...validationMessages(event.validation_errors),
                       ...(event.outbox?.last_error ? [event.outbox.last_error] : []),
-                      ...(event.outbox?.missing_key ? [`Mapping/dato faltante: ${event.outbox.missing_key}`] : []),
+                      ...(pendingConcept ? [pendingConcept] : []),
                     ];
                     const linkedDraft = event.journal_entry;
                     const originHref = resolveAccountingOriginHref(event.source_type, event.source_id);
@@ -883,6 +902,7 @@ export function FinancialCenterManager({
                         </td>
                         <td className="px-3 py-3">
                           <p>{formatHnDateTime(event.occurred_at)}</p>
+                          {formatAccountingDate(event.accounting_date) ? <p className="text-xs font-medium text-black/55">Contable: {formatAccountingDate(event.accounting_date)}</p> : null}
                           {event.outbox?.cutover_at ? <p className="text-xs text-black/45">Corte: {formatHnDateTime(event.outbox.cutover_at)}</p> : null}
                         </td>
                         <td className="px-3 py-3">

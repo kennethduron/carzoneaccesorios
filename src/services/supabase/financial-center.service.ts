@@ -205,7 +205,7 @@ export async function getFinancialCenterData(input: {
   let eventsQuery = supabase
     .from("financial_events")
     .select(
-      "id, source_type, source_id, event_purpose, posting_version, status, occurred_at, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at, journal_entries(id, entry_number, status)",
+      "id, source_type, source_id, event_purpose, posting_version, status, occurred_at, accounting_date, source_snapshot, validation_errors, journal_entry_id, created_by, created_at, updated_at, journal_entries(id, entry_number, status)",
       { count: "exact" },
     );
 

@@ -614,6 +614,14 @@ export async function retryAccountingOutboxV2Action(outboxId: string): Promise<A
     return { ok: true, message: "La partida contable fue creada en borrador para revisión manual." };
   }
   if (result.outboxStatus === "pending_mapping") {
+    const { data: pending } = await supabase
+      .from("accounting_outbox_v2")
+      .select("missing_key")
+      .eq("id", validatedId.value)
+      .maybeSingle<{ missing_key: string | null }>();
+    if (pending?.missing_key === "revenue:sale_cod_fee") {
+      return { ok: true, message: "Falta configurar la cuenta contable para ingresos por contraentrega." };
+    }
     return { ok: true, message: "El evento continúa pendiente porque falta un mapping contable exacto." };
   }
   if (result.outboxStatus === "pending_data") {

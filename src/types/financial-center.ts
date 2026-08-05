@@ -73,6 +73,7 @@ export type FinancialEvent = {
   posting_version: string;
   status: FinancialEventStatus;
   occurred_at: string;
+  accounting_date: string | null;
   source_snapshot: Record<string, unknown>;
   validation_errors: unknown[];
   journal_entry_id: string | null;
