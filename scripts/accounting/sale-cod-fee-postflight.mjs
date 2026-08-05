@@ -113,7 +113,7 @@ const checks = {
   v1_control_unchanged: byEventId.get(ids.controlEventV1)?.status === "skipped" && byEventId.get(ids.controlEventV1)?.journal_entry_id == null,
   v1_outboxes_zero: v1OutboxMatches.length === 0,
   mapping_audit_once: mappingAudits.filter((row) => row.mapping_key === "revenue:sale_cod_fee" && row.account_code === "4101002").length === 1,
-  supersession_audit_twice: supersessions.filter((row) => [ids.saleEventV1, ids.cogsEventV1].includes(row.event_id)).length === 2,
+  supersession_audit_twice: supersessions.filter((row) => [ids.saleEventV1, ids.cogsEventV1].includes(row.legacy_event_id)).length === 2,
   recovery_audit_once: recoveryAudits.filter((row) => row.outbox_id === ids.saleOutboxV2).length === 1,
   periods_open_or_absent: periods.every((period) => period.status === "open"),
 };
