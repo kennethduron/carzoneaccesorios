@@ -153,22 +153,6 @@ begin
     date '2026-07-16', before_hash, after_hash, before_state, after_state
   );
 
-  perform public.write_audit_log(
-    'accounting_mappings', mapping_id, 'ACCOUNTING_MAPPING_CREATED',
-    before_state,
-    jsonb_build_object(
-      'mapping', 'revenue:sale_cod_fee',
-      'account_code', target_account.code,
-      'account_name', target_account.name,
-      'reason', 'APPROVED_ACCOUNT_FOR_CASH_ON_DELIVERY_REVENUE',
-      'approved_by', 'area_contable',
-      'effective_from', date '2026-07-16',
-      'before_hash', before_hash,
-      'after_hash', after_hash,
-      'technical_actor', current_user
-    )
-  );
-
   return mapping_id;
 end;
 $function$;

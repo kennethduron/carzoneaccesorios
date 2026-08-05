@@ -219,21 +219,6 @@ begin
     before_hash, after_hash, before_state, after_state
   );
 
-  perform public.write_audit_log(
-    'accounting_outbox_v2', target_outbox,
-    'ACCOUNTING_OUTBOX_EXACT_RECOVERY', before_state,
-    jsonb_build_object(
-      'outbox_id', target_outbox,
-      'status', 'queued',
-      'reason', 'AUTHORIZED_SALE_COD_FEE_MAPPING_RECOVERY',
-      'mapping', 'revenue:sale_cod_fee',
-      'account_code', '4101002',
-      'attempt_count_preserved', box.attempt_count,
-      'before_hash', before_hash,
-      'after_hash', after_hash
-    )
-  );
-
   insert into public.accounting_event_log (
     event_type, entity_type, entity_id, source_type, source_id,
     metadata, created_by

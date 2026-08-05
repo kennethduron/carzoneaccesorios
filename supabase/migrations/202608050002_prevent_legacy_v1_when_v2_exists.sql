@@ -311,19 +311,6 @@ begin
       previous_row, next_row
     );
 
-    perform public.write_audit_log(
-      'financial_events', item.legacy_id,
-      'ACCOUNTING_V1_EVENT_SUPERSEDED', previous_row,
-      jsonb_build_object(
-        'event_id', item.legacy_id,
-        'status', 'skipped',
-        'reason', 'SUPERSEDED_BY_CANONICAL_V2_EVENT',
-        'canonical_v2_event_id', item.canonical_id,
-        'canonical_v2_outbox_id', item.outbox_id,
-        'before_hash', before_hash,
-        'after_hash', after_hash
-      )
-    );
   end loop;
 end;
 $neutralize$;
