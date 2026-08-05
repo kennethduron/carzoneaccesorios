@@ -141,6 +141,22 @@ const purchaseApControlMessages = new Map<FinancialEventPurpose, string>([
   ["supplier_payment_cancelled", "La anulaci\u00f3n de pago a proveedor requiere revisi\u00f3n contable antes de generar reversos."],
 ]);
 
+const canonicalV2PurposeByLegacyV1 = new Map<FinancialEventPurpose, string>([
+  ["sale_revenue", "sale_recognized"],
+  ["inventory_cogs", "inventory_cogs"],
+]);
+const supersededByV2Message = "SUPERSEDED_BY_CANONICAL_V2_EVENT";
+
+function canonicalV2CoverageKey(sourceType: string, sourceId: string, legacyPurpose: FinancialEventPurpose) {
+  return `${sourceType}:${sourceId}:${legacyPurpose}`;
+}
+
+function legacyPurposeForCanonicalV2(purpose: string): FinancialEventPurpose | null {
+  if (purpose === "sale_recognized" || purpose === "sale_revenue") return "sale_revenue";
+  if (purpose === "inventory_cogs") return "inventory_cogs";
+  return null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -434,10 +450,60 @@ async function collectCandidates() {
   return [...orders, ...payments, ...invoices, ...receivables, ...inventory, ...purchases];
 }
 
-export async function registerFinancialEventCandidate(candidate: FinancialEventCandidate, mappings: MappingLookup, automationMode: AutomationMode, createdBy: string | null, client?: SupabaseClient) {
+async function getCanonicalV2Coverage(client?: SupabaseClient) {
+  const supabase = client ?? getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("accounting_outbox_v2")
+    .select("source_type, source_id, event_purpose")
+    .eq("posting_version", "v2")
+    .neq("status", "cancelled")
+    .in("event_purpose", ["sale_recognized", "sale_revenue", "inventory_cogs"])
+    .returns<Array<{ source_type: string; source_id: string; event_purpose: string }>>();
+  if (error) throw new Error(error.message);
+
+  const coverage = new Set<string>();
+  for (const row of data ?? []) {
+    const legacyPurpose = legacyPurposeForCanonicalV2(row.event_purpose);
+    if (legacyPurpose) coverage.add(canonicalV2CoverageKey(row.source_type, row.source_id, legacyPurpose));
+  }
+  return coverage;
+}
+
+async function hasCanonicalV2Coverage(candidate: FinancialEventCandidate, client?: SupabaseClient) {
+  const canonicalPurpose = canonicalV2PurposeByLegacyV1.get(candidate.event_purpose);
+  if (!canonicalPurpose || (candidate.posting_version ?? "v1") !== "v1") return false;
+  const supabase = client ?? getSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("accounting_outbox_v2")
+    .select("id")
+    .eq("posting_version", "v2")
+    .eq("source_type", candidate.source_type)
+    .eq("source_id", candidate.source_id)
+    .eq("event_purpose", canonicalPurpose)
+    .neq("status", "cancelled")
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return Boolean(data?.length);
+}
+
+export async function registerFinancialEventCandidate(
+  candidate: FinancialEventCandidate,
+  mappings: MappingLookup,
+  automationMode: AutomationMode,
+  createdBy: string | null,
+  client?: SupabaseClient,
+  canonicalV2Coverage?: Set<string>,
+) {
   const supabase = client ?? getSupabaseAdminClient();
   const postingVersion = candidate.posting_version ?? "v1";
-  const statusResult = resolveCandidateStatus(candidate, mappings, automationMode);
+  const coveredByV2 = postingVersion === "v1" && canonicalV2PurposeByLegacyV1.has(candidate.event_purpose)
+    ? canonicalV2Coverage
+      ? canonicalV2Coverage.has(canonicalV2CoverageKey(candidate.source_type, candidate.source_id, candidate.event_purpose))
+      : await hasCanonicalV2Coverage(candidate, supabase)
+    : false;
+  const statusResult = coveredByV2
+    ? { status: "skipped" as const, validationErrors: [...new Set([...(candidate.validation_errors ?? []), supersededByV2Message])] }
+    : resolveCandidateStatus(candidate, mappings, automationMode);
   const snapshot = buildRegisteredSnapshot(candidate);
 
   const { data: existing, error: existingError } = await supabase
@@ -490,7 +556,7 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
     }
 
     if (dryRunStatuses.has(existing.status) && !existing.journal_entry_id) {
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from("financial_events")
         .update({
           status: payload.status,
@@ -499,19 +565,21 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
           source_snapshot: payload.source_snapshot,
           validation_errors: payload.validation_errors,
         })
-        .eq("id", existing.id);
+        .eq("id", existing.id)
+        .select("status")
+        .single<{ status: FinancialEventStatus }>();
 
       if (updateError) {
         throw new Error(updateError.message);
       }
 
-      return { result: "skipped_duplicate" as const, status: payload.status, updated: true, eventId: existing.id };
+      return { result: "skipped_duplicate" as const, status: updated?.status ?? payload.status, updated: true, eventId: existing.id };
     }
 
     return { result: "skipped_duplicate" as const, status: existing.status, updated: false, eventId: existing.id };
   }
 
-  const { data: inserted, error: insertError } = await supabase.from("financial_events").insert(payload).select("id").single<{ id: string }>();
+  const { data: inserted, error: insertError } = await supabase.from("financial_events").insert(payload).select("id, status").single<{ id: string; status: FinancialEventStatus }>();
   if (insertError) {
     if (insertError.code === "23505") {
       return { result: "skipped_duplicate" as const, status: payload.status, updated: false, eventId: null };
@@ -520,14 +588,15 @@ export async function registerFinancialEventCandidate(candidate: FinancialEventC
     throw new Error(insertError.message);
   }
 
-  return { result: "inserted" as const, status: payload.status, updated: false, eventId: inserted?.id ?? null };
+  return { result: "inserted" as const, status: inserted?.status ?? payload.status, updated: false, eventId: inserted?.id ?? null };
 }
 
 export async function scanFinancialEventsDryRun(createdBy: string): Promise<FinancialEventScanSummary> {
-  const [automationMode, mappings, candidates] = await Promise.all([
+  const [automationMode, mappings, candidates, canonicalV2Coverage] = await Promise.all([
     getAccountingAutomationMode(),
     getActiveAccountingMappingLookup(),
     collectCandidates(),
+    getCanonicalV2Coverage(),
   ]);
 
   const summary: FinancialEventScanSummary = {
@@ -545,7 +614,7 @@ export async function scanFinancialEventsDryRun(createdBy: string): Promise<Fina
   };
 
   for (const candidate of candidates) {
-    const registered = await registerFinancialEventCandidate(candidate, mappings, automationMode, createdBy);
+    const registered = await registerFinancialEventCandidate(candidate, mappings, automationMode, createdBy, undefined, canonicalV2Coverage);
     if (registered.result === "inserted") {
       summary.inserted += 1;
     } else {

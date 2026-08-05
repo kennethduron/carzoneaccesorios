@@ -1225,6 +1225,27 @@ export async function generateJournalDraftFromFinancialEvent(
     return { ok: false, message: "Este tipo de evento financiero no está soportado para generar borradores." };
   }
 
+  if (event.posting_version === "v1" && ["sale_revenue", "inventory_cogs"].includes(event.event_purpose)) {
+    const canonicalPurpose = event.event_purpose === "sale_revenue" ? "sale_recognized" : "inventory_cogs";
+    const { data: canonicalV2, error: canonicalV2Error } = await dataClient
+      .from("accounting_outbox_v2")
+      .select("id")
+      .eq("posting_version", "v2")
+      .eq("source_type", event.source_type)
+      .eq("source_id", event.source_id)
+      .eq("event_purpose", canonicalPurpose)
+      .neq("status", "cancelled")
+      .limit(1);
+    if (canonicalV2Error) return { ok: false, message: "No se pudo validar la cobertura contable V2." };
+    if (canonicalV2?.length) {
+      return {
+        ok: false,
+        message: "Este evento V1 fue reemplazado por la cadena contable V2 y no puede generar otro borrador.",
+        status: "skipped",
+      };
+    }
+  }
+
   const existingDraft = await findExistingDraft(event, dataClient);
   if (existingDraft) {
     if (!event.journal_entry_id) {
