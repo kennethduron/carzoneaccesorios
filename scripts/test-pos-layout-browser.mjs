@@ -235,6 +235,21 @@ try {
     if (width <= 430) assert.ok(result.headerHeight <= 84, `${width}x${height}: header móvil compacto`);
   }
 
+  const zoomResults = {};
+  for (const zoom of [1, 1.25, 1.5]) {
+    const effectiveWidth = Math.floor(1440 / zoom);
+    const effectiveHeight = Math.floor(900 / zoom);
+    await navigate(effectiveWidth, effectiveHeight, 10);
+    const result = await metrics();
+    zoomResults[`${Math.round(zoom * 100)}%`] = result;
+    assert.equal(result.globalOverflow, false, `${Math.round(zoom * 100)}%: sin overflow horizontal global`);
+    assert.equal(result.backVisible, true, `${Math.round(zoom * 100)}%: Volver al inicio visible y táctil`);
+    assert.ok(result.nameLines <= 1, `${Math.round(zoom * 100)}%: nombre legible`);
+    assert.equal(result.emailFits, true, `${Math.round(zoom * 100)}%: correo largo contenido`);
+    assert.equal(result.cardsFit, true, `${Math.round(zoom * 100)}%: tarjetas comerciales contenidas`);
+    assert.equal(result.moneyFits, true, `${Math.round(zoom * 100)}%: importes legibles`);
+  }
+
   await navigate(1440, 900, 20);
   await evaluate("document.querySelector('[data-testid=pos-cart-lines]').scrollTop = 0; document.querySelector('[data-testid=pos-cart-lines]').focus(); true");
   await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "PageDown", code: "PageDown", windowsVirtualKeyCode: 34, nativeVirtualKeyCode: 34 });
@@ -249,8 +264,8 @@ try {
     await writeFile(join(outputDir, `${name}.png`), Buffer.from(capture.data, "base64"));
   }
 
-  await writeFile(join(outputDir, "metrics.json"), JSON.stringify({ cartCounts, responsiveResults }, null, 2));
-  console.log("POS browser layout dimensions, responsive grid, keyboard scroll and screenshots: PASS");
+  await writeFile(join(outputDir, "metrics.json"), JSON.stringify({ cartCounts, responsiveResults, zoomResults }, null, 2));
+  console.log("POS browser layout dimensions, responsive grid, zoom, keyboard scroll and screenshots: PASS");
 } catch (error) {
   if (serverOutput) console.error(serverOutput.slice(-8_000));
   throw error;
