@@ -1106,6 +1106,7 @@ function OrderDetail({
           <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <CompactInfo label="Cliente" value={order.customer_name} />
             <CompactInfo label="Teléfono" value={order.phone} />
+            <CompactInfo label="Origen" value={order.source === 'pos' ? 'Punto de venta' : order.source === 'web' ? 'Sitio web' : 'Manual'} />
             {order.tracking_code ? <CompactInfo label="Código" value={order.tracking_code} /> : null}
             {canViewFinancialData ? <CompactInfo label="RTN" value={order.fiscal_customer_rtn ?? "Sin RTN"} /> : null}
           </div>
@@ -1121,14 +1122,14 @@ function OrderDetail({
               <CompactInfo label="Subtotal antes de ISV" value={formatCurrency(order.subtotal)} />
               <CompactInfo label="ISV incluido 15%" value={formatCurrency(order.tax)} />
               <CompactInfo label="Total" value={formatCurrency(order.total)} />
-              <CompactInfo label="Envío" value={order.shipping_fee === 0 ? "Gratis" : formatCurrency(order.shipping_fee)} />
-              <CompactInfo
+              {order.shipping_fee > 0 ? <CompactInfo label="Envío" value={formatCurrency(order.shipping_fee)} /> : null}
+              {order.cash_on_delivery_fee > 0 ? <CompactInfo
                 label="Contra entrega"
                 value={cashOnDeliveryRequired && cashOnDeliveryPending ? "Pendiente de confirmación" : formatCurrency(order.cash_on_delivery_fee)}
-              />
-              <CompactInfo label="Recargo mínimo" value={formatCurrency(order.small_order_fee)} />
+              /> : null}
+              {order.small_order_fee > 0 ? <CompactInfo label="Recargo mínimo" value={formatCurrency(order.small_order_fee)} /> : null}
               <CompactInfo label="Descuentos" value={order.discount_total > 0 ? `-${formatCurrency(order.discount_total)}` : formatCurrency(0)} />
-              <CompactInfo label="Otros cargos" value={formatCurrency(order.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))} />
+              {order.additional_fees.filter((fee) => fee.amount > 0).map((fee, index) => <CompactInfo key={`${fee.label}-${index}`} label={fee.label} value={formatCurrency(fee.amount)} />)}
               <CompactInfo label="Nombre fiscal" value={order.fiscal_customer_name} />
               <CompactInfo label="RTN fiscal" value={order.fiscal_customer_rtn ?? "Sin RTN"} />
               <CompactInfo label="Dirección fiscal" value={order.fiscal_customer_address ?? "Sin dirección"} />

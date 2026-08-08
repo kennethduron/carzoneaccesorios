@@ -123,10 +123,27 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
         <h2 className="font-semibold text-emerald-950">Venta confirmada</h2>
         <p className="text-sm text-emerald-900">Pedido {result.orderNumber} · Factura {result.invoiceNumber}</p>
       </div></div>
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm"><span>Total</span><strong className="text-right">{formatCurrency(result.total)}</strong>{result.changeDue !== null ? <><span>Cambio</span><strong className="text-right">{formatCurrency(result.changeDue)}</strong></> : null}</div>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        <a className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white" href={`/api/admin/facturas/${result.invoiceId}/pdf?download=1`}><ReceiptText size={18} /> Descargar factura</a>
-        <button type="button" onClick={() => printPosReceipt(result, draft, customer.displayName, operatorName)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold"><Printer size={18} /> Imprimir recibo</button>
+      <dl className="mt-4 grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-2 text-sm">
+        <dt>Pedido</dt><dd className="text-right font-semibold">{result.orderNumber}</dd>
+        <dt>Factura</dt><dd className="text-right font-semibold">{result.invoiceNumber}</dd>
+        <dt>Cliente</dt><dd className="text-right font-semibold">{customer.displayName}</dd>
+        <dt>Fecha de factura</dt><dd className="text-right font-semibold">{result.invoiceDate}</dd>
+        <dt>Total</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd>
+        <dt>Método</dt><dd className="text-right font-semibold">{result.paymentMethod}</dd>
+        {result.paymentId ? <><dt>Pago registrado</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd></> : null}
+        {result.receivableId ? <><dt>Saldo CxC</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd></> : null}
+        {result.amountTendered !== null ? <><dt>Recibido</dt><dd className="text-right font-semibold">{formatCurrency(result.amountTendered)}</dd></> : null}
+        {result.changeDue !== null ? <><dt>Cambio</dt><dd className="text-right font-semibold">{formatCurrency(result.changeDue)}</dd></> : null}
+        <dt>Origen</dt><dd className="text-right font-semibold">Punto de venta</dd>
+        <dt>Responsable</dt><dd className="text-right font-semibold">{operatorName}</dd>
+      </dl>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <a className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white" href={`/api/admin/facturas/${result.invoiceId}/pdf?download=1`}><ReceiptText size={18} /> Descargar factura PDF</a>
+        <a target="_blank" rel="noreferrer" href={`/api/admin/facturas/${result.invoiceId}/pdf`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold"><Printer size={18} /> Imprimir factura</a>
+        <a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pedido</a>
+        <a href={`/admin/facturas?invoiceId=${encodeURIComponent(result.invoiceId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver factura</a>
+        {result.receivableId ? <a href={`/admin/cuentas-por-cobrar?receivableId=${encodeURIComponent(result.receivableId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver cuenta por cobrar</a> : null}
+        {result.paymentId ? <a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}&paymentId=${encodeURIComponent(result.paymentId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pago</a> : null}
         <button type="button" onClick={onNewSale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold"><PlusCircle size={18} /> Nueva venta</button>
       </div>
     </section>;

@@ -178,6 +178,8 @@ export type OrderPriceAdjustmentPreview = {
 export type AdminOrderRow = {
   id: string;
   order_number: string;
+  source: 'web' | 'pos' | 'manual';
+  channel: string;
   tracking_code: string | null;
   tracking_status: string | null;
   public_tracking_enabled: boolean;

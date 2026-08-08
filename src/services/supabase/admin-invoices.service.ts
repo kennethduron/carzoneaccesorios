@@ -178,10 +178,12 @@ export async function getAdminInvoicesPage({
   page: rawPage,
   pageSize: rawPageSize,
   task,
+  focusInvoiceId,
 }: {
   page?: number;
   pageSize?: number;
   task?: AdminInvoiceTask | null;
+  focusInvoiceId?: string | null;
 } = {}): Promise<AdminInvoicesPage> {
   const supabase = await getSupabaseServerClient();
   const page = normalizePage(rawPage);
@@ -226,6 +228,10 @@ export async function getAdminInvoicesPage({
 
   if (task === "pending_invoices") {
     invoicesQuery = invoicesQuery.in("status", ["draft"]);
+  }
+
+  if (focusInvoiceId) {
+    invoicesQuery = invoicesQuery.eq('id', focusInvoiceId);
   }
 
   const { data: invoices, error: invoicesError, count } = await invoicesQuery

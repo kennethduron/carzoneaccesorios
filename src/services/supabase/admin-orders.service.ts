@@ -227,11 +227,13 @@ export async function getAdminOrdersPage({
   page: rawPage,
   pageSize: rawPageSize,
   task,
+  focusOrderId,
   includeAccountingTraceability = false,
 }: {
   page?: number;
   pageSize?: number;
   task?: AdminOrderTask | null;
+  focusOrderId?: string | null;
   includeAccountingTraceability?: boolean;
 } = {}): Promise<AdminOrdersPage> {
   const supabase = await getSupabaseServerClient();
@@ -247,6 +249,8 @@ export async function getAdminOrdersPage({
       `
       id,
       order_number,
+      source,
+      channel,
       tracking_code,
       tracking_status,
       public_tracking_enabled,
@@ -332,6 +336,10 @@ export async function getAdminOrdersPage({
 
   if (task === "expired_reservations") {
     ordersQuery = ordersQuery.eq("reservation_review_required", true);
+  }
+
+  if (focusOrderId) {
+    ordersQuery = ordersQuery.eq('id', focusOrderId);
   }
 
   const { data, error, count } = await ordersQuery

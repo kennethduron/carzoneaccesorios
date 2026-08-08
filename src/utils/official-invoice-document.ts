@@ -620,7 +620,10 @@ export function getOfficialInvoiceDates(invoice: OfficialInvoiceInput) {
 }
 
 export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
-  const otherFees = additionalFeesTotal(invoice.additionalFees ?? []);
+  const additionalFees = (invoice.additionalFees ?? []).filter((fee) => Number(fee.amount) > 0);
+  const posFeeLabels = new Set(['cargo adicional', 'otro cargo']);
+  const itemizedAdditionalFees = additionalFees.filter((fee) => posFeeLabels.has(fee.label.trim().toLowerCase()));
+  const otherFees = additionalFeesTotal(additionalFees.filter((fee) => !posFeeLabels.has(fee.label.trim().toLowerCase())));
   const discountTotal = roundMoney(invoice.discountTotal ?? 0);
   const shippingFee = roundMoney(invoice.shippingFee ?? 0);
   const cashOnDeliveryFee = roundMoney(invoice.cashOnDeliveryFee ?? 0);
@@ -653,6 +656,7 @@ export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
     shippingFee,
     cashOnDeliveryFee,
     smallOrderFee,
+    itemizedAdditionalFees,
   };
 }
 
@@ -809,6 +813,7 @@ export function summaryRows(totals: ReturnType<typeof getOfficialInvoiceTotals>)
     totals.shippingFee > 0 ? { label: "Envío estándar", value: formatCurrency(totals.shippingFee) } : null,
     totals.cashOnDeliveryFee > 0 ? { label: "Contra entrega", value: formatCurrency(totals.cashOnDeliveryFee) } : null,
     totals.smallOrderFee > 0 ? { label: "Recargo pedido mínimo", value: formatCurrency(totals.smallOrderFee) } : null,
+    ...totals.itemizedAdditionalFees.map((fee) => ({ label: fee.label, value: formatCurrency(fee.amount) })),
     totals.otherFees > 0 ? { label: "Otros cargos", value: formatCurrency(totals.otherFees) } : null,
     totals.discountTotal > 0 ? { label: "Descuento", value: formatCurrency(totals.discountTotal) } : null,
     { label: "Total", value: formatCurrency(totals.total), isTotal: true },

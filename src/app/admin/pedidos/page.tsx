@@ -66,7 +66,7 @@ function stripFinancialOrderData(order: AdminOrderRow): AdminOrderRow {
 export default async function AdminOrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; task?: string }>;
+  searchParams: Promise<{ page?: string; task?: string; orderId?: string }>;
 }) {
   const profile = await requirePermission("admin:access");
   const canReadOrders =
@@ -80,6 +80,7 @@ export default async function AdminOrdersPage({
 
   const params = await searchParams;
   const task = normalizeAdminOrderTask(params.task);
+  const focusOrderId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(params.orderId ?? '') ? params.orderId : null;
   const canManagePayments = hasEffectivePermission(profile.role, profile.permissions, "payments:manage", profile.email);
   const canConfirmPayments =
     canManagePayments || hasEffectivePermission(profile.role, profile.permissions, "payments:confirm", profile.email);
@@ -113,6 +114,7 @@ export default async function AdminOrdersPage({
     page: Number(params.page ?? 1),
     pageSize: 50,
     task,
+    focusOrderId,
     includeAccountingTraceability: canViewAccountingTraceability,
   });
   const visibleOrders = canViewFinancialData ? ordersPage.orders : ordersPage.orders.map(stripFinancialOrderData);

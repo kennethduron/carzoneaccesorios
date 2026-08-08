@@ -18,10 +18,11 @@ const AdminInvoicesManager = nextDynamic(
 async function getSafeAdminInvoicesPage(input: {
   page: number;
   task: ReturnType<typeof normalizeAdminInvoiceTask>;
+  focusInvoiceId?: string | null;
 }): Promise<{ invoicesPage: AdminInvoicesPage; errorMessage: string | null }> {
   try {
     return {
-      invoicesPage: await getAdminInvoicesPage({ page: input.page, pageSize: 50, task: input.task }),
+      invoicesPage: await getAdminInvoicesPage({ page: input.page, pageSize: 50, task: input.task, focusInvoiceId: input.focusInvoiceId }),
       errorMessage: null,
     };
   } catch (error) {
@@ -48,11 +49,12 @@ async function getSafeAdminInvoicesPage(input: {
 export default async function AdminInvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; task?: string }>;
+  searchParams: Promise<{ page?: string; task?: string; invoiceId?: string }>;
 }) {
   const profile = await requirePermission("invoices:read");
   const params = await searchParams;
   const task = normalizeAdminInvoiceTask(params.task);
+  const focusInvoiceId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(params.invoiceId ?? '') ? params.invoiceId : null;
   const canUseTechnicalExports =
     profile.email?.toLowerCase() === "kennethduron.paz@gmail.com" ||
     profile.role === "technical_owner" ||
@@ -61,7 +63,7 @@ export default async function AdminInvoicesPage({
   const canCorrectInvoices = profile.permissions.includes("invoices:correct");
   const page = Number(params.page ?? 1) || 1;
   const [{ invoicesPage, errorMessage: invoicesErrorMessage }, fiscalSettings] = await Promise.all([
-    getSafeAdminInvoicesPage({ page, task }),
+    getSafeAdminInvoicesPage({ page, task, focusInvoiceId }),
     getFiscalSettings(),
   ]);
   const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoicesPage.invoices);

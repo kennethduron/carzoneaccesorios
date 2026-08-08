@@ -842,11 +842,13 @@ function InvoiceModal({
         <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
           <p>Subtotal antes de ISV: {formatCurrency(invoice.subtotal)}</p>
           <p>ISV incluido 15%: {formatCurrency(invoice.tax)}</p>
-          <p>Envío: {formatCurrency(invoice.shipping_fee)}</p>
-          <p>Comisión: {formatCurrency(invoice.cash_on_delivery_fee)}</p>
+          {invoice.shipping_fee > 0 ? <p>Envío: {formatCurrency(invoice.shipping_fee)}</p> : null}
+          {invoice.cash_on_delivery_fee > 0 ? <p>Contra entrega: {formatCurrency(invoice.cash_on_delivery_fee)}</p> : null}
           <p>Recargo mínimo: {formatCurrency(invoice.small_order_fee)}</p>
           <p>Descuentos: {invoice.discount_total > 0 ? `-${formatCurrency(invoice.discount_total)}` : formatCurrency(0)}</p>
-          <p>Otros cargos: {formatCurrency(invoice.additional_fees.reduce((sum, fee) => sum + fee.amount, 0))}</p>
+          {invoice.additional_fees.filter((fee) => fee.amount > 0).map((fee, index) => (
+            <p key={`${fee.label}-${index}`}>{fee.label}: {formatCurrency(fee.amount)}</p>
+          ))}
           <p className="font-semibold">Total: {formatCurrency(invoice.total)}</p>
         </div>
       </section>
