@@ -270,6 +270,39 @@ export type PosCustomerDuplicateSuggestionPage = {
   hasStrongMatch: boolean;
 };
 
+export type PosInventorySnapshot = {
+  productId: string;
+  tracksInventory: boolean;
+  physicalStock: number | null;
+  reservedStock: number | null;
+  availableStock: number | null;
+  hasActiveReservations: boolean;
+  stockObservedAt: string;
+};
+
+export type PosProductReservation = {
+  reservationId: string;
+  orderId: string;
+  orderNumber: string;
+  reservedQuantity: number;
+  reservationStatus: string;
+  orderStatus: string;
+  reservationCreatedAt: string;
+  expiresAt: string;
+  reviewRequired: boolean;
+};
+
+export type PosProductReservationPage = {
+  results: PosProductReservation[];
+  total: number;
+  nextOffset: number | null;
+};
+
+export type PosInventoryConflict = PosInventorySnapshot & {
+  productName: string;
+  requestedQuantity: number;
+};
+
 export type PosProductSearchResult = {
   productId: string;
   sku: string;
@@ -287,8 +320,12 @@ export type PosProductSearchResult = {
   productStatus: "active" | "inactive" | "draft" | "archived";
   active: boolean;
   autoDisabledByStock: boolean;
-  availableStock: number;
-  tracksInventory?: boolean;
+  physicalStock: number | null;
+  reservedStock: number | null;
+  availableStock: number | null;
+  tracksInventory: boolean;
+  hasActiveReservations: boolean;
+  stockObservedAt: string;
   lowStockThreshold: number;
   imageUrl: string | null;
 };
@@ -321,8 +358,11 @@ export type PosDraftItem = {
   lineTaxableBase: number;
   lineTaxAmount: number;
   lineExemptAmount: number;
-  availableStock: number;
-  tracksInventory?: boolean;
+  physicalStock: number | null;
+  reservedStock: number | null;
+  availableStock: number | null;
+  tracksInventory: boolean;
+  hasActiveReservations: boolean;
   stockObservedAt: string;
   stockStatus: "available" | "low" | "insufficient";
   validationStatus: "valid" | "warning" | "blocked";

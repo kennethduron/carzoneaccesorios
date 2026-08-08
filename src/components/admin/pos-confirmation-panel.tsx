@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, CreditCard, LoaderCircle, PlusCircle, Printer, ReceiptText } from "lucide-react";
 import type {
   PosConfirmationPaymentInput,
+  PosInventoryConflict,
   PosConfirmationResult,
   PosCustomerContext,
   PosPaymentMethod,
@@ -17,10 +18,14 @@ type Props = {
   customer: PosCustomerContext;
   disabled: boolean;
   onConfirmed: (result: PosConfirmationResult) => void;
+  onInventoryConflict: () => Promise<PosInventoryConflict[]>;
+  onViewReservations: (item: PosInventoryConflict) => void;
   onNewSale: () => void;
   operatorName: string;
   initialResult?: PosConfirmationResult | null;
 };
+
+type ConfirmationError = { code: string; message: string };
 
 function hondurasDate() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -67,7 +72,7 @@ export function printPosReceipt(
   popup.document.close();
 }
 
-export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onNewSale, operatorName, initialResult = null }: Props) {
+export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onInventoryConflict, onViewReservations, onNewSale, operatorName, initialResult = null }: Props) {
   const [method, setMethod] = useState<PosPaymentMethod>("cash");
   const [invoiceDate, setInvoiceDate] = useState(hondurasDate);
   const [amountTendered, setAmountTendered] = useState(String(draft.grandTotal));
@@ -75,7 +80,8 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
   const [verified, setVerified] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
+  const [confirmationError, setConfirmationError] = useState<ConfirmationError | null>(null);
+  const [inventoryConflicts, setInventoryConflicts] = useState<PosInventoryConflict[]>([]);
   const [result, setResult] = useState<PosConfirmationResult | null>(initialResult);
   const requestKey = useRef<string | null>(null);
 
@@ -94,7 +100,8 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
   async function confirm() {
     if (pending || disabled || !accepted || !paymentReady) return;
     setPending(true);
-    setMessage("");
+    setConfirmationError(null);
+    setInventoryConflicts([]);
     requestKey.current ??= crypto.randomUUID();
     const payment: PosConfirmationPaymentInput = method === "cash"
       ? { method, amountTendered: Number(amountTendered) }
@@ -114,12 +121,26 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
           payment,
         }),
       });
-      const payload = await response.json() as PosConfirmationResult & { message?: string };
-      if (!response.ok) throw new Error(payload.message || "No se pudo confirmar la venta.");
+      const payload = await response.json() as PosConfirmationResult & { code?: string; message?: string };
+      if (!response.ok) {
+        const error: ConfirmationError = {
+          code: payload.code || "POS_CONFIRMATION_FAILED",
+          message: payload.message || "No se pudo confirmar la venta.",
+        };
+        setConfirmationError(error);
+        if (error.code === "POS_INSUFFICIENT_STOCK" || error.code === "POS_PRODUCT_INACTIVE") {
+          const conflicts = await onInventoryConflict();
+          setInventoryConflicts(conflicts);
+        }
+        return;
+      }
       setResult(payload);
       onConfirmed(payload);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo confirmar la venta.");
+      setConfirmationError({
+        code: "POS_CONFIRMATION_FAILED",
+        message: error instanceof Error ? error.message : "No se pudo confirmar la venta.",
+      });
     } finally {
       setPending(false);
     }
@@ -168,7 +189,15 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
     {method === "commercial_credit" ? <div className={`mt-3 rounded-lg p-3 text-sm min-[1320px]:col-span-2 ${creditAllowed ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}><p>Disponible: <strong>{formatCurrency(customer.credit.availableCredit)}</strong></p><p>{creditAllowed ? "El crédito disponible se verificará nuevamente al confirmar." : customer.credit.reason}</p></div> : null}
     </div>
     <label className="mt-3 flex min-h-11 items-center gap-3 rounded-lg px-1 py-2 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="size-5 shrink-0" /><span>Confirmo que los productos, precios y datos son correctos.</span></label>
-    {message ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{message}</p> : null}
+    {confirmationError && ["POS_INSUFFICIENT_STOCK", "POS_PRODUCT_INACTIVE"].includes(confirmationError.code) && inventoryConflicts.length > 0 ? <div role="alert" data-error-code={confirmationError.code} className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+      <p className="font-semibold">No hay suficientes unidades disponibles para completar esta venta.</p>
+      {inventoryConflicts.length === 1 ? inventoryConflicts.map((conflict) => <div key={conflict.productId} className="mt-2">
+        <p className="font-semibold">{conflict.productName}</p>
+        <p className="mt-1">Existencia física: {conflict.physicalStock} · Reservadas por pedidos activos: {conflict.reservedStock} · Disponibles: {conflict.availableStock} · Solicitadas: {conflict.requestedQuantity}</p>
+        {conflict.hasActiveReservations ? <button type="button" onClick={() => onViewReservations(conflict)} className="mt-1 inline-flex min-h-11 items-center font-semibold underline underline-offset-4">Ver pedidos relacionados</button> : null}
+      </div>) : inventoryConflicts.length > 1 ? <ul className="mt-2 space-y-1">{inventoryConflicts.map((conflict) => <li key={conflict.productId}><strong>{conflict.productName}</strong> — disponibles {conflict.availableStock} / solicitadas {conflict.requestedQuantity}{conflict.hasActiveReservations ? <button type="button" onClick={() => onViewReservations(conflict)} className="ml-2 min-h-11 font-semibold underline underline-offset-4">Ver pedidos</button> : null}</li>)}</ul> : <p className="mt-2">Las existencias se actualizaron. Revise las cantidades del carrito.</p>}
+      <p className="mt-2">Ajuste la cantidad para continuar.</p>
+    </div> : confirmationError ? <p role="alert" data-error-code={confirmationError.code} className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{confirmationError.message}</p> : null}
     <button type="button" disabled={disabled || pending || !accepted || !paymentReady || !invoiceDate} onClick={() => void confirm()} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={19} /> : <CheckCircle2 size={19} />} Confirmar venta por {formatCurrency(draft.grandTotal)}</button>
   </section>;
 }

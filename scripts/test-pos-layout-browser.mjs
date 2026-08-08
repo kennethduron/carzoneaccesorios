@@ -203,6 +203,9 @@ try {
       const confirmation = document.querySelector('[data-testid=pos-confirmation-panel]');
       const confirmationButton = confirmation?.querySelector('button:last-of-type');
       const mobileBar = document.querySelector('[data-testid=pos-mobile-total-bar]');
+      const inventorySummaries = [...document.querySelectorAll('[data-testid=pos-inventory-summary]')];
+      const reservationTriggers = [...document.querySelectorAll('[data-testid=pos-reservations-trigger]')];
+      const refreshInventory = document.querySelector('[data-testid=pos-refresh-inventory]');
       const deliveryDisclosure = document.querySelector('[data-testid=pos-delivery-disclosure]');
       const fiscalDisclosure = document.querySelector('[data-testid=pos-fiscal-breakdown]');
       const result = {
@@ -230,6 +233,12 @@ try {
         deliveryOpen: Boolean(deliveryDisclosure?.open),
         fiscalOpen: Boolean(fiscalDisclosure?.open),
         commercialOpen: commercialWasOpen,
+        inventoryFits: inventorySummaries.every((value) => value.scrollWidth <= value.parentElement.clientWidth + 1),
+        inventoryText: inventorySummaries[0]?.innerText ?? '',
+        reservationTriggerSizes: reservationTriggers.map((button) => ({ width: rect(button).width, height: rect(button).height })),
+        reservationTriggerTouch: reservationTriggers.some((button) => rect(button).width > 0)
+          && reservationTriggers.filter((button) => rect(button).width > 0).every((button) => rect(button).width >= 43.5 && rect(button).height >= 43.5),
+        refreshInventoryTouch: Boolean(refreshInventory && rect(refreshInventory).height >= 44),
       };
       if (commercialDetails) commercialDetails.open = commercialWasOpen;
       return result;
@@ -260,6 +269,10 @@ try {
     assert.equal(result.emailFits, true, `${width}x${height}: correo largo contenido`);
     assert.equal(result.cardsFit, true, `${width}x${height}: tarjetas comerciales contenidas`);
     assert.equal(result.moneyFits, true, `${width}x${height}: importes contenidos y legibles`);
+    assert.equal(result.inventoryFits, true, `${width}x${height}: inventario compacto dentro de la card`);
+    assert.match(result.inventoryText, /Disponible|No disponible/, `${width}x${height}: disponible es prioritario`);
+    assert.equal(result.reservationTriggerTouch, true, `${width}x${height}: pedidos relacionados es táctil ${JSON.stringify(result.reservationTriggerSizes)}`);
+    assert.equal(result.refreshInventoryTouch, true, `${width}x${height}: actualizar existencias es táctil`);
     assert.ok(result.minimumCardWidth >= 250, `${width}x${height}: tarjetas no colapsan`);
     const expectedColumns = width >= 1320 ? 3 : width >= 800 ? 2 : 1;
     assert.equal(result.columns, expectedColumns, `${width}x${height}: cambio de grid antes de comprimir`);
@@ -324,6 +337,61 @@ try {
   await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
   await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
   assert.equal(await evaluate("document.querySelector('[data-testid=pos-commercial-details]').open"), false, "detalles comerciales cierran con teclado");
+
+  await evaluate(`(() => {
+    window.__posOriginalFetch = window.fetch;
+    window.fetch = async (input, init) => String(input).includes('/reservations?')
+      ? new Response(JSON.stringify({
+          results: [{
+            reservationId: '00000000-0000-4000-8000-000000000901',
+            orderId: '00000000-0000-4000-8000-000000000902',
+            orderNumber: 'LOCAL-RES-001',
+            reservedQuantity: 3,
+            reservationStatus: 'reserved',
+            orderStatus: 'pending',
+            reservationCreatedAt: '2026-08-08T12:00:00.000Z',
+            expiresAt: '2026-08-09T12:00:00.000Z',
+            reviewRequired: false
+          }],
+          total: 1,
+          nextOffset: null
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      : window.__posOriginalFetch(input, init);
+    const trigger = [...document.querySelectorAll('[data-testid=pos-reservations-trigger]')]
+      .find((button) => button.getBoundingClientRect().width > 0);
+    trigger.focus();
+    trigger.click();
+    return true;
+  })()`);
+  const dialogDeadline = Date.now() + 5_000;
+  while (Date.now() < dialogDeadline && !(await evaluate("Boolean(document.querySelector('[data-testid=pos-reservation-row]'))"))) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+  }
+  const dialogMetrics = await evaluate(`(() => {
+    const dialog = document.querySelector('[data-testid=pos-product-reservations-dialog]');
+    const row = document.querySelector('[data-testid=pos-reservation-row]');
+    const close = dialog?.querySelector('button[aria-label^="Cerrar"]');
+    const link = row?.querySelector('a');
+    return {
+      visible: Boolean(dialog && row),
+      modal: dialog?.getAttribute('aria-modal'),
+      activeIsClose: document.activeElement === close,
+      text: dialog?.innerText ?? '',
+      href: link?.getAttribute('href'),
+      fits: dialog ? dialog.scrollWidth <= dialog.clientWidth + 1 : false,
+    };
+  })()`);
+  assert.equal(dialogMetrics.visible, true, "diálogo lazy muestra pedidos relacionados");
+  assert.equal(dialogMetrics.modal, "true", "diálogo expone semántica modal");
+  assert.equal(dialogMetrics.activeIsClose, true, "diálogo mueve foco a una acción segura");
+  assert.match(dialogMetrics.text, /Existencia física[\s\S]*5[\s\S]*Reservado[\s\S]*3[\s\S]*Disponible[\s\S]*2/);
+  assert.equal(dialogMetrics.href, "/admin/pedidos?orderId=00000000-0000-4000-8000-000000000902");
+  assert.equal(dialogMetrics.fits, true, "diálogo móvil no crea overflow horizontal");
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+  assert.equal(await evaluate("Boolean(document.querySelector('[data-testid=pos-product-reservations-dialog]'))"), false, "Escape cierra pedidos relacionados");
+  assert.equal(await evaluate("document.activeElement === document.querySelector('[data-testid=pos-reservations-trigger]')"), true, "el foco regresa al disparador");
 
   const bottomClearance = await evaluate(`(async () => {
     scrollTo(0, document.documentElement.scrollHeight);

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { BadgeDollarSign, Minus, Package, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { BadgeDollarSign, ListOrdered, LoaderCircle, Minus, Package, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import { PriceOverrideDialog } from "@/components/admin/price-override-dialog";
 import { isPosDraftItemStockInsufficient } from "@/lib/pos/inventory-mode";
@@ -12,6 +12,15 @@ import { formatCurrency } from "@/utils/pricing";
 import styles from "./pos-cart.module.css";
 
 type PendingRemoval = { kind: "line"; item: PosDraftItem; index: number } | { kind: "clear" };
+
+type Props = {
+  items: PosDraftItem[];
+  refreshingInventory: boolean;
+  onChange: (items: PosDraftItem[]) => void;
+  onClear: () => void;
+  onRefreshInventory: () => void;
+  onViewReservations: (item: PosDraftItem) => void;
+};
 
 function priceLabel(item: PosDraftItem) {
   if (item.priceOverridden) return "Precio autorizado";
@@ -32,7 +41,7 @@ function QuantityInput({ item, onCommit, onError }: {
     if (!result.ok) {
       onError(result.code === "POS_QUANTITY_INVALID"
         ? "La cantidad debe ser un número entero mayor que cero."
-        : `Solo hay ${item.availableStock} unidades disponibles de ${item.productName}.`);
+        : `Solo hay ${item.availableStock ?? 0} unidades disponibles de ${item.productName}.`);
       setValue(String(item.quantity));
       return;
     }
@@ -66,7 +75,7 @@ function QuantityInput({ item, onCommit, onError }: {
   );
 }
 
-export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; onChange: (items: PosDraftItem[]) => void; onClear: () => void }) {
+export function PosCart({ items, refreshingInventory, onChange, onClear, onRefreshInventory, onViewReservations }: Props) {
   const [editing, setEditing] = useState<PosDraftItem | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [lastRemoved, setLastRemoved] = useState<{ item: PosDraftItem; index: number } | null>(null);
@@ -81,7 +90,7 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
     if (!result.ok) {
       setCartMessage(result.code === "POS_QUANTITY_INVALID"
         ? "La cantidad debe ser un número entero mayor que cero."
-        : `Solo hay ${item.availableStock} unidades disponibles de ${item.productName}.`);
+        : `Solo hay ${item.availableStock ?? 0} unidades disponibles de ${item.productName}.`);
       return;
     }
     setCartMessage("");
@@ -121,22 +130,25 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
   }, [items.length]);
 
   return <section data-testid="pos-cart" className={`${styles.cart} min-w-0 rounded-xl border border-black/10 bg-white p-3 shadow-sm`} aria-labelledby="pos-cart-title">
-    <div data-testid="pos-cart-header" className="flex items-center justify-between gap-3">
+    <div data-testid="pos-cart-header" className="flex items-center justify-between gap-2">
       <div>
         <h2 id="pos-cart-title" className="font-semibold">Productos agregados</h2>
         <p className="text-xs text-black/55">{items.length} línea{items.length === 1 ? "" : "s"} · {unitCount} unidad{unitCount === 1 ? "" : "es"}</p>
       </div>
-      {items.length ? <button type="button" onClick={() => setPendingRemoval({ kind: "clear" })} className="min-h-11 rounded-lg border border-black/15 px-3 text-sm font-semibold hover:border-red-500 hover:text-red-700">Vaciar</button> : null}
+      {items.length ? <div className="flex shrink-0 items-center gap-1"><button data-testid="pos-refresh-inventory" type="button" disabled={refreshingInventory} onClick={onRefreshInventory} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-black/15 px-2 text-sm font-semibold disabled:opacity-50" title="Actualizar existencias">{refreshingInventory ? <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" size={16} /> : <RefreshCw aria-hidden="true" size={16} />}<span className="sr-only min-[520px]:not-sr-only">Actualizar existencias</span></button><button type="button" onClick={() => setPendingRemoval({ kind: "clear" })} className="min-h-11 rounded-lg border border-black/15 px-3 text-sm font-semibold hover:border-red-500 hover:text-red-700">Vaciar</button></div> : null}
     </div>
     {cartMessage ? <div className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status"><span>{cartMessage}</span>{lastRemoved ? <button type="button" onClick={undoRemove} className="min-h-11 shrink-0 font-semibold text-[#e4252c]">Deshacer</button> : null}</div> : null}
     {!items.length ? <div className="mt-3 rounded-lg border border-dashed border-black/15 p-6 text-center"><p className="font-semibold">Aún no hay productos agregados</p><p className="mt-1 text-sm text-black/50">Busque un producto por nombre, SKU o código y agréguelo a la venta.</p></div> : <div ref={linesRef} role="region" aria-label="Lista desplazable de productos agregados" tabIndex={0} className={`mt-3 space-y-2 ${styles.lines}`} data-testid="pos-cart-lines">{items.map((item, index) => {
       const insufficient = isPosDraftItemStockInsufficient(item);
       const maximum = getPosMaximumQuantity(item);
-      return <article key={item.productId} data-testid="pos-cart-line" className={`${styles.line} rounded-lg border p-2 ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>
+      const availableStock = item.availableStock ?? 0;
+      const reservedStock = item.reservedStock ?? 0;
+      const inventoryTone = insufficient || availableStock <= 0 ? "text-red-700" : item.stockStatus === "low" ? "text-amber-700" : "text-emerald-700";
+      return <article key={item.productId} data-testid="pos-cart-line" data-pos-product-id={item.productId} tabIndex={-1} className={`${styles.line} rounded-lg border p-2 outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>
           <div className={`${styles.productImage} relative flex size-14 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-black/25`}>
             {item.imageUrl ? <Image src={item.imageUrl} alt="" fill sizes="56px" className="object-contain p-1" /> : <Package aria-hidden="true" size={24} />}
           </div>
-          <div className={`${styles.identity} min-w-0`}><h3 className="line-clamp-2 font-semibold leading-5">{item.productName}</h3><p className="truncate text-xs text-black/50">{[item.sku, item.internalCode].filter(Boolean).join(" · ")} · {item.taxCategory === "exempt" ? "Exento" : "ISV incluido"}</p><p className={`mt-1 text-xs font-semibold ${insufficient ? "text-red-700" : item.stockStatus === "low" && item.tracksInventory !== false ? "text-amber-700" : "text-emerald-700"}`}>{item.tracksInventory === false ? "Sin control de inventario" : `Existencia: ${item.availableStock}${insufficient ? " · Revise la cantidad" : ""}`}</p></div>
+          <div className={`${styles.identity} min-w-0`}><h3 className="line-clamp-2 font-semibold leading-5">{item.productName}</h3><p className="truncate text-xs text-black/50">{[item.sku, item.internalCode].filter(Boolean).join(" · ")} · {item.taxCategory === "exempt" ? "Exento" : "ISV incluido"}</p><div className="mt-0.5 flex min-h-8 min-w-0 items-center gap-1"><p data-testid="pos-inventory-summary" className={`min-w-0 text-xs font-semibold ${item.tracksInventory === false ? "text-blue-700" : inventoryTone}`}>{item.tracksInventory === false ? "Sin control de inventario" : item.hasActiveReservations ? <><span className="sm:hidden">Físico {item.physicalStock} · Reservado {reservedStock} · Disponible {availableStock}</span><span className="hidden sm:inline">{availableStock <= 0 ? "No disponible" : `Disponible: ${availableStock}`} · {reservedStock} reservada{reservedStock === 1 ? "" : "s"}</span></> : `Disponible: ${availableStock}`}{insufficient ? " · Revise la cantidad" : ""}</p>{item.hasActiveReservations ? <button data-testid="pos-reservations-trigger" type="button" aria-label={`Ver pedidos relacionados con ${item.productName}`} title="Ver pedidos relacionados" onClick={() => onViewReservations(item)} className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-amber-800 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amber-700"><ListOrdered aria-hidden="true" size={17} /></button> : null}</div></div>
           <div className={`${styles.quantity} flex items-center`}>
             <button type="button" disabled={item.quantity <= 1} aria-label={`Reducir cantidad de ${item.productName}`} onClick={() => setQuantity(item, item.quantity - 1)} className="inline-flex size-11 items-center justify-center rounded-l-lg border border-black/15 disabled:opacity-40"><Minus size={16} /></button>
             <QuantityInput key={item.quantity} item={item} onCommit={(quantity) => setQuantity(item, quantity)} onError={setCartMessage} />

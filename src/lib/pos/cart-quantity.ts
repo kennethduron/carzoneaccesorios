@@ -1,6 +1,6 @@
 export type PosQuantityStock = {
   tracksInventory?: boolean;
-  availableStock: number;
+  availableStock: number | null;
 };
 
 export type PosQuantityValidation =
@@ -8,7 +8,9 @@ export type PosQuantityValidation =
   | { ok: false; code: "POS_QUANTITY_INVALID" | "POS_INSUFFICIENT_STOCK"; maximum: number };
 
 export function getPosMaximumQuantity(item: PosQuantityStock) {
-  return item.tracksInventory === false ? 9999 : Math.max(0, Math.floor(item.availableStock));
+  if (item.tracksInventory === false) return 9999;
+  if (item.availableStock === null) return 0;
+  return Math.max(0, Math.floor(item.availableStock));
 }
 
 export function validatePosQuantity(item: PosQuantityStock, requested: number): PosQuantityValidation {

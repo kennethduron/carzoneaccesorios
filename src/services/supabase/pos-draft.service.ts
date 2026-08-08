@@ -1,6 +1,6 @@
 import "server-only";
 
-import { applyPosDraftInventoryModes } from "@/lib/pos/inventory-mode";
+import { applyPosDraftInventorySnapshots } from "@/lib/pos/inventory-mode";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   PosChargeCapabilities,
@@ -8,6 +8,9 @@ import type {
   PosConfirmationInput,
   PosConfirmationResult,
   PosDraftSaveInput,
+  PosInventorySnapshot,
+  PosProductReservation,
+  PosProductReservationPage,
   PosProductSearchPage,
   PosProductSearchResult,
   PosSaleDraft,
@@ -55,6 +58,29 @@ type ProductRow = {
   total_count: number | string;
 };
 
+type InventorySnapshotRow = {
+  product_id: string;
+  tracks_inventory: boolean;
+  physical_stock: number | string | null;
+  reserved_stock: number | string | null;
+  available_stock: number | string | null;
+  has_active_reservations: boolean;
+  stock_observed_at: string;
+};
+
+type ProductReservationRow = {
+  reservation_id: string;
+  order_id: string;
+  order_number: string;
+  reserved_quantity: number | string;
+  reservation_status: string;
+  order_status: string;
+  reservation_created_at: string;
+  expires_at: string;
+  review_required: boolean;
+  total_count: number | string;
+};
+
 export class PosDraftServiceError extends Error {
   constructor(
     message: string,
@@ -69,6 +95,12 @@ export class PosDraftServiceError extends Error {
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumberValue(value: unknown) {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function throwRpcError(error: { code?: string; message?: string; details?: string } | null, fallback: string): never {
@@ -160,20 +192,46 @@ function confirmationResult(row: ConfirmationRow): PosConfirmationResult {
   };
 }
 
-async function enrichDraftInventoryModes(
+function inventorySnapshot(row: InventorySnapshotRow): PosInventorySnapshot {
+  return {
+    productId: row.product_id,
+    tracksInventory: row.tracks_inventory,
+    physicalStock: nullableNumberValue(row.physical_stock),
+    reservedStock: nullableNumberValue(row.reserved_stock),
+    availableStock: nullableNumberValue(row.available_stock),
+    hasActiveReservations: row.has_active_reservations,
+    stockObservedAt: row.stock_observed_at,
+  };
+}
+
+async function loadInventorySnapshotMap(
+  supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
+  productIds: readonly string[],
+) {
+  const uniqueProductIds = [...new Set(productIds)];
+  if (!uniqueProductIds.length) return new Map<string, PosInventorySnapshot>();
+  const { data, error } = await supabase.rpc("get_pos_product_inventory_snapshot_v1", {
+    p_product_ids: uniqueProductIds,
+  });
+  if (error) throwRpcError(error, "No se pudieron actualizar las existencias.");
+  return new Map(
+    ((data ?? []) as InventorySnapshotRow[]).map((row) => {
+      const snapshot = inventorySnapshot(row);
+      return [snapshot.productId, snapshot] as const;
+    }),
+  );
+}
+
+async function enrichDraftInventorySnapshots(
   supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>,
   draft: PosSaleDraft,
 ) {
   if (!draft.items.length) return draft;
-  const { data, error } = await supabase.rpc("get_pos_product_inventory_modes_v1", {
-    p_product_ids: draft.items.map((item) => item.productId),
-  });
-  if (error) throwRpcError(error, "No se pudo validar el control de inventario.");
-  const modes = new Map(
-    ((data ?? []) as Array<{ product_id: string; tracks_inventory: boolean }>)
-      .map((row) => [row.product_id, row.tracks_inventory]),
+  const snapshots = await loadInventorySnapshotMap(
+    supabase,
+    draft.items.map((item) => item.productId),
   );
-  return applyPosDraftInventoryModes(draft, modes);
+  return applyPosDraftInventorySnapshots(draft, snapshots);
 }
 
 export async function searchPosProducts(input: { query: string; customerId: string; expectedCustomerCommercialVersion: number; categoryId?: string | null; brand?: string | null; includeUnavailable: boolean; limit: number; offset: number }): Promise<PosProductSearchPage> {
@@ -190,37 +248,45 @@ export async function searchPosProducts(input: { query: string; customerId: stri
   });
   if (error) throwRpcError(error, "No se pudieron buscar productos.");
   const rows = (data ?? []) as unknown as ProductRow[];
-  const { data: inventoryRows, error: inventoryError } = await supabase.rpc(
-    "get_pos_product_inventory_modes_v1",
-    { p_product_ids: rows.map((row) => row.product_id) },
+  const inventorySnapshots = await loadInventorySnapshotMap(
+    supabase,
+    rows.map((row) => row.product_id),
   );
-  if (inventoryError) throwRpcError(inventoryError, "No se pudo validar el control de inventario.");
-  const inventoryModes = new Map(
-    ((inventoryRows ?? []) as Array<{ product_id: string; tracks_inventory: boolean }>)
-      .map((row) => [row.product_id, row.tracks_inventory]),
-  );
-  const results: PosProductSearchResult[] = rows.map((row) => ({
-    productId: row.product_id,
-    sku: row.sku,
-    internalCode: row.internal_code,
-    productName: row.product_name,
-    brand: row.brand,
-    categoryId: row.category_id,
-    categoryName: row.category_name,
-    baseUnitPrice: numberValue(row.base_unit_price),
-    pricingSource: row.pricing_source,
-    wholesaleMinQuantity: numberValue(row.wholesale_min_quantity),
-    taxCategory: row.tax_category,
-    includedTaxRate: numberValue(row.included_tax_rate),
-    productSalesVersion: numberValue(row.product_sales_version),
-    productStatus: row.product_status,
-    active: row.active,
-    autoDisabledByStock: row.auto_disabled_by_stock,
-    availableStock: row.active && row.product_status === "active" ? numberValue(row.available_stock) : 0,
-    tracksInventory: inventoryModes.get(row.product_id) ?? true,
-    lowStockThreshold: numberValue(row.low_stock_threshold),
-    imageUrl: row.image_url,
-  }));
+  const results: PosProductSearchResult[] = rows.map((row) => {
+    const snapshot = inventorySnapshots.get(row.product_id);
+    if (!snapshot) {
+      throw new PosDraftServiceError(
+        "No se pudo obtener la disponibilidad actual del producto.",
+        "POS_INVENTORY_SNAPSHOT_MISSING",
+      );
+    }
+    return {
+      productId: row.product_id,
+      sku: row.sku,
+      internalCode: row.internal_code,
+      productName: row.product_name,
+      brand: row.brand,
+      categoryId: row.category_id,
+      categoryName: row.category_name,
+      baseUnitPrice: numberValue(row.base_unit_price),
+      pricingSource: row.pricing_source,
+      wholesaleMinQuantity: numberValue(row.wholesale_min_quantity),
+      taxCategory: row.tax_category,
+      includedTaxRate: numberValue(row.included_tax_rate),
+      productSalesVersion: numberValue(row.product_sales_version),
+      productStatus: row.product_status,
+      active: row.active,
+      autoDisabledByStock: row.auto_disabled_by_stock,
+      physicalStock: snapshot.physicalStock,
+      reservedStock: snapshot.reservedStock,
+      availableStock: snapshot.availableStock,
+      tracksInventory: snapshot.tracksInventory,
+      hasActiveReservations: snapshot.hasActiveReservations,
+      stockObservedAt: snapshot.stockObservedAt,
+      lowStockThreshold: numberValue(row.low_stock_threshold),
+      imageUrl: row.image_url,
+    };
+  });
   const total = numberValue(rows[0]?.total_count);
   return { results, total, nextOffset: input.offset + results.length < total ? input.offset + results.length : null };
 }
@@ -243,7 +309,7 @@ export async function getPosDraft(draftId: string) {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_pos_sale_draft_v1", { p_draft_id: draftId });
   if (error || !data) throwRpcError(error, "No se pudo cargar el borrador.");
-  return enrichDraftInventoryModes(supabase, data as unknown as PosSaleDraft);
+  return enrichDraftInventorySnapshots(supabase, data as unknown as PosSaleDraft);
 }
 
 export async function listPosDrafts(limit: number, offset: number) {
@@ -274,7 +340,45 @@ export async function savePosDraft(input: PosDraftSaveInput) {
     p_other_charge_description: input.otherChargeDescription,
   });
   if (error || !data) throwRpcError(error, "No se pudo guardar el borrador.");
-  return enrichDraftInventoryModes(supabase, data as unknown as PosSaleDraft);
+  return enrichDraftInventorySnapshots(supabase, data as unknown as PosSaleDraft);
+}
+
+export async function getPosProductInventorySnapshots(productIds: readonly string[]) {
+  const supabase = await getSupabaseServerClient();
+  const snapshots = await loadInventorySnapshotMap(supabase, productIds);
+  return [...snapshots.values()];
+}
+
+export async function getPosProductReservations(input: {
+  productId: string;
+  limit: number;
+  offset: number;
+}): Promise<PosProductReservationPage> {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_pos_product_reservations_v1", {
+    p_product_id: input.productId,
+    p_limit: input.limit,
+    p_offset: input.offset,
+  });
+  if (error) throwRpcError(error, "No se pudieron consultar los pedidos relacionados.");
+  const rows = (data ?? []) as ProductReservationRow[];
+  const results: PosProductReservation[] = rows.map((row) => ({
+    reservationId: row.reservation_id,
+    orderId: row.order_id,
+    orderNumber: row.order_number,
+    reservedQuantity: numberValue(row.reserved_quantity),
+    reservationStatus: row.reservation_status,
+    orderStatus: row.order_status,
+    reservationCreatedAt: row.reservation_created_at,
+    expiresAt: row.expires_at,
+    reviewRequired: row.review_required,
+  }));
+  const total = numberValue(rows[0]?.total_count);
+  return {
+    results,
+    total,
+    nextOffset: input.offset + results.length < total ? input.offset + results.length : null,
+  };
 }
 
 export async function abandonPosDraft(requestKey: string, draftId: string, expectedVersion: number) {

@@ -13,8 +13,10 @@ import { PosDraftSummary } from "@/components/admin/pos-draft-summary";
 import { POS_OPERATIONAL_COLUMN_CLASS, POS_PRODUCT_COLUMN_CLASS, POS_SUMMARY_COLUMN_CLASS, POS_WORKSPACE_GRID_CLASS } from "@/components/admin/pos-layout";
 import { PosMobileTotalBar } from "@/components/admin/pos-mobile-total-bar";
 import { PosProductSearch } from "@/components/admin/pos-product-search";
+import { PosProductReservationsDialog } from "@/components/admin/pos-product-reservations-dialog";
+import { applyPosInventorySnapshotsToItems } from "@/lib/pos/inventory-mode";
 import { validatePosQuantity } from "@/lib/pos/cart-quantity";
-import type { PosConfirmationResult, PosCustomerContext } from "@/types/point-of-sale";
+import type { PosConfirmationResult, PosCustomerContext, PosInventoryConflict, PosInventorySnapshot } from "@/types/point-of-sale";
 import type { PosActiveDraftSummary, PosChargeCapabilities, PosDraftApiError, PosDraftItem, PosProductSearchResult, PosSaleDraft } from "@/types/pos-drafts";
 
 const storedDraftKey = "car-zone-pos-stage4-draft-id";
@@ -70,6 +72,9 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const [workspaceDialog, setWorkspaceDialog] = useState<WorkspaceDialog | null>(null);
   const [operationPending, setOperationPending] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [refreshingInventory, setRefreshingInventory] = useState(false);
+  const [inventoryAnnouncement, setInventoryAnnouncement] = useState("");
+  const [reservationProduct, setReservationProduct] = useState<{ productName: string; snapshot: PosInventorySnapshot } | null>(null);
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const pendingSaveKeyRef = useRef<string | null>(null);
@@ -78,6 +83,9 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const draftRequestRevisionRef = useRef(0);
   const operationLockRef = useRef(false);
   const cartPanelRef = useRef<HTMLDivElement | null>(null);
+  const itemsRef = useRef<PosDraftItem[]>([]);
+
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   const applyDraft = useCallback((next: PosSaleDraft, recoveredMessage = "") => {
     if (next.status !== "active") {
@@ -202,7 +210,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     finally { setCreating(false); }
   }
 
-  const markItems = useCallback((next: PosDraftItem[]) => { setItems(next); changeRevisionRef.current += 1; dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus(navigator.onLine ? "dirty" : "offline"); setMessage(""); }, []);
+  const markItems = useCallback((next: PosDraftItem[]) => { itemsRef.current = next; setItems(next); changeRevisionRef.current += 1; dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus(navigator.onLine ? "dirty" : "offline"); setMessage(""); }, []);
   const markDelivery = useCallback((next: PosDeliveryState) => { setDelivery(next); changeRevisionRef.current += 1; dirtyRef.current = true; setIsDirty(true); pendingSaveKeyRef.current = null; setStatus(navigator.onLine ? "dirty" : "offline"); setMessage(""); }, []);
 
   const saveDraft = useCallback(async () => {
@@ -265,8 +273,82 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       return;
     }
     const now = new Date().toISOString();
-    markItems([...items, { productId: product.productId, productSalesVersion: product.productSalesVersion, sku: product.sku, internalCode: product.internalCode, productName: product.productName, brand: product.brand, categoryName: product.categoryName, imageUrl: product.imageUrl, pricingSource: product.pricingSource, baseUnitPrice: product.baseUnitPrice, finalUnitPrice: product.baseUnitPrice, priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: product.taxCategory, includedTaxRate: product.includedTaxRate, lineMerchandiseGross: product.baseUnitPrice, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: product.taxCategory === "exempt" ? product.baseUnitPrice : 0, availableStock: product.availableStock, tracksInventory: product.tracksInventory, stockObservedAt: now, stockStatus: product.tracksInventory === false ? "available" : product.availableStock <= 0 ? "insufficient" : product.availableStock <= product.lowStockThreshold ? "low" : "available", validationStatus: product.tracksInventory === false || product.availableStock > 0 ? "valid" : "warning", costFloorValidated: false, costValidationVersion: 1, costValidatedAt: now }]);
+    const availableStock = product.availableStock;
+    markItems([...items, { productId: product.productId, productSalesVersion: product.productSalesVersion, sku: product.sku, internalCode: product.internalCode, productName: product.productName, brand: product.brand, categoryName: product.categoryName, imageUrl: product.imageUrl, pricingSource: product.pricingSource, baseUnitPrice: product.baseUnitPrice, finalUnitPrice: product.baseUnitPrice, priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: product.taxCategory, includedTaxRate: product.includedTaxRate, lineMerchandiseGross: product.baseUnitPrice, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: product.taxCategory === "exempt" ? product.baseUnitPrice : 0, physicalStock: product.physicalStock, reservedStock: product.reservedStock, availableStock, tracksInventory: product.tracksInventory, hasActiveReservations: product.hasActiveReservations, stockObservedAt: product.stockObservedAt || now, stockStatus: product.tracksInventory === false ? "available" : availableStock === null || availableStock <= 0 ? "insufficient" : availableStock <= product.lowStockThreshold ? "low" : "available", validationStatus: product.tracksInventory === false || (availableStock !== null && availableStock > 0) ? "valid" : "warning", costFloorValidated: false, costValidationVersion: 1, costValidatedAt: now }]);
   }
+
+  const openProductReservations = useCallback((item: PosInventorySnapshot & { productName: string }) => {
+    setReservationProduct({
+      productName: item.productName,
+      snapshot: {
+        productId: item.productId,
+        tracksInventory: item.tracksInventory,
+        physicalStock: item.physicalStock,
+        reservedStock: item.reservedStock,
+        availableStock: item.availableStock,
+        hasActiveReservations: item.hasActiveReservations,
+        stockObservedAt: item.stockObservedAt,
+      },
+    });
+  }, []);
+
+  const refreshInventory = useCallback(async (focusConflicts = false): Promise<PosInventoryConflict[]> => {
+    const productIds = [...new Set(itemsRef.current.map((item) => item.productId))];
+    if (!productIds.length) return [];
+    setRefreshingInventory(true);
+    setInventoryAnnouncement("");
+    try {
+      const response = await fetch("/api/admin/pos/products/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ productIds }),
+      });
+      const payload = await jsonResponse<{ snapshots: PosInventorySnapshot[] }>(response);
+      const snapshotMap = new Map(payload.snapshots.map((snapshot) => [snapshot.productId, snapshot]));
+      const merged = applyPosInventorySnapshotsToItems(itemsRef.current, snapshotMap);
+      itemsRef.current = merged;
+      setItems(merged);
+      const conflicts = merged.filter((item) => item.tracksInventory && (
+        item.availableStock === null || item.quantity > item.availableStock
+      )).map((item): PosInventoryConflict => ({
+        productId: item.productId,
+        productName: item.productName,
+        requestedQuantity: item.quantity,
+        tracksInventory: item.tracksInventory,
+        physicalStock: item.physicalStock,
+        reservedStock: item.reservedStock,
+        availableStock: item.availableStock,
+        hasActiveReservations: item.hasActiveReservations,
+        stockObservedAt: item.stockObservedAt,
+      }));
+      setInventoryAnnouncement(conflicts.length
+        ? `Existencias actualizadas. ${conflicts.length} producto${conflicts.length === 1 ? " requiere" : "s requieren"} ajustar cantidad.`
+        : "Existencias actualizadas.");
+      if (focusConflicts && conflicts[0]) {
+        window.requestAnimationFrame(() => {
+          const line = document.querySelector<HTMLElement>(`[data-pos-product-id="${conflicts[0].productId}"]`);
+          line?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
+          line?.focus({ preventScroll: true });
+        });
+      }
+      return conflicts;
+    } catch (error) {
+      setInventoryAnnouncement(error instanceof Error ? error.message : "No se pudieron actualizar las existencias.");
+      return [];
+    } finally {
+      setRefreshingInventory(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const refreshStaleInventory = () => {
+      if (document.visibilityState !== "visible" || !itemsRef.current.length) return;
+      const oldestSnapshot = Math.min(...itemsRef.current.map((item) => Date.parse(item.stockObservedAt) || 0));
+      if (Date.now() - oldestSnapshot > 45_000) void refreshInventory(false);
+    };
+    document.addEventListener("visibilitychange", refreshStaleInventory);
+    return () => document.removeEventListener("visibilitychange", refreshStaleInventory);
+  }, [refreshInventory]);
 
   async function abandonDraft(nextCustomer?: PosCustomerContext | null) {
     if (!draft || operationPending) return;
@@ -354,24 +436,26 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       <PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm xl:sticky xl:top-4"><div className="flex items-start gap-3"><ShoppingCart className="mt-0.5 shrink-0 text-[#e4252c]" size={22} /><div><h2 className="font-semibold">{customer ? "Cliente listo" : "Prepare una nueva venta"}</h2><p className="mt-1 text-sm leading-5 text-black/55">{customer ? "Inicie el borrador con las condiciones comerciales seleccionadas." : "Seleccione un cliente para habilitar productos y precios."}</p></div></div><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
     </div>
-      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /></div>
+      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} /></div>
       : <>
         <div data-testid="pos-workspace-grid" className={POS_WORKSPACE_GRID_CLASS}>
           <div className={POS_OPERATIONAL_COLUMN_CLASS}>
           <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /></div>
           <div className={POS_PRODUCT_COLUMN_CLASS}>
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
-            <PosCart items={items} onChange={markItems} onClear={() => markItems([])} />
+            <PosCart items={items} refreshingInventory={refreshingInventory} onChange={markItems} onClear={() => markItems([])} onRefreshInventory={() => void refreshInventory(false)} onViewReservations={openProductReservations} />
+            <span className="sr-only" aria-live="polite">{inventoryAnnouncement}</span>
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
           </div>
           <div id="pos-sale-summary" ref={cartPanelRef} className={POS_SUMMARY_COLUMN_CLASS}>
             <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} additionalChargeDescription={delivery.additionalChargeDescription} otherCharge={Number(delivery.otherCharge) || 0} otherChargeDescription={delivery.otherChargeDescription} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
-            {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : null}
+            {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} /> : null}
           </div>
         </div>
         <PosMobileTotalBar unitCount={cartUnits} total={provisionalTotal} hidden={keyboardOpen} onReview={() => cartPanelRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })} />
       </>}
+    {reservationProduct ? <PosProductReservationsDialog productName={reservationProduct.productName} snapshot={reservationProduct.snapshot} onClose={() => setReservationProduct(null)} /> : null}
     {workspaceDialog ? <PosConfirmationDialog
       title={workspaceDialog.kind === "open-draft" ? "Descartar cambios" : workspaceDialog.kind === "abandon" ? "Abandonar borrador" : "Cambiar cliente"}
       description={workspaceDialog.kind === "open-draft"

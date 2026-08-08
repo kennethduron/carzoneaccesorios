@@ -9,6 +9,7 @@ import { PosDeliveryFields, type PosDeliveryState } from "@/components/admin/pos
 import { PosDraftSummary } from "@/components/admin/pos-draft-summary";
 import { POS_OPERATIONAL_COLUMN_CLASS, POS_PRODUCT_COLUMN_CLASS, POS_SUMMARY_COLUMN_CLASS, POS_WORKSPACE_GRID_CLASS } from "@/components/admin/pos-layout";
 import { PosMobileTotalBar } from "@/components/admin/pos-mobile-total-bar";
+import { PosProductReservationsDialog } from "@/components/admin/pos-product-reservations-dialog";
 import type { PosChargeCapabilities, PosCustomerContext, PosDraftItem, PosSaleDraft } from "@/types/point-of-sale";
 
 const certificationCustomer: PosCustomerContext = {
@@ -57,7 +58,12 @@ function certificationItems(count: number): PosDraftItem[] {
     imageUrl: null, pricingSource: "wholesale", baseUnitPrice: 400 + index * 25, finalUnitPrice: 400 + index * 25,
     priceOverridden: false, priceOverrideReason: null, quantity: 1, taxCategory: "standard", includedTaxRate: 0.15,
     lineMerchandiseGross: 400 + index * 25, lineTaxableBase: 0, lineTaxAmount: 0, lineExemptAmount: 0,
-    availableStock: 50, tracksInventory: true, stockObservedAt: now, stockStatus: "available", validationStatus: "valid",
+    physicalStock: index === 0 ? 5 : 50,
+    reservedStock: index === 0 ? 3 : 0,
+    availableStock: index === 0 ? 2 : 50,
+    tracksInventory: true,
+    hasActiveReservations: index === 0,
+    stockObservedAt: now, stockStatus: "available", validationStatus: "valid",
     costFloorValidated: true, costValidationVersion: 1, costValidatedAt: now,
   }));
 }
@@ -65,6 +71,7 @@ function certificationItems(count: number): PosDraftItem[] {
 export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
   const [items, setItems] = useState(() => certificationItems(itemCount));
   const [delivery, setDelivery] = useState(initialDelivery);
+  const [reservationItem, setReservationItem] = useState<PosDraftItem | null>(null);
   const summaryRef = useRef<HTMLDivElement | null>(null);
   const merchandise = items.reduce((sum, item) => sum + item.quantity * item.finalUnitPrice, 0);
   const taxableBase = Math.round((merchandise / 1.15) * 100) / 100;
@@ -93,15 +100,24 @@ export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
         </section>
         <div className={POS_PRODUCT_COLUMN_CLASS}>
           <section className="rounded-xl border border-black/10 bg-white p-3 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-semibold">Productos</h2><span className="text-xs font-semibold text-blue-700">Precios actualizados</span></div><div className="relative mt-2"><Search className="pointer-events-none absolute left-3 top-3 text-black/40" size={18} /><input aria-label="Buscar y agregar productos" placeholder="Buscar y agregar productos" className="min-h-11 w-full rounded-lg border border-black/15 pl-10 pr-3" /></div></section>
-          <PosCart items={items} onChange={setItems} onClear={() => setItems([])} />
+          <PosCart items={items} refreshingInventory={false} onChange={setItems} onClear={() => setItems([])} onRefreshInventory={() => undefined} onViewReservations={setReservationItem} />
           <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={setDelivery} />
         </div>
       </div>
       <div id="pos-sale-summary" ref={summaryRef} className={POS_SUMMARY_COLUMN_CLASS}>
         <PosDraftSummary draft={draft} pending={false} merchandiseGross={merchandise} taxableGross={merchandise} taxableBase={taxableBase} taxAmount={tax} exemptGross={0} shippingFee={draft.shippingFee} codFee={draft.codFee} additionalCharge={draft.additionalCharge} additionalChargeDescription={draft.additionalChargeDescription ?? ""} otherCharge={draft.otherCharge} otherChargeDescription={draft.otherChargeDescription ?? ""} total={total} disabled onSave={() => undefined} />
-        <PosConfirmationPanel draft={draft} customer={certificationCustomer} disabled onConfirmed={() => undefined} onNewSale={() => undefined} operatorName="Operador local" />
+        <PosConfirmationPanel draft={draft} customer={certificationCustomer} disabled onConfirmed={() => undefined} onInventoryConflict={async () => []} onViewReservations={() => undefined} onNewSale={() => undefined} operatorName="Operador local" />
       </div>
     </div>
     <PosMobileTotalBar unitCount={items.reduce((sum, item) => sum + item.quantity, 0)} total={total} onReview={() => summaryRef.current?.scrollIntoView({ block: "start" })} />
+    {reservationItem ? <PosProductReservationsDialog productName={reservationItem.productName} snapshot={{
+      productId: reservationItem.productId,
+      tracksInventory: reservationItem.tracksInventory,
+      physicalStock: reservationItem.physicalStock,
+      reservedStock: reservationItem.reservedStock,
+      availableStock: reservationItem.availableStock,
+      hasActiveReservations: reservationItem.hasActiveReservations,
+      stockObservedAt: reservationItem.stockObservedAt,
+    }} onClose={() => setReservationItem(null)} /> : null}
   </div>;
 }
