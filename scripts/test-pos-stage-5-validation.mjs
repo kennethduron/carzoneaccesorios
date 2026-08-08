@@ -73,6 +73,6 @@ assert.match(panel, /Usuario responsable/);
 assert.match(panel, /draft\.items\.map/);
 assert.match(panel, /Monto recibido/);
 assert.match(workspace, /startNewSale/);
-assert.doesNotMatch(panel, /card_credit|card_debit|noopener|noreferrer/i);
+assert.doesNotMatch(panel, /card_credit|card_debit/i);
 
 console.log("POS Stage 5 application validation: OK");

@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(41);
+select plan(63);
 
 insert into public.roles(name, description, permissions)
 values (
@@ -93,6 +93,26 @@ select set_config('request.jwt.claim.role', 'authenticated', true);
 select set_config('request.jwt.claims', jsonb_build_object(
   'sub','a5100000-0000-4000-8000-000000000001','role','authenticated'
 )::text, true);
+
+insert into public.accounting_accounts(
+  id, code, name, type, normal_balance, created_by
+) values (
+  'a5700000-0000-4000-8000-000000000001', 'POS5-4199',
+  'POS optional charges fixture', 'revenue', 'credit',
+  'a5100000-0000-4000-8000-000000000001'
+),(
+  'a5700000-0000-4000-8000-000000000002', 'POS5-1109',
+  'POS payment clearing fixture', 'asset', 'debit',
+  'a5100000-0000-4000-8000-000000000001'
+);
+insert into public.accounting_mappings(
+  mapping_type, source_key, account_id, priority, is_active, created_by
+) values
+  ('revenue','sale_shipping_fee','a5700000-0000-4000-8000-000000000001',1,true,'a5100000-0000-4000-8000-000000000001'),
+  ('revenue','sale_cod_fee','a5700000-0000-4000-8000-000000000001',1,true,'a5100000-0000-4000-8000-000000000001'),
+  ('revenue','sale_other_charge','a5700000-0000-4000-8000-000000000001',1,true,'a5100000-0000-4000-8000-000000000001'),
+  ('payment_method','bank_transfer','a5700000-0000-4000-8000-000000000002',1,true,'a5100000-0000-4000-8000-000000000001'),
+  ('payment_method','card','a5700000-0000-4000-8000-000000000002',1,true,'a5100000-0000-4000-8000-000000000001');
 
 create temporary table pos5_state(key text primary key, value jsonb not null);
 
@@ -211,6 +231,74 @@ select is((select (value->>'replayed')::boolean from pos5_state where key = 'cas
 select is((select value->>'order_id' from pos5_state where key = 'cash_replay'), (select value->>'order_id' from pos5_state where key = 'cash_result'), 'replay returns same order');
 select is((select count(*)::integer from public.invoices i join public.orders o on o.id = i.order_id where o.pos_draft_id = 'a5400000-0000-4000-8000-000000000001'), 1, 'replay does not consume another correlativo');
 
+select pg_temp.pos5_single_line_draft(
+  'a5400000-0000-4000-8000-000000000005',
+  'a5200000-0000-4000-8000-000000000001',
+  'a5300000-0000-4000-8000-000000000002'
+);
+update public.pos_sale_drafts
+set shipping_fee = 0.10, cod_fee = 0.20, additional_charge = 0.30,
+    other_charge = 0.40, grand_total = 101.00
+where id = 'a5400000-0000-4000-8000-000000000005';
+insert into pos5_state
+select 'charged_result', public.confirm_selectable_pos_sale_v1(
+  'a5400000-0000-4000-8000-000000000005',
+  'a5500000-0000-4000-8000-000000000050', 1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','cash','amount_tendered',101.25)
+);
+select is((select (value->>'total')::numeric from pos5_state where key='charged_result'), 101.00::numeric, 'authoritative total includes all four decimal charges');
+select ok(exists(
+  select 1 from public.orders where id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+    and shipping_fee=0.10 and shipping_total=0.10 and cash_on_delivery_fee=0.20
+), 'order persists canonical delivery and COD charge columns');
+select is((
+  select coalesce(sum((fee->>'amount')::numeric),0) from public.orders order_row,
+    lateral jsonb_array_elements(order_row.additional_fees) fee
+  where order_row.id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+), 0.70::numeric, 'order persists additional and other charge amounts exactly once');
+select is((
+  select jsonb_array_length(additional_fees) from public.orders
+  where id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+), 2, 'positive additional charges remain two labeled invoice rows');
+select ok(exists(
+  select 1 from public.invoices where id=((select value->>'invoice_id' from pos5_state where key='charged_result')::uuid)
+    and shipping_fee=0.10 and cash_on_delivery_fee=0.20 and total=101.00
+), 'issued invoice snapshots charges and final total');
+select ok(exists(
+  select 1 from public.payments where id=((select value->>'payment_id' from pos5_state where key='charged_result')::uuid)
+    and amount=101.00 and payment_status='approved'
+), 'cash payment equals charged grand total');
+select is((
+  select difference from public.order_financial_audit
+  where id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+), 0.00::numeric, 'canonical order financial audit balances with charges');
+select ok(exists(
+  select 1 from public.orders where id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+    and source='pos' and channel='store'
+), 'charged sale remains a canonical POS order');
+select is((select stock from public.products where id='a5300000-0000-4000-8000-000000000002'), 8, 'charges do not change inventory quantity semantics');
+select is((
+  select count(*)::integer from public.inventory_movements
+  where reference_id=((select value->>'order_id' from pos5_state where key='charged_result')::uuid)
+), 1, 'charged sale creates one movement for one tracked line');
+insert into pos5_state
+select 'charged_replay', public.confirm_selectable_pos_sale_v1(
+  'a5400000-0000-4000-8000-000000000005',
+  'a5500000-0000-4000-8000-000000000050', 1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','cash','amount_tendered',101.25)
+);
+select is((select (value->>'replayed')::boolean from pos5_state where key='charged_replay'), true, 'charged confirmation replay is idempotent');
+select is((select count(*)::integer from public.orders where pos_draft_id='a5400000-0000-4000-8000-000000000005'), 1, 'charged replay keeps one order');
+select is((select count(*)::integer from public.invoices i join public.orders o on o.id=i.order_id where o.pos_draft_id='a5400000-0000-4000-8000-000000000005'), 1, 'charged replay keeps one invoice');
+select is((select count(*)::integer from public.payments p join public.orders o on o.id=p.order_id where o.pos_draft_id='a5400000-0000-4000-8000-000000000005'), 1, 'charged replay keeps one payment');
+select is((select stock from public.products where id='a5300000-0000-4000-8000-000000000002'), 8, 'charged replay never decrements inventory twice');
+select is((
+  select jsonb_array_length(additional_fees) from public.orders
+  where id=((select value->>'order_id' from pos5_state where key='cash_result')::uuid)
+), 0, 'zero charges create no invoice fee rows');
+
 select throws_ok(
   $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000001','a5500000-0000-4000-8000-000000000001',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','cash','amount_tendered',251))$$,
   'PT409', 'POS_REQUEST_KEY_CONFLICT', 'same request key rejects a changed payload'
@@ -316,6 +404,36 @@ select throws_ok(
 drop trigger pos5_forced_rollback on public.pos_sale_drafts;
 select is((select count(*)::integer from public.orders where pos_draft_id = 'a5400000-0000-4000-8000-000000000004'), 0, 'late failure leaves no order, invoice, payment or movement');
 select is((select current_invoice_number from public.fiscal_settings where id = true), (select value->>'number' from pos5_state where key = 'fiscal_before'), 'late failure does not consume the fiscal correlativo');
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000006','a5200000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000003');
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000006';
+insert into pos5_state select 'transfer_charged', public.confirm_selectable_pos_sale_v1(
+  'a5400000-0000-4000-8000-000000000006','a5500000-0000-4000-8000-000000000060',1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','bank_transfer','verified',true,'reference','POS5-TRANSFER')
+);
+select is((select value->>'payment_method' from pos5_state where key='transfer_charged'),'bank_transfer','verified transfer confirms with charges');
+select is((select amount from public.payments where id=((select value->>'payment_id' from pos5_state where key='transfer_charged')::uuid)),231::numeric,'transfer payment includes all charges');
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000007','a5200000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000003');
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000007';
+insert into pos5_state select 'card_charged', public.confirm_selectable_pos_sale_v1(
+  'a5400000-0000-4000-8000-000000000007','a5500000-0000-4000-8000-000000000070',1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','card','verified',true,'reference','POS5-CARD')
+);
+select is((select value->>'payment_method' from pos5_state where key='card_charged'),'card','verified card confirms with charges');
+select is((select amount from public.payments where id=((select value->>'payment_id' from pos5_state where key='card_charged')::uuid)),231::numeric,'card payment includes all charges');
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000008','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000008';
+insert into pos5_state select 'credit_charged', public.confirm_selectable_pos_sale_v1(
+  'a5400000-0000-4000-8000-000000000008','a5500000-0000-4000-8000-000000000080',1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','commercial_credit')
+);
+select is((select value->>'payment_method' from pos5_state where key='credit_charged'),'commercial_credit','commercial credit confirms with charges');
+select is((select original_amount from public.accounts_receivable where id=((select value->>'receivable_id' from pos5_state where key='credit_charged')::uuid)),231::numeric,'receivable includes all charges');
 
 select * from finish();
 rollback;

@@ -32,7 +32,7 @@ select ok(pg_get_functiondef('public.save_pos_customer_commercial_profile_v1(uui
 select ok(pg_get_functiondef('public.save_pos_customer_commercial_profile_v1(uuid,uuid,integer,text,text,text,text,text,text,text,text,text,text,numeric,integer,text,text)'::regprocedure) like '%set_customer_commercial_credit%', 'profile RPC reuses canonical credit contract');
 select ok(pg_get_functiondef('public.save_pos_customer_commercial_profile_v1(uuid,uuid,integer,text,text,text,text,text,text,text,text,text,text,numeric,integer,text,text)'::regprocedure) like '%commercial_profile_saved%', 'profile RPC writes summary audit');
 select ok(pg_get_functiondef('public.create_pos_customer_v1(uuid,text,text,text,text,text,text,text,text)'::regprocedure) like '%normalized_phone is not null%', 'supplied phone is conditionally validated');
-select ok(pg_get_functiondef('public.create_pos_customer_v1(uuid,text,text,text,text,text,text,text,text)'::regprocedure) like '%exact_normalized_name%', 'exact-name possible duplicate is surfaced');
+select ok(pg_get_functiondef('public.suggest_pos_customer_duplicates_v1(text,text,text,text,text,integer)'::regprocedure) like '%name_match%', 'exact and similar names are surfaced by the non-blocking suggestion service');
 select ok(pg_get_functiondef('public.return_customer_to_retail_v1(uuid,uuid,integer,text,text)'::regprocedure) like '%wholesale_access_history%', 'retail transition appends wholesale history');
 select ok(pg_get_functiondef('public.return_customer_to_retail_v1(uuid,uuid,integer,text,text)'::regprocedure) like '%commercial_version%', 'retail transition uses optimistic commercial version');
 select is((select count(*)::integer from public.accounting_periods), 0, 'migration creates no accounting period');
