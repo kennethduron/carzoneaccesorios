@@ -20,15 +20,19 @@ export function normalizeAdditionalFees(value: unknown): AdditionalFee[] {
         return null;
       }
 
-      const source = item as { label?: unknown; name?: unknown; amount?: unknown; total?: unknown };
+      const source = item as { label?: unknown; name?: unknown; amount?: unknown; total?: unknown; category?: unknown };
       const amount = toMoney(source.amount ?? source.total);
       if (amount <= 0) {
         return null;
       }
 
+      const category = source.category === "additional_charge" || source.category === "other_charge"
+        ? source.category
+        : undefined;
       return {
         label: String(source.label ?? source.name ?? "Otros cargos").trim() || "Otros cargos",
         amount,
+        ...(category ? { category } : {}),
       };
     })
     .filter(Boolean) as AdditionalFee[];

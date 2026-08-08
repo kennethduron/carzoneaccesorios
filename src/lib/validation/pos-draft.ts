@@ -2,7 +2,10 @@ import { z } from "zod";
 
 const nullableText = (maximum: number) => z.string().trim().max(maximum).nullable();
 const optionalCharge = z.number().finite().min(0).max(999_999_999_999.99)
-  .refine((value) => Math.abs(Math.round(value * 100) - value * 100) < 1e-8, 'Los cargos deben tener maximo dos decimales.');
+  .refine((value) => Math.abs(Math.round(value * 100) - value * 100) < 1e-8, 'Los cargos deben tener máximo dos decimales.');
+const chargeDescription = z.string().trim().max(120)
+  .refine((value) => !/[<>\r\n\t]/.test(value), "La descripción no puede incluir HTML ni saltos de línea.")
+  .nullable();
 
 export const createPosDraftSchema = z.object({
   requestKey: z.string().uuid(),
@@ -28,8 +31,17 @@ export const savePosDraftSchema = z.object({
   shippingFee: optionalCharge,
   codFee: optionalCharge,
   additionalCharge: optionalCharge,
+  additionalChargeDescription: chargeDescription,
   otherCharge: optionalCharge,
-}).strict();
+  otherChargeDescription: chargeDescription,
+}).strict().superRefine((value, context) => {
+  if (value.additionalCharge > 0 && (value.additionalChargeDescription?.trim().length ?? 0) < 2) {
+    context.addIssue({ code: "custom", path: ["additionalChargeDescription"], message: "Describe el cargo adicional con al menos 2 caracteres." });
+  }
+  if (value.otherCharge > 0 && (value.otherChargeDescription?.trim().length ?? 0) < 2) {
+    context.addIssue({ code: "custom", path: ["otherChargeDescription"], message: "Describe el otro cargo con al menos 2 caracteres." });
+  }
+});
 
 export const abandonPosDraftSchema = z.object({
   requestKey: z.string().uuid(),

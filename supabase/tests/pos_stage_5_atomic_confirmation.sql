@@ -238,7 +238,9 @@ select pg_temp.pos5_single_line_draft(
 );
 update public.pos_sale_drafts
 set shipping_fee = 0.10, cod_fee = 0.20, additional_charge = 0.30,
-    other_charge = 0.40, grand_total = 101.00
+    additional_charge_description = 'Cargo adicional de prueba',
+    other_charge = 0.40, other_charge_description = 'Otro cargo de prueba',
+    grand_total = 101.00
 where id = 'a5400000-0000-4000-8000-000000000005';
 insert into pos5_state
 select 'charged_result', public.confirm_selectable_pos_sale_v1(
@@ -406,7 +408,7 @@ select is((select count(*)::integer from public.orders where pos_draft_id = 'a54
 select is((select current_invoice_number from public.fiscal_settings where id = true), (select value->>'number' from pos5_state where key = 'fiscal_before'), 'late failure does not consume the fiscal correlativo');
 
 select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000006','a5200000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000003');
-update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000006';
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,additional_charge_description='Cargo adicional de prueba',other_charge=0.40,other_charge_description='Otro cargo de prueba',grand_total=231 where id='a5400000-0000-4000-8000-000000000006';
 insert into pos5_state select 'transfer_charged', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000006','a5500000-0000-4000-8000-000000000060',1,
   (now() at time zone 'America/Tegucigalpa')::date,
@@ -416,7 +418,7 @@ select is((select value->>'payment_method' from pos5_state where key='transfer_c
 select is((select amount from public.payments where id=((select value->>'payment_id' from pos5_state where key='transfer_charged')::uuid)),231::numeric,'transfer payment includes all charges');
 
 select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000007','a5200000-0000-4000-8000-000000000001','a5300000-0000-4000-8000-000000000003');
-update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000007';
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,additional_charge_description='Cargo adicional de prueba',other_charge=0.40,other_charge_description='Otro cargo de prueba',grand_total=231 where id='a5400000-0000-4000-8000-000000000007';
 insert into pos5_state select 'card_charged', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000007','a5500000-0000-4000-8000-000000000070',1,
   (now() at time zone 'America/Tegucigalpa')::date,
@@ -426,7 +428,7 @@ select is((select value->>'payment_method' from pos5_state where key='card_charg
 select is((select amount from public.payments where id=((select value->>'payment_id' from pos5_state where key='card_charged')::uuid)),231::numeric,'card payment includes all charges');
 
 select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000008','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
-update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,other_charge=0.40,grand_total=231 where id='a5400000-0000-4000-8000-000000000008';
+update public.pos_sale_drafts set shipping_fee=0.10,cod_fee=0.20,additional_charge=0.30,additional_charge_description='Cargo adicional de prueba',other_charge=0.40,other_charge_description='Otro cargo de prueba',grand_total=231 where id='a5400000-0000-4000-8000-000000000008';
 insert into pos5_state select 'credit_charged', public.confirm_selectable_pos_sale_v1(
   'a5400000-0000-4000-8000-000000000008','a5500000-0000-4000-8000-000000000080',1,
   (now() at time zone 'America/Tegucigalpa')::date,

@@ -351,7 +351,9 @@ export type PosSaleDraft = {
   shippingFee: number;
   codFee: number;
   additionalCharge: number;
+  additionalChargeDescription: string | null;
   otherCharge: number;
+  otherChargeDescription: string | null;
   grandTotal: number;
   calculationVersion: 2;
   currency: "HNL";
@@ -384,7 +386,9 @@ export type PosDraftSaveInput = {
   shippingFee: number;
   codFee: number;
   additionalCharge: number;
+  additionalChargeDescription: string | null;
   otherCharge: number;
+  otherChargeDescription: string | null;
 };
 
 export type PosChargeCapabilities = {

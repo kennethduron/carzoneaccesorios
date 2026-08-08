@@ -79,12 +79,18 @@ function throwRpcError(error: { code?: string; message?: string; details?: strin
     );
   }
   const code = error?.code ?? "POS_DRAFT_OPERATION_FAILED";
+  const validationMessages: Record<string, string> = {
+    POS_ADDITIONAL_CHARGE_DESCRIPTION_REQUIRED: "Escriba una descripción de 2 a 120 caracteres para el cargo adicional.",
+    POS_OTHER_CHARGE_DESCRIPTION_REQUIRED: "Escriba una descripción de 2 a 120 caracteres para el otro cargo.",
+    POS_CHARGE_DESCRIPTION_INVALID: "La descripción del cargo debe tener de 2 a 120 caracteres y no puede contener HTML ni saltos de línea.",
+  };
   let context: { currentVersion?: number; status?: string; updatedAt?: string } = {};
   if (code === "PT409" && error?.details) {
     try { context = JSON.parse(error.details) as typeof context; } catch { context = {}; }
   }
-  const safe = code === "42501" ? "Acceso denegado."
-    : code === "P0002" ? "No se encontro el recurso solicitado."
+  const safe = error?.message && validationMessages[error.message] ? validationMessages[error.message]
+    : code === "42501" ? "Acceso denegado."
+    : code === "P0002" ? "No se encontró el recurso solicitado."
       : code === "PT409" ? "Los datos cambiaron en otra pestaña o dispositivo. Recarga e intenta de nuevo."
         : code === "55000" ? "La operación todavía está en proceso."
           : code === "22023" && error?.message ? error.message
@@ -93,30 +99,33 @@ function throwRpcError(error: { code?: string; message?: string; details?: strin
 }
 
 const confirmationMessages: Record<string, string> = {
-  POS_DRAFT_NOT_FOUND: "No se encontro el borrador de venta.",
+  POS_DRAFT_NOT_FOUND: "No se encontró el borrador de venta.",
   POS_DRAFT_ALREADY_CONFIRMED: "La venta ya fue confirmada con otros datos.",
   POS_DRAFT_CANCELLED: "El borrador fue abandonado.",
-  POS_DRAFT_EXPIRED: "El borrador vencio. Crea uno nuevo.",
-  POS_DRAFT_CHANGED: "El borrador cambio. Recarga y revisa antes de confirmar.",
+  POS_DRAFT_EXPIRED: "El borrador venció. Crea uno nuevo.",
+  POS_DRAFT_CHANGED: "El borrador cambió. Recarga y revisa antes de confirmar.",
   POS_PERMISSION_DENIED: "No tienes permiso para confirmar ventas POS.",
-  POS_CUSTOMER_INVALID: "El cliente ya no esta disponible para esta venta.",
+  POS_CUSTOMER_INVALID: "El cliente ya no está disponible para esta venta.",
   POS_CUSTOMER_SUSPENDED: "Este cliente está suspendido y no puede utilizarse para una nueva venta.",
-  POS_PRODUCT_INACTIVE: "Un producto ya no esta activo.",
-  POS_INSUFFICIENT_STOCK: "El inventario cambio y ya no hay existencias suficientes.",
-  POS_PRICE_CHANGED: "Un precio, impuesto o condicion comercial cambio. Guarda y revisa de nuevo.",
+  POS_PRODUCT_INACTIVE: "Un producto ya no está activo.",
+  POS_INSUFFICIENT_STOCK: "El inventario cambió y ya no hay existencias suficientes.",
+  POS_PRICE_CHANGED: "Un precio, impuesto o condición comercial cambió. Guarda y revisa de nuevo.",
   POS_MANUAL_PRICE_DENIED: "El precio manual ya no cumple las reglas autorizadas.",
-  POS_TAX_CONFIGURATION_INVALID: "La configuracion tributaria no es valida.",
-  POS_PAYMENT_METHOD_INVALID: "Selecciona un metodo de pago valido.",
+  POS_TAX_CONFIGURATION_INVALID: "La configuración tributaria no es válida.",
+  POS_PAYMENT_METHOD_INVALID: "Selecciona un método de pago válido.",
   POS_AMOUNT_TENDERED_INSUFFICIENT: "El efectivo recibido debe cubrir el total.",
   POS_TRANSFER_REFERENCE_REQUIRED: "Confirma la transferencia e ingresa su referencia.",
-  POS_CARD_CONFIGURATION_INVALID: "La cuenta puente generica para tarjeta no esta configurada.",
+  POS_CARD_CONFIGURATION_INVALID: "La cuenta puente genérica para tarjeta no está configurada.",
   POS_SHIPPING_MAPPING_INVALID: "El cargo de entrega no tiene un mapeo contable activo para la fecha de la factura.",
   POS_COD_MAPPING_INVALID: "El cargo contra entrega no tiene un mapeo contable activo para la fecha de la factura.",
   POS_OTHER_CHARGE_MAPPING_INVALID: "El cargo adicional u otro cargo no tiene un mapeo contable activo para la fecha de la factura.",
-  POS_CREDIT_DISABLED: "El cliente no tiene credito comercial habilitado.",
-  POS_CREDIT_SUSPENDED: "La cuenta de credito esta suspendida.",
-  POS_CREDIT_INSUFFICIENT: "El credito disponible no cubre la venta.",
-  POS_CONFIRMATION_CONFLICT: "La confirmacion entro en conflicto. Recupera la venta antes de reintentar.",
+  POS_ADDITIONAL_CHARGE_DESCRIPTION_REQUIRED: "Escriba una descripción de 2 a 120 caracteres para el cargo adicional.",
+  POS_OTHER_CHARGE_DESCRIPTION_REQUIRED: "Escriba una descripción de 2 a 120 caracteres para el otro cargo.",
+  POS_CHARGE_DESCRIPTION_INVALID: "La descripción del cargo debe tener de 2 a 120 caracteres y no puede contener HTML ni saltos de línea.",
+  POS_CREDIT_DISABLED: "El cliente no tiene crédito comercial habilitado.",
+  POS_CREDIT_SUSPENDED: "La cuenta de crédito está suspendida.",
+  POS_CREDIT_INSUFFICIENT: "El crédito disponible no cubre la venta.",
+  POS_CONFIRMATION_CONFLICT: "La confirmación entró en conflicto. Recupera la venta antes de reintentar.",
   POS_REQUEST_KEY_CONFLICT: "La solicitud ya fue utilizada con datos diferentes.",
 };
 
@@ -125,7 +134,7 @@ function throwConfirmationError(error: { code?: string; message?: string } | nul
     ? error.message
     : error?.code === "42501" ? "POS_PERMISSION_DENIED" : "POS_CONFIRMATION_FAILED";
   throw new PosDraftServiceError(
-    confirmationMessages[safeCode] ?? "No se pudo confirmar la venta. Ningun cambio economico fue aplicado.",
+    confirmationMessages[safeCode] ?? "No se pudo confirmar la venta. Ningún cambio económico fue aplicado.",
     safeCode,
   );
 }
@@ -246,7 +255,7 @@ export async function listPosDrafts(limit: number, offset: number) {
 
 export async function savePosDraft(input: PosDraftSaveInput) {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc('save_pos_sale_draft_with_charges_v1', {
+  const { data, error } = await supabase.rpc('save_pos_sale_draft_with_charge_descriptions_v1', {
     p_request_key: input.requestKey,
     p_draft_id: input.draftId,
     p_expected_version: input.expectedVersion,
@@ -261,6 +270,8 @@ export async function savePosDraft(input: PosDraftSaveInput) {
     p_cash_on_delivery_charge: input.codFee,
     p_additional_charge: input.additionalCharge,
     p_other_charge: input.otherCharge,
+    p_additional_charge_description: input.additionalChargeDescription,
+    p_other_charge_description: input.otherChargeDescription,
   });
   if (error || !data) throwRpcError(error, "No se pudo guardar el borrador.");
   return enrichDraftInventoryModes(supabase, data as unknown as PosSaleDraft);
@@ -278,7 +289,7 @@ export async function confirmPosSale(input: PosConfirmationInput) {
   const paymentPayload = input.payment.method === "cash"
     ? { method: input.payment.method, amount_tendered: input.payment.amountTendered }
     : input.payment;
-  const { data, error } = await supabase.rpc("confirm_selectable_pos_sale_v1", {
+  const { data, error } = await supabase.rpc("confirm_pos_sale_with_charge_descriptions_v1", {
     p_draft_id: input.draftId,
     p_request_key: input.requestKey,
     p_expected_draft_version: input.expectedDraftVersion,

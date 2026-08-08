@@ -1,6 +1,7 @@
 export type AdditionalFee = {
   label: string;
   amount: number;
+  category?: "additional_charge" | "other_charge";
 };
 
 export type FinancialBreakdown = {

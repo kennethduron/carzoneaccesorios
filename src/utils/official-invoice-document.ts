@@ -622,8 +622,12 @@ export function getOfficialInvoiceDates(invoice: OfficialInvoiceInput) {
 export function getOfficialInvoiceTotals(invoice: OfficialInvoiceInput) {
   const additionalFees = (invoice.additionalFees ?? []).filter((fee) => Number(fee.amount) > 0);
   const posFeeLabels = new Set(['cargo adicional', 'otro cargo']);
-  const itemizedAdditionalFees = additionalFees.filter((fee) => posFeeLabels.has(fee.label.trim().toLowerCase()));
-  const otherFees = additionalFeesTotal(additionalFees.filter((fee) => !posFeeLabels.has(fee.label.trim().toLowerCase())));
+  const itemizedAdditionalFees = additionalFees.filter((fee) => fee.category === 'additional_charge'
+    || fee.category === 'other_charge'
+    || posFeeLabels.has(fee.label.trim().toLowerCase()));
+  const otherFees = additionalFeesTotal(additionalFees.filter((fee) => fee.category !== 'additional_charge'
+    && fee.category !== 'other_charge'
+    && !posFeeLabels.has(fee.label.trim().toLowerCase())));
   const discountTotal = roundMoney(invoice.discountTotal ?? 0);
   const shippingFee = roundMoney(invoice.shippingFee ?? 0);
   const cashOnDeliveryFee = roundMoney(invoice.cashOnDeliveryFee ?? 0);
