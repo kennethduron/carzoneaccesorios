@@ -66,7 +66,7 @@ const [route, service, panel, workspace] = await Promise.all([
 assert.match(route, /authorizePosCustomerRequest\("pos:confirm_sale"\)/);
 assert.match(route, /recoverPosSaleConfirmation/);
 assert.match(route, /confirmPosSale/);
-assert.match(service, /confirm_selectable_pos_sale_v1/);
+assert.match(service, /confirm_pos_sale_with_charge_descriptions_v1/);
 assert.match(service, /recover_pos_sale_confirmation_v1/);
 assert.match(panel, /Nueva venta/);
 assert.match(panel, /Usuario responsable/);
