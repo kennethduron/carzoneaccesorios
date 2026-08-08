@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ReceiptText } from "lucide-react";
 import { FinancialCenterManager } from "@/components/admin/financial-center-manager";
 import { normalizeFinancialCenterTab } from "@/lib/accounting-navigation";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
@@ -89,6 +89,7 @@ export default async function AdminAccountingPage({
   const canReverse = hasEffectivePermission(profile.role, profile.permissions, "accounting:reverse", profile.email);
   const canConfigureAccounting = hasEffectivePermission(profile.role, profile.permissions, "accounting:settings", profile.email);
   const canExportAccounting = hasEffectivePermission(profile.role, profile.permissions, "accounting:export", profile.email);
+  const canReadTaxReport = hasEffectivePermission(profile.role, profile.permissions, "tax:read", profile.email);
   const canExportTechnicalCsv = canExportAccounting && isTechnicalOwner(profile.role, profile.email);
 
   return (
@@ -111,8 +112,15 @@ export default async function AdminAccountingPage({
               Contabilidad, configuración contable, eventos financieros y preparación para automatización futura.
             </p>
           </div>
-          <div className="rounded-lg border border-black/10 bg-[#fafafa] px-4 py-3 text-sm text-black/60">
-            <span className="font-semibold text-black">Automatización:</span> {financialData.summary.automationMode === "disabled" ? "Desactivada" : "Configurada"}
+          <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
+            {canReadTaxReport ? (
+              <Link href="/admin/contabilidad/impuestos" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#c91d24]">
+                <ReceiptText size={18} /> Reporte de impuestos
+              </Link>
+            ) : null}
+            <div className="rounded-lg border border-black/10 bg-[#fafafa] px-4 py-3 text-sm text-black/60">
+              <span className="font-semibold text-black">Automatización:</span> {financialData.summary.automationMode === "disabled" ? "Desactivada" : "Configurada"}
+            </div>
           </div>
         </header>
 
