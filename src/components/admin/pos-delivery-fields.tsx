@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Truck } from 'lucide-react';
 import type { PosDeliveryMode } from '@/types/point-of-sale';
 import type { PosChargeCapabilities } from '@/types/pos-drafts';
 
@@ -109,19 +111,31 @@ export function PosDeliveryFields({ value, capabilities, onChange }: {
   capabilities: PosChargeCapabilities | null;
   onChange: (value: PosDeliveryState) => void;
 }) {
-  return <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="pos-delivery-title">
-    <div>
-      <p className="text-sm font-semibold text-[#e4252c]">Entrega y cargos</p>
-      <h2 id="pos-delivery-title" className="mt-0.5 text-lg font-semibold">Detalles de entrega y conceptos adicionales</h2>
-    </div>
-    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+  const [open, setOpen] = useState(false);
+  const userChanged = useRef(false);
+
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 800px)');
+    const sync = () => { if (!userChanged.current) setOpen(query.matches); };
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  return <details data-testid="pos-delivery-disclosure" open={open} onToggle={(event) => { if (event.nativeEvent.isTrusted) userChanged.current = true; setOpen(event.currentTarget.open); }} className="group rounded-xl border border-black/10 bg-white shadow-sm">
+    <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
+      <span className="flex min-w-0 items-center gap-2"><Truck size={18} className="shrink-0 text-[#e4252c]" /><span><span id="pos-delivery-title" className="block font-semibold">Entrega y cargos</span><span className="block truncate text-xs font-normal text-black/50">Modalidad, instrucciones y conceptos adicionales</span></span></span>
+      <ChevronDown size={18} className="shrink-0 transition group-open:rotate-180 motion-reduce:transition-none" />
+    </summary>
+    <div className="border-t border-black/10 p-3">
+    <div className="grid gap-3 sm:grid-cols-2">
       <label className="grid gap-1 text-sm font-semibold">Modalidad<select value={value.mode} onChange={(event) => onChange({ ...value, mode: event.target.value as PosDeliveryMode })} className="h-11 rounded-lg border border-black/15 bg-white px-3"><option value="store_immediate">Entrega inmediata en tienda</option><option value="home_delivery">Entrega a domicilio</option><option value="cash_on_delivery">Contra entrega</option></select></label>
       <label className="grid gap-1 text-sm font-semibold">Dirección<input maxLength={500} value={value.address} onChange={(event) => onChange({ ...value, address: event.target.value })} placeholder="Dirección de entrega (opcional)" className="h-11 rounded-lg border border-black/15 px-3" /></label>
       <label className="grid gap-1 text-sm font-semibold">Instrucciones de entrega<textarea maxLength={1000} value={value.notes} onChange={(event) => onChange({ ...value, notes: event.target.value })} placeholder="Indicaciones para la entrega (opcional)" className="min-h-20 rounded-lg border border-black/15 p-3" /></label>
       <label className="grid gap-1 text-sm font-semibold">Notas internas no sensibles<textarea maxLength={1000} value={value.internalNotes} onChange={(event) => onChange({ ...value, internalNotes: event.target.value })} placeholder="Notas para el equipo (no visibles para el cliente)" className="min-h-20 rounded-lg border border-black/15 p-3" /></label>
     </div>
-    <details className="mt-4 rounded-xl border border-black/10 p-3" open>
-      <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold">Cargos opcionales</summary>
+    <section className="mt-3 rounded-xl border border-black/10 p-3" aria-labelledby="pos-optional-charges-title">
+      <h3 id="pos-optional-charges-title" className="text-sm font-semibold">Cargos opcionales</h3>
       <div className="mt-2 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-black/10 p-3"><MoneyField id="shipping-fee" label="Entrega" value={value.shippingFee} enabled={Boolean(capabilities?.shippingFeeEnabled)} onChange={(shippingFee) => onChange({ ...value, shippingFee })} /></div>
         <div className="rounded-xl border border-black/10 p-3"><MoneyField id="cod-fee" label="Contra entrega" value={value.codFee} enabled={Boolean(capabilities?.codFeeEnabled)} onChange={(codFee) => onChange({ ...value, codFee })} /></div>
@@ -130,6 +144,7 @@ export function PosDeliveryFields({ value, capabilities, onChange }: {
       </div>
       <p className="mt-3 text-xs leading-5 text-black/55">Solo los cargos mayores que cero aparecerán en el pedido, la factura y el total. Las descripciones son documentales: no cambian impuestos ni cuentas contables.</p>
       {capabilities && (!capabilities.shippingFeeEnabled || !capabilities.codFeeEnabled || !capabilities.additionalChargeEnabled || !capabilities.otherChargeEnabled) ? <p className="mt-1 text-xs text-amber-800">Los cargos sin mapping contable activo permanecen bloqueados.</p> : null}
-    </details>
-  </section>;
+    </section>
+    </div>
+  </details>;
 }

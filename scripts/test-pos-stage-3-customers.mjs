@@ -7,6 +7,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 const migration = read("supabase/migrations/202607280001_pos_customer_commercial_rules.sql");
 const completionMigration = read("supabase/migrations/202608030001_pos_customer_commercial_profile.sql");
 const operationalUxMigration = read("supabase/migrations/202608030002_pos_final_operational_ux_guards.sql");
+const duplicateSafetyMigration = read("supabase/migrations/202608070001_pos_charges_customer_duplicate_suggestions.sql");
 const types = read("src/types/point-of-sale.ts");
 const service = read("src/services/supabase/pos-customer.service.ts");
 const requestAuth = read("src/lib/auth/pos-customer-request.ts");
@@ -66,7 +67,8 @@ for (const name of [
 
 assert.match(service, /server-only/);
 assert.match(service, /get_selectable_pos_customer_context_v1/);
-assert.match(service, /save_pos_customer_commercial_profile_v1/);
+assert.match(service, /save_pos_customer_commercial_profile_v2/);
+assert.match(duplicateSafetyMigration, /save_pos_customer_commercial_profile_v2/);
 assert.match(completionMigration, /save_pos_customer_commercial_profile_v1/);
 assert.match(completionMigration, /set_customer_commercial_credit/);
 assert.match(completionMigration, /grant_customer_wholesale_access_v1/);
@@ -86,7 +88,8 @@ assert.match(workspace, /Habilitar crédito comercial/i);
 assert.match(workspace, /Mayorista/i);
 assert.doesNotMatch(workspace, /Evaluar elegibilidad mayorista/i);
 assert.doesNotMatch(workspace, /Crédito \(solo lectura\)/i);
-assert.match(workspace, /siguiente etapa/i);
+assert.match(workspace, /Ver detalles comerciales/i);
+assert.match(workspace, /Crédito comercial/i);
 assert.doesNotMatch(workspace, /finalizar venta|cobrar ahora|emitir factura/i);
 
 console.log("POS Stage 3 customer structural contract: OK");

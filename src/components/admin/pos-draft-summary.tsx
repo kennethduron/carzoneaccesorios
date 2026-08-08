@@ -1,6 +1,6 @@
 'use client';
 
-import { Save, ShieldCheck } from 'lucide-react';
+import { Save } from 'lucide-react';
 import type { PosSaleDraft } from '@/types/pos-drafts';
 import { formatCurrency } from '@/utils/pricing';
 
@@ -53,12 +53,11 @@ export function PosDraftSummary({ draft, pending, disabled, onSave, total, ...va
     otherCharge: draft.otherCharge,
     otherChargeDescription: draft.otherChargeDescription ?? 'Otro cargo',
   };
-  return <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="draft-summary-title">
+  return <section data-testid="pos-draft-summary" className="rounded-xl border border-black/10 bg-white p-3 shadow-sm" aria-labelledby="draft-summary-title">
     <div className="flex items-center justify-between gap-3"><h2 id="draft-summary-title" className="font-semibold">Resumen del borrador</h2>{pending ? <span className="text-xs font-semibold text-amber-700">Pendiente de guardar</span> : null}</div>
     <div className="hidden sm:block"><SummaryBreakdown {...officialValues} /></div>
-    <details className="mt-2 sm:hidden"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-[#e4252c]">Ver desglose fiscal</summary><SummaryBreakdown {...officialValues} /></details>
-    <div className="mt-3 flex justify-between border-t border-black/15 pt-3 text-lg"><span className="font-semibold">Total</span><strong className="text-[#e4252c]">{formatCurrency(pending ? total : draft.grandTotal)}</strong></div>
-    <div className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-xs text-emerald-900"><ShieldCheck className="shrink-0" size={17} /><span>El servidor validará y devolverá el total definitivo antes de confirmar.</span></div>
-    <button type="button" disabled={disabled} onClick={onSave} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50"><Save size={17} /> Guardar borrador</button>
+    <details data-testid="pos-fiscal-breakdown" className="mt-1 sm:hidden"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-[#e4252c]">Ver desglose fiscal</summary><SummaryBreakdown {...officialValues} /></details>
+    <div className="mt-3 flex items-baseline justify-between border-t border-black/15 pt-3"><span className="font-semibold">Total</span><strong className="whitespace-nowrap text-2xl text-[#e4252c]">{formatCurrency(pending ? total : draft.grandTotal)}</strong></div>
+    <button type="button" disabled={disabled} onClick={onSave} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#e4252c] bg-white px-4 text-sm font-semibold text-[#e4252c] disabled:border-black/15 disabled:text-black/40 disabled:opacity-60"><Save size={17} /> Guardar borrador</button>
   </section>;
 }

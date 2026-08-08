@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-export const stage6Marker = "POS-STAGE6-LOCAL-ONLY";
+const requestedMarker = process.env.POS_TEST_MARKER_PREFIX?.trim();
+export const stage6Marker = requestedMarker || "POS-STAGE6-LOCAL-ONLY";
+assert.match(stage6Marker, /^POS-[A-Z0-9-]+-LOCAL-ONLY$/, "The local test marker must be explicit and isolated.");
 export const protectedProductionRef = "mbowrapstbufzzfefipn";
 
 export function readStage6LocalStatus() {

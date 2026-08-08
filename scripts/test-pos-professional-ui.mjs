@@ -70,12 +70,13 @@ assert.equal(posCustomerMatchLabel("strong", ["email", "phone"]), "Coincidencia 
 assert.equal(posSourceLabel("portal_registration"), "Registro desde el portal");
 assert.equal(posSourceLabel("pos"), "Punto de venta");
 
-const [page, shell, workspace, customerWorkspace, cart, confirmation, service, migration, orderView, invoiceView] = await Promise.all([
+const [page, shell, workspace, customerWorkspace, cart, mobileTotalBar, confirmation, service, migration, orderView, invoiceView] = await Promise.all([
   readFile(new URL("../src/app/admin/pos/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/admin-shell.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/pos-workspace.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/pos-customer-workspace.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/pos-cart.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/components/admin/pos-mobile-total-bar.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/pos-confirmation-panel.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/services/supabase/pos-draft.service.ts", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/202608080001_pos_charge_descriptions.sql", import.meta.url), "utf8"),
@@ -89,7 +90,8 @@ assert.match(shell, /variant === "wide"/);
 assert.match(workspace, /POS_WORKSPACE_GRID_CLASS/);
 assert.match(cart, /pos-cart-lines/);
 assert.match(cart, /Lista desplazable de productos agregados/);
-assert.match(workspace, /Revisar total/);
+assert.match(workspace, /<PosMobileTotalBar/);
+assert.match(mobileTotalBar, /Revisar total/);
 assert.match(cart, /<Image/);
 assert.match(cart, /min-h-11/);
 assert.match(confirmation, /paymentMethodLabel\(result\.paymentMethod\)/);

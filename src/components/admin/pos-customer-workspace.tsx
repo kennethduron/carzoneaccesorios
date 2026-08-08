@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Building2,
   ChevronDown,
+  ChevronRight,
   CircleUserRound,
   CreditCard,
   Link2,
@@ -463,21 +464,21 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   }
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div><p className="text-sm font-semibold text-[#e4252c]">Cliente</p><h2 className="mt-0.5 text-lg font-semibold">Buscar o seleccionar cliente</h2></div>
+    <div className={compact ? styles.workspaceCompact : "space-y-4"}>
+      <section className={compact ? styles.compactSection : "rounded-xl border border-black/10 bg-white p-4 shadow-sm sm:p-5"}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="text-sm font-semibold text-[#e4252c]">Cliente</p><h2 className={`${compact ? "sr-only" : "mt-0.5 text-lg font-semibold"}`}>Buscar o seleccionar cliente</h2></div>
           <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#c91f26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
             <Plus size={18} /> Nuevo cliente
           </button>
         </div>
       </section>
 
-      <div className={compact ? "grid gap-4" : "grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)]"}>
-        <section className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="customer-search-title">
-          <h2 id="customer-search-title" className="text-lg font-semibold">Buscar cliente</h2>
-          <p className="mt-1 text-sm text-black/55">Nombre, empresa, teléfono, correo, RTN o identificador.</p>
-          <div className="relative mt-4">
+      <div className={compact ? "grid gap-3" : "grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)]"}>
+        <section className={`min-w-0 rounded-xl border border-black/10 bg-white shadow-sm ${compact ? "p-3" : "p-4"}`} aria-labelledby="customer-search-title">
+          <h2 id="customer-search-title" className={compact ? "sr-only" : "text-lg font-semibold"}>Buscar cliente</h2>
+          {!compact ? <p className="mt-1 text-sm text-black/55">Nombre, empresa, teléfono, correo, RTN o identificador.</p> : null}
+          <div className={`relative ${compact ? "" : "mt-4"}`}>
             <Search aria-hidden="true" size={18} className="pointer-events-none absolute left-3 top-3.5 text-black/40" />
             <input
               value={query}
@@ -494,7 +495,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
             />
             {searchState === "loading" ? <LoaderCircle aria-label="Buscando" size={19} className="absolute right-3 top-3 animate-spin text-[#e4252c]" /> : null}
           </div>
-          <div className="mt-2 min-h-6 text-xs text-black/50" aria-live="polite">
+          <div className={`${compact ? "mt-1" : "mt-2 min-h-6"} text-xs text-black/50`} aria-live="polite">
             {searchState === "loading" ? "Buscando…" : searchMessage || (results.length ? `${results.length} de ${total} resultados` : query.trim().length >= 2 ? "Sin resultados." : "La búsqueda es bajo demanda.")}
           </div>
 
@@ -530,8 +531,8 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           ) : null}
         </section>
 
-        <section className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm sm:p-5" aria-live="polite">
-          {contextLoading ? <div className="flex min-h-72 items-center justify-center gap-2 text-sm text-black/55"><LoaderCircle className="animate-spin text-[#e4252c]" size={20} /> Cargando contexto…</div> : null}
+        <section className={`min-w-0 rounded-xl border border-black/10 bg-white shadow-sm ${compact ? "p-3" : "p-4 sm:p-5"}`} aria-live="polite">
+          {contextLoading ? <div className={`flex items-center justify-center gap-2 text-sm text-black/55 ${compact ? "min-h-28" : "min-h-72"}`}><LoaderCircle className="animate-spin text-[#e4252c]" size={20} /> Cargando contexto…</div> : null}
           {!contextLoading && panelMode !== "closed" ? (
             <CustomerFormPanel
               mode={panelMode}
@@ -558,7 +559,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
             />
           ) : null}
           {!contextLoading && panelMode === "closed" && !visibleContext ? (
-            <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-black/15 bg-[#fafafa] p-6 text-center">
+            <div className={`flex flex-col items-center justify-center rounded-xl border border-dashed border-black/15 bg-[#fafafa] text-center ${compact ? "min-h-32 p-4" : "min-h-72 p-6"}`}>
               <CircleUserRound size={38} className="text-black/25" />
               <h2 className="mt-3 text-lg font-semibold">Selecciona un cliente</h2>
               <p className="mt-2 max-w-md text-sm leading-6 text-black/55">El detalle comercial, precio resuelto, portal y crédito se cargan solamente después de seleccionar un resultado.</p>
@@ -715,16 +716,24 @@ export function CustomerContextPanel({
   onEdit: () => void;
   onClear: () => void;
 }) {
+  const initials = context.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  const creditStatus = context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado";
   return (
     <div data-testid="pos-customer-context" className={styles.context}>
       <div className={styles.header}>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#e4252c]">Cliente seleccionado</p>
-          <h2 data-testid="pos-customer-name" className="mt-1 break-normal text-2xl font-semibold [overflow-wrap:break-word]">{context.displayName}</h2>
-          <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm text-black/55">
-            {context.businessName ? <span className="min-w-0 [overflow-wrap:break-word]">{context.businessName}</span> : null}
-            {context.phone ? <span className="whitespace-nowrap">{context.phone}</span> : null}
-            {context.email ? <span data-testid="pos-customer-email" className="min-w-0 [overflow-wrap:anywhere]">{context.email}</span> : null}
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#e4252c]">Cliente seleccionado</p>
+          <div className="mt-2 flex min-w-0 items-start gap-3">
+            <span aria-hidden="true" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-sm font-semibold text-red-700">{initials || "CZ"}</span>
+            <div className="min-w-0">
+              <h2 data-testid="pos-customer-name" className="break-normal text-xl font-semibold [overflow-wrap:break-word]">{context.displayName}</h2>
+              <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm text-black/55">
+                {context.phone ? <span className="whitespace-nowrap">{context.phone}</span> : null}
+                {context.phone && context.email ? <span aria-hidden="true">·</span> : null}
+                {context.email ? <span data-testid="pos-customer-email" className="min-w-0 [overflow-wrap:anywhere]">{context.email}</span> : null}
+                {!context.phone && !context.email ? <span>Sin teléfono ni correo registrados</span> : null}
+              </div>
+            </div>
           </div>
         </div>
         <div className={styles.actions}>
@@ -733,23 +742,32 @@ export function CustomerContextPanel({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${statusTone(context.wholesaleStatus)}`}>{statusLabel(context.wholesaleStatus)}</span>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${context.pricingMode === "wholesale" ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-slate-100 text-slate-700 ring-slate-200"}`}>Precio {context.pricingMode === "wholesale" ? "mayorista" : "minorista"}</span>
       </div>
-      <p className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-6 text-black/65">{context.pricingReason}</p>
+      {context.credit.accountExists || context.credit.enabled ? <section data-testid="pos-credit-card" className="mt-3 rounded-xl border border-black/10 bg-[#fafafa] p-3">
+        <div className="flex items-center justify-between gap-3"><span className="flex items-center gap-2 text-sm font-semibold"><CreditCard size={17} className="text-[#e4252c]" /> Crédito comercial</span><span className={`text-xs font-semibold ${context.credit.canUseCredit ? "text-emerald-700" : "text-amber-800"}`}>{creditStatus}</span></div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs"><Metric label="Límite" value={formatCurrency(context.credit.creditLimit)} /><Metric label="Disponible" value={formatCurrency(context.credit.availableCredit)} /><Metric label="Utilizado" value={formatCurrency(context.credit.openBalance)} /></div>
+        <p className="mt-2 text-xs text-black/55">Plazo: {context.credit.termsDays} días</p>
+        {context.credit.overdueBalance > 0 ? <p className="mt-2 rounded-lg bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-800">Saldo vencido: {formatCurrency(context.credit.overdueBalance)}</p> : null}
+      </section> : null}
 
-      <div className={styles.commercialGrid}>
-        <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta de portal vinculada" : "Sin cuenta de portal"} detail="Crear el perfil no habilita acceso al portal ni envía invitaciones.">
-          {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación administrativa</Link> : null}
-        </InfoCard>
-        <InfoCard icon={CreditCard} title="Crédito comercial" value={context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado"} detail={context.credit.reason}>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><Metric label="Límite" value={formatCurrency(context.credit.creditLimit)} /><Metric label="Disponible" value={formatCurrency(context.credit.availableCredit)} /><Metric label="Saldo abierto" value={formatCurrency(context.credit.openBalance)} /><Metric label="Vencido" value={formatCurrency(context.credit.overdueBalance)} /></div>
-          <p className="mt-2 text-xs text-black/50">Plazo: {context.credit.termsDays} días{context.credit.notes ? ` · ${context.credit.notes}` : ""}</p>
-        </InfoCard>
-        <InfoCard icon={Building2} title="Resumen comercial" value={`${context.summary.orderCount.toLocaleString("es-HN")} pedidos`} detail={`${context.summary.invoiceCount.toLocaleString("es-HN")} facturas · ${formatCurrency(context.summary.totalBilled)} facturado`} />
-        <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="El estado se verificará nuevamente al confirmar." />
-      </div>
+      <details data-testid="pos-commercial-details" className="group mt-3 rounded-xl border border-black/10">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">Ver detalles comerciales <ChevronDown size={17} className="transition group-open:rotate-180 motion-reduce:transition-none" /></summary>
+        <div className="border-t border-black/10 p-3">
+          <p className="rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-5 text-black/65">{context.pricingReason}</p>
+          {context.businessName || context.taxId ? <dl className="mt-3 grid gap-2 text-sm"><div className="flex justify-between gap-3"><dt className="text-black/50">Empresa</dt><dd className="min-w-0 text-right font-medium [overflow-wrap:anywhere]">{context.businessName || "No registrada"}</dd></div><div className="flex justify-between gap-3"><dt className="text-black/50">RTN</dt><dd className="text-right font-medium">{context.taxId || "No registrado"}</dd></div></dl> : null}
+          <div className={styles.commercialGrid}>
+            <InfoCard icon={Link2} title="Portal del cliente" value={context.hasPortalAccount ? "Acceso vinculado" : "Sin cuenta vinculada"} detail="La vinculación y los permisos permanecen bajo control administrativo.">
+              {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-2 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación <ChevronRight size={16} /></Link> : null}
+            </InfoCard>
+            <InfoCard icon={Building2} title="Resumen comercial" value={`${context.summary.orderCount.toLocaleString("es-HN")} pedidos`} detail={`${context.summary.invoiceCount.toLocaleString("es-HN")} facturas · ${formatCurrency(context.summary.totalBilled)} facturado`} />
+            <InfoCard icon={ShieldCheck} title="Estado operativo" value={context.customerStatus === "active" ? "Activo" : "Inactivo"} detail="El estado se verificará nuevamente al confirmar." />
+          </div>
+          {context.credit.notes || context.credit.reason ? <p className="mt-3 text-xs leading-5 text-black/55">{context.credit.notes || context.credit.reason}</p> : null}
+        </div>
+      </details>
 
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
     </div>

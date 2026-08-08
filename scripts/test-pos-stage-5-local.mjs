@@ -143,7 +143,7 @@ const replayArgs = {
   p_expected_draft_version: replayDraft.version, p_invoice_date: today,
   p_payment_payload: { method: "cash", amount_tendered: 115 },
 };
-const clickCount = markerPrefix === "POS-STAGE6-LOCAL-ONLY" ? 10 : 2;
+const clickCount = markerPrefix.endsWith("-LOCAL-ONLY") ? 10 : 2;
 const doubleClick = await Promise.all(Array.from({ length: clickCount }, (_, index) =>
   rpc(index % 2 === 0 ? firstClient : secondClient, "confirm_selectable_pos_sale_v1", replayArgs)
 ));

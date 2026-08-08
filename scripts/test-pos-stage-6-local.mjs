@@ -72,7 +72,7 @@ const product = await admin.from("products").insert({
 }).select("id,product_sales_version").single();
 assert.ifError(product.error);
 const cardAccount = await admin.from("accounting_accounts").insert({
-  code: `${stage6Marker}-CARD`,
+  code: `${stage6Marker.slice(0, 27)}-CARD`,
   name: `${stage6Marker} CARD BRIDGE`,
   type: "asset",
   normal_balance: "debit",
@@ -142,7 +142,7 @@ const manualLine = await admin.from("order_items")
 assert.ifError(manualLine.error);
 assert.equal(Number(manualLine.data.unit_price), 150);
 assert.equal(manualLine.data.price_overridden_by, actorId);
-assert.match(manualLine.data.price_override_reason, /POS-STAGE6-LOCAL-ONLY/);
+assert.match(manualLine.data.price_override_reason, new RegExp(stage6Marker));
 
 const creditCustomer = await admin.from("customers").insert({
   contact_name: `${marker} CREDIT`, email: `${marker.toLowerCase()}-credit@example.test`,

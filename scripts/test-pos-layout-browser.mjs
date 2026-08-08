@@ -88,8 +88,8 @@ function connectCdp(webSocketUrl) {
 }
 
 const viewportCases = [
-  [1920, 1080], [1440, 900], [1366, 768], [1280, 800], [1100, 800], [1024, 768],
-  [900, 768], [768, 1024], [430, 932], [392, 608], [390, 844], [360, 800],
+  [1920, 1080], [1600, 900], [1440, 900], [1366, 768], [1280, 800], [1180, 820],
+  [1024, 768], [834, 1194], [768, 1024], [430, 932], [412, 915], [392, 608], [390, 844], [360, 800],
 ];
 
 const chromePath = await firstExecutable([
@@ -154,11 +154,21 @@ try {
         && Boolean(document.querySelector('[data-testid=pos-admin-header]'))
         && Boolean(document.querySelector('[data-testid=pos-cart]'))
         && Boolean(document.querySelector('[data-testid=pos-customer-context]'))
-        && document.querySelectorAll('[data-testid=pos-customer-info-card]').length === 4
-        && [...document.querySelectorAll('[data-testid=pos-customer-info-card]')].every((card) => card.getBoundingClientRect().width > 0)
+        && Boolean(document.querySelector('[data-testid=pos-sale-toolbar]'))
+        && Boolean(document.querySelector('[data-testid=pos-credit-card]'))
+        && Boolean(document.querySelector('[data-testid=pos-commercial-details]'))
+        && Boolean(document.querySelector('[data-testid=pos-draft-summary]'))
+        && Boolean(document.querySelector('[data-testid=pos-confirmation-panel]'))
         && document.querySelectorAll('[data-testid=pos-cart-line]').length === ${itemCount}`);
       if (complete) {
         await evaluate("new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+        const deliveryDeadline = Date.now() + 2_000;
+        const expectedDeliveryOpen = width >= 800;
+        while (Date.now() < deliveryDeadline) {
+          const deliveryReady = await evaluate(`document.querySelector('[data-testid=pos-delivery-disclosure]')?.open === ${expectedDeliveryOpen}`);
+          if (deliveryReady) break;
+          await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+        }
         return;
       }
       await new Promise((resolveWait) => setTimeout(resolveWait, 100));
@@ -167,7 +177,7 @@ try {
   }
 
   async function metrics() {
-    return evaluate(`(() => {
+    return evaluate(`(async () => {
       const rect = (element) => element?.getBoundingClientRect();
       const header = document.querySelector('[data-testid=pos-admin-header]');
       const back = header?.querySelector('a');
@@ -177,14 +187,25 @@ try {
       const lines = document.querySelector('[data-testid=pos-cart-lines]');
       const name = document.querySelector('[data-testid=pos-customer-name]');
       const email = document.querySelector('[data-testid=pos-customer-email]');
+      const commercialDetails = document.querySelector('[data-testid=pos-commercial-details]');
+      const commercialWasOpen = commercialDetails?.open ?? false;
+      if (commercialDetails) commercialDetails.open = true;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       const cards = [...document.querySelectorAll('[data-testid=pos-customer-info-card]')];
+      const visibleCards = cards.filter((card) => rect(card).width > 0);
       const money = [...document.querySelectorAll('[data-testid=pos-credit-metric] p:last-child')];
       const nameStyle = getComputedStyle(name);
       const cartHeaderBefore = rect(cartHeader);
       if (lines) lines.scrollTop = lines.scrollHeight;
       const cartHeaderAfter = rect(cartHeader);
       const template = getComputedStyle(grid).gridTemplateColumns.trim();
-      return {
+      const summary = document.querySelector('[data-testid=pos-draft-summary]');
+      const confirmation = document.querySelector('[data-testid=pos-confirmation-panel]');
+      const confirmationButton = confirmation?.querySelector('button:last-of-type');
+      const mobileBar = document.querySelector('[data-testid=pos-mobile-total-bar]');
+      const deliveryDisclosure = document.querySelector('[data-testid=pos-delivery-disclosure]');
+      const fiscalDisclosure = document.querySelector('[data-testid=pos-fiscal-breakdown]');
+      const result = {
         viewportWidth: innerWidth,
         pageHeight: document.documentElement.scrollHeight,
         globalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
@@ -198,24 +219,34 @@ try {
         nameLines: Math.round(rect(name).height / parseFloat(nameStyle.lineHeight)),
         nameWidth: rect(name).width,
         emailFits: email.scrollWidth <= email.parentElement.clientWidth + 1,
-        cardsFit: cards.every((card) => card.scrollWidth <= card.clientWidth + 1),
-        minimumCardWidth: Math.min(...cards.map((card) => rect(card).width)),
+        cardsFit: visibleCards.length >= 3 && visibleCards.every((card) => card.scrollWidth <= card.clientWidth + 1),
+        minimumCardWidth: Math.min(...visibleCards.map((card) => rect(card).width)),
         moneyFits: money.every((value) => value.scrollWidth <= value.parentElement.clientWidth + 1),
+        summaryVisible: Boolean(summary && rect(summary).top < innerHeight),
+        confirmationVisible: Boolean(confirmation && rect(confirmation).top < innerHeight),
+        confirmActionVisible: Boolean(confirmationButton && rect(confirmationButton).top < innerHeight),
+        summarySticky: summary?.parentElement ? getComputedStyle(summary.parentElement).position === 'sticky' : false,
+        mobileBarVisible: Boolean(mobileBar && getComputedStyle(mobileBar).display !== 'none' && rect(mobileBar).height >= 44),
+        deliveryOpen: Boolean(deliveryDisclosure?.open),
+        fiscalOpen: Boolean(fiscalDisclosure?.open),
+        commercialOpen: commercialWasOpen,
       };
+      if (commercialDetails) commercialDetails.open = commercialWasOpen;
+      return result;
     })()`);
   }
 
   const cartCounts = {};
-  for (const itemCount of [1, 3, 4, 5, 10, 20]) {
+  for (const itemCount of [1, 3, 4, 5, 10, 20, 50]) {
     await navigate(1440, 900, itemCount);
     cartCounts[itemCount] = await metrics();
   }
   assert.ok(cartCounts[3].cartHeight > cartCounts[1].cartHeight, "1–3 productos conservan altura natural");
-  for (const itemCount of [4, 5, 10, 20]) {
+  for (const itemCount of [4, 5, 10, 20, 50]) {
     assert.ok(cartCounts[itemCount].listScrollHeight > cartCounts[itemCount].listClientHeight, `${itemCount} productos deben activar scroll interno`);
   }
-  assert.ok(Math.abs(cartCounts[20].cartHeight - cartCounts[4].cartHeight) <= 3, "4–20 productos mantienen altura estable");
-  assert.ok(Math.abs(cartCounts[20].pageHeight - cartCounts[4].pageHeight) <= 3, "20 productos no aumentan linealmente la página");
+  assert.ok(Math.abs(cartCounts[50].cartHeight - cartCounts[4].cartHeight) <= 3, "4–50 productos mantienen altura estable");
+  assert.ok(Math.abs(cartCounts[50].pageHeight - cartCounts[4].pageHeight) <= 3, "50 productos no aumentan linealmente la página");
   assert.equal(cartCounts[20].cartHeaderStable, true, "el encabezado del carrito permanece fijo durante el scroll interno");
 
   const responsiveResults = {};
@@ -230,9 +261,20 @@ try {
     assert.equal(result.cardsFit, true, `${width}x${height}: tarjetas comerciales contenidas`);
     assert.equal(result.moneyFits, true, `${width}x${height}: importes contenidos y legibles`);
     assert.ok(result.minimumCardWidth >= 250, `${width}x${height}: tarjetas no colapsan`);
-    const expectedColumns = width >= 1700 ? 3 : width >= 1280 ? 2 : 1;
+    const expectedColumns = width >= 1320 ? 3 : width >= 800 ? 2 : 1;
     assert.equal(result.columns, expectedColumns, `${width}x${height}: cambio de grid antes de comprimir`);
-    if (width <= 430) assert.ok(result.headerHeight <= 84, `${width}x${height}: header móvil compacto`);
+    if (width >= 800) assert.equal(result.summarySticky, true, `${width}x${height}: resumen/cobro sticky`);
+    if (width <= 430) {
+      assert.ok(result.headerHeight <= 84, `${width}x${height}: header móvil compacto`);
+      assert.equal(result.mobileBarVisible, true, `${width}x${height}: total móvil visible y táctil`);
+      assert.equal(result.deliveryOpen, false, `${width}x${height}: entrega y cargos inicia compacta`);
+      assert.equal(result.commercialOpen, false, `${width}x${height}: detalles comerciales inician compactos`);
+    }
+    if (width === 1440 || width === 1920) {
+      assert.equal(result.summaryVisible, true, `${width}x${height}: resumen visible above the fold`);
+      assert.equal(result.confirmationVisible, true, `${width}x${height}: confirmación visible above the fold`);
+      assert.equal(result.confirmActionVisible, true, `${width}x${height}: acción confirmar visible above the fold`);
+    }
   }
 
   const zoomResults = {};
@@ -257,7 +299,42 @@ try {
   await new Promise((resolveWait) => setTimeout(resolveWait, 150));
   assert.ok(await evaluate("document.querySelector('[data-testid=pos-cart-lines]').scrollTop > 0"), "PageDown desplaza la lista interna enfocada");
 
-  const screenshots = [[1920, 1080, "desktop-wide"], [1100, 800, "desktop-intermediate"], [768, 1024, "tablet"], [392, 608, "mobile-392"]];
+  await navigate(392, 608, 10);
+  await evaluate(`(() => {
+    const disclosure = document.querySelector('[data-testid=pos-delivery-disclosure]');
+    disclosure.open = true;
+    const address = disclosure.querySelector('input[placeholder^="Direcci"]');
+    address.focus();
+    address.select();
+    return true;
+  })()`);
+  await cdp.send("Input.insertText", { text: "Dirección persistente local" });
+  await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+  assert.equal(await evaluate(`(() => {
+    const disclosure = document.querySelector('[data-testid=pos-delivery-disclosure]');
+    disclosure.open = false;
+    disclosure.open = true;
+    return disclosure.querySelector('input[placeholder^="Direcci"]').value;
+  })()`), "Dirección persistente local", "colapsar entrega no pierde datos editados");
+
+  await evaluate(`document.querySelector('[data-testid=pos-commercial-details] summary').focus(); true`);
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  assert.equal(await evaluate("document.querySelector('[data-testid=pos-commercial-details]').open"), true, "detalles comerciales abren con teclado");
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+  assert.equal(await evaluate("document.querySelector('[data-testid=pos-commercial-details]').open"), false, "detalles comerciales cierran con teclado");
+
+  const bottomClearance = await evaluate(`(async () => {
+    scrollTo(0, document.documentElement.scrollHeight);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const bar = document.querySelector('[data-testid=pos-mobile-total-bar]').getBoundingClientRect();
+    const button = document.querySelector('[data-testid=pos-confirmation-panel] button:last-of-type').getBoundingClientRect();
+    return { barTop: bar.top, buttonBottom: button.bottom };
+  })()`);
+  assert.ok(bottomClearance.buttonBottom <= bottomClearance.barTop, "la barra móvil no tapa Confirmar venta al final del flujo");
+
+  const screenshots = [[1440, 900, "desktop-1440"], [1024, 768, "tablet-1024"], [392, 608, "mobile-392"]];
   for (const [width, height, name] of screenshots) {
     await navigate(width, height, 10);
     const capture = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });

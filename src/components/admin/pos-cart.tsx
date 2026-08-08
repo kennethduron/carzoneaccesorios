@@ -61,7 +61,7 @@ function QuantityInput({ item, onCommit, onError }: {
           event.currentTarget.blur();
         }
       }}
-      className="h-11 w-16 border-y border-black/15 text-center outline-none focus:ring-2 focus:ring-[#e4252c]/20"
+      className="h-11 w-12 border-y border-black/15 text-center outline-none focus:ring-2 focus:ring-[#e4252c]/20"
     />
   );
 }
@@ -120,11 +120,11 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
     previousLineCount.current = items.length;
   }, [items.length]);
 
-  return <section data-testid="pos-cart" className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="pos-cart-title">
+  return <section data-testid="pos-cart" className={`${styles.cart} min-w-0 rounded-xl border border-black/10 bg-white p-3 shadow-sm`} aria-labelledby="pos-cart-title">
     <div data-testid="pos-cart-header" className="flex items-center justify-between gap-3">
       <div>
-        <p className="text-sm font-semibold text-[#e4252c]">Productos agregados</p>
-        <h2 id="pos-cart-title" className="text-lg font-semibold">{items.length} línea{items.length === 1 ? "" : "s"} · {unitCount} unidad{unitCount === 1 ? "" : "es"}</h2>
+        <h2 id="pos-cart-title" className="font-semibold">Productos agregados</h2>
+        <p className="text-xs text-black/55">{items.length} línea{items.length === 1 ? "" : "s"} · {unitCount} unidad{unitCount === 1 ? "" : "es"}</p>
       </div>
       {items.length ? <button type="button" onClick={() => setPendingRemoval({ kind: "clear" })} className="min-h-11 rounded-lg border border-black/15 px-3 text-sm font-semibold hover:border-red-500 hover:text-red-700">Vaciar</button> : null}
     </div>
@@ -132,24 +132,19 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
     {!items.length ? <div className="mt-3 rounded-lg border border-dashed border-black/15 p-6 text-center"><p className="font-semibold">Aún no hay productos agregados</p><p className="mt-1 text-sm text-black/50">Busque un producto por nombre, SKU o código y agréguelo a la venta.</p></div> : <div ref={linesRef} role="region" aria-label="Lista desplazable de productos agregados" tabIndex={0} className={`mt-3 space-y-2 ${styles.lines}`} data-testid="pos-cart-lines">{items.map((item, index) => {
       const insufficient = isPosDraftItemStockInsufficient(item);
       const maximum = getPosMaximumQuantity(item);
-      return <article key={item.productId} data-testid="pos-cart-line" className={`rounded-lg border p-2 ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>
-        <div className="grid grid-cols-[56px_minmax(0,1fr)_44px] items-start gap-3">
-          <div className="relative flex size-14 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-black/25">
+      return <article key={item.productId} data-testid="pos-cart-line" className={`${styles.line} rounded-lg border p-2 ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>
+          <div className={`${styles.productImage} relative flex size-14 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-black/25`}>
             {item.imageUrl ? <Image src={item.imageUrl} alt="" fill sizes="56px" className="object-contain p-1" /> : <Package aria-hidden="true" size={24} />}
           </div>
-          <div className="min-w-0"><h3 className="truncate font-semibold">{item.productName}</h3><p className="truncate text-xs text-black/50">{[item.sku, item.internalCode].filter(Boolean).join(" · ")} · {item.taxCategory === "exempt" ? "Exento" : "ISV incluido"}</p></div>
-          <button type="button" aria-label={`Eliminar ${item.productName}`} title="Quitar producto" onClick={() => setPendingRemoval({ kind: "line", item, index })} className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]"><Trash2 size={18} /></button>
-        </div>
-        <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
-          <div className="flex items-center">
+          <div className={`${styles.identity} min-w-0`}><h3 className="line-clamp-2 font-semibold leading-5">{item.productName}</h3><p className="truncate text-xs text-black/50">{[item.sku, item.internalCode].filter(Boolean).join(" · ")} · {item.taxCategory === "exempt" ? "Exento" : "ISV incluido"}</p><p className={`mt-1 text-xs font-semibold ${insufficient ? "text-red-700" : item.stockStatus === "low" && item.tracksInventory !== false ? "text-amber-700" : "text-emerald-700"}`}>{item.tracksInventory === false ? "Sin control de inventario" : `Existencia: ${item.availableStock}${insufficient ? " · Revise la cantidad" : ""}`}</p></div>
+          <div className={`${styles.quantity} flex items-center`}>
             <button type="button" disabled={item.quantity <= 1} aria-label={`Reducir cantidad de ${item.productName}`} onClick={() => setQuantity(item, item.quantity - 1)} className="inline-flex size-11 items-center justify-center rounded-l-lg border border-black/15 disabled:opacity-40"><Minus size={16} /></button>
             <QuantityInput key={item.quantity} item={item} onCommit={(quantity) => setQuantity(item, quantity)} onError={setCartMessage} />
             <button type="button" disabled={item.quantity >= maximum} aria-label={`Aumentar cantidad de ${item.productName}`} onClick={() => setQuantity(item, item.quantity + 1)} className="inline-flex size-11 items-center justify-center rounded-r-lg border border-black/15 disabled:opacity-40"><Plus size={16} /></button>
           </div>
-          <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2"><div className="min-w-0"><p className="text-xs font-semibold text-black/60">{priceLabel(item)}</p><p className="font-semibold">{formatCurrency(item.finalUnitPrice)} c/u</p>{item.priceOverridden ? <p className="text-[11px] text-black/45">Precio habitual: {formatCurrency(item.baseUnitPrice)}</p> : null}</div><button type="button" onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(item); }} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-black/15 px-2 text-xs font-semibold"><BadgeDollarSign size={16} /> Ajustar</button></div>
-        </div>
-        {item.priceOverridden ? <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950"><span className="min-w-0 truncate">Motivo: {item.priceOverrideReason}</span><button type="button" onClick={() => update(item.productId, { finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null })} className="inline-flex min-h-11 shrink-0 items-center gap-1 font-semibold"><RotateCcw size={14} /> Restaurar</button></div> : null}
-        <div className="mt-1 flex items-end justify-between gap-3"><p className={`text-xs font-semibold ${insufficient ? "text-red-700" : item.stockStatus === "low" && item.tracksInventory !== false ? "text-amber-700" : "text-emerald-700"}`}>{item.tracksInventory === false ? "Sin control de inventario" : `Existencia disponible: ${item.availableStock}${insufficient ? " · Revise la cantidad" : ""}`}</p><div className="text-right"><p className="text-[11px] text-black/45">Subtotal</p><p className="shrink-0 font-semibold">{formatCurrency(item.quantity * item.finalUnitPrice)}</p></div></div>
+          <div className={`${styles.price} flex min-w-0 items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5`}><div className="min-w-0"><p className="text-[11px] font-semibold text-black/55">{priceLabel(item)}</p><p className="whitespace-nowrap text-sm font-semibold">{formatCurrency(item.finalUnitPrice)} c/u</p><p className="whitespace-nowrap text-xs text-black/55">Subtotal: <strong>{formatCurrency(item.quantity * item.finalUnitPrice)}</strong></p></div><button type="button" onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(item); }} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-black/15 px-2 text-xs font-semibold"><BadgeDollarSign size={15} /> Ajustar</button></div>
+          <button type="button" aria-label={`Eliminar ${item.productName}`} title="Quitar producto" onClick={() => setPendingRemoval({ kind: "line", item, index })} className={`${styles.remove} inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]`}><Trash2 size={18} /></button>
+        {item.priceOverridden ? <div className={`${styles.override} flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950`}><span className="min-w-0 truncate">Motivo: {item.priceOverrideReason}</span><button type="button" onClick={() => update(item.productId, { finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null })} className="inline-flex min-h-11 shrink-0 items-center gap-1 font-semibold"><RotateCcw size={14} /> Restaurar</button></div> : null}
       </article>;
     })}</div>}
     {editing ? <PriceOverrideDialog item={editing} returnFocus={returnFocus} onCancel={() => setEditing(null)} onApply={(price, reason) => { update(editing.productId, { finalUnitPrice: price, priceOverridden: price !== editing.baseUnitPrice, priceOverrideReason: price === editing.baseUnitPrice ? null : reason }); setEditing(null); }} /> : null}
