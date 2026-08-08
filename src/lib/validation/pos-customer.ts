@@ -48,6 +48,10 @@ const schema = z.object({
   creditTermsDays: z.coerce.number().int().min(1).max(365),
   creditNotes: optionalText(1000),
   changeReason: z.string().trim().min(5).max(500),
+  duplicateOverrideReason: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() ? value.trim() : null),
+    z.string().min(5).max(500).nullable(),
+  ),
   expectedCommercialVersion: z.coerce.number().int().min(0).optional(),
 }).superRefine((value, context) => {
   if ((value.creditMode === "active" || value.creditMode === "suspended") && value.creditLimit <= 0) {
@@ -107,6 +111,7 @@ export function parsePosCustomerInput(
     creditTermsDays: parsed.data.creditTermsDays,
     creditNotes: parsed.data.creditNotes,
     changeReason: parsed.data.changeReason,
+    duplicateOverrideReason: parsed.data.duplicateOverrideReason,
   };
   if (options.mode === "create") return { ok: true, value: base };
   return {

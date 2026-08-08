@@ -22,6 +22,8 @@ import {
 import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import type {
   PosCustomerContext,
+  PosCustomerDuplicateSuggestion,
+  PosCustomerDuplicateSuggestionPage,
   PosCustomerSearchPage,
   PosCustomerSearchResult,
   PosCustomerWriteResult,
@@ -43,6 +45,7 @@ type CustomerForm = {
   creditLimit: string;
   creditTermsDays: string;
   creditNotes: string;
+  duplicateOverrideReason: string;
 };
 
 const emptyForm: CustomerForm = {
@@ -60,6 +63,7 @@ const emptyForm: CustomerForm = {
   creditLimit: "",
   creditTermsDays: "30",
   creditNotes: "",
+  duplicateOverrideReason: "",
 };
 
 function contextToForm(context: PosCustomerContext): CustomerForm {
@@ -78,6 +82,7 @@ function contextToForm(context: PosCustomerContext): CustomerForm {
     creditLimit: context.credit.creditLimit > 0 ? String(context.credit.creditLimit) : "",
     creditTermsDays: String(context.credit.termsDays),
     creditNotes: context.credit.notes ?? "",
+    duplicateOverrideReason: "",
   };
 }
 
@@ -130,14 +135,40 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   const [initialForm, setInitialForm] = useState<CustomerForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+  const [duplicateSuggestions, setDuplicateSuggestions] = useState<PosCustomerDuplicateSuggestion[]>([]);
+  const [duplicateState, setDuplicateState] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [duplicateMessage, setDuplicateMessage] = useState('');
+  const [duplicateResultSignature, setDuplicateResultSignature] = useState('');
   const [pendingFormAction, setPendingFormAction] = useState<PendingFormAction | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const duplicateAbortRef = useRef<AbortController | null>(null);
   const contextRevisionRef = useRef(0);
   const requestSignatureRef = useRef("");
   const listboxId = "pos-customer-results";
 
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(initialForm), [form, initialForm]);
   const visibleContext = selectedCustomerId && context?.customerId === selectedCustomerId ? context : null;
+  const duplicateInputReady = form.contactName.trim().length >= 3
+    || form.businessName.trim().length >= 3
+    || Boolean(form.email.trim())
+    || form.phone.replace(/\D/g, '').length >= 8
+    || form.taxId.replace(/\D/g, '').length >= 14;
+  const duplicateQuerySignature = duplicateInputReady ? JSON.stringify([
+    form.contactName.trim(), form.businessName.trim(), form.email.trim().toLowerCase(),
+    form.phone.replace(/\D/g, ''), form.taxId.replace(/\D/g, ''),
+  ]) : '';
+  const visibleDuplicateSuggestions = duplicateResultSignature === duplicateQuerySignature
+    ? duplicateSuggestions : [];
+  const duplicateReviewState = !duplicateInputReady ? 'idle'
+    : duplicateResultSignature !== duplicateQuerySignature ? 'loading'
+      : duplicateState;
+  const strongSuggestions = visibleDuplicateSuggestions.filter((suggestion) => suggestion.matchLevel === 'strong');
+  const hasNonOverridableMatch = strongSuggestions.some((suggestion) => !suggestion.overrideAllowed);
+  const requiresOverrideReason = strongSuggestions.some((suggestion) => suggestion.overrideAllowed)
+    && !hasNonOverridableMatch;
+  const duplicateBlocksCreate = panelMode === 'create' && (
+    hasNonOverridableMatch || (requiresOverrideReason && form.duplicateOverrideReason.trim().length < 5)
+  );
 
   useEffect(() => {
     if (!dirty) return;
@@ -195,6 +226,48 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  useEffect(() => {
+    if (panelMode !== 'create' || !duplicateQuerySignature) {
+      duplicateAbortRef.current?.abort();
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      duplicateAbortRef.current?.abort();
+      const controller = new AbortController();
+      duplicateAbortRef.current = controller;
+      setDuplicateState('loading');
+      setDuplicateMessage('');
+      try {
+        const response = await fetch('/api/admin/pos/customers/suggestions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            contactName: form.contactName,
+            businessName: form.businessName || null,
+            email: form.email || null,
+            phone: form.phone || null,
+            taxId: form.taxId || null,
+          }),
+          signal: controller.signal,
+        });
+        const payload = await readJson<PosCustomerDuplicateSuggestionPage>(response);
+        if (controller.signal.aborted) return;
+        setDuplicateSuggestions(payload.results);
+        setDuplicateResultSignature(duplicateQuerySignature);
+        setDuplicateState('idle');
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setDuplicateSuggestions([]);
+        setDuplicateResultSignature(duplicateQuerySignature);
+        setDuplicateState('error');
+        setDuplicateMessage(error instanceof Error ? error.message : 'No se pudieron revisar coincidencias.');
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [duplicateQuerySignature, form.businessName, form.contactName, form.email, form.phone, form.taxId, panelMode]);
+
+  useEffect(() => () => duplicateAbortRef.current?.abort(), []);
+
   const loadContext = useCallback(async (customerId: string, requestSelection = false) => {
     const revision = ++contextRevisionRef.current;
     setContextLoading(true);
@@ -247,6 +320,10 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       setForm(emptyForm);
       setInitialForm(emptyForm);
       setFormMessage("");
+      setDuplicateSuggestions([]);
+      setDuplicateResultSignature("");
+      setDuplicateState("idle");
+      setDuplicateMessage("");
       return;
     }
     if (action.kind === "clear") {
@@ -312,6 +389,16 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
   async function saveCustomer(event: React.FormEvent) {
     event.preventDefault();
     if (saving || !form.contactName.trim()) return;
+    if (panelMode === 'create' && (duplicateBlocksCreate || duplicateReviewState !== 'idle')) {
+      setFormMessage(duplicateReviewState === 'loading'
+        ? 'Espera a que termine la revision de posibles clientes existentes.'
+        : duplicateReviewState === 'error'
+          ? 'No se puede crear el cliente hasta completar la revision de coincidencias.'
+          : hasNonOverridableMatch
+            ? 'Use o corrija el perfil existente: la coincidencia exacta no admite excepcion.'
+            : 'Confirme la excepcion e ingrese un motivo de al menos 5 caracteres.');
+      return;
+    }
     setSaving(true);
     setFormMessage("");
     const requestKey = crypto.randomUUID();
@@ -332,6 +419,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       creditTermsDays: Number(form.creditTermsDays || 30),
       creditNotes: form.creditNotes || null,
       changeReason: "Configurado desde Punto de Venta.",
+      duplicateOverrideReason: form.duplicateOverrideReason.trim() || null,
       ...(panelMode === "edit" && context
         ? { expectedCommercialVersion: context.commercialVersion }
         : {}),
@@ -348,9 +436,13 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       });
       const result = (await response.json()) as PosCustomerWriteResult & { message?: string };
       if (!response.ok) {
-        if (result.customerId && (["duplicate", "possible_duplicate", "version_conflict"] as string[]).includes(result.status)) {
+        if (result.customerId && result.status === 'version_conflict') {
           setFormMessage(result.message);
           await loadContext(result.customerId);
+          return;
+        }
+        if (result.customerId && (["duplicate", "possible_duplicate"] as string[]).includes(result.status)) {
+          setFormMessage(result.message);
           return;
         }
         throw new Error(result.message ?? "No se pudo guardar el cliente.");
@@ -451,9 +543,14 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
               dirty={dirty}
               saving={saving}
               message={formMessage}
+              duplicateSuggestions={visibleDuplicateSuggestions}
+              duplicateState={duplicateReviewState}
+              duplicateMessage={duplicateMessage}
+              duplicateBlocksCreate={duplicateBlocksCreate}
               onChange={setForm}
               onSubmit={saveCustomer}
               onCancel={() => requestFormAction({ kind: "close" })}
+              onSelectSuggestion={(customerId) => void loadContext(customerId)}
             />
           ) : null}
           {!contextLoading && panelMode === "closed" && visibleContext ? (
@@ -501,20 +598,33 @@ function CustomerFormPanel({
   dirty,
   saving,
   message,
+  duplicateSuggestions,
+  duplicateState,
+  duplicateMessage,
+  duplicateBlocksCreate,
   onChange,
   onSubmit,
   onCancel,
+  onSelectSuggestion,
 }: {
   mode: "create" | "edit";
   form: CustomerForm;
   dirty: boolean;
   saving: boolean;
   message: string;
+  duplicateSuggestions: PosCustomerDuplicateSuggestion[];
+  duplicateState: 'idle' | 'loading' | 'error';
+  duplicateMessage: string;
+  duplicateBlocksCreate: boolean;
   onChange: (value: CustomerForm) => void;
   onSubmit: (event: React.FormEvent) => void;
   onCancel: () => void;
+  onSelectSuggestion: (customerId: string) => void;
 }) {
   const field = (key: keyof CustomerForm) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange({ ...form, [key]: event.target.value });
+  const exactBlocked = duplicateSuggestions.some((suggestion) => suggestion.matchLevel === 'strong' && !suggestion.overrideAllowed);
+  const phoneOverrideAvailable = duplicateSuggestions.some((suggestion) => suggestion.matchLevel === 'strong' && suggestion.overrideAllowed)
+    && !exactBlocked;
   return (
     <form onSubmit={onSubmit}>
       <div className="flex items-start justify-between gap-3">
@@ -538,6 +648,39 @@ function CustomerFormPanel({
       </fieldset>
       {!form.phone.trim() && !form.email.trim() && !form.taxId.trim() ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Puedes crear el perfil solo con el nombre. Completa teléfono, correo o RTN después para facilitar la identificación.</p> : null}
 
+      {mode === 'create' && (duplicateState !== 'idle' || duplicateSuggestions.length > 0) ? (
+        <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4" aria-labelledby="pos-duplicate-suggestions-title">
+          <div className="flex items-center gap-2">
+            {duplicateState === 'loading' ? <LoaderCircle className="animate-spin text-amber-700 motion-reduce:animate-none" size={18} /> : <AlertTriangle className="text-amber-700" size={18} />}
+            <h3 id="pos-duplicate-suggestions-title" className="font-semibold">Posibles clientes existentes</h3>
+          </div>
+          {duplicateState === 'loading' ? <p className="mt-2 text-sm text-amber-900">Revisando nombre, empresa, correo, telefono y RTN...</p> : null}
+          {duplicateState === 'error' ? <p role="alert" className="mt-2 text-sm text-red-800">{duplicateMessage}</p> : null}
+          <div className="mt-3 space-y-3">
+            {duplicateSuggestions.map((suggestion) => (
+              <article key={suggestion.customerId} className="rounded-lg border border-amber-200 bg-white p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="font-semibold">{suggestion.displayName}</p>
+                    <p className="mt-1 text-xs text-black/60">{[suggestion.businessName, suggestion.phoneMasked, suggestion.emailMasked, suggestion.taxIdMasked].filter(Boolean).join(' · ')}</p>
+                    <p className="mt-2 text-xs font-semibold text-amber-900">{suggestion.matchLevel === 'strong' ? 'Coincidencia exacta fuerte' : 'Coincidencia probable'}: {suggestion.matchedFields.join(', ')}</p>
+                    <p className="mt-1 text-xs text-black/55">{suggestion.hasPortalAccount ? 'Portal vinculado' : 'Sin portal vinculado'}{suggestion.source ? ` · Origen: ${suggestion.source}` : ''}</p>
+                    {!suggestion.selectable ? <p className="mt-1 text-xs font-semibold text-red-800">Perfil suspendido - no disponible para ventas</p> : null}
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button type="button" disabled={!suggestion.selectable} onClick={() => onSelectSuggestion(suggestion.customerId)} className="min-h-11 rounded-lg bg-[#e4252c] px-3 text-xs font-semibold text-white disabled:opacity-45">Usar cliente existente</button>
+                    <Link href={`/admin/clientes?customerId=${encodeURIComponent(suggestion.customerId)}`} target="_blank" className="inline-flex min-h-11 items-center rounded-lg border border-black/15 bg-white px-3 text-xs font-semibold">Ver informacion</Link>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+          {exactBlocked ? <p className="mt-3 text-sm font-semibold text-red-800">La coincidencia exacta de correo o RTN no admite excepcion. Use o corrija el perfil existente.</p> : null}
+          {phoneOverrideAvailable ? <div className="mt-3"><FormField label="Motivo para continuar con telefono compartido"><input minLength={5} maxLength={500} value={form.duplicateOverrideReason} onChange={field('duplicateOverrideReason')} className="pos-input" placeholder="Ejemplo: telefono familiar compartido" /></FormField></div> : null}
+          {!exactBlocked && duplicateSuggestions.length > 0 && duplicateSuggestions.every((suggestion) => suggestion.matchLevel === 'probable') ? <p className="mt-3 text-sm text-amber-900">Encontramos perfiles parecidos. Puede continuar despues de revisarlos.</p> : null}
+        </section>
+      ) : null}
+
       <fieldset className="mt-5 rounded-xl border border-black/10 p-4">
         <legend className="px-1 text-sm font-semibold">Tipo de cliente</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
@@ -559,7 +702,7 @@ function CustomerFormPanel({
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold">Cancelar</button>
-        <button type="submit" disabled={saving || !form.contactName.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <LoaderCircle size={18} className="animate-spin" /> : <UserRoundCheck size={18} />}{mode === "create" ? "Crear y seleccionar" : "Guardar configuración"}</button>
+        <button type="submit" disabled={saving || !form.contactName.trim() || (mode === 'create' && (duplicateBlocksCreate || duplicateState !== 'idle'))} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? <LoaderCircle size={18} className="animate-spin" /> : <UserRoundCheck size={18} />}{mode === "create" ? "Crear y seleccionar" : "Guardar configuración"}</button>
       </div>
     </form>
   );

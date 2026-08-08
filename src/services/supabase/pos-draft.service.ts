@@ -110,6 +110,9 @@ const confirmationMessages: Record<string, string> = {
   POS_AMOUNT_TENDERED_INSUFFICIENT: "El efectivo recibido debe cubrir el total.",
   POS_TRANSFER_REFERENCE_REQUIRED: "Confirma la transferencia e ingresa su referencia.",
   POS_CARD_CONFIGURATION_INVALID: "La cuenta puente generica para tarjeta no esta configurada.",
+  POS_SHIPPING_MAPPING_INVALID: "El cargo de entrega no tiene un mapeo contable activo para la fecha de la factura.",
+  POS_COD_MAPPING_INVALID: "El cargo contra entrega no tiene un mapeo contable activo para la fecha de la factura.",
+  POS_OTHER_CHARGE_MAPPING_INVALID: "El cargo adicional u otro cargo no tiene un mapeo contable activo para la fecha de la factura.",
   POS_CREDIT_DISABLED: "El cliente no tiene credito comercial habilitado.",
   POS_CREDIT_SUSPENDED: "La cuenta de credito esta suspendida.",
   POS_CREDIT_INSUFFICIENT: "El credito disponible no cubre la venta.",
@@ -243,7 +246,7 @@ export async function listPosDrafts(limit: number, offset: number) {
 
 export async function savePosDraft(input: PosDraftSaveInput) {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("save_pos_sale_draft_v1", {
+  const { data, error } = await supabase.rpc('save_pos_sale_draft_with_charges_v1', {
     p_request_key: input.requestKey,
     p_draft_id: input.draftId,
     p_expected_version: input.expectedVersion,
@@ -254,9 +257,10 @@ export async function savePosDraft(input: PosDraftSaveInput) {
     p_delivery_address: input.deliveryAddress,
     p_delivery_notes: input.deliveryNotes,
     p_internal_notes: input.internalNotes,
-    p_delivery_charge: 0,
-    p_cash_on_delivery_charge: 0,
-    p_other_charges: 0,
+    p_delivery_charge: input.shippingFee,
+    p_cash_on_delivery_charge: input.codFee,
+    p_additional_charge: input.additionalCharge,
+    p_other_charge: input.otherCharge,
   });
   if (error || !data) throwRpcError(error, "No se pudo guardar el borrador.");
   return enrichDraftInventoryModes(supabase, data as unknown as PosSaleDraft);

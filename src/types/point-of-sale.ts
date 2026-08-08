@@ -231,6 +231,7 @@ export type PosCustomerWriteInput = {
   creditTermsDays: number;
   creditNotes: string | null;
   changeReason: string;
+  duplicateOverrideReason: string | null;
 };
 
 export type PosCustomerUpdateInput = PosCustomerWriteInput & {
@@ -245,6 +246,28 @@ export type PosCustomerWriteResult = {
   customerId: string;
   commercialVersion: number;
   idempotentReplay: boolean;
+};
+
+export type PosCustomerDuplicateSuggestion = {
+  customerId: string;
+  displayName: string;
+  businessName: string | null;
+  phoneMasked: string | null;
+  emailMasked: string | null;
+  taxIdMasked: string | null;
+  customerStatus: "active" | "inactive";
+  wholesaleStatus: PosWholesaleStatus;
+  hasPortalAccount: boolean;
+  source: string | null;
+  matchLevel: "strong" | "probable";
+  matchedFields: Array<"email" | "phone" | "tax_id" | "name" | "business_name">;
+  selectable: boolean;
+  overrideAllowed: boolean;
+};
+
+export type PosCustomerDuplicateSuggestionPage = {
+  results: PosCustomerDuplicateSuggestion[];
+  hasStrongMatch: boolean;
 };
 
 export type PosProductSearchResult = {
@@ -327,6 +350,7 @@ export type PosSaleDraft = {
   taxAmount: number;
   shippingFee: number;
   codFee: number;
+  additionalCharge: number;
   otherCharge: number;
   grandTotal: number;
   calculationVersion: 2;
@@ -357,11 +381,16 @@ export type PosDraftSaveInput = {
   deliveryAddress: string | null;
   deliveryNotes: string | null;
   internalNotes: string | null;
+  shippingFee: number;
+  codFee: number;
+  additionalCharge: number;
+  otherCharge: number;
 };
 
 export type PosChargeCapabilities = {
   shippingFeeEnabled: boolean;
   codFeeEnabled: boolean;
+  additionalChargeEnabled: boolean;
   externalChargeEnabled: boolean;
   otherChargeEnabled: boolean;
   disabledReason: string;

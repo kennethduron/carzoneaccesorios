@@ -3,6 +3,8 @@ import "server-only";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   PosCustomerContext,
+  PosCustomerDuplicateSuggestion,
+  PosCustomerDuplicateSuggestionPage,
   PosCustomerSearchPage,
   PosCustomerSearchResult,
   PosCustomerUpdateInput,
@@ -24,6 +26,23 @@ type SearchRow = {
   customer_status: PosCustomerSearchResult["customerStatus"];
   commercial_version: number | string;
   total_count: number | string;
+};
+
+type DuplicateSuggestionRow = {
+  customer_id: string;
+  display_name: string;
+  business_name: string | null;
+  phone_masked: string | null;
+  email_masked: string | null;
+  tax_id_masked: string | null;
+  customer_status: PosCustomerDuplicateSuggestion['customerStatus'];
+  wholesale_status: PosCustomerDuplicateSuggestion['wholesaleStatus'];
+  has_portal_account: boolean;
+  source: string | null;
+  match_level: PosCustomerDuplicateSuggestion['matchLevel'];
+  matched_fields: PosCustomerDuplicateSuggestion['matchedFields'];
+  selectable: boolean;
+  override_allowed: boolean;
 };
 
 type ContextRow = {
@@ -141,6 +160,42 @@ export async function searchPosCustomers(input: {
   return { results, total, nextOffset: input.offset + results.length < total ? input.offset + results.length : null };
 }
 
+export async function suggestPosCustomerDuplicates(input: {
+  contactName: string;
+  businessName: string | null;
+  email: string | null;
+  phone: string | null;
+  taxId: string | null;
+}): Promise<PosCustomerDuplicateSuggestionPage> {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc('suggest_pos_customer_duplicates_v1', {
+    p_contact_name: input.contactName,
+    p_business_name: input.businessName,
+    p_email: input.email,
+    p_phone: input.phone,
+    p_tax_id: input.taxId,
+    p_limit: 8,
+  });
+  if (error) throwRpcError(error, 'No se pudieron buscar posibles clientes existentes.');
+  const results = ((data ?? []) as unknown as DuplicateSuggestionRow[]).map((row) => ({
+    customerId: row.customer_id,
+    displayName: row.display_name,
+    businessName: row.business_name,
+    phoneMasked: row.phone_masked,
+    emailMasked: row.email_masked,
+    taxIdMasked: row.tax_id_masked,
+    customerStatus: row.customer_status,
+    wholesaleStatus: row.wholesale_status,
+    hasPortalAccount: Boolean(row.has_portal_account),
+    source: row.source,
+    matchLevel: row.match_level,
+    matchedFields: row.matched_fields,
+    selectable: Boolean(row.selectable),
+    overrideAllowed: Boolean(row.override_allowed),
+  }));
+  return { results, hasStrongMatch: results.some((row) => row.matchLevel === 'strong') };
+}
+
 export async function getPosCustomerContext(customerId: string): Promise<PosCustomerContext> {
   const supabase = await getSupabaseServerClient();
   const [contextResponse, configurationResponse] = await Promise.all([
@@ -244,19 +299,20 @@ function writeRpcInput(input: PosCustomerWriteInput) {
     p_credit_terms_days: input.creditTermsDays,
     p_credit_notes: input.creditNotes,
     p_change_reason: input.changeReason,
+    p_duplicate_override_reason: input.duplicateOverrideReason,
   };
 }
 
 export async function createPosCustomer(input: PosCustomerWriteInput): Promise<PosCustomerWriteResult> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("save_pos_customer_commercial_profile_v1", writeRpcInput(input));
+  const { data, error } = await supabase.rpc('save_pos_customer_commercial_profile_v2', writeRpcInput(input));
   if (error || !data) throwRpcError(error, "No se pudo crear el cliente.");
   return data as unknown as PosCustomerWriteResult;
 }
 
 export async function updatePosCustomer(input: PosCustomerUpdateInput): Promise<PosCustomerWriteResult> {
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("save_pos_customer_commercial_profile_v1", {
+  const { data, error } = await supabase.rpc('save_pos_customer_commercial_profile_v2', {
     ...writeRpcInput(input),
     p_customer_id: input.customerId,
     p_expected_commercial_version: input.expectedCommercialVersion,

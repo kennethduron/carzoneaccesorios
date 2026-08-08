@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 const nullableText = (maximum: number) => z.string().trim().max(maximum).nullable();
+const optionalCharge = z.number().finite().min(0).max(999_999_999_999.99)
+  .refine((value) => Math.abs(Math.round(value * 100) - value * 100) < 1e-8, 'Los cargos deben tener maximo dos decimales.');
 
 export const createPosDraftSchema = z.object({
   requestKey: z.string().uuid(),
@@ -23,6 +25,10 @@ export const savePosDraftSchema = z.object({
   deliveryAddress: nullableText(500),
   deliveryNotes: nullableText(1000),
   internalNotes: nullableText(1000),
+  shippingFee: optionalCharge,
+  codFee: optionalCharge,
+  additionalCharge: optionalCharge,
+  otherCharge: optionalCharge,
 }).strict();
 
 export const abandonPosDraftSchema = z.object({
