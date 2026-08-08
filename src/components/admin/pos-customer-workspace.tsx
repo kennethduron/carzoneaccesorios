@@ -29,6 +29,7 @@ import type {
   PosCustomerWriteResult,
 } from "@/types/point-of-sale";
 import { formatCurrency } from "@/utils/pricing";
+import { posCustomerMatchLabel, posSourceLabel } from "@/utils/pos-presentation-labels";
 
 type CustomerForm = {
   contactName: string;
@@ -120,7 +121,7 @@ function statusTone(status: PosCustomerContext["wholesaleStatus"]) {
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
-export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = true, onCustomerContextChange }: { selectedCustomerId?: string | null; showFutureStages?: boolean; onCustomerContextChange?: (context: PosCustomerContext | null) => void }) {
+export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = true, compact = false, onCustomerContextChange }: { selectedCustomerId?: string | null; showFutureStages?: boolean; compact?: boolean; onCustomerContextChange?: (context: PosCustomerContext | null) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PosCustomerSearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -464,20 +465,14 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
     <div className="space-y-4">
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="hidden">
-            <p className="text-sm font-semibold text-[#e4252c]">Clientes y reglas comerciales</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Punto de Venta</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-black/60">
-              Busque, seleccione o cree un cliente para preparar una nueva venta.
-            </p>
-          </div>
+          <div><p className="text-sm font-semibold text-[#e4252c]">Cliente</p><h2 className="mt-0.5 text-lg font-semibold">Buscar o seleccionar cliente</h2></div>
           <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#c91f26] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">
             <Plus size={18} /> Nuevo cliente
           </button>
         </div>
       </section>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)]">
+      <div className={compact ? "grid gap-4" : "grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.5fr)]"}>
         <section className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="customer-search-title">
           <h2 id="customer-search-title" className="text-lg font-semibold">Buscar cliente</h2>
           <p className="mt-1 text-sm text-black/55">Nombre, empresa, teléfono, correo, RTN o identificador.</p>
@@ -556,6 +551,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           {!contextLoading && panelMode === "closed" && visibleContext ? (
             <CustomerContextPanel
               context={visibleContext}
+              compact={compact}
               message={formMessage}
               onEdit={openEdit}
               onClear={clearSelection}
@@ -663,13 +659,13 @@ function CustomerFormPanel({
                   <div className="min-w-0">
                     <p className="font-semibold">{suggestion.displayName}</p>
                     <p className="mt-1 text-xs text-black/60">{[suggestion.businessName, suggestion.phoneMasked, suggestion.emailMasked, suggestion.taxIdMasked].filter(Boolean).join(' · ')}</p>
-                    <p className="mt-2 text-xs font-semibold text-amber-900">{suggestion.matchLevel === 'strong' ? 'Coincidencia exacta fuerte' : 'Coincidencia probable'}: {suggestion.matchedFields.join(', ')}</p>
-                    <p className="mt-1 text-xs text-black/55">{suggestion.hasPortalAccount ? 'Portal vinculado' : 'Sin portal vinculado'}{suggestion.source ? ` · Origen: ${suggestion.source}` : ''}</p>
+                    <p className="mt-2 text-xs font-semibold text-amber-900">{posCustomerMatchLabel(suggestion.matchLevel, suggestion.matchedFields)}</p>
+                    <p className="mt-1 text-xs text-black/55">{suggestion.hasPortalAccount ? 'Cuenta de portal vinculada' : 'Sin cuenta de portal'} · Origen: {posSourceLabel(suggestion.source)}</p>
                     {!suggestion.selectable ? <p className="mt-1 text-xs font-semibold text-red-800">Perfil suspendido - no disponible para ventas</p> : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <button type="button" disabled={!suggestion.selectable} onClick={() => onSelectSuggestion(suggestion.customerId)} className="min-h-11 rounded-lg bg-[#e4252c] px-3 text-xs font-semibold text-white disabled:opacity-45">Usar cliente existente</button>
-                    <Link href={`/admin/clientes?customerId=${encodeURIComponent(suggestion.customerId)}`} target="_blank" className="inline-flex min-h-11 items-center rounded-lg border border-black/15 bg-white px-3 text-xs font-semibold">Ver informacion</Link>
+                    <Link href={`/admin/clientes?customerId=${encodeURIComponent(suggestion.customerId)}`} target="_blank" className="inline-flex min-h-11 items-center rounded-lg border border-black/15 bg-white px-3 text-xs font-semibold">Ver información</Link>
                   </div>
                 </div>
               </article>
@@ -677,7 +673,7 @@ function CustomerFormPanel({
           </div>
           {exactBlocked ? <p className="mt-3 text-sm font-semibold text-red-800">La coincidencia exacta de correo o RTN no admite excepcion. Use o corrija el perfil existente.</p> : null}
           {phoneOverrideAvailable ? <div className="mt-3"><FormField label="Motivo para continuar con telefono compartido"><input minLength={5} maxLength={500} value={form.duplicateOverrideReason} onChange={field('duplicateOverrideReason')} className="pos-input" placeholder="Ejemplo: telefono familiar compartido" /></FormField></div> : null}
-          {!exactBlocked && duplicateSuggestions.length > 0 && duplicateSuggestions.every((suggestion) => suggestion.matchLevel === 'probable') ? <p className="mt-3 text-sm text-amber-900">Encontramos perfiles parecidos. Puede continuar despues de revisarlos.</p> : null}
+          {!exactBlocked && duplicateSuggestions.length > 0 && duplicateSuggestions.every((suggestion) => suggestion.matchLevel === 'probable') ? <p className="mt-3 text-sm text-amber-900">Encontramos perfiles parecidos. Puede continuar después de revisarlos.</p> : null}
         </section>
       ) : null}
 
@@ -710,25 +706,27 @@ function CustomerFormPanel({
 
 function CustomerContextPanel({
   context,
+  compact,
   message,
   onEdit,
   onClear,
 }: {
   context: PosCustomerContext;
+  compact: boolean;
   message: string;
   onEdit: () => void;
   onClear: () => void;
 }) {
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className={`flex flex-col gap-3 ${compact ? "" : "sm:flex-row sm:items-start sm:justify-between"}`}>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#e4252c]">Cliente seleccionado</p>
           <h2 className="mt-1 break-words text-2xl font-semibold">{context.displayName}</h2>
           <p className="mt-1 break-words text-sm text-black/55">{[context.businessName, context.phone, context.email].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c]"><Pencil size={16} /> Editar configuración comercial</button>
+        <div className={`flex gap-2 ${compact ? "flex-wrap" : "shrink-0"}`}>
+          <button type="button" onClick={onEdit} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c] ${compact ? "min-w-0 flex-1" : ""}`}><Pencil size={16} /> Editar configuración comercial</button>
           <button type="button" onClick={onClear} aria-label="Quitar cliente seleccionado" title="Quitar cliente" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/15 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={17} /></button>
         </div>
       </div>
@@ -739,8 +737,8 @@ function CustomerContextPanel({
       </div>
       <p className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-6 text-black/65">{context.pricingReason}</p>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta vinculada" : "Sin cuenta vinculada"} detail="Crear el perfil no habilita acceso al portal ni envía invitaciones.">
+      <div className={compact ? "mt-4 grid gap-3" : "mt-4 grid gap-3 md:grid-cols-2"}>
+        <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta de portal vinculada" : "Sin cuenta de portal"} detail="Crear el perfil no habilita acceso al portal ni envía invitaciones.">
           {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación administrativa</Link> : null}
         </InfoCard>
         <InfoCard icon={CreditCard} title="Crédito comercial" value={context.credit.status === "active" ? "Activo" : context.credit.status === "on_hold" ? "En espera" : context.credit.status === "suspended" ? "Suspendido" : "No habilitado"} detail={context.credit.reason}>

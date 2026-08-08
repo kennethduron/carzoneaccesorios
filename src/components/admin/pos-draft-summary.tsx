@@ -13,15 +13,17 @@ type SummaryValues = {
   shippingFee: number;
   codFee: number;
   additionalCharge: number;
+  additionalChargeDescription: string;
   otherCharge: number;
+  otherChargeDescription: string;
 };
 
 function SummaryBreakdown(values: SummaryValues) {
   const charges = [
     ['Entrega', values.shippingFee],
     ['Contra entrega', values.codFee],
-    ['Cargo adicional', values.additionalCharge],
-    ['Otro cargo', values.otherCharge],
+    [values.additionalChargeDescription.trim() || 'Cargo adicional', values.additionalCharge],
+    [values.otherChargeDescription.trim() || 'Otro cargo', values.otherCharge],
   ] as const;
   return <dl className="mt-3 space-y-2 text-sm">
     <div className="flex justify-between"><dt>Mercadería</dt><dd className="font-semibold">{formatCurrency(values.merchandiseGross)}</dd></div>
@@ -47,13 +49,15 @@ export function PosDraftSummary({ draft, pending, disabled, onSave, total, ...va
     shippingFee: draft.shippingFee,
     codFee: draft.codFee,
     additionalCharge: draft.additionalCharge,
+    additionalChargeDescription: draft.additionalChargeDescription ?? 'Cargo adicional',
     otherCharge: draft.otherCharge,
+    otherChargeDescription: draft.otherChargeDescription ?? 'Otro cargo',
   };
-  return <section className="sticky bottom-2 z-20 rounded-xl border border-black/10 bg-white/95 p-4 shadow-lg backdrop-blur lg:static lg:shrink-0 lg:bg-white" aria-labelledby="draft-summary-title">
+  return <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="draft-summary-title">
     <div className="flex items-center justify-between gap-3"><h2 id="draft-summary-title" className="font-semibold">Resumen del borrador</h2>{pending ? <span className="text-xs font-semibold text-amber-700">Pendiente de guardar</span> : null}</div>
     <div className="hidden sm:block"><SummaryBreakdown {...officialValues} /></div>
     <details className="mt-2 sm:hidden"><summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-[#e4252c]">Ver desglose fiscal</summary><SummaryBreakdown {...officialValues} /></details>
-    <div className="flex justify-between border-t pt-3 text-lg"><span className="font-semibold">Total</span><strong>{formatCurrency(pending ? total : draft.grandTotal)}</strong></div>
+    <div className="mt-3 flex justify-between border-t border-black/15 pt-3 text-lg"><span className="font-semibold">Total</span><strong className="text-[#e4252c]">{formatCurrency(pending ? total : draft.grandTotal)}</strong></div>
     <div className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-50 p-3 text-xs text-emerald-900"><ShieldCheck className="shrink-0" size={17} /><span>El servidor validará y devolverá el total definitivo antes de confirmar.</span></div>
     <button type="button" disabled={disabled} onClick={onSave} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50"><Save size={17} /> Guardar borrador</button>
   </section>;

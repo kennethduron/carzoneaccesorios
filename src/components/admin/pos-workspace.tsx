@@ -17,8 +17,8 @@ import type { PosActiveDraftSummary, PosChargeCapabilities, PosDraftApiError, Po
 import { formatCurrency } from "@/utils/pricing";
 
 const storedDraftKey = "car-zone-pos-stage4-draft-id";
-const emptyDelivery: PosDeliveryState = { mode: 'store_immediate', address: '', notes: '', internalNotes: '', shippingFee: '0.00', codFee: '0.00', additionalCharge: '0.00', otherCharge: '0.00' };
-const noCharges: PosChargeCapabilities = { shippingFeeEnabled: false, codFeeEnabled: false, additionalChargeEnabled: false, externalChargeEnabled: false, otherChargeEnabled: false, disabledReason: 'Los cargos requieren configuracion contable activa.' };
+const emptyDelivery: PosDeliveryState = { mode: 'store_immediate', address: '', notes: '', internalNotes: '', shippingFee: '0.00', codFee: '0.00', additionalCharge: '0.00', additionalChargeDescription: '', otherCharge: '0.00', otherChargeDescription: '' };
+const noCharges: PosChargeCapabilities = { shippingFeeEnabled: false, codFeeEnabled: false, additionalChargeEnabled: false, externalChargeEnabled: false, otherChargeEnabled: false, disabledReason: 'Los cargos requieren configuración contable activa.' };
 
 class PosApiError extends Error {
   constructor(message: string, readonly code: string, readonly currentVersion?: number) { super(message); this.name = "PosApiError"; }
@@ -31,15 +31,20 @@ async function jsonResponse<T>(response: Response): Promise<T> {
 }
 
 function draftDelivery(draft: PosSaleDraft): PosDeliveryState {
-  return { mode: draft.deliveryMode, address: draft.deliveryAddress ?? '', notes: draft.deliveryNotes ?? '', internalNotes: draft.internalNotes ?? '', shippingFee: draft.shippingFee.toFixed(2), codFee: draft.codFee.toFixed(2), additionalCharge: draft.additionalCharge.toFixed(2), otherCharge: draft.otherCharge.toFixed(2) };
+  return { mode: draft.deliveryMode, address: draft.deliveryAddress ?? '', notes: draft.deliveryNotes ?? '', internalNotes: draft.internalNotes ?? '', shippingFee: draft.shippingFee.toFixed(2), codFee: draft.codFee.toFixed(2), additionalCharge: draft.additionalCharge.toFixed(2), additionalChargeDescription: draft.additionalChargeDescription ?? '', otherCharge: draft.otherCharge.toFixed(2), otherChargeDescription: draft.otherChargeDescription ?? '' };
 }
 
 function validChargeInputs(value: PosDeliveryState) {
-  return [value.shippingFee, value.codFee, value.additionalCharge, value.otherCharge].every((raw) => {
+  const validAmounts = [value.shippingFee, value.codFee, value.additionalCharge, value.otherCharge].every((raw) => {
     if (!raw.trim()) return true;
     const amount = Number(raw);
     return Number.isFinite(amount) && amount >= 0 && amount <= 999_999_999_999.99 && /^\d+(?:\.\d{0,2})?$/.test(raw.trim());
   });
+  const descriptionValid = (amount: string, description: string) => Number(amount || 0) <= 0
+    || (description.trim().length >= 2 && description.trim().length <= 120 && !/[<>\r\n\t]/.test(description));
+  return validAmounts
+    && descriptionValid(value.additionalCharge, value.additionalChargeDescription)
+    && descriptionValid(value.otherCharge, value.otherChargeDescription);
 }
 
 type WorkspaceDialog =
@@ -75,7 +80,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const applyDraft = useCallback((next: PosSaleDraft, recoveredMessage = "") => {
     if (next.status !== "active") {
       window.sessionStorage.removeItem(storedDraftKey);
-      setDraft(null); setItems([]); setDelivery(emptyDelivery); setStatus("error"); setMessage("El borrador ya no esta activo.");
+      setDraft(null); setItems([]); setDelivery(emptyDelivery); setStatus("error"); setMessage("El borrador ya no está activo.");
       return;
     }
     dirtyRef.current = false; setIsDirty(false); pendingSaveKeyRef.current = null;
@@ -187,7 +192,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
 
   const saveDraft = useCallback(async () => {
     if (!draft || !customer || !dirtyRef.current || savingRef.current || operationLockRef.current) return;
-    if (!validChargeInputs(delivery)) { setStatus('error'); setMessage('Corrija los cargos: deben ser montos no negativos con maximo dos decimales.'); return; }
+    if (!validChargeInputs(delivery)) { setStatus('error'); setMessage('Corrija los cargos: deben ser montos no negativos con máximo dos decimales.'); return; }
     if (!navigator.onLine) { setStatus("offline"); return; }
     savingRef.current = true; setStatus("saving");
     const savingRevision = changeRevisionRef.current;
@@ -199,7 +204,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
         body: JSON.stringify({ requestKey, expectedVersion: draft.version, customerId: customer.customerId, expectedCustomerCommercialVersion: customer.commercialVersion,
           items: items.map((item) => ({ productId: item.productId, quantity: item.quantity, finalUnitPrice: item.priceOverridden ? item.finalUnitPrice : null, priceOverrideReason: item.priceOverridden ? item.priceOverrideReason : null, expectedProductSalesVersion: item.productSalesVersion })),
           deliveryMode: delivery.mode, deliveryAddress: delivery.address || null, deliveryNotes: delivery.notes || null, internalNotes: delivery.internalNotes || null,
-          shippingFee: Number(delivery.shippingFee || 0), codFee: Number(delivery.codFee || 0), additionalCharge: Number(delivery.additionalCharge || 0), otherCharge: Number(delivery.otherCharge || 0) }),
+          shippingFee: Number(delivery.shippingFee || 0), codFee: Number(delivery.codFee || 0), additionalCharge: Number(delivery.additionalCharge || 0), additionalChargeDescription: delivery.additionalChargeDescription.trim() || null, otherCharge: Number(delivery.otherCharge || 0), otherChargeDescription: delivery.otherChargeDescription.trim() || null }),
       }));
       pendingSaveKeyRef.current = null;
       if (changeRevisionRef.current === savingRevision) {
@@ -321,32 +326,36 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   }, { merchandise: 0, taxable: 0, taxableBase: 0, tax: 0, exempt: 0 }), [items]);
   const compatibleCustomer = Boolean(customer && draft?.customerId === customer.customerId && draft.customerCommercialVersion === customer.commercialVersion);
   const cartUnits = items.reduce((sum, item) => sum + item.quantity, 0);
+  const cartUnitsLabel = `${cartUnits} ${cartUnits === 1 ? "unidad" : "unidades"}`;
   const provisionalCharges = Math.round(([delivery.shippingFee, delivery.codFee, delivery.additionalCharge, delivery.otherCharge]
     .reduce((sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0)) * 100) / 100;
   const provisionalTotal = Math.round((provisional.merchandise + provisionalCharges) * 100) / 100;
 
   return <div className="min-w-0 space-y-4 pb-20 lg:pb-0">
-    <section className="rounded-xl border border-black/10 bg-gradient-to-r from-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">Nueva venta</p><h1 className="text-2xl font-semibold">Prepare y facture una venta</h1><p className="mt-1 text-sm text-black/60">Agregue productos, revise los totales y seleccione el método de pago.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => requestOpenDraft(draft.draftId, "Se cargó la información más reciente. Revísela antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => setWorkspaceDialog({ kind: "abandon" })} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/15 bg-white px-3 text-sm font-semibold"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
+    <section className="rounded-2xl border border-red-100 bg-gradient-to-r from-white via-white to-red-50 p-4 shadow-sm sm:p-5"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="text-sm font-semibold text-[#e4252c]">Nueva venta</p><h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Prepare y facture una venta</h1><p className="mt-1 max-w-2xl text-sm leading-6 text-black/60">Agregue productos, revise los totales y seleccione el método de pago.</p></div><div className="flex flex-wrap items-center gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => requestOpenDraft(draft.draftId, "Se cargó la información más reciente. Revísela antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => setWorkspaceDialog({ kind: "abandon" })} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-sm font-semibold text-red-700"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
 
-    <PosCustomerWorkspace selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
     <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => requestOpenDraft(draftId)} />
 
-    {!draft ? <section className="rounded-xl border border-dashed border-black/15 bg-white p-6 text-center"><h2 className="font-semibold">Seleccione un cliente para comenzar</h2><p className="mt-1 text-sm text-black/55">Los precios y condiciones comerciales se cargarán automáticamente.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
-      : confirmedResult && customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} />
+    {!draft ? <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)]">
+      <PosCustomerWorkspace selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
+      <section className="rounded-xl border border-dashed border-black/15 bg-white p-8 text-center xl:sticky xl:top-4"><ShoppingCart className="mx-auto text-black/25" size={38} /><h2 className="mt-3 font-semibold">Seleccione un cliente para comenzar</h2><p className="mt-1 text-sm text-black/55">Los precios y condiciones comerciales se cargarán automáticamente.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
+    </div>
+      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /></div>
       : <>
-        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]">
+        <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.3fr)] 2xl:grid-cols-[minmax(380px,0.9fr)_minmax(580px,1.4fr)_minmax(380px,0.9fr)]">
+          <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /></div>
           <div className="min-w-0 space-y-4">
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
+            <PosCart items={items} onChange={markItems} onClear={() => markItems([])} />
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
-          <div ref={cartPanelRef} className="min-w-0 scroll-mt-4 space-y-4">
-            <div className="lg:min-h-72 lg:max-h-[85vh] lg:overflow-y-auto lg:overscroll-contain lg:rounded-xl"><PosCart items={items} onChange={markItems} onClear={() => markItems([])} /></div>
-            <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} otherCharge={Number(delivery.otherCharge) || 0} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
+          <div ref={cartPanelRef} className="min-w-0 scroll-mt-4 space-y-4 xl:col-span-2 xl:grid xl:grid-cols-2 xl:gap-4 xl:space-y-0 2xl:sticky 2xl:top-4 2xl:col-span-1 2xl:block 2xl:space-y-4">
+            <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} additionalChargeDescription={delivery.additionalChargeDescription} otherCharge={Number(delivery.otherCharge) || 0} otherChargeDescription={delivery.otherChargeDescription} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
             {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : null}
           </div>
         </div>
-        <button type="button" onClick={() => cartPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="fixed inset-x-4 bottom-4 z-40 flex min-h-12 items-center justify-between rounded-xl bg-black px-4 text-sm font-semibold text-white shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c] lg:hidden" aria-label={`Ver carrito, ${cartUnits} unidades, total ${formatCurrency(provisionalTotal)}`}>
-          <span className="inline-flex items-center gap-2"><ShoppingCart size={19} /> Ver carrito ({cartUnits})</span>
+        <button type="button" onClick={() => cartPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="fixed inset-x-4 bottom-4 z-40 flex min-h-12 items-center justify-between rounded-xl bg-black px-4 text-sm font-semibold text-white shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c] lg:hidden" aria-label={`Revisar total de ${cartUnitsLabel}: ${formatCurrency(provisionalTotal)}`}>
+          <span className="inline-flex items-center gap-2"><ShoppingCart size={19} /> Revisar total ({cartUnits})</span>
           <span>{formatCurrency(provisionalTotal)}</span>
         </button>
       </>}

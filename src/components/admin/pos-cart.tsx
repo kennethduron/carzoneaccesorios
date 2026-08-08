@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, useState } from "react";
-import { BadgeDollarSign, Minus, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { BadgeDollarSign, Minus, Package, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import { PriceOverrideDialog } from "@/components/admin/price-override-dialog";
 import { isPosDraftItemStockInsufficient } from "@/lib/pos/inventory-mode";
@@ -121,7 +122,10 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
       const insufficient = isPosDraftItemStockInsufficient(item);
       const maximum = getPosMaximumQuantity(item);
       return <article key={item.productId} data-testid="pos-cart-line" className={`rounded-lg border p-2 ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>
-        <div className="flex items-start justify-between gap-3">
+        <div className="grid grid-cols-[56px_minmax(0,1fr)_44px] items-start gap-3">
+          <div className="relative flex size-14 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-black/25">
+            {item.imageUrl ? <Image src={item.imageUrl} alt="" fill sizes="56px" className="object-contain p-1" /> : <Package aria-hidden="true" size={24} />}
+          </div>
           <div className="min-w-0"><h3 className="truncate font-semibold">{item.productName}</h3><p className="truncate text-xs text-black/50">{[item.sku, item.internalCode].filter(Boolean).join(" · ")} · {item.taxCategory === "exempt" ? "Exento" : "ISV incluido"}</p></div>
           <button type="button" aria-label={`Eliminar ${item.productName}`} title="Quitar producto" onClick={() => setPendingRemoval({ kind: "line", item, index })} className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]"><Trash2 size={18} /></button>
         </div>

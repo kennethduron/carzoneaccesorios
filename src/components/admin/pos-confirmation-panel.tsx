@@ -9,6 +9,7 @@ import type {
   PosPaymentMethod,
   PosSaleDraft,
 } from "@/types/point-of-sale";
+import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
 
 type Props = {
@@ -49,13 +50,20 @@ export function printPosReceipt(
     ? ""
     : `<p><strong>Monto recibido:</strong> ${formatCurrency(result.amountTendered)}</p>`;
   const items = draft.items.map((item) => `<div class="item"><div>${escapeReceiptText(item.productName)}</div><div class="row"><span>${item.quantity} x ${formatCurrency(item.finalUnitPrice)}</span><strong>${formatCurrency(item.lineMerchandiseGross)}</strong></div></div>`).join("");
+  const charges = [
+    { label: "Entrega", amount: draft.shippingFee },
+    { label: "Contra entrega", amount: draft.codFee },
+    { label: draft.additionalChargeDescription || "Cargo adicional", amount: draft.additionalCharge },
+    { label: draft.otherChargeDescription || "Otro cargo", amount: draft.otherCharge },
+  ].filter((charge) => charge.amount > 0).map((charge) => `<div class="row"><span>${escapeReceiptText(charge.label)}</span><span>${formatCurrency(charge.amount)}</span></div>`).join("");
   const orderNumber = escapeReceiptText(result.orderNumber);
   const invoiceNumber = escapeReceiptText(result.invoiceNumber);
   const safeCustomerName = escapeReceiptText(customerName);
   const safeOperatorName = escapeReceiptText(operatorName);
+  const paymentMethod = escapeReceiptText(paymentMethodLabel(result.paymentMethod));
   popup.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Recibo ${orderNumber}</title><style>
     @page{size:80mm auto;margin:5mm}body{font-family:ui-monospace,monospace;max-width:70mm;margin:auto;color:#111}h1,h2,p{text-align:center}hr{border:0;border-top:1px dashed #555}.row{display:flex;justify-content:space-between;gap:8px}.item{margin:8px 0}button{width:100%;padding:12px;margin-top:16px}@media print{button{display:none}}
-  </style></head><body><h1>Car Zone Accesorios</h1><p>Recibo POS</p><hr><p><strong>Pedido:</strong> ${orderNumber}</p><p><strong>Factura:</strong> ${invoiceNumber}</p><p><strong>Fecha:</strong> ${escapeReceiptText(result.invoiceDate)}</p><p><strong>Cliente:</strong> ${safeCustomerName}</p><p><strong>Usuario responsable:</strong> ${safeOperatorName}</p><hr>${items}<hr><div class="row"><span>Gravado</span><span>${formatCurrency(draft.taxableGross)}</span></div><div class="row"><span>Exento</span><span>${formatCurrency(draft.exemptGross)}</span></div><div class="row"><span>ISV incluido</span><span>${formatCurrency(draft.taxAmount)}</span></div><div class="row"><strong>Total</strong><strong>${formatCurrency(result.total)}</strong></div><p><strong>Metodo:</strong> ${escapeReceiptText(result.paymentMethod)}</p>${amountTendered}${change}<p>${escapeReceiptText(result.receiptReference)}</p><hr><p>Gracias por su compra.</p><button onclick="window.print()">Imprimir</button></body></html>`);
+  </style></head><body><h1>Car Zone Accesorios</h1><p>Recibo POS</p><hr><p><strong>Pedido:</strong> ${orderNumber}</p><p><strong>Factura:</strong> ${invoiceNumber}</p><p><strong>Fecha:</strong> ${escapeReceiptText(result.invoiceDate)}</p><p><strong>Cliente:</strong> ${safeCustomerName}</p><p><strong>Usuario responsable:</strong> ${safeOperatorName}</p><hr>${items}<hr><div class="row"><span>Gravado</span><span>${formatCurrency(draft.taxableGross)}</span></div><div class="row"><span>Exento</span><span>${formatCurrency(draft.exemptGross)}</span></div><div class="row"><span>ISV incluido</span><span>${formatCurrency(draft.taxAmount)}</span></div>${charges}<div class="row"><strong>Total</strong><strong>${formatCurrency(result.total)}</strong></div><p><strong>Método:</strong> ${paymentMethod}</p>${amountTendered}${change}<p>${escapeReceiptText(result.receiptReference)}</p><hr><p>Gracias por su compra.</p><button onclick="window.print()">Imprimir</button></body></html>`);
   popup.document.close();
 }
 
@@ -129,7 +137,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
         <dt>Cliente</dt><dd className="text-right font-semibold">{customer.displayName}</dd>
         <dt>Fecha de factura</dt><dd className="text-right font-semibold">{result.invoiceDate}</dd>
         <dt>Total</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd>
-        <dt>Método</dt><dd className="text-right font-semibold">{result.paymentMethod}</dd>
+        <dt>Método</dt><dd className="text-right font-semibold">{paymentMethodLabel(result.paymentMethod)}</dd>
         {result.paymentId ? <><dt>Pago registrado</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd></> : null}
         {result.receivableId ? <><dt>Saldo CxC</dt><dd className="text-right font-semibold">{formatCurrency(result.total)}</dd></> : null}
         {result.amountTendered !== null ? <><dt>Recibido</dt><dd className="text-right font-semibold">{formatCurrency(result.amountTendered)}</dd></> : null}
@@ -153,11 +161,11 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
     <div className="flex items-center gap-2"><CreditCard size={19} className="text-[#e4252c]" /><h2 className="font-semibold">Confirmar venta</h2></div>
     <p className="mt-1 text-xs text-black/55">Revise la información antes de confirmar. Al continuar se generarán el pedido y la factura.</p>
     <label className="mt-4 block text-sm font-medium">Fecha de factura<input type="date" value={invoiceDate} max={hondurasDate()} onChange={(event) => { setInvoiceDate(event.target.value); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3" /></label>
-    <label className="mt-3 block text-sm font-medium">Metodo de pago<select value={method} onChange={(event) => { setMethod(event.target.value as PosPaymentMethod); setVerified(false); setReference(""); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3"><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia bancaria</option><option value="card">Tarjeta</option><option value="commercial_credit">Credito comercial</option></select></label>
+    <label className="mt-3 block text-sm font-medium">Método de pago<select value={method} onChange={(event) => { setMethod(event.target.value as PosPaymentMethod); setVerified(false); setReference(""); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3"><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia bancaria</option><option value="card">Tarjeta</option><option value="commercial_credit">Crédito comercial</option></select></label>
     {method === "cash" ? <><label className="mt-3 block text-sm font-medium">Efectivo recibido<input inputMode="decimal" value={amountTendered} onChange={(event) => { setAmountTendered(event.target.value); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3" /></label><div className="mt-2 flex justify-between rounded-lg bg-black/[0.04] p-3 text-sm"><span>Cambio estimado</span><strong className={cashChange < 0 ? "text-red-700" : ""}>{formatCurrency(Math.max(0, cashChange))}</strong></div></> : null}
     {method === "bank_transfer" || method === "card" ? <div className="mt-3 space-y-3"><label className="block text-sm font-medium">Referencia {method === "card" ? "(opcional)" : ""}<input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3" /></label><label className="flex min-h-11 items-center gap-2 rounded-lg border border-black/10 px-3 text-sm"><input type="checkbox" checked={verified} onChange={(event) => { setVerified(event.target.checked); requestKey.current = null; }} /> Pago verificado por el operador</label></div> : null}
     {method === "commercial_credit" ? <div className={`mt-3 rounded-lg p-3 text-sm ${creditAllowed ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}><p>Disponible: <strong>{formatCurrency(customer.credit.availableCredit)}</strong></p><p>{creditAllowed ? "El crédito disponible se verificará nuevamente al confirmar." : customer.credit.reason}</p></div> : null}
-    <label className="mt-4 flex items-start gap-2 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1" /><span>Revise cliente, productos, precios, impuestos, fecha y metodo. Confirmar genera efectos economicos definitivos.</span></label>
+    <label className="mt-4 flex min-h-11 items-center gap-3 rounded-lg px-1 py-2 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="size-5 shrink-0" /><span>Revise cliente, productos, precios, impuestos, fecha y método. Confirmar genera efectos económicos definitivos.</span></label>
     {message ? <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{message}</p> : null}
     <button type="button" disabled={disabled || pending || !accepted || !paymentReady || !invoiceDate} onClick={() => void confirm()} className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={19} /> : <CheckCircle2 size={19} />} Confirmar venta por {formatCurrency(draft.grandTotal)}</button>
   </section>;
