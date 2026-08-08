@@ -30,6 +30,7 @@ import type {
 } from "@/types/point-of-sale";
 import { formatCurrency } from "@/utils/pricing";
 import { posCustomerMatchLabel, posSourceLabel } from "@/utils/pos-presentation-labels";
+import styles from "./pos-customer-workspace.module.css";
 
 type CustomerForm = {
   contactName: string;
@@ -551,7 +552,6 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           {!contextLoading && panelMode === "closed" && visibleContext ? (
             <CustomerContextPanel
               context={visibleContext}
-              compact={compact}
               message={formMessage}
               onEdit={openEdit}
               onClear={clearSelection}
@@ -704,29 +704,31 @@ function CustomerFormPanel({
   );
 }
 
-function CustomerContextPanel({
+export function CustomerContextPanel({
   context,
-  compact,
   message,
   onEdit,
   onClear,
 }: {
   context: PosCustomerContext;
-  compact: boolean;
   message: string;
   onEdit: () => void;
   onClear: () => void;
 }) {
   return (
-    <div>
-      <div className={`flex flex-col gap-3 ${compact ? "" : "sm:flex-row sm:items-start sm:justify-between"}`}>
+    <div data-testid="pos-customer-context" className={styles.context}>
+      <div className={styles.header}>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#e4252c]">Cliente seleccionado</p>
-          <h2 className="mt-1 break-words text-2xl font-semibold">{context.displayName}</h2>
-          <p className="mt-1 break-words text-sm text-black/55">{[context.businessName, context.phone, context.email].filter(Boolean).join(" · ")}</p>
+          <h2 data-testid="pos-customer-name" className="mt-1 break-normal text-2xl font-semibold [overflow-wrap:break-word]">{context.displayName}</h2>
+          <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-sm text-black/55">
+            {context.businessName ? <span className="min-w-0 [overflow-wrap:break-word]">{context.businessName}</span> : null}
+            {context.phone ? <span className="whitespace-nowrap">{context.phone}</span> : null}
+            {context.email ? <span data-testid="pos-customer-email" className="min-w-0 [overflow-wrap:anywhere]">{context.email}</span> : null}
+          </div>
         </div>
-        <div className={`flex gap-2 ${compact ? "flex-wrap" : "shrink-0"}`}>
-          <button type="button" onClick={onEdit} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c] ${compact ? "min-w-0 flex-1" : ""}`}><Pencil size={16} /> Editar configuración comercial</button>
+        <div className={styles.actions}>
+          <button type="button" onClick={onEdit} className={`${styles.editAction} inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 px-3 py-2 text-sm font-semibold hover:border-[#e4252c] hover:text-[#e4252c]`}><Pencil size={16} /> Editar configuración comercial</button>
           <button type="button" onClick={onClear} aria-label="Quitar cliente seleccionado" title="Quitar cliente" className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-black/15 hover:border-[#e4252c] hover:text-[#e4252c]"><X size={17} /></button>
         </div>
       </div>
@@ -737,7 +739,7 @@ function CustomerContextPanel({
       </div>
       <p className="mt-3 rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-6 text-black/65">{context.pricingReason}</p>
 
-      <div className={compact ? "mt-4 grid gap-3" : "mt-4 grid gap-3 md:grid-cols-2"}>
+      <div className={styles.commercialGrid}>
         <InfoCard icon={Link2} title="Portal" value={context.hasPortalAccount ? "Cuenta de portal vinculada" : "Sin cuenta de portal"} detail="Crear el perfil no habilita acceso al portal ni envía invitaciones.">
           {!context.hasPortalAccount ? <Link href="/admin/vincular-cuenta-cliente" className="mt-3 inline-flex min-h-11 items-center text-sm font-semibold text-[#e4252c] hover:underline">Abrir vinculación administrativa</Link> : null}
         </InfoCard>
@@ -759,11 +761,11 @@ function FormField({ label, wide = false, children }: { label: string; wide?: bo
 }
 
 function InfoCard({ icon: Icon, title, value, detail, children }: { icon: React.ComponentType<{ size?: number; className?: string }>; title: string; value: string; detail: string; children?: React.ReactNode }) {
-  return <div className="min-w-0 rounded-xl border border-black/10 p-4"><div className="flex items-start gap-3"><span className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#e4252c]"><Icon size={19} /></span><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-wide text-black/45">{title}</p><p className="mt-1 break-words font-semibold">{value}</p><p className="mt-1 text-sm leading-5 text-black/55">{detail}</p></div></div>{children}</div>;
+  return <div data-testid="pos-customer-info-card" className="min-w-0 rounded-xl border border-black/10 p-4"><div className="flex items-start gap-3"><span className="inline-flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#e4252c]"><Icon size={19} /></span><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-wide text-black/45">{title}</p><p className="mt-1 break-normal font-semibold [overflow-wrap:break-word]">{value}</p><p className="mt-1 break-normal text-sm leading-5 text-black/55 [overflow-wrap:break-word]">{detail}</p></div></div>{children}</div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-[#fafafa] p-2"><p className="text-black/45">{label}</p><p className="mt-1 break-words font-semibold text-black/75">{value}</p></div>;
+  return <div data-testid="pos-credit-metric" className="min-w-0 rounded-lg bg-[#fafafa] p-2"><p className="text-black/45">{label}</p><p className="mt-1 whitespace-nowrap font-semibold tabular-nums text-black/75">{value}</p></div>;
 }
 
 function FutureStageCard({ icon: Icon, title }: { icon: React.ComponentType<{ size?: number }>; title: string }) {

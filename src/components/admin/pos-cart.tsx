@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BadgeDollarSign, Minus, Package, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import { PriceOverrideDialog } from "@/components/admin/price-override-dialog";
@@ -9,6 +9,7 @@ import { isPosDraftItemStockInsufficient } from "@/lib/pos/inventory-mode";
 import { getPosMaximumQuantity, validatePosQuantity } from "@/lib/pos/cart-quantity";
 import type { PosDraftItem } from "@/types/pos-drafts";
 import { formatCurrency } from "@/utils/pricing";
+import styles from "./pos-cart.module.css";
 
 type PendingRemoval = { kind: "line"; item: PosDraftItem; index: number } | { kind: "clear" };
 
@@ -71,6 +72,8 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
   const [lastRemoved, setLastRemoved] = useState<{ item: PosDraftItem; index: number } | null>(null);
   const [cartMessage, setCartMessage] = useState("");
   const returnFocus = useRef<HTMLElement | null>(null);
+  const linesRef = useRef<HTMLDivElement | null>(null);
+  const previousLineCount = useRef(items.length);
   const update = (productId: string, values: Partial<PosDraftItem>) => onChange(items.map((item) => item.productId === productId ? { ...item, ...values } : item));
 
   const setQuantity = (item: PosDraftItem, requested: number) => {
@@ -109,8 +112,16 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
   };
   const unitCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
-  return <section className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="pos-cart-title">
-    <div className="flex items-center justify-between gap-3">
+  useEffect(() => {
+    const lines = linesRef.current;
+    if (lines && items.length > previousLineCount.current) {
+      lines.scrollTo({ top: lines.scrollHeight, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+    previousLineCount.current = items.length;
+  }, [items.length]);
+
+  return <section data-testid="pos-cart" className="min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm" aria-labelledby="pos-cart-title">
+    <div data-testid="pos-cart-header" className="flex items-center justify-between gap-3">
       <div>
         <p className="text-sm font-semibold text-[#e4252c]">Productos agregados</p>
         <h2 id="pos-cart-title" className="text-lg font-semibold">{items.length} línea{items.length === 1 ? "" : "s"} · {unitCount} unidad{unitCount === 1 ? "" : "es"}</h2>
@@ -118,7 +129,7 @@ export function PosCart({ items, onChange, onClear }: { items: PosDraftItem[]; o
       {items.length ? <button type="button" onClick={() => setPendingRemoval({ kind: "clear" })} className="min-h-11 rounded-lg border border-black/15 px-3 text-sm font-semibold hover:border-red-500 hover:text-red-700">Vaciar</button> : null}
     </div>
     {cartMessage ? <div className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status"><span>{cartMessage}</span>{lastRemoved ? <button type="button" onClick={undoRemove} className="min-h-11 shrink-0 font-semibold text-[#e4252c]">Deshacer</button> : null}</div> : null}
-    {!items.length ? <div className="mt-3 rounded-lg border border-dashed border-black/15 p-6 text-center"><p className="font-semibold">Aún no hay productos agregados</p><p className="mt-1 text-sm text-black/50">Busque un producto por nombre, SKU o código y agréguelo a la venta.</p></div> : <div className="mt-3 space-y-2" data-testid="pos-cart-lines">{items.map((item, index) => {
+    {!items.length ? <div className="mt-3 rounded-lg border border-dashed border-black/15 p-6 text-center"><p className="font-semibold">Aún no hay productos agregados</p><p className="mt-1 text-sm text-black/50">Busque un producto por nombre, SKU o código y agréguelo a la venta.</p></div> : <div ref={linesRef} role="region" aria-label="Lista desplazable de productos agregados" tabIndex={0} className={`mt-3 space-y-2 ${styles.lines}`} data-testid="pos-cart-lines">{items.map((item, index) => {
       const insufficient = isPosDraftItemStockInsufficient(item);
       const maximum = getPosMaximumQuantity(item);
       return <article key={item.productId} data-testid="pos-cart-line" className={`rounded-lg border p-2 ${insufficient ? "border-red-300 bg-red-50/30" : "border-black/10"}`}>

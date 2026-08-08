@@ -86,7 +86,9 @@ const [page, shell, workspace, customerWorkspace, cart, confirmation, service, m
 assert.match(page, /backHref="\/admin"/);
 assert.match(shell, /Volver al inicio/);
 assert.match(shell, /variant === "wide"/);
-assert.match(workspace, /2xl:grid-cols-\[minmax\(380px,0\.9fr\)_minmax\(580px,1\.4fr\)_minmax\(380px,0\.9fr\)\]/);
+assert.match(workspace, /POS_WORKSPACE_GRID_CLASS/);
+assert.match(cart, /pos-cart-lines/);
+assert.match(cart, /Lista desplazable de productos agregados/);
 assert.match(workspace, /Revisar total/);
 assert.match(cart, /<Image/);
 assert.match(cart, /min-h-11/);

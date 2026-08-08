@@ -10,6 +10,7 @@ import { PosCustomerWorkspace } from "@/components/admin/pos-customer-workspace"
 import { PosDeliveryFields, type PosDeliveryState } from "@/components/admin/pos-delivery-fields";
 import { PosDraftStatus, type PosSaveState } from "@/components/admin/pos-draft-status";
 import { PosDraftSummary } from "@/components/admin/pos-draft-summary";
+import { POS_SUMMARY_COLUMN_CLASS, POS_WORKSPACE_GRID_CLASS } from "@/components/admin/pos-layout";
 import { PosProductSearch } from "@/components/admin/pos-product-search";
 import { validatePosQuantity } from "@/lib/pos/cart-quantity";
 import type { PosConfirmationResult, PosCustomerContext } from "@/types/point-of-sale";
@@ -336,20 +337,20 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
 
     <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => requestOpenDraft(draftId)} />
 
-    {!draft ? <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)]">
-      <PosCustomerWorkspace selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
-      <section className="rounded-xl border border-dashed border-black/15 bg-white p-8 text-center xl:sticky xl:top-4"><ShoppingCart className="mx-auto text-black/25" size={38} /><h2 className="mt-3 font-semibold">Seleccione un cliente para comenzar</h2><p className="mt-1 text-sm text-black/55">Los precios y condiciones comerciales se cargarán automáticamente.</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
+    {!draft ? <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(380px,0.95fr)_minmax(420px,1.05fr)]">
+      <PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
+      <section className="rounded-xl border border-dashed border-black/15 bg-white p-8 text-center xl:sticky xl:top-4"><ShoppingCart className="mx-auto text-black/25" size={38} /><h2 className="mt-3 font-semibold">{customer ? "Cliente listo para preparar la venta" : "Seleccione un cliente para comenzar"}</h2><p className="mt-1 text-sm text-black/55">{customer ? "Revise la configuración comercial y continúe cuando esté listo." : "Los precios y condiciones comerciales se cargarán automáticamente."}</p><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
     </div>
       : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /></div>
       : <>
-        <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.3fr)] 2xl:grid-cols-[minmax(380px,0.9fr)_minmax(580px,1.4fr)_minmax(380px,0.9fr)]">
+        <div data-testid="pos-workspace-grid" className={POS_WORKSPACE_GRID_CLASS}>
           <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /></div>
           <div className="min-w-0 space-y-4">
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
             <PosCart items={items} onChange={markItems} onClear={() => markItems([])} />
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
-          <div ref={cartPanelRef} className="min-w-0 scroll-mt-4 space-y-4 xl:col-span-2 xl:grid xl:grid-cols-2 xl:gap-4 xl:space-y-0 2xl:sticky 2xl:top-4 2xl:col-span-1 2xl:block 2xl:space-y-4">
+          <div ref={cartPanelRef} className={POS_SUMMARY_COLUMN_CLASS}>
             <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} additionalChargeDescription={delivery.additionalChargeDescription} otherCharge={Number(delivery.otherCharge) || 0} otherChargeDescription={delivery.otherChargeDescription} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
             {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onNewSale={startNewSale} operatorName={operatorName} /> : null}
           </div>

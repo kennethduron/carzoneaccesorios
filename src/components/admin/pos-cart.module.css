@@ -1,0 +1,35 @@
+.lines {
+  max-height: 52dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scrollbar-color: rgb(228 37 44 / 0.72) rgb(231 229 228 / 0.9);
+  scrollbar-width: thin;
+}
+
+.lines:focus-visible {
+  border-radius: 0.5rem;
+  outline: 2px solid rgb(228 37 44 / 0.75);
+  outline-offset: 3px;
+}
+
+.lines::-webkit-scrollbar {
+  width: 0.55rem;
+}
+
+.lines::-webkit-scrollbar-track {
+  background: rgb(231 229 228 / 0.9);
+  border-radius: 999px;
+}
+
+.lines::-webkit-scrollbar-thumb {
+  background: rgb(228 37 44 / 0.72);
+  border: 2px solid rgb(231 229 228 / 0.9);
+  border-radius: 999px;
+}
+
+@media (min-width: 768px) {
+  .lines {
+    max-height: clamp(42rem, 82vh, 46rem);
+  }
+}

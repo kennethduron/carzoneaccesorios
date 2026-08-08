@@ -47,6 +47,7 @@
     "test:pos-stage-6:validation": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-pos-stage-6-validation.mjs",
     "test:pos-stage-6:local": "node scripts/test-pos-stage-6-local.mjs",
     "test:pos-professional-ui": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-pos-professional-ui.mjs",
+    "test:pos-layout": "node scripts/test-pos-layout-contract.mjs && node scripts/test-pos-layout-browser.mjs",
     "test:portal-customer-sync": "node scripts/test-portal-customer-profile-sync.mjs",
     "test:portal-customer-sync:local": "node scripts/test-portal-customer-profile-sync-local.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
