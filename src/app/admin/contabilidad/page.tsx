@@ -114,7 +114,7 @@ export default async function AdminAccountingPage({
           </div>
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
             {canReadTaxReport ? (
-              <Link href="/admin/contabilidad/impuestos" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#c91d24]">
+              <Link href="/admin/contabilidad/impuestos" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#c91d24] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2">
                 <ReceiptText size={18} /> Reporte de impuestos
               </Link>
             ) : null}
