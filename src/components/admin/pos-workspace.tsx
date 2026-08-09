@@ -14,6 +14,7 @@ import { POS_OPERATIONAL_COLUMN_CLASS, POS_PRODUCT_COLUMN_CLASS, POS_SUMMARY_COL
 import { PosMobileTotalBar } from "@/components/admin/pos-mobile-total-bar";
 import { PosProductSearch } from "@/components/admin/pos-product-search";
 import { PosProductReservationsDialog } from "@/components/admin/pos-product-reservations-dialog";
+import { resolvePosCustomerDeliveryAddress, resolvePosCustomerSelectionDeliveryAddress } from "@/lib/pos/customer-delivery-address";
 import { applyPosInventorySnapshotsToItems } from "@/lib/pos/inventory-mode";
 import { validatePosQuantity } from "@/lib/pos/cart-quantity";
 import type { PosConfirmationResult, PosCustomerContext, PosInventoryConflict, PosInventorySnapshot } from "@/types/point-of-sale";
@@ -81,6 +82,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const pendingAbandonKeyRef = useRef<string | null>(null);
   const changeRevisionRef = useRef(0);
   const draftRequestRevisionRef = useRef(0);
+  const selectedCustomerIdRef = useRef<string | null>(null);
   const operationLockRef = useRef(false);
   const cartPanelRef = useRef<HTMLDivElement | null>(null);
   const itemsRef = useRef<PosDraftItem[]>([]);
@@ -90,11 +92,13 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
   const applyDraft = useCallback((next: PosSaleDraft, recoveredMessage = "") => {
     if (next.status !== "active") {
       window.sessionStorage.removeItem(storedDraftKey);
+      selectedCustomerIdRef.current = null;
       setDraft(null); setItems([]); setDelivery(emptyDelivery); setStatus("error"); setMessage("El borrador ya no está activo.");
       return;
     }
     dirtyRef.current = false; setIsDirty(false); pendingSaveKeyRef.current = null;
     changeRevisionRef.current = 0;
+    selectedCustomerIdRef.current = next.customerId;
     setDraft(next); setItems(next.items); setDelivery(draftDelivery(next));
     setCustomer((current) => next.customerId === current?.customerId && next.customerCommercialVersion === current.commercialVersion ? current : null);
     setConfirmedResult(null);
@@ -120,6 +124,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
         const confirmation = await jsonResponse<PosConfirmationResult>(await fetch(`/api/admin/pos/drafts/${draftId}/confirm`, { headers: { Accept: "application/json" }, cache: "no-store" }));
         if (requestRevision !== draftRequestRevisionRef.current) return;
         dirtyRef.current = false; setIsDirty(false); setDraft(recovered); setItems(recovered.items);
+        selectedCustomerIdRef.current = recovered.customerId;
         setDelivery(draftDelivery(recovered)); setSelectedCustomerId(recovered.customerId);
         setConfirmedResult(confirmation); setStatus("saved"); setMessage("Venta confirmada recuperada.");
         window.sessionStorage.removeItem(storedDraftKey);
@@ -181,8 +186,10 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     if (!next) {
       if (!draft) {
         draftRequestRevisionRef.current += 1;
+        selectedCustomerIdRef.current = null;
         setCustomer(null);
         setSelectedCustomerId(null);
+        setDelivery(emptyDelivery);
         setMessage("");
         return;
       }
@@ -197,6 +204,16 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       changeRevisionRef.current += 1;
       setMessage("Las condiciones comerciales cambiaron. Revise los productos y precios antes de continuar.");
     }
+    setDelivery((current) => ({
+      ...current,
+      address: resolvePosCustomerSelectionDeliveryAddress({
+        currentAddress: current.address,
+        currentCustomerId: selectedCustomerIdRef.current,
+        nextCustomer: next,
+        hasDraft: Boolean(draft),
+      }),
+    }));
+    selectedCustomerIdRef.current = next.customerId;
     setCustomer(next); setSelectedCustomerId(next.customerId);
   }, [draft]);
 
@@ -205,7 +222,16 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     setCreating(true); setMessage("");
     try {
       const created = await jsonResponse<PosSaleDraft>(await fetch("/api/admin/pos/drafts", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ requestKey: crypto.randomUUID(), customerId: customer.customerId }) }));
-      applyDraft(created, "Venta en preparación creada."); await loadActiveDrafts();
+      applyDraft(created, "Venta en preparación creada.");
+      const address = resolvePosCustomerDeliveryAddress(customer);
+      if (address) {
+        setDelivery({ ...draftDelivery(created), address });
+        changeRevisionRef.current += 1;
+        dirtyRef.current = true;
+        setIsDirty(true);
+        setStatus(navigator.onLine ? "dirty" : "offline");
+      }
+      await loadActiveDrafts();
     } catch (error) { setStatus("error"); setMessage(error instanceof Error ? error.message : "No se pudo crear el borrador."); }
     finally { setCreating(false); }
   }
@@ -369,10 +395,12 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       setIsDirty(false);
       setDraft(null);
       setItems([]);
-      setDelivery(emptyDelivery);
+      const nextAddress = nextCustomer ? resolvePosCustomerDeliveryAddress(nextCustomer) : "";
+      setDelivery({ ...emptyDelivery, address: nextAddress });
       setStatus("idle");
       setMessage("La venta en preparación fue descartada.");
       if (workspaceDialog?.kind === "change-customer") {
+        selectedCustomerIdRef.current = nextCustomer?.customerId ?? null;
         setCustomer(nextCustomer ?? null);
         setSelectedCustomerId(nextCustomer?.customerId ?? null);
       }
@@ -401,6 +429,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
     setDraft(null);
     setConfirmedResult(null);
     setCustomer(null);
+    selectedCustomerIdRef.current = null;
     setSelectedCustomerId(null);
     setItems([]);
     setDelivery(emptyDelivery);

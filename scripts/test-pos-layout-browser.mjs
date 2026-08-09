@@ -313,6 +313,13 @@ try {
   assert.ok(await evaluate("document.querySelector('[data-testid=pos-cart-lines]').scrollTop > 0"), "PageDown desplaza la lista interna enfocada");
 
   await navigate(392, 608, 10);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value`), "Dirección sintética local", "cliente con address inicia prepopulado");
+  await evaluate(`document.querySelector('[data-testid=select-customer-city]').click()`);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value`), "La Ceiba", "cliente solo city usa fallback");
+  await evaluate(`document.querySelector('[data-testid=select-customer-empty]').click()`);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value`), "", "cliente sin address/city limpia el valor anterior");
+  await evaluate(`document.querySelector('[data-testid=select-customer-address]').click()`);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value`), "Dirección sintética local", "cambiar de cliente repone su address");
   await evaluate(`(() => {
     const disclosure = document.querySelector('[data-testid=pos-delivery-disclosure]');
     disclosure.open = true;
@@ -329,6 +336,18 @@ try {
     disclosure.open = true;
     return disclosure.querySelector('input[placeholder^="Direcci"]').value;
   })()`), "Dirección persistente local", "colapsar entrega no pierde datos editados");
+  await evaluate(`document.querySelector('[data-testid=select-customer-address]').click()`);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value`), "Dirección persistente local", "refetch lógico del mismo cliente conserva override manual");
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.getAttribute('autocomplete')`), "shipping street-address", "dirección expone autocomplete estándar");
+  await evaluate(`(() => {
+    const input = document.querySelector('input[placeholder^="Direcci"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'D'.repeat(500));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  assert.equal(await evaluate(`document.querySelector('input[placeholder^="Direcci"]')?.value.length`), 500, "dirección POS admite 500 caracteres");
+  assert.equal(await evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth + 1`), false, "dirección de 500 caracteres no causa overflow global");
 
   await evaluate(`document.querySelector('[data-testid=pos-commercial-details] summary').focus(); true`);
   await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });

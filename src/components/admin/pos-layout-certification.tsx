@@ -10,6 +10,7 @@ import { PosDraftSummary } from "@/components/admin/pos-draft-summary";
 import { POS_OPERATIONAL_COLUMN_CLASS, POS_PRODUCT_COLUMN_CLASS, POS_SUMMARY_COLUMN_CLASS, POS_WORKSPACE_GRID_CLASS } from "@/components/admin/pos-layout";
 import { PosMobileTotalBar } from "@/components/admin/pos-mobile-total-bar";
 import { PosProductReservationsDialog } from "@/components/admin/pos-product-reservations-dialog";
+import { resolvePosCustomerSelectionDeliveryAddress } from "@/lib/pos/customer-delivery-address";
 import type { PosChargeCapabilities, PosCustomerContext, PosDraftItem, PosSaleDraft } from "@/types/point-of-sale";
 
 const certificationCustomer: PosCustomerContext = {
@@ -43,8 +44,20 @@ const capabilities: PosChargeCapabilities = {
   externalChargeEnabled: true, otherChargeEnabled: true, disabledReason: "",
 };
 
+const certificationCityOnlyCustomer = {
+  customerId: "00000000-0000-4000-8000-000000000002",
+  address: null,
+  city: "La Ceiba",
+};
+
+const certificationEmptyCustomer = {
+  customerId: "00000000-0000-4000-8000-000000000003",
+  address: null,
+  city: null,
+};
+
 const initialDelivery: PosDeliveryState = {
-  mode: "home_delivery", address: "Dirección local sintética", notes: "", internalNotes: "",
+  mode: "home_delivery", address: "Dirección sintética local", notes: "", internalNotes: "",
   shippingFee: "60.00", codFee: "0.00", additionalCharge: "0.00",
   additionalChargeDescription: "", otherCharge: "0.00", otherChargeDescription: "",
 };
@@ -71,6 +84,7 @@ function certificationItems(count: number): PosDraftItem[] {
 export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
   const [items, setItems] = useState(() => certificationItems(itemCount));
   const [delivery, setDelivery] = useState(initialDelivery);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(certificationCustomer.customerId);
   const [reservationItem, setReservationItem] = useState<PosDraftItem | null>(null);
   const summaryRef = useRef<HTMLDivElement | null>(null);
   const merchandise = items.reduce((sum, item) => sum + item.quantity * item.finalUnitPrice, 0);
@@ -89,6 +103,19 @@ export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
     expiresAt: "2026-08-09T12:00:00.000Z", createdAt: "2026-08-08T12:00:00.000Z", updatedAt: "2026-08-08T12:00:00.000Z", items,
   }), [delivery, items, merchandise, taxableBase, tax, total]);
 
+  function selectCustomerLocation(nextCustomer: { customerId: string; address: string | null; city: string | null }) {
+    setDelivery((current) => ({
+      ...current,
+      address: resolvePosCustomerSelectionDeliveryAddress({
+        currentAddress: current.address,
+        currentCustomerId: selectedCustomerId,
+        nextCustomer,
+        hasDraft: false,
+      }),
+    }));
+    setSelectedCustomerId(nextCustomer.customerId);
+  }
+
   return <div className="space-y-3 pb-24 min-[800px]:pb-0">
     <section data-testid="pos-sale-toolbar" className="rounded-xl border border-black/10 bg-white p-3 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#e4252c]"><PlusCircle size={20} /></span><div><h2 className="font-semibold text-[#e4252c]">Nueva venta</h2><p className="text-sm text-black/55">Agregue productos, revise los totales y seleccione el método de pago.</p></div></div><span className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-sm font-semibold text-slate-700">Sin cambios</span></div></section>
     <div data-testid="pos-layout-certification" className={POS_WORKSPACE_GRID_CLASS}>
@@ -96,6 +123,11 @@ export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
         <section className="min-w-0 rounded-xl border border-black/10 bg-white p-3 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3"><h2 className="font-semibold">Cliente</h2><button type="button" className="min-h-11 rounded-lg border border-red-200 px-3 text-sm font-semibold text-red-700">Nuevo cliente</button></div>
           <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-3 text-black/40" size={18} /><input aria-label="Buscar cliente" placeholder="Buscar cliente" className="min-h-11 w-full rounded-lg border border-black/15 pl-10 pr-3" /></div>
+          <div data-testid="pos-address-prefill-controls" className="mb-3 flex flex-wrap gap-2">
+            <button type="button" data-testid="select-customer-address" onClick={() => selectCustomerLocation(certificationCustomer)} className="min-h-11 rounded-lg border border-black/15 px-3 text-xs font-semibold">Cliente con dirección</button>
+            <button type="button" data-testid="select-customer-city" onClick={() => selectCustomerLocation(certificationCityOnlyCustomer)} className="min-h-11 rounded-lg border border-black/15 px-3 text-xs font-semibold">Cliente solo ciudad</button>
+            <button type="button" data-testid="select-customer-empty" onClick={() => selectCustomerLocation(certificationEmptyCustomer)} className="min-h-11 rounded-lg border border-black/15 px-3 text-xs font-semibold">Cliente sin ubicación</button>
+          </div>
           <CustomerContextPanel context={certificationCustomer} message="" onEdit={() => undefined} onClear={() => undefined} />
         </section>
         <div className={POS_PRODUCT_COLUMN_CLASS}>
