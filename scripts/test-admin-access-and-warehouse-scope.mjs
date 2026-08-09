@@ -37,6 +37,10 @@ assert.match(ordersPage, /if \(!canReadOrders\) \{[\s\S]*redirect\("\/sin-permis
 
 assert.equal(rolePermissions.contadora.includes("admin:access"), true);
 assert.equal(rolePermissions.contadora.includes("inventory:read"), true);
+assert.equal(rolePermissions.contadora.includes("inventory:adjust_read"), true);
+assert.equal(rolePermissions.contadora.includes("inventory:adjust_create"), true);
+assert.equal(rolePermissions.contadora.includes("inventory:adjust_confirm"), true);
+assert.equal(rolePermissions.contadora.includes("inventory:cost_read"), true);
 assert.equal(rolePermissions.contadora.includes("products:adjust_stock"), true);
 assert.equal(rolePermissions.contadora.includes("orders:read"), true);
 assert.equal(rolePermissions.contadora.includes("invoices:create"), true);
@@ -61,6 +65,9 @@ assert.deepEqual(new Set(rolePermissions.bodega), new Set([
   "products:read",
   "inventory:read",
   "inventory:manage",
+  "inventory:adjust_read",
+  "inventory:adjust_create",
+  "inventory:adjust_confirm",
   "shipments:manage",
   "orders:read",
   "orders:manage_logistics",

@@ -125,6 +125,7 @@ const moduleGroups = [
     modules: [
       { title: "Inventario bajo", href: "/admin/inventario?filter=low_stock", description: "Productos bajo mínimo o sin stock.", permissions: ["inventory:read", "inventory:manage"] },
       { title: "Movimientos", href: "/admin/inventario", description: "Historial de entradas, salidas, devoluciones y ajustes.", permissions: ["inventory:read", "inventory:manage"] },
+      { title: "Ajustes de inventario", href: "/admin/inventario/ajustes", description: "Documentos multiartículo, historial y reversión controlada.", permissions: ["inventory:adjust_read"] },
       { title: "Catálogo", href: "/admin/productos", description: "Productos, precios y contenido del catálogo.", permissions: ["products:read", "products:manage"] },
     ],
   },

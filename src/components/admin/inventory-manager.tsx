@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { AlertTriangle, History, PackagePlus, Save } from "lucide-react";
 import { createInventoryMovementAction } from "@/app/admin/inventario/actions";
 import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
@@ -92,6 +93,10 @@ export function InventoryManager({
 
   return (
     <div className="space-y-5">
+      <nav aria-label="Secciones de inventario" className="flex flex-wrap gap-2">
+        <span aria-current="page" className="min-h-11 rounded-lg bg-black px-4 py-2.5 text-sm font-semibold text-white">Inventario general</span>
+        <Link href="/admin/inventario/ajustes" className="min-h-11 rounded-lg border border-black/10 px-4 py-2.5 text-sm font-semibold">Ajustes de inventario</Link>
+      </nav>
       {activeFilter ? <ActiveFilterBanner label={activeFilter.label} clearHref="/admin/inventario" /> : null}
 
       <div className="grid gap-3 md:grid-cols-4">
