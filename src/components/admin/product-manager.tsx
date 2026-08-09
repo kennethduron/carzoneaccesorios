@@ -1804,7 +1804,7 @@ export function ProductManager({
             Limpiar filtros
           </Link>
           {capabilities.create ? (
-            <Button onClick={openNewProduct} variant="dark">
+            <Button onClick={openNewProduct} variant="dark" className="min-h-11">
               <Plus size={17} />
               Nuevo
             </Button>
@@ -1816,7 +1816,7 @@ export function ProductManager({
             </Button>
           ) : null}
           {capabilities.exportProducts && capabilities.technicalExports ? (
-            <Button onClick={exportTechnicalCsv} variant="ghost" title="Exportación técnica disponible solo para el Technical Owner">
+            <Button onClick={exportTechnicalCsv} variant="ghost" className="min-h-11" title="Exportación técnica disponible solo para el Technical Owner">
               <Download size={17} />
               CSV técnico
             </Button>
@@ -1851,7 +1851,7 @@ export function ProductManager({
             <p className="mt-1 text-xs text-black/50">Límites: 5,000 productos y 10 MiB por XLSX. La validación se repite en el servidor antes de importar.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button onClick={() => void downloadExcelImportTemplate()} disabled={isImportingProducts} variant="ghost" title="Descargar plantilla Excel para importar productos">
+            <Button onClick={() => void downloadExcelImportTemplate()} disabled={isImportingProducts} variant="ghost" className="min-h-11" title="Descargar plantilla Excel para importar productos">
               <FileSpreadsheet size={17} />
               Descargar plantilla
             </Button>
@@ -1866,7 +1866,7 @@ export function ProductManager({
                 setPendingImportRows([]);
                 setImportProgress(null);
               }}
-              className="h-10 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+              className="min-h-11 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
             >
               <option value="create_and_update">Crear y actualizar (Recomendado)</option>
               <option value="create_only">Crear solo productos nuevos</option>
@@ -1886,7 +1886,7 @@ export function ProductManager({
               type="file"
               disabled={isImportingProducts}
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="mt-2 block w-full text-sm"
+              className="mt-2 block min-h-11 w-full text-sm"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 if (file && file.size > MAX_PRODUCT_XLSX_BYTES) {
@@ -1912,7 +1912,7 @@ export function ProductManager({
               type="file"
               disabled={isImportingProducts}
               accept=".zip,application/zip"
-              className="mt-2 block w-full text-sm"
+              className="mt-2 block min-h-11 w-full text-sm"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 if (file && file.size > MAX_PRODUCT_ZIP_BYTES) {
@@ -1933,12 +1933,12 @@ export function ProductManager({
           </label>
 
           <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || isImportingProducts || !excelFile} variant="dark" className="h-10 whitespace-nowrap">
+            <Button onClick={() => void prepareProductImportPreview()} disabled={isPreparingImport || isImportingProducts || !excelFile} variant="dark" className="min-h-11 whitespace-nowrap">
               {isPreparingImport ? <Loader2 size={17} className="animate-spin" /> : <Upload size={17} />}
               Validar archivos
             </Button>
             {!importPreview ? (
-              <Button disabled variant="ghost" className="h-10 whitespace-nowrap" title="Valida los archivos y revisa el preview antes de importar.">
+              <Button disabled variant="ghost" className="min-h-11 whitespace-nowrap" title="Valida los archivos y revisa el preview antes de importar.">
                 <Save size={17} />
                 Importar productos
               </Button>
@@ -1981,7 +1981,7 @@ export function ProductManager({
               onClick={() => void retryPendingProductImport()}
               disabled={isImportingProducts}
               variant="dark"
-              className="mt-3"
+              className="mt-3 min-h-11"
             >
               {isImportingProducts ? <Loader2 size={17} className="animate-spin" /> : <RefreshCw size={17} />}
               Reintentar filas pendientes
@@ -2360,10 +2360,10 @@ function ImportPreviewPanel({
       </div>
 
       <div className="mt-4 grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
-        <Button onClick={onCancel} variant="ghost" disabled={pending} className="w-full sm:w-auto">
+        <Button onClick={onCancel} variant="ghost" disabled={pending} className="min-h-11 w-full sm:w-auto">
           Cancelar
         </Button>
-        <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0} className="w-full sm:w-auto">
+        <Button onClick={onConfirm} variant="dark" disabled={pending || detectedErrors > 0 || validRows.length === 0} className="min-h-11 w-full sm:w-auto">
           {pending ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
           {pending ? "Importando productos..." : "Importar productos"}
         </Button>
@@ -3142,7 +3142,7 @@ function ProductEditor({
                 <h3 className="font-semibold">Imagen principal</h3>
                 <p className="text-xs text-black/50">{productImageHelpText}</p>
               </div>
-              <Button onClick={onAddImage} disabled={product.images.length >= maxProductImages} variant="ghost" className="px-3">
+              <Button onClick={onAddImage} disabled={product.images.length >= maxProductImages} variant="ghost" className="min-h-11 px-3">
                 <Plus size={16} />
                 Agregar otra imagen
               </Button>
@@ -3302,10 +3302,10 @@ function ProductEditor({
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 px-5 py-4">
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} variant="ghost" className="min-h-11">
             Cancelar
           </Button>
-          <Button onClick={onSubmit} disabled={pending} variant="dark">
+          <Button onClick={onSubmit} disabled={pending} variant="dark" className="min-h-11">
             <Save size={17} />
             {pending ? "Guardando producto..." : "Guardar producto"}
           </Button>
