@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
+import { Building2, CheckCircle2, Loader2, LogIn, MailCheck, RotateCcw, UserPlus } from "lucide-react";
 import {
   checkRegisteredEmailVerificationAction,
   loginWithEmailAction,
@@ -374,30 +374,46 @@ export function AuthCard({ mode }: AuthCardProps) {
   }, [email, isCheckEmailMode, registrationEmailSent, runVerificationCheck, verificationDetected]);
 
   return (
-    <section className="min-h-screen bg-[#f4f4f5] px-5 py-10 text-[#080808]">
+    <section className="min-h-screen bg-[#f4f4f5] px-4 py-6 text-[#080808] sm:px-6 sm:py-8 min-[1100px]:px-8">
       {loading ? <SystemLoadingScreen fullScreen /> : null}
-      <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-6">
+      <div
+        className={`mx-auto grid min-h-[calc(100vh-3rem)] items-start gap-6 sm:min-h-[calc(100vh-4rem)] ${
+          isLogin
+            ? "max-w-6xl lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-8"
+            : "max-w-[1240px] min-[1100px]:grid-cols-[minmax(300px,350px)_minmax(0,1fr)] min-[1100px]:grid-rows-[auto_1fr] min-[1100px]:gap-x-14 min-[1100px]:gap-y-6 min-[1280px]:gap-x-16"
+        }`}
+      >
+        <div
+          className={`space-y-5 ${
+            isLogin ? "lg:self-center" : "min-[1100px]:col-start-1 min-[1100px]:row-start-1 min-[1100px]:pt-2"
+          }`}
+        >
           <div className="flex items-center gap-3">
-            <div className="grid size-14 place-items-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10">
+            <div className="grid size-14 shrink-0 place-items-center rounded-md bg-white p-1 shadow-sm ring-1 ring-black/10">
               <Image src="/brand/car-zone-logo.jpeg" alt="Car Zone Accesorios" width={96} height={56} className="h-auto w-full object-contain" preload />
             </div>
             <div>
-              <p className="text-2xl font-semibold">Car Zone Accesorios</p>
+              <p className="text-lg font-semibold sm:text-xl">Car Zone Accesorios</p>
               <p className="text-sm text-black/55">Acceso seguro para clientes</p>
             </div>
           </div>
-          <h1 className="max-w-xl text-4xl font-semibold leading-tight">
+          <h1 className="max-w-xl text-3xl font-semibold leading-tight sm:text-4xl min-[1100px]:max-w-[330px]">
             {isLogin ? "Ingresa a tu cuenta." : "Crea tu cuenta de cliente."}
           </h1>
-          <p className="max-w-lg text-black/60">
+          <p className="max-w-lg leading-6 text-black/60 min-[1100px]:max-w-[320px]">
             {isLogin
               ? "Accede para revisar tus pedidos, facturas y beneficios."
-              : "Regístrate para comprar más rápido, revisar tus pedidos y solicitar acceso mayorista."}
+              : "Compra de manera más rápida y administra todo desde un solo lugar."}
           </p>
+          {!isLogin ? <RegistrationBenefits /> : null}
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-lg border border-black/10 bg-white p-5 shadow-sm">
+        <form
+          onSubmit={handleSubmit}
+          className={`w-full rounded-lg border border-black/10 bg-white p-4 shadow-sm sm:p-6 min-[1100px]:p-8 ${
+            isLogin ? "" : "min-[1100px]:col-start-2 min-[1100px]:row-span-2 min-[1100px]:row-start-1"
+          }`}
+        >
           <div className="mb-5">
             <h2 className="text-xl font-semibold">{isLogin ? "Iniciar sesión" : "Registro"}</h2>
             <p className="mt-1 text-sm text-black/55">
@@ -458,11 +474,12 @@ export function AuthCard({ mode }: AuthCardProps) {
             </div>
           ) : null}
 
-          {!registrationEmailSent ? <div className="space-y-3">
+          {!registrationEmailSent ? <div className={isLogin ? "space-y-3" : "grid gap-x-5 gap-y-4 sm:grid-cols-2"}>
             {!isLogin ? (
               <AuthField label="Nombre completo" htmlFor="auth-full-name">
                 <Input
                   id="auth-full-name"
+                  className="min-h-11"
                   value={fullName}
                   onChange={(event) => setFullName(event.target.value)}
                   autoComplete="name"
@@ -475,6 +492,7 @@ export function AuthCard({ mode }: AuthCardProps) {
               <AuthField label="Nombre de usuario" htmlFor="auth-username">
                 <Input
                   id="auth-username"
+                  className="min-h-11"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   autoComplete="username"
@@ -488,6 +506,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             <AuthField label={isLogin ? "Correo electrónico o usuario" : "Correo electrónico"} htmlFor="auth-email">
               <Input
                 id="auth-email"
+                className="min-h-11"
                 value={email}
                 onChange={(event) => {
                   setEmail(event.target.value);
@@ -503,6 +522,7 @@ export function AuthCard({ mode }: AuthCardProps) {
               <AuthField label="Teléfono" htmlFor="auth-phone">
                 <Input
                   id="auth-phone"
+                  className="min-h-11"
                   value={phone}
                   onChange={(event) => setPhone(event.target.value)}
                   type="tel"
@@ -513,9 +533,10 @@ export function AuthCard({ mode }: AuthCardProps) {
                 />
               </AuthField>
             ) : null}
-            <AuthField label="Contraseña" htmlFor="auth-password">
+            <AuthField label="Contraseña" htmlFor="auth-password" className={isLogin ? "" : "sm:col-span-2"}>
               <PasswordInput
                 id="auth-password"
+                className="min-h-11"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 minLength={isLogin ? undefined : 8}
@@ -525,46 +546,64 @@ export function AuthCard({ mode }: AuthCardProps) {
               />
             </AuthField>
             {!isLogin ? (
-              <fieldset className="space-y-3 rounded-lg border border-black/10 bg-[#fafafa] p-4">
-                <legend className="px-1 text-sm font-semibold">Datos del negocio (opcional)</legend>
-                <p className="text-xs leading-5 text-black/55">
-                  Puedes dejarlos vacíos y completarlos una sola vez desde tu cuenta después de verificar el correo.
-                </p>
-                <AuthField label="Nombre del negocio (opcional)" htmlFor="auth-business-name">
-                  <Input
-                    id="auth-business-name"
-                    value={businessName}
-                    onChange={(event) => setBusinessName(event.target.value)}
-                    maxLength={160}
-                    autoComplete="organization"
-                    disabled={loading}
-                  />
-                </AuthField>
-                <AuthField label="RTN (opcional)" htmlFor="auth-tax-id">
-                  <Input
-                    id="auth-tax-id"
-                    value={taxId}
-                    onChange={(event) => setTaxId(event.target.value)}
-                    maxLength={40}
-                    inputMode="numeric"
-                    disabled={loading}
-                    aria-describedby="auth-tax-id-help"
-                  />
-                  <span id="auth-tax-id-help" className="mt-1 block text-xs text-black/50">14 dígitos; puedes usar espacios o guiones.</span>
-                </AuthField>
-                <AuthField label="Ubicación (ciudad/municipio) (opcional)" htmlFor="auth-city">
-                  <Input
-                    id="auth-city"
-                    value={city}
-                    onChange={(event) => setCity(event.target.value)}
-                    maxLength={120}
-                    autoComplete="address-level2"
-                    disabled={loading}
-                  />
-                </AuthField>
+              <fieldset className="min-w-0 border-0 border-t border-black/10 pt-5 sm:col-span-2">
+                <legend className="sr-only">Datos del negocio (opcional)</legend>
+                <div className="flex items-start gap-3">
+                  <div className="grid size-9 shrink-0 place-items-center rounded-md bg-[#f4f4f5] text-black/70">
+                    <Building2 aria-hidden="true" size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold">Datos del negocio (opcional)</h3>
+                    <p className="mt-1 text-xs leading-5 text-black/55">
+                      Puedes dejarlos vacíos y completarlos una sola vez desde tu cuenta después de verificar el correo.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                  <AuthField label="Nombre del negocio (opcional)" htmlFor="auth-business-name">
+                    <Input
+                      id="auth-business-name"
+                      className="min-h-11"
+                      value={businessName}
+                      onChange={(event) => setBusinessName(event.target.value)}
+                      maxLength={160}
+                      autoComplete="organization"
+                      disabled={loading}
+                    />
+                  </AuthField>
+                  <AuthField label="RTN (opcional)" htmlFor="auth-tax-id">
+                    <Input
+                      id="auth-tax-id"
+                      className="min-h-11"
+                      value={taxId}
+                      onChange={(event) => setTaxId(event.target.value)}
+                      maxLength={40}
+                      inputMode="numeric"
+                      disabled={loading}
+                      aria-describedby="auth-tax-id-help"
+                    />
+                    <span id="auth-tax-id-help" className="mt-1 block text-xs leading-5 text-black/50">
+                      14 dígitos; puedes usar espacios o guiones.
+                    </span>
+                  </AuthField>
+                  <AuthField
+                    label="Ubicación (ciudad/municipio) (opcional)"
+                    htmlFor="auth-city"
+                    className="sm:col-span-2"
+                  >
+                    <Input
+                      id="auth-city"
+                      className="min-h-11"
+                      value={city}
+                      onChange={(event) => setCity(event.target.value)}
+                      maxLength={120}
+                      autoComplete="address-level2"
+                      disabled={loading}
+                    />
+                  </AuthField>
+                </div>
               </fieldset>
             ) : null}
-            {!isLogin ? <WholesaleSignupInfo /> : null}
           </div> : null}
 
           {isLogin ? (
@@ -633,23 +672,48 @@ export function AuthCard({ mode }: AuthCardProps) {
             </Link>
           </p> : null}
         </form>
+        {!isLogin ? (
+          <WholesaleSignupInfo className="min-[1100px]:col-start-1 min-[1100px]:row-start-2 min-[1100px]:self-start" />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+const registrationBenefits = [
+  "Consulta tus pedidos",
+  "Guarda tus datos para futuras compras",
+  "Solicita acceso a precios mayoristas",
+  "Administra tus datos comerciales desde tu cuenta",
+] as const;
+
+function RegistrationBenefits() {
+  return (
+    <ul className="grid max-w-lg gap-2.5 text-sm text-black/75 min-[1100px]:max-w-[340px]" aria-label="Beneficios de crear una cuenta">
+      {registrationBenefits.map((benefit) => (
+        <li key={benefit} className="flex items-start gap-2.5 leading-5">
+          <CheckCircle2 aria-hidden="true" size={17} className="mt-0.5 shrink-0 fill-[#080808] text-white" />
+          <span>{benefit}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 function AuthField({
   label,
   htmlFor,
+  className = "",
   children,
 }: {
   label: string;
   htmlFor: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="block" htmlFor={htmlFor}>
-      <span className="mb-1 block text-sm font-medium text-black/70">{label}</span>
+    <label className={`block min-w-0 ${className}`} htmlFor={htmlFor}>
+      <span className="mb-1 block text-sm font-medium leading-5 text-black/70">{label}</span>
       {children}
     </label>
   );

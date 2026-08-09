@@ -2,7 +2,7 @@
 
 import type React from "react";
 import Link from "next/link";
-import { BadgePercent, CheckCircle2, Handshake, Repeat, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowRight, BadgePercent, CheckCircle2, Handshake, Repeat, ShoppingBag, Sparkles } from "lucide-react";
 import { formatCurrency } from "@/utils/pricing";
 import type { WholesaleFirstPurchaseRequirement } from "@/types/wholesale";
 
@@ -41,28 +41,32 @@ export function WholesaleProgramConditionsCard({ compact = false }: { compact?: 
   );
 }
 
-export function WholesaleSignupInfo() {
+export function WholesaleSignupInfo({ className = "" }: { className?: string }) {
   return (
-    <div className="rounded-lg border border-[#e4252c]/15 bg-[#fff8f6] p-4">
+    <aside className={`rounded-lg border border-[#e4252c]/20 bg-[#fff8f6] p-4 ${className}`} aria-labelledby="wholesale-signup-title">
       <div className="flex items-start gap-3">
         <div className="grid size-10 shrink-0 place-items-center rounded-md bg-white text-[#b91c25] ring-1 ring-[#e4252c]/15">
           <ShoppingBag size={18} />
         </div>
-        <div>
-          <h3 className="font-semibold">Deseas comprar al por mayor?</h3>
-          <p className="mt-1 text-sm leading-6 text-black/60">
-            Obten acceso a precios mayoristas exclusivos para distribuidores y negocios.
+        <div className="min-w-0">
+          <h3 id="wholesale-signup-title" className="font-semibold">¿Deseas comprar al por mayor?</h3>
+          <p className="mt-1 text-sm leading-5 text-black/60">
+            Obtén acceso a precios mayoristas exclusivos para distribuidores y negocios.
           </p>
         </div>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2">
         <InfoItem icon={<BadgePercent size={15} />} text="Primera compra mayorista con total final mínimo: L 10,000." />
         <InfoItem icon={<Repeat size={15} />} text="Compras posteriores sin monto mínimo." />
       </div>
-      <Link href="/contacto#mayoreo" className="mt-3 inline-flex text-sm font-semibold text-[#b91c25]">
+      <Link
+        href="/contacto#mayoreo"
+        className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#b91c25] focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2"
+      >
         Conocer programa mayorista
+        <ArrowRight aria-hidden="true" size={16} />
       </Link>
-    </div>
+    </aside>
   );
 }
 
