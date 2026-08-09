@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Archive,
@@ -27,6 +27,7 @@ import {
   deleteProductAction,
   getProductImportSkuStatusAction,
   importProductsAction,
+  preflightProductImportFileAction,
   saveProductAction,
   setProductActiveAction,
   uploadProductImageAction,
@@ -34,8 +35,8 @@ import {
 import type { ProductImportResult, ProductImportSummary } from "@/app/admin/productos/actions";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { normalizeImportedProductCategoryName, officialProductCategories } from "@/lib/product-categories";
+import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
 import {
@@ -56,6 +57,15 @@ import {
   runProductImportBatches,
   stockPreviewLabel,
 } from "@/utils/product-import-stock";
+import {
+  MAX_PRODUCT_IMPORT_ROWS,
+  MAX_PRODUCT_XLSX_BYTES,
+  MAX_PRODUCT_ZIP_BYTES,
+  MAX_PRODUCT_ZIP_ENTRIES,
+  MAX_PRODUCT_ZIP_UNCOMPRESSED_BYTES,
+  productImportRowLimitMessage,
+  productImportSizeLimitMessage,
+} from "@/utils/product-import-limits";
 import {
   formatMegapixels,
   isAllowedProductImageMimeType,
@@ -80,6 +90,7 @@ type ProductManagerProps = {
   total: number;
   page: number;
   pageSize: number;
+  summary: AdminProductCatalogSummary;
   capabilities: ProductCapabilities;
   filters: {
     query: string;
@@ -120,6 +131,7 @@ type ProductImportPreviewRow = {
 };
 
 type ProductImportPreview = {
+  batchId: string;
   rows: ProductImportPreviewRow[];
   zipWarnings: string[];
   criticalErrors: string[];
@@ -245,7 +257,7 @@ function toFormProduct(product: ProductAdminRow): EditableProductInput {
     compatibility_notes: product.compatibility_notes,
     stock: product.stock,
     min_stock: product.min_stock,
-    cost_price: product.cost_price,
+    cost_price: product.cost_price ?? 0,
     retail_price: product.retail_price,
     wholesale_price: product.wholesale_price,
     wholesale_min_quantity: product.wholesale_min_quantity,
@@ -369,7 +381,7 @@ const productExcelHeaders = [
   "Nombre de imagen",
 ];
 
-const productTechnicalCsvHeaders = [
+const productCsvHeaders = [
   "sku",
   "codigo_proveedor",
   "nombre",
@@ -396,33 +408,7 @@ const productTechnicalCsvHeaders = [
   "public_id",
 ];
 
-const productCsvHeaders = productTechnicalCsvHeaders;
-
-const productOperationalExportHeaders = [
-  "SKU",
-  "Código OEM / proveedor",
-  "Nombre del producto",
-  "Descripción corta",
-  "Descripción completa",
-  "Categoría",
-  "Stock",
-  "Stock mínimo",
-  "Precio costo",
-  "Precio al detalle",
-  "Precio mayorista",
-  "Cantidad mínima mayorista",
-  "Producto nuevo",
-  "Estado",
-  "Marca del vehículo",
-  "Modelo del vehículo",
-  "Año inicial",
-  "Año final",
-  "Notas de compatibilidad",
-  "Imagen",
-];
-
 const requiredImportHeaders = ["SKU", "Nombre del producto", "Categoría", "Stock", "Precio al detalle"];
-const zipMaxBytes = 250 * 1024 * 1024;
 
 function spreadsheetSafeValue(value: unknown) {
   const text = String(value ?? "");
@@ -437,11 +423,9 @@ function parseCsvLine(line: string) {
   const values: string[] = [];
   let current = "";
   let quoted = false;
-
   for (let index = 0; index < line.length; index += 1) {
     const char = line[index];
     const next = line[index + 1];
-
     if (char === '"' && quoted && next === '"') {
       current += '"';
       index += 1;
@@ -454,17 +438,8 @@ function parseCsvLine(line: string) {
       current += char;
     }
   }
-
   values.push(current);
   return values;
-}
-
-function htmlEscape(value: unknown) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 function downloadBlob(content: BlobPart, fileName: string, type: string) {
@@ -475,26 +450,6 @@ function downloadBlob(content: BlobPart, fileName: string, type: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
-}
-
-function buildExcelTable(title: string, columns: string[], rows: unknown[][]) {
-  const header = columns.map((column) => `<th>${htmlEscape(column)}</th>`).join("");
-  const body = rows
-    .map((row) => `<tr>${row.map((value) => `<td>${htmlEscape(spreadsheetSafeValue(value))}</td>`).join("")}</tr>`)
-    .join("");
-
-  return `
-    <html>
-      <head><meta charset="utf-8" /></head>
-      <body>
-        <h1>${htmlEscape(title)}</h1>
-        <table border="1">
-          <thead><tr>${header}</tr></thead>
-          <tbody>${body}</tbody>
-        </table>
-      </body>
-    </html>
-  `;
 }
 
 function normalizeHeader(value: string) {
@@ -570,6 +525,7 @@ export function ProductManager({
   total,
   page,
   pageSize,
+  summary,
   capabilities,
   filters,
 }: ProductManagerProps) {
@@ -588,31 +544,16 @@ export function ProductManager({
   const [importProgress, setImportProgress] = useState<ProductImportProgress | null>(null);
   const [isPreparingImport, setIsPreparingImport] = useState(false);
   const [isImportingProducts, setIsImportingProducts] = useState(false);
+  const [activeImportBatchId, setActiveImportBatchId] = useState<string | null>(null);
   const [importExecutionGuard] = useState(createProductImportSingleFlightGuard);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
-  const debouncedQuery = useDebouncedValue(query, 400);
-
-  const filteredProducts = useMemo(() => {
-    const normalizedQuery = debouncedQuery.trim().toLowerCase();
-
-    return products.filter((product) => {
-      const matchesQuery =
-        !normalizedQuery ||
-        `${product.sku} ${product.internal_code ?? ""} ${product.name} ${product.brand} ${product.category_name ?? ""} ${product.vehicle_brand ?? ""} ${product.vehicle_model ?? ""} ${product.vehicle_year_start ?? ""} ${product.vehicle_year_end ?? ""} ${product.short_description ?? ""} ${product.description} ${product.features ?? ""} ${product.specifications ?? ""} ${product.compatibility_notes ?? ""}`
-          .toLowerCase()
-          .includes(normalizedQuery);
-      const matchesStatus = status === "all" || product.status === status;
-      const matchesCategory = categoryId === "all" || product.category_id === categoryId;
-
-      return matchesQuery && matchesStatus && matchesCategory;
-    });
-  }, [categoryId, debouncedQuery, products, status]);
-
-  const lowStockCount = products.filter((product) => product.stock <= product.min_stock).length;
-  const activeCount = products.filter((product) => product.active).length;
-  const inventoryValue = products.reduce((sum, product) => sum + product.cost_price * product.stock, 0);
+  const visibleProducts = products;
+  const lowStockCount = summary.lowStockProducts;
+  const activeCount = summary.activeProducts;
+  const inventoryValue = summary.inventoryCost;
   const hasNextPage = page * pageSize < total;
+  const hasCatalogFilters = Boolean(filters.query || (filters.status && filters.status !== "all") || (filters.categoryId && filters.categoryId !== "all"));
 
   useEffect(() => {
     persistProductDraft(editing);
@@ -1111,7 +1052,7 @@ export function ProductManager({
 
   function exportCsv() {
     const headers = productCsvHeaders;
-    const rows = filteredProducts.map((product) => [
+    const rows = visibleProducts.map((product) => [
       product.sku,
       product.internal_code,
       product.name,
@@ -1128,7 +1069,7 @@ export function ProductManager({
       normalizeImportedProductCategoryName(product.category_name) ?? "",
       product.stock,
       product.min_stock,
-      product.cost_price,
+      product.cost_price ?? 0,
       product.retail_price,
       product.wholesale_price,
       product.wholesale_min_quantity,
@@ -1271,14 +1212,26 @@ export function ProductManager({
 
   void downloadImportTemplate;
   void importCsv;
+  void exportCsv;
+
+  function exportResults(format: "xlsx" | "csv") {
+    const params = new URLSearchParams();
+    if (filters.query) params.set("q", filters.query);
+    if (filters.status && filters.status !== "all") params.set("status", filters.status);
+    if (filters.categoryId && filters.categoryId !== "all") params.set("category", filters.categoryId);
+    if (format === "csv") params.set("format", "csv");
+    const queryString = params.toString();
+    window.location.assign(`/api/admin/productos/exportar${queryString ? `?${queryString}` : ""}`);
+    toast.info("Preparando todos los resultados de la exportación...");
+  }
 
   function exportTechnicalCsv() {
     if (!capabilities.technicalExports) return;
-    exportCsv();
+    exportResults("csv");
   }
 
   function productExportRows() {
-    return filteredProducts.map((product) => [
+    return visibleProducts.map((product) => [
       product.sku,
       product.internal_code ?? "",
       product.name,
@@ -1287,7 +1240,7 @@ export function ProductManager({
       normalizeImportedProductCategoryName(product.category_name) ?? "",
       product.stock,
       product.min_stock,
-      formatCurrency(product.cost_price),
+      formatCurrency(product.cost_price ?? 0),
       formatCurrency(product.retail_price),
       formatCurrency(product.wholesale_price),
       product.tax_category === "exempt" ? "Exento" : "Gravado",
@@ -1304,13 +1257,10 @@ export function ProductManager({
   }
 
   function exportExcel() {
-    downloadBlob(
-      buildExcelTable("Productos - Car Zone Accesorios", productOperationalExportHeaders, productExportRows()),
-      "car-zone-productos.xlsx.xls",
-      "application/vnd.ms-excel;charset=utf-8",
-    );
-    toast.success("Excel operativo descargado correctamente.");
+    exportResults("xlsx");
   }
+
+  void productExportRows;
 
   async function downloadExcelImportTemplate() {
     const sampleRow = [
@@ -1372,7 +1322,7 @@ export function ProductManager({
       criticalErrors.push("El archivo de imágenes debe ser ZIP.");
       return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
     }
-    if (file.size > zipMaxBytes) {
+    if (file.size > MAX_PRODUCT_ZIP_BYTES) {
       criticalErrors.push("El ZIP es demasiado grande. Divide las imágenes en lotes más pequeños.");
       return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
     }
@@ -1380,10 +1330,29 @@ export function ProductManager({
     try {
       const JSZip = (await import("jszip")).default;
       const zip = await JSZip.loadAsync(file);
-      for (const entry of Object.values(zip.files)) {
+      const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+      if (entries.length > MAX_PRODUCT_ZIP_ENTRIES) {
+        criticalErrors.push(`El ZIP contiene más de ${MAX_PRODUCT_ZIP_ENTRIES.toLocaleString("es-HN")} archivos.`);
+        return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
+      }
+      const declaredUncompressedBytes = entries.reduce((total, entry) => {
+        const metadata = entry as typeof entry & { _data?: { uncompressedSize?: number } };
+        return total + Number(metadata._data?.uncompressedSize ?? 0);
+      }, 0);
+      if (declaredUncompressedBytes > MAX_PRODUCT_ZIP_UNCOMPRESSED_BYTES) {
+        criticalErrors.push("El contenido descomprimido del ZIP supera el límite de 500 MiB.");
+        return { index: createProductImportImageIndex<File>([]), warnings, criticalErrors };
+      }
+      let actualUncompressedBytes = 0;
+      for (const entry of entries) {
         if (entry.dir) continue;
         const originalPath = (entry as typeof entry & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
         const blob = await entry.async("blob");
+        actualUncompressedBytes += blob.size;
+        if (actualUncompressedBytes > MAX_PRODUCT_ZIP_UNCOMPRESSED_BYTES) {
+          criticalErrors.push("El contenido descomprimido del ZIP supera el límite de 500 MiB.");
+          break;
+        }
         if (blob.size > 5 * 1024 * 1024) {
           criticalErrors.push(`Se rechazó ${originalPath}: supera 5 MB.`);
           continue;
@@ -1418,6 +1387,10 @@ export function ProductManager({
       showMessage("Selecciona un archivo Excel .xlsx. El formato .xls binario no es compatible.", "error");
       return;
     }
+    if (excelFile.size > MAX_PRODUCT_XLSX_BYTES) {
+      showMessage(productImportSizeLimitMessage, "error");
+      return;
+    }
 
     setIsPreparingImport(true);
     setImportPreview(null);
@@ -1427,11 +1400,23 @@ export function ProductManager({
     showMessage("Validando Excel e imágenes...", "neutral");
 
     try {
+      const preflightFormData = new FormData();
+      preflightFormData.set("file", excelFile);
+      const serverPreflight = await preflightProductImportFileAction(preflightFormData);
+      if (!serverPreflight.ok || !serverPreflight.batchId || !serverPreflight.totalRows) {
+        throw new Error(serverPreflight.message);
+      }
       const ExcelJS = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(await excelFile.arrayBuffer());
       const worksheet = workbook.worksheets[0] ?? null;
       const { rows } = readProductImportWorksheet(worksheet);
+      if (rows.length > MAX_PRODUCT_IMPORT_ROWS) {
+        throw new Error(productImportRowLimitMessage);
+      }
+      if (rows.length !== serverPreflight.totalRows) {
+        throw new Error("El conteo local no coincide con el preflight server-side. Vuelve a seleccionar el archivo.");
+      }
       if (rows.length === 0) {
         showMessage("El Excel está vacío o no tiene filas de productos.", "error");
         return;
@@ -1542,7 +1527,8 @@ export function ProductManager({
         return { ...row, exists, duplicateSku, action, errors };
       });
 
-      setImportPreview({ rows: previewRows, zipWarnings: zipImages.warnings, criticalErrors: zipImages.criticalErrors });
+      setActiveImportBatchId(serverPreflight.batchId);
+      setImportPreview({ batchId: serverPreflight.batchId, rows: previewRows, zipWarnings: zipImages.warnings, criticalErrors: zipImages.criticalErrors });
       showMessage("Preview listo. Revisa errores y confirma para importar.", "success");
     } catch (error) {
       showMessage(error instanceof Error ? `No se pudo preparar la importación: ${error.message}` : "No se pudo preparar la importación.", "error");
@@ -1556,6 +1542,10 @@ export function ProductManager({
     initialSummary: ProductImportSummary,
     existingRows: ProductImportResult["rows"] = [],
   ) {
+    if (!activeImportBatchId) {
+      showMessage("El lote no tiene un preflight server-side válido. Vuelve a validar el archivo.", "error");
+      return;
+    }
     const guard = importExecutionGuard;
     if (!guard.tryStart()) {
       showMessage("Ya existe una importación en curso.", "error");
@@ -1628,6 +1618,7 @@ export function ProductManager({
           }
 
           const batchResult = await importProductsAction(productsToSave, {
+            batchId: activeImportBatchId,
             mode: importMode,
             fileName: excelFile?.name,
             imageSummary: { uploaded, missing, errors: imageErrors },
@@ -1708,6 +1699,7 @@ export function ProductManager({
         setImportPreview(null);
         setExcelFile(null);
         setZipFile(null);
+        setActiveImportBatchId(null);
       }
     } finally {
       guard.finish();
@@ -1751,17 +1743,21 @@ export function ProductManager({
 
   return (
     <div className="space-y-5">
+      <p className="text-sm font-medium text-black/55">
+        {hasCatalogFilters ? "Resumen de todos los resultados filtrados" : "Resumen general del catálogo"}
+      </p>
       <div className="grid gap-3 md:grid-cols-3">
         <Metric label="Productos activos" value={activeCount.toLocaleString("es-HN")} />
         <Metric label="Stock bajo" value={lowStockCount.toLocaleString("es-HN")} />
-        {capabilities.viewCost ? <Metric label="Costo en inventario" value={formatCurrency(inventoryValue)} /> : <Metric label="Costo interno" value="Restringido" />}
+        {capabilities.viewCost ? <Metric label="Costo en inventario" value={formatCurrency(inventoryValue ?? 0)} /> : <Metric label="Costo interno" value="Restringido" />}
       </div>
 
       <section className="rounded-lg border border-black/10 bg-white p-4">
-        <form action="/admin/productos" className="grid gap-3 lg:grid-cols-[1fr_180px_220px_auto_auto_auto]">
-          <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2">
+        <form action="/admin/productos" className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_180px_220px_auto]">
+          <label className="flex min-h-11 items-center gap-2 rounded-md border border-black/10 px-3 py-2">
             <Search size={18} className="text-black/45" />
             <input
+              aria-label="Buscar productos"
               name="q"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -1770,10 +1766,11 @@ export function ProductManager({
             />
           </label>
           <select
+            aria-label="Filtrar por estado"
             name="status"
             value={status}
             onChange={(event) => setStatus(event.target.value as ProductStatus | "all")}
-            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+            className="min-h-11 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
           >
             <option value="all">Todos</option>
             {Object.entries(statusLabels).map(([value, label]) => (
@@ -1783,10 +1780,11 @@ export function ProductManager({
             ))}
           </select>
           <select
+            aria-label="Filtrar por categoría"
             name="category"
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
-            className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
+            className="min-h-11 rounded-md border border-black/10 bg-white px-3 py-2 text-sm outline-none"
           >
             <option value="all">Categorías</option>
             {categories.map((category) => (
@@ -1795,12 +1793,13 @@ export function ProductManager({
               </option>
             ))}
           </select>
-          <button className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+          <button className="min-h-11 rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]">
             Filtrar
           </button>
+          <div className="flex flex-wrap gap-3 md:col-span-2 xl:col-span-4">
           <Link
             href="/admin/productos"
-            className="inline-flex items-center justify-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]"
           >
             Limpiar filtros
           </Link>
@@ -1811,9 +1810,9 @@ export function ProductManager({
             </Button>
           ) : null}
           {capabilities.exportProducts ? (
-            <Button onClick={exportExcel} variant="ghost">
+            <Button onClick={exportExcel} variant="ghost" className="min-h-11" title="Exporta todos los productos que coinciden con los filtros actuales.">
               <FileSpreadsheet size={17} />
-              Excel
+              Exportar resultados
             </Button>
           ) : null}
           {capabilities.exportProducts && capabilities.technicalExports ? (
@@ -1822,6 +1821,7 @@ export function ProductManager({
               CSV técnico
             </Button>
           ) : null}
+          </div>
         </form>
         <p className="mt-3 text-sm text-black/55">
           Página {page}: mostrando {products.length.toLocaleString("es-HN")} de {total.toLocaleString("es-HN")} productos.
@@ -1848,6 +1848,7 @@ export function ProductManager({
           <div className="min-w-0">
             <h2 className="font-semibold">Importación masiva</h2>
             <p className="mt-1 text-sm text-black/55">Sube un Excel de productos y un ZIP opcional de imágenes.</p>
+            <p className="mt-1 text-xs text-black/50">Límites: 5,000 productos y 10 MiB por XLSX. La validación se repite en el servidor antes de importar.</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button onClick={() => void downloadExcelImportTemplate()} disabled={isImportingProducts} variant="ghost" title="Descargar plantilla Excel para importar productos">
@@ -1860,6 +1861,7 @@ export function ProductManager({
               disabled={isImportingProducts}
               onChange={(event) => {
                 setImportMode(event.target.value as ProductImportMode);
+                setActiveImportBatchId(null);
                 setImportPreview(null);
                 setPendingImportRows([]);
                 setImportProgress(null);
@@ -1886,7 +1888,15 @@ export function ProductManager({
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="mt-2 block w-full text-sm"
               onChange={(event) => {
-                setExcelFile(event.target.files?.[0] ?? null);
+                const file = event.target.files?.[0] ?? null;
+                if (file && file.size > MAX_PRODUCT_XLSX_BYTES) {
+                  event.target.value = "";
+                  setExcelFile(null);
+                  showMessage(productImportSizeLimitMessage, "error");
+                } else {
+                  setExcelFile(file);
+                }
+                setActiveImportBatchId(null);
                 setImportPreview(null);
                 setLastImportResult(null);
                 setPendingImportRows([]);
@@ -1904,7 +1914,15 @@ export function ProductManager({
               accept=".zip,application/zip"
               className="mt-2 block w-full text-sm"
               onChange={(event) => {
-                setZipFile(event.target.files?.[0] ?? null);
+                const file = event.target.files?.[0] ?? null;
+                if (file && file.size > MAX_PRODUCT_ZIP_BYTES) {
+                  event.target.value = "";
+                  setZipFile(null);
+                  showMessage("El ZIP es demasiado grande. Divide las imágenes en lotes más pequeños.", "error");
+                } else {
+                  setZipFile(file);
+                }
+                setActiveImportBatchId(null);
                 setImportPreview(null);
                 setLastImportResult(null);
                 setPendingImportRows([]);
@@ -1975,27 +1993,27 @@ export function ProductManager({
 
       <div className="flex justify-end gap-2">
         {page > 1 ? (
-          <Link href={buildPageHref(page - 1)} className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+          <Link href={buildPageHref(page - 1)} className="inline-flex min-h-11 items-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]">
             Anterior
           </Link>
         ) : null}
         {hasNextPage ? (
-          <Link href={buildPageHref(page + 1)} className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium">
+          <Link href={buildPageHref(page + 1)} className="inline-flex min-h-11 items-center rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]">
             Siguiente
           </Link>
         ) : null}
       </div>
 
       <section className="overflow-hidden rounded-lg border border-black/10 bg-white">
-        <div className="grid gap-3 p-3 md:hidden">
-          {filteredProducts.length === 0 ? (
+        <div className="grid gap-3 p-3 md:grid-cols-2 xl:hidden">
+          {visibleProducts.length === 0 ? (
             <p className="rounded-md bg-[#f4f4f5] p-4 text-center text-sm text-black/55">
-              {total === 0 && !filters.query && !filters.status && !filters.categoryId
-                ? "Aun no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
+              {total === 0 && !hasCatalogFilters
+                ? "Aún no hay productos cargados. Usa Crear producto o Importar Excel para cargar el primer producto real."
                 : "No se encontraron resultados con estos filtros."}
             </p>
           ) : (
-            filteredProducts.map((product) => (
+            visibleProducts.map((product) => (
               <article key={product.id} className="rounded-md border border-black/10 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -2051,7 +2069,7 @@ export function ProductManager({
             ))
           )}
         </div>
-        <div className="hidden overflow-x-auto md:block">
+        <div className="hidden xl:block">
           <table className="w-full min-w-[1120px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -2067,16 +2085,16 @@ export function ProductManager({
               </tr>
             </thead>
             <tbody className="divide-y divide-black/10">
-              {filteredProducts.length === 0 ? (
+              {visibleProducts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-sm text-black/55">
-                    {total === 0 && !filters.query && !filters.status && !filters.categoryId
-                      ? "Aún no hay productos cargados. Usa Crear producto o Importar CSV para cargar el primer producto real."
+                    {total === 0 && !hasCatalogFilters
+                      ? "Aún no hay productos cargados. Usa Crear producto o Importar Excel para cargar el primer producto real."
                       : "No se encontraron resultados con estos filtros."}
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
+                visibleProducts.map((product) => (
                 <tr key={product.id} className="transition-colors hover:bg-[#f4f4f5]">
                   <td className="px-4 py-3">
                     <p className="font-semibold">{product.name}</p>
@@ -2092,7 +2110,7 @@ export function ProductManager({
                     </span>
                     <span className="text-black/45"> / mínimo {product.min_stock}</span>
                   </td>
-                  {capabilities.viewCost ? <td className="px-4 py-3">{formatCurrency(product.cost_price)}</td> : null}
+                  {capabilities.viewCost ? <td className="px-4 py-3">{formatCurrency(product.cost_price ?? 0)}</td> : null}
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.retail_price)}</td>
                   <td className="px-4 py-3 font-semibold">{formatCurrency(product.wholesale_price)}</td>
                   <td className="px-4 py-3">
@@ -2437,7 +2455,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="grid size-9 place-items-center rounded-md border border-black/10 bg-white text-[#080808] transition-colors hover:bg-[#f4f4f5]"
+      className="grid size-11 place-items-center rounded-md border border-black/10 bg-white text-[#080808] transition-colors hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]"
     >
       {children}
     </button>
@@ -2523,6 +2541,8 @@ function ProductEditor({
   onPrimaryImage: (index: number) => void;
 }) {
   const [slugEditable, setSlugEditable] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const vehicleHasData = Boolean(
     product.vehicle_brand || product.vehicle_model || product.vehicle_year_start || product.vehicle_year_end,
   );
@@ -2530,6 +2550,46 @@ function ProductEditor({
   const generatedSlug = slugifyProductUrl(product.name);
   const displayedSlug = product.slug || generatedSlug;
   const categoryMissing = !product.category_id;
+
+  useEffect(() => {
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.requestAnimationFrame(() => returnFocus?.focus());
+    };
+  }, []);
+
+  function handleDialogKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (event.key !== "Tab" || !dialogRef.current) return;
+
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true");
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   function toggleUniversalVehicle(checked: boolean) {
     setVehicleUniversal(checked);
@@ -2551,13 +2611,21 @@ function ProductEditor({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] sm:my-6">
+      <section
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-editor-title"
+        tabIndex={-1}
+        onKeyDown={handleDialogKeyDown}
+        className="mx-auto my-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] outline-none sm:my-6"
+      >
         <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
           <div>
             <p className="text-sm text-black/50">{product.id ? "Editar producto" : "Crear producto"}</p>
-            <h2 className="text-xl font-semibold">{product.name || "Nuevo producto"}</h2>
+            <h2 id="product-editor-title" className="text-xl font-semibold">{product.name || "Nuevo producto"}</h2>
           </div>
-          <button onClick={onClose} className="grid size-10 place-items-center rounded-md border border-black/10" aria-label="Cerrar">
+          <button ref={closeButtonRef} onClick={onClose} className="grid size-11 place-items-center rounded-md border border-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]" aria-label="Cerrar editor de producto">
             <X size={18} />
           </button>
         </div>

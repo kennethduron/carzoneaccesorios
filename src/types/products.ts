@@ -32,7 +32,7 @@ export type ProductAdminRow = {
   compatibility_notes: string | null;
   stock: number;
   min_stock: number;
-  cost_price: number;
+  cost_price?: number;
   retail_price: number;
   wholesale_price: number;
   wholesale_min_quantity: number;

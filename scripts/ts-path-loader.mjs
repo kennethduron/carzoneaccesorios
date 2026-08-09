@@ -5,6 +5,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src");
 
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier === "server-only") {
+    return { url: "data:text/javascript,export {};", shortCircuit: true };
+  }
   if (!specifier.startsWith("@/")) {
     return nextResolve(specifier, context);
   }

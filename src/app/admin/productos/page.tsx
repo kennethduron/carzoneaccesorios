@@ -20,14 +20,16 @@ export default async function AdminProductsPage({
   const profile = await requireProductCapability("read");
   const capabilities = getProductCapabilities(profile);
   const params = await searchParams;
-  const { products: loadedProducts, categories, vehicleBrands, vehicleModels, total, page, pageSize } = await getAdminProductCatalogPage({
-    query: params.q,
-    status: params.status,
-    categoryId: params.category,
-    page: Number(params.page ?? 1),
-    pageSize: 50,
-  });
-  const products = capabilities.viewCost ? loadedProducts : loadedProducts.map((product) => ({ ...product, cost_price: 0 }));
+  const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize, summary } = await getAdminProductCatalogPage(
+    {
+      query: params.q,
+      status: params.status,
+      categoryId: params.category,
+      page: Number(params.page ?? 1),
+      pageSize: 50,
+    },
+    { includeCost: capabilities.viewCost },
+  );
 
   return (
     <AdminShell title="Productos">
@@ -41,6 +43,7 @@ export default async function AdminProductsPage({
         </Link>
       </div>
       <ProductManager
+        key={`${params.q ?? ""}:${params.status ?? "all"}:${params.category ?? "all"}:${page}`}
         products={products}
         categories={categories}
         vehicleBrands={vehicleBrands}
@@ -48,6 +51,7 @@ export default async function AdminProductsPage({
         total={total}
         page={page}
         pageSize={pageSize}
+        summary={summary}
         capabilities={capabilities}
         filters={{
           query: params.q ?? "",

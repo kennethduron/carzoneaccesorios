@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
@@ -22,7 +23,17 @@ import {
   productImageTooManyPixelsMessage,
 } from "@/utils/product-image-rules";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
-import { parseRequiredStockInteger, type ProductImportSummaryCounters } from "@/utils/product-import-stock";
+import {
+  MAX_PRODUCT_IMPORT_ROWS,
+  MAX_PRODUCT_XLSX_BYTES,
+  validateProductImportLimits,
+} from "@/utils/product-import-limits";
+import {
+  parseRequiredStockInteger,
+  productImportBatchSize,
+  readProductImportWorksheet,
+  type ProductImportSummaryCounters,
+} from "@/utils/product-import-stock";
 
 type ProductMutationResult = {
   ok: boolean;
@@ -60,6 +71,11 @@ export type ProductImportSkuStatusResult = ProductMutationResult & {
   existingSkus?: string[];
 };
 
+export type ProductImportPreflightResult = ProductMutationResult & {
+  batchId?: string;
+  totalRows?: number;
+};
+
 type ProductImageUploadResult = ProductMutationResult & {
   publicUrl?: string;
   storagePath?: string;
@@ -95,6 +111,12 @@ type ProductImportRowRpcResult = {
   quantity: number | null;
   removed_asset_ids: string[] | null;
   consumed_asset_ids: string[] | null;
+};
+
+type StagedProductImportRow = {
+  row_number: number;
+  normalized_data: { sku?: unknown } | null;
+  apply_status: string;
 };
 
 type ProductDbPayload = {
@@ -140,6 +162,20 @@ function slugify(value: string) {
 function cleanText(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeImportHeader(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function importRowSku(row: Record<string, unknown>) {
+  const entry = Object.entries(row).find(([header]) => normalizeImportHeader(header) === "sku");
+  return String(entry?.[1] ?? "").trim().toUpperCase();
 }
 
 function positiveNumber(value: unknown, fallback = 0) {
@@ -733,6 +769,83 @@ export async function deleteProductAction(id: string, confirmation?: string): Pr
   return { ok: true, message: "Producto eliminado correctamente." };
 }
 
+export async function preflightProductImportFileAction(formData: FormData): Promise<ProductImportPreflightResult> {
+  const profile = await requireProductCapability("importProducts");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, message: "Selecciona un archivo Excel .xlsx con productos." };
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { ok: false, message: "Selecciona un archivo Excel .xlsx. El formato .xls binario no es compatible." };
+  }
+
+  const byteLimit = validateProductImportLimits({ bytes: file.size });
+  if (!byteLimit.ok) {
+    return { ok: false, message: byteLimit.message };
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (buffer.byteLength > MAX_PRODUCT_XLSX_BYTES) {
+      return { ok: false, message: validateProductImportLimits({ bytes: buffer.byteLength }).message ?? "El archivo es demasiado grande." };
+    }
+
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+    const worksheet = workbook.worksheets[0] ?? null;
+    const { rows } = readProductImportWorksheet(worksheet);
+    if (rows.length === 0) {
+      return { ok: false, message: "El Excel está vacío o no tiene filas de productos." };
+    }
+    const rowLimit = validateProductImportLimits({ rows: rows.length });
+    if (!rowLimit.ok) {
+      return { ok: false, message: rowLimit.message };
+    }
+
+    const stagedRows = rows.map((row, index) => ({
+      row_number: index + 2,
+      sku: importRowSku(row),
+    }));
+    const supabase = await getSupabaseServerClient();
+    const { data, error } = await supabase.rpc("create_product_import_preflight", {
+      file_name: file.name,
+      file_bytes: buffer.byteLength,
+      file_sha256: createHash("sha256").update(buffer).digest("hex"),
+      row_payload: stagedRows,
+    });
+    if (error) {
+      return { ok: false, message: friendlyProductError(error.message) };
+    }
+
+    const batchId = String(data ?? "");
+    await writeAuditLog({
+      tableName: "import_batches",
+      recordId: batchId,
+      action: "products.import_preflight_validated",
+      newData: {
+        batch_id: batchId,
+        imported_by: profile.id,
+        file_name: file.name,
+        file_bytes: buffer.byteLength,
+        total_rows: rows.length,
+      },
+    });
+    return {
+      ok: true,
+      message: `Archivo validado en servidor: ${rows.length.toLocaleString("es-HN")} productos.`,
+      batchId,
+      totalRows: rows.length,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? `No se pudo validar el Excel en servidor: ${error.message}` : "No se pudo validar el Excel en servidor.",
+    };
+  }
+}
+
 export async function getProductImportSkuStatusAction(skus: string[]): Promise<ProductImportSkuStatusResult> {
   await requireProductCapability("importProducts");
   const supabase = await getSupabaseServerClient();
@@ -758,6 +871,7 @@ export async function getProductImportSkuStatusAction(skus: string[]): Promise<P
 export async function importProductsAction(
   products: ProductFormInput[],
   options: {
+    batchId?: string;
     mode?: ProductImportMode;
     fileName?: string;
     imageSummary?: {
@@ -803,6 +917,88 @@ export async function importProductsAction(
     };
   }
 
+  const batchId = cleanText(options.batchId);
+  if (!batchId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(batchId)) {
+    return {
+      ok: false,
+      message: "La importación no tiene un preflight server-side válido. Vuelve a validar el archivo.",
+      summary,
+      rows,
+      pendingRows: products.map((product, index) => ({ rowNumber: options.rowNumbers?.[index] ?? index + 2, sku: String(product?.sku ?? "") })),
+      failedBatchNumber: 1,
+      totalBatches: 1,
+    };
+  }
+  if (products.length > productImportBatchSize) {
+    return {
+      ok: false,
+      message: `Cada lote puede contener como máximo ${productImportBatchSize} productos.`,
+      summary,
+      rows,
+      pendingRows: products.map((product, index) => ({ rowNumber: options.rowNumbers?.[index] ?? index + 2, sku: String(product?.sku ?? "") })),
+      failedBatchNumber: 1,
+      totalBatches: 1,
+    };
+  }
+
+  const { data: batch, error: batchError } = await supabase
+    .from("import_batches")
+    .select("id, module, status, created_by, total_rows, metadata")
+    .eq("id", batchId)
+    .eq("module", "products")
+    .eq("created_by", profile.id)
+    .maybeSingle();
+  if (batchError || !batch || Number(batch.total_rows) < 1 || Number(batch.total_rows) > MAX_PRODUCT_IMPORT_ROWS) {
+    return {
+      ok: false,
+      message: "El lote de importación no existe, expiró o supera el límite permitido. Vuelve a validar el archivo.",
+      summary,
+      rows,
+      pendingRows: products.map((product, index) => ({ rowNumber: options.rowNumbers?.[index] ?? index + 2, sku: String(product?.sku ?? "") })),
+      failedBatchNumber: 1,
+      totalBatches: 1,
+    };
+  }
+
+  const requestedRowNumbers = products.map((_, index) => Number(options.rowNumbers?.[index] ?? index + 2));
+  if (
+    requestedRowNumbers.some((rowNumber) => !Number.isInteger(rowNumber) || rowNumber < 2 || rowNumber > Number(batch.total_rows) + 1) ||
+    new Set(requestedRowNumbers).size !== requestedRowNumbers.length
+  ) {
+    return {
+      ok: false,
+      message: "Las filas solicitadas no coinciden con el archivo validado en servidor.",
+      summary,
+      rows,
+      pendingRows: products.map((product, index) => ({ rowNumber: requestedRowNumbers[index], sku: String(product?.sku ?? "") })),
+      failedBatchNumber: 1,
+      totalBatches: 1,
+    };
+  }
+
+  const { data: stagedRows, error: stagedRowsError } = await supabase
+    .from("import_rows")
+    .select("row_number, normalized_data, apply_status")
+    .eq("batch_id", batchId)
+    .in("row_number", requestedRowNumbers)
+    .returns<StagedProductImportRow[]>();
+  const stagedByRow = new Map((stagedRows ?? []).map((row) => [row.row_number, row]));
+  const stagedRowsMatch = !stagedRowsError && products.every((product, index) => {
+    const staged = stagedByRow.get(requestedRowNumbers[index]);
+    return String(staged?.normalized_data?.sku ?? "").trim().toUpperCase() === String(product?.sku ?? "").trim().toUpperCase();
+  });
+  if (!stagedRowsMatch) {
+    return {
+      ok: false,
+      message: "El contenido del lote no coincide con las filas del XLSX validado en servidor.",
+      summary,
+      rows,
+      pendingRows: products.map((product, index) => ({ rowNumber: requestedRowNumbers[index], sku: String(product?.sku ?? "") })),
+      failedBatchNumber: 1,
+      totalBatches: 1,
+    };
+  }
+
   const uploadedAssetIds = Array.from(
     new Set(
       products.flatMap((product) =>
@@ -828,6 +1024,7 @@ export async function importProductsAction(
         user_id: profile.id,
         imported_by: profile.id,
         user_role: profile.role,
+        batch_id: batchId,
         status,
         mode,
         file_name: cleanText(options.fileName),
@@ -884,7 +1081,9 @@ export async function importProductsAction(
       const { stock: catalogStock, ...catalogData } = payloadWithStock;
       void catalogStock;
       const images = capabilities.manageImages && product.images.length > 0 ? imagePayload(product.images) : null;
-      const { data, error } = await supabase.rpc("import_product_row_v2_atomic", {
+      const { data, error } = await supabase.rpc("import_product_batch_row_v3_atomic", {
+        target_batch_id: batchId,
+        target_row_number: rowNumber,
         product_data: catalogData,
         images_data: images,
         target_stock: targetStock,
@@ -941,6 +1140,11 @@ export async function importProductsAction(
       });
     } catch (error) {
       const message = friendlyProductError(error instanceof Error ? error.message : "No se pudo importar la fila.");
+      await supabase
+        .from("import_rows")
+        .update({ apply_status: "failed", apply_error: message, audit_metadata: { batch_id: batchId, sku } })
+        .eq("batch_id", batchId)
+        .eq("row_number", rowNumber);
       summary.failed += 1;
       rows.push({
         rowNumber,
@@ -972,6 +1176,7 @@ export async function importProductsAction(
   summary.orphanAssetsCleaned = cleanedOrphanAssets.length;
 
   await writeBulkImportAudit(summary.failed > 0 ? "completed_with_errors" : "completed");
+  await supabase.rpc("recount_import_batch", { target_batch_id: batchId });
 
   if (summary.created + summary.updated > 0) {
     revalidateProductCatalog();

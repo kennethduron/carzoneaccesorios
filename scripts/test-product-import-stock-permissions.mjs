@@ -89,7 +89,8 @@ const productActions = read("src/app/admin/productos/actions.ts");
 const productManager = read("src/components/admin/product-manager.tsx");
 const permissionMigration = read("supabase/migrations/202607200001_grant_contadora_product_stock_adjustment.sql");
 const atomicMigration = read("supabase/migrations/202607200002_atomic_product_import_row.sql");
-assert.match(productActions, /rpc\("import_product_row_atomic"/);
+const catalogConsistencyMigration = read("supabase/migrations/202608080004_product_catalog_consistency_and_sku_guards.sql");
+assert.match(productActions, /rpc\("import_product_batch_row_v3_atomic"/);
 assert.doesNotMatch(productActions, /Importacion detenida/);
 assert.match(productActions, /summary\.stockProcessed/);
 assert.match(productActions, /consumed_asset_ids/);
@@ -105,5 +106,7 @@ assert.match(permissionMigration, /products:adjust_stock/);
 assert.match(atomicMigration, /save_product_catalog_locked/);
 assert.match(atomicMigration, /set_product_stock_locked/);
 assert.match(atomicMigration, /row_status := 'skipped'/);
+assert.match(catalogConsistencyMigration, /from public\.import_product_row_v2_atomic/);
+assert.match(catalogConsistencyMigration, /target_batch\.total_rows > 5000/);
 
 console.log("PRODUCT_IMPORT_STOCK_PERMISSIONS_AND_XLSX_PASS");

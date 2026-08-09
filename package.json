@@ -53,6 +53,8 @@
     "test:portal-customer-sync": "node scripts/test-portal-customer-profile-sync.mjs",
     "test:portal-customer-sync:local": "node scripts/test-portal-customer-profile-sync-local.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",
+    "test:product-catalog": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-product-catalog-consistency.mjs",
+    "test:product-catalog:local": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-product-catalog-local.mjs",
     "test:product-accountant-access": "node scripts/test-product-accountant-access.mjs",
     "test:wholesale-permissions": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-wholesale-permissions.mjs",
     "test:wholesale-approval": "node scripts/test-wholesale-approval-v1.mjs",
