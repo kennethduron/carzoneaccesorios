@@ -75,6 +75,11 @@ export type CustomerAccountSummary = {
   orderCount: number;
   totalPurchased: number;
   issuedInvoiceCount: number;
+  customerId: string | null;
+  customerActive: boolean;
+  businessName: string | null;
+  taxId: string | null;
+  city: string | null;
 };
 
 export type CustomerOrdersPage = {
@@ -422,7 +427,13 @@ export async function getCustomerAccountSummary(userId: string): Promise<Custome
         target_email: null,
       })
       .single<CustomerAccountSummaryRow>(),
-    admin.from("customers").select("id").eq("user_id", userId).limit(1).maybeSingle<{ id: string }>(),
+    admin
+      .from("customers")
+      .select("id, active, business_name, tax_id, city")
+      .eq("user_id", userId)
+      .is("merged_into_customer_id", null)
+      .limit(1)
+      .maybeSingle<{ id: string; active: boolean; business_name: string | null; tax_id: string | null; city: string | null }>(),
   ]);
 
   const summary = summaryResult.data ?? null;
@@ -435,6 +446,11 @@ export async function getCustomerAccountSummary(userId: string): Promise<Custome
     orderCount: summary?.order_count ?? 0,
     totalPurchased: toNumber(summary?.total_purchased),
     issuedInvoiceCount: summary?.issued_invoice_count ?? 0,
+    customerId: linkedCustomerResult.data?.id ?? null,
+    customerActive: Boolean(linkedCustomerResult.data?.active),
+    businessName: linkedCustomerResult.data?.business_name ?? null,
+    taxId: linkedCustomerResult.data?.tax_id ?? null,
+    city: linkedCustomerResult.data?.city ?? null,
   };
 }
 

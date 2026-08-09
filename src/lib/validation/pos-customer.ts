@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { PosCustomerUpdateInput, PosCustomerWriteInput } from "@/types/point-of-sale";
+import { optionalCustomerRtnSchema } from "@/lib/validation/customer-commercial-profile";
 
 const optionalText = (maximum: number) =>
   z.preprocess(
@@ -24,13 +25,7 @@ const email = z.preprocess(
   z.string().email("CUSTOMER_EMAIL_INVALID").max(254).nullable(),
 );
 
-const taxId = z.preprocess(
-  (value) => (typeof value === "string" && value.trim() ? value.trim() : null),
-  z.string()
-    .max(40)
-    .refine((value) => /^[0-9 -]+$/.test(value) && value.replace(/\D/g, "").length === 14, "CUSTOMER_RTN_INVALID")
-    .nullable(),
-);
+const taxId = optionalCustomerRtnSchema;
 
 const schema = z.object({
   requestKey: z.string().uuid(),

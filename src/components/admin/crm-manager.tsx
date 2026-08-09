@@ -1785,7 +1785,7 @@ function CrmActionDrawer({
           {mode === "lead" ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Empresa">
-                <Input value={lead.business_name} onChange={(event) => onUpdateLead("business_name", event.target.value)} />
+                <Input value={lead.business_name} disabled={Boolean(lead.id)} onChange={(event) => onUpdateLead("business_name", event.target.value)} />
               </Field>
               <Field label="Cliente">
                 <Input value={lead.contact_name} onChange={(event) => onUpdateLead("contact_name", event.target.value)} />
@@ -1797,10 +1797,10 @@ function CrmActionDrawer({
                 <Input type="email" value={lead.email} onChange={(event) => onUpdateLead("email", event.target.value)} />
               </Field>
               <Field label="RTN">
-                <Input value={lead.tax_id} onChange={(event) => onUpdateLead("tax_id", event.target.value)} />
+                <Input value={lead.tax_id} disabled={Boolean(lead.id)} onChange={(event) => onUpdateLead("tax_id", event.target.value)} />
               </Field>
               <Field label="Ciudad">
-                <Input value={lead.city} onChange={(event) => onUpdateLead("city", event.target.value)} />
+                <Input value={lead.city} disabled={Boolean(lead.id)} onChange={(event) => onUpdateLead("city", event.target.value)} />
               </Field>
               <Field label="Valor estimado">
                 <Input type="number" min={0} value={lead.estimated_value} onChange={(event) => onUpdateLead("estimated_value", numberValue(event.target.value))} />

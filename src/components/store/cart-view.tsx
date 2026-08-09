@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
@@ -10,6 +10,7 @@ import { formatCurrency, getProductPriceLabel, hasValidWholesalePrice } from "@/
 import { calculateCheckoutFees } from "@/utils/commerce-settings";
 import { defaultPublicCompanySettings, getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
 import type { PublicCompanySettings } from "@/types/settings";
+import { CartQuantityControl } from "@/components/store/cart-quantity-control";
 
 export function CartView() {
   const { rows, wholesaleQuantityIssues, invalidItemCount, cartMessage, subtotal, tax, total: productsTotal, updateQuantity, removeFromCart, clearInvalidCartItems } =
@@ -128,18 +129,23 @@ export function CartView() {
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => updateQuantity(item.product.id, -1)} className="grid size-9 place-items-center rounded-md border border-black/10">
-                    <Minus size={15} />
-                  </button>
-                  <span className="w-8 text-center text-sm">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.product.id, 1)} className="grid size-9 place-items-center rounded-md border border-black/10">
-                    <Plus size={15} />
-                  </button>
-                  <button onClick={() => removeFromCart(item.product.id)} className="grid size-9 place-items-center rounded-md border border-black/10">
+                <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 md:justify-end">
+                  <CartQuantityControl
+                    key={`${item.product.id}:${item.quantity}`}
+                    productId={item.product.id}
+                    productName={item.product.name}
+                    quantity={item.quantity}
+                    availableStock={item.product.stock}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeFromCart(item.product.id)}
+                    className="grid size-11 shrink-0 place-items-center rounded-md border border-black/10 transition-colors hover:bg-[#f4f4f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]"
+                    aria-label={`Eliminar ${item.product.name} del carrito`}
+                  >
                     <Trash2 size={15} />
                   </button>
-                  <span className="w-28 text-right font-semibold">{formatCurrency(item.lineTotal)}</span>
+                  <span className="min-w-28 text-right font-semibold">{formatCurrency(item.lineTotal)}</span>
                 </div>
               </div>
             ))

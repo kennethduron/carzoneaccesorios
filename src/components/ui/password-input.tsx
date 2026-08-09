@@ -26,7 +26,7 @@ export function PasswordInput({
       />
       <button
         type="button"
-        className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-black/55 transition-colors hover:bg-black/5 hover:text-[#080808] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
+        className="absolute right-0 top-1/2 grid size-11 -translate-y-1/2 place-items-center rounded-md text-black/55 transition-colors hover:bg-black/5 hover:text-[#080808] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-45"
         onClick={() => setVisible((current) => !current)}
         aria-label={label}
         title={label}

@@ -6,6 +6,7 @@ import { PublicInvoiceDownloadButton } from "@/components/store/public-invoice-d
 import { CustomerCreditNotificationToast } from "@/components/store/customer-credit-notification-toast";
 import { CustomerWholesaleNotificationToast } from "@/components/store/customer-wholesale-notification-toast";
 import { CustomerNotifications } from "@/components/store/customer-notifications";
+import { CustomerCommercialProfile } from "@/components/store/customer-commercial-profile";
 import { WholesaleAccountRequestCard } from "@/components/store/wholesale-account-request-card";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { PublicStoreShell } from "@/components/store/public-store-shell";
@@ -195,6 +196,13 @@ export default async function CuentaPage({
 
           <WholesaleAccountRequestCard initialState={wholesaleState} context="account" />
         </div>
+
+        <CustomerCommercialProfile
+          businessName={accountSummary.businessName}
+          taxId={accountSummary.taxId}
+          city={accountSummary.city}
+          enabled={accountSummary.emailConfirmed && accountSummary.customerActive}
+        />
 
         <CustomerNotifications initialNotifications={portalNotifications} />
 

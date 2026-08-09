@@ -14,6 +14,7 @@
     "test:auth-session-handling": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-session-handling.mjs",
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
     "test:cart-hydration": "node scripts/test-cart-hydration.mjs",
+    "test:cart-quantity": "node scripts/test-cart-quantity-input.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
     "test:admin-reports-historical-payments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-reports-historical-payments.mjs",
@@ -74,6 +75,7 @@
     "test:supabase-auth-smtp-structure": "node scripts/test-supabase-auth-smtp-structure.mjs",
     "test:supabase-auth-email:remote": "node scripts/test-supabase-auth-email-remote.mjs",
     "test:customer-canonical-merge": "node scripts/test-customer-canonical-merge.mjs",
+    "test:customer-profile-set-once": "node scripts/test-customer-profile-set-once.mjs",
     "test:customer-merge-wizard-details": "node scripts/test-customer-merge-wizard-details.mjs"
   },
   "dependencies": {

@@ -13,6 +13,7 @@ import {
 import { usePriceMode } from "@/contexts/price-mode-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
 import { useToast } from "@/contexts/toast-context";
+import { CART_MAX_QUANTITY, validateCartQuantity } from "@/utils/cart-quantity";
 
 type CartRow = {
   product: Product;
@@ -28,6 +29,13 @@ export type WholesaleQuantityIssue = {
   minimumQuantity: number;
 };
 
+export type CartQuantityResult = {
+  ok: boolean;
+  code: "UPDATED" | "UNCHANGED" | "PRODUCT_UNAVAILABLE" | "QUANTITY_INVALID" | "QUANTITY_TOO_HIGH" | "STOCK_EXCEEDED" | "WHOLESALE_MINIMUM";
+  message: string;
+  quantity?: number;
+};
+
 type CartContextValue = {
   cart: CartItem[];
   rows: CartRow[];
@@ -40,6 +48,7 @@ type CartContextValue = {
   total: number;
   cartCount: number;
   addToCart: (productId: string) => boolean;
+  setQuantity: (productId: string, requestedQuantity: number) => CartQuantityResult;
   updateQuantity: (productId: string, delta: number) => boolean;
   removeFromCart: (productId: string) => void;
   clearInvalidCartItems: () => void;
@@ -78,10 +87,14 @@ function readStoredCart() {
       )
       .map((item) => ({
         productId: item.productId as string,
-        quantity: Math.max(1, Math.floor(Number(item.quantity))),
+        quantity: Math.min(CART_MAX_QUANTITY, Math.max(1, Math.floor(Number(item.quantity)))),
       }));
 
-    if (validCart.length !== parsed.length || parsed.some((item) => "productSnapshot" in item)) {
+    if (
+      validCart.length !== parsed.length ||
+      parsed.some((item) => "productSnapshot" in item) ||
+      validCart.some((item, index) => item.quantity !== Number(parsed[index]?.quantity))
+    ) {
       window.sessionStorage.setItem(storageKey, JSON.stringify(validCart));
     }
 
@@ -212,6 +225,46 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCart(nextCart);
   }, []);
 
+  const setQuantity = useCallback((productId: string, requestedQuantity: number): CartQuantityResult => {
+    const product = resolvedCartProducts[productId] ?? null;
+    if (!product) {
+      const message = isResolvingCart
+        ? "Estamos actualizando este producto. Intenta de nuevo."
+        : "Producto no encontrado.";
+      setCartMessage(message);
+      return { ok: false, code: "PRODUCT_UNAVAILABLE", message };
+    }
+    const minimumQuantity = getWholesaleMinimumQuantity(product);
+    const validation = validateCartQuantity({
+      requestedQuantity,
+      availableStock: product.stock,
+      wholesaleMinimum: minimumQuantity,
+      wholesaleMinimumApplies: requiresWholesaleMinimumQuantity(product, priceMode),
+    });
+    if (!validation.ok) {
+      setCartMessage(validation.message);
+      return validation;
+    }
+
+    const current = cartRef.current;
+    const existing = current.find((item) => item.productId === productId);
+    if (!existing) {
+      const message = "Producto no encontrado en el carrito.";
+      setCartMessage(message);
+      return { ok: false, code: "PRODUCT_UNAVAILABLE", message };
+    }
+    if (existing.quantity === requestedQuantity) {
+      return { ok: true, code: "UNCHANGED", message: "La cantidad ya estaba actualizada.", quantity: requestedQuantity };
+    }
+
+    commitCart(
+      current.map((item) => item.productId === productId ? { ...item, quantity: requestedQuantity } : item),
+    );
+    const message = "Cantidad actualizada en el carrito.";
+    setCartMessage(message);
+    return { ok: true, code: "UPDATED", message, quantity: requestedQuantity };
+  }, [commitCart, isResolvingCart, priceMode, resolvedCartProducts]);
+
   const addToCart = useCallback((productId: string) => {
     if (!isUuid(productId)) {
       const message = "Este producto no está disponible para compra.";
@@ -237,7 +290,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       ? Math.max(currentQuantity + 1, minimumQuantity)
       : currentQuantity + 1;
 
-    if (nextQuantity > product.stock) {
+    if (nextQuantity > Math.min(product.stock, CART_MAX_QUANTITY)) {
       const message = `Solo hay ${product.stock} unidades disponibles.`;
       setCartMessage(message);
       toast.warning(message);
@@ -263,47 +316,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [commitCart, findProduct, priceMode, toast]);
 
   const updateQuantity = useCallback((productId: string, delta: number) => {
-    const product = resolvedCartProducts[productId] ?? null;
-    if (!product) {
-      const message = isResolvingCart
-        ? "Estamos actualizando este producto. Intenta de nuevo."
-        : "Producto no encontrado.";
-      setCartMessage(message);
-      toast.error(message);
-      return false;
-    }
-
+    if (!Number.isSafeInteger(delta)) return false;
     const current = cartRef.current;
     const existing = current.find((item) => item.productId === productId);
     if (!existing) return false;
-    const nextQuantity = Math.max(0, existing.quantity + delta);
-    const minimumQuantity = getWholesaleMinimumQuantity(product);
-    if (
-      requiresWholesaleMinimumQuantity(product, priceMode) &&
-      nextQuantity > 0 &&
-      nextQuantity < minimumQuantity
-    ) {
-      const message = wholesaleMinimumQuantityMessage(minimumQuantity);
-      setCartMessage(message);
-      toast.warning(message);
-      return false;
+    const nextQuantity = existing.quantity + delta;
+    if (nextQuantity <= 0) {
+      commitCart(current.filter((item) => item.productId !== productId));
+      setCartMessage("Producto eliminado del carrito.");
+      return true;
     }
-    if (nextQuantity > product.stock) {
-      const message = `Solo hay ${product.stock} unidades disponibles.`;
-      setCartMessage(message);
-      toast.warning(message);
-      return false;
-    }
-
-    const nextCart = current
-      .map((item) =>
-        item.productId === productId ? { productId: item.productId, quantity: nextQuantity } : item,
-      )
-      .filter((item) => item.quantity > 0);
-    commitCart(nextCart);
-    setCartMessage("Cantidad actualizada en el carrito.");
-    return true;
-  }, [commitCart, isResolvingCart, priceMode, resolvedCartProducts, toast]);
+    const result = setQuantity(productId, nextQuantity);
+    if (!result.ok) toast.warning(result.message);
+    return result.ok;
+  }, [commitCart, setQuantity, toast]);
 
   const removeFromCart = useCallback((productId: string) => {
     commitCart(cartRef.current.filter((item) => item.productId !== productId));
@@ -347,6 +373,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       total,
       cartCount,
       addToCart,
+      setQuantity,
       updateQuantity,
       removeFromCart,
       clearInvalidCartItems,
@@ -367,6 +394,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       removeFromCart,
       refreshCart,
       rows,
+      setQuantity,
       subtotal,
       tax,
       total,

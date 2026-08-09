@@ -71,17 +71,26 @@ export async function ensurePortalCustomerProfileForUser(
   eventKey?: string | null,
 ): Promise<PortalCustomerSyncResult> {
   const admin = getSupabaseAdminClient();
+  const requestKey = portalCustomerSyncRequestKey(userId, source, eventKey ?? "current");
   const { data, error } = await admin.rpc("ensure_portal_customer_profile_internal_v1", {
     p_portal_user_id: userId,
     p_source: source,
-    p_request_key: portalCustomerSyncRequestKey(userId, source, eventKey ?? "current"),
+    p_request_key: requestKey,
   });
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return throwOnOperationalFailure(normalizeResult(data));
+  const result = throwOnOperationalFailure(normalizeResult(data));
+  if (source === "registration" && result.ok && ["PROFILE_CREATED", "ALREADY_LINKED"].includes(result.code)) {
+    const { error: commercialError } = await admin.rpc("finalize_portal_registration_commercial_fields_v1", {
+      p_portal_user_id: userId,
+      p_request_key: requestKey,
+    });
+    if (commercialError) throw new Error(commercialError.message);
+  }
+  return result;
 }
 
 export async function ensureMyPortalCustomerProfile(

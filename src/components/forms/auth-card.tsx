@@ -59,6 +59,9 @@ export function AuthCard({ mode }: AuthCardProps) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [phone, setPhone] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [taxId, setTaxId] = useState("");
+  const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -174,7 +177,17 @@ export function AuthCard({ mode }: AuthCardProps) {
     try {
       const result = isLogin
         ? await loginWithEmailAction(email, password, nextPath)
-        : await registerWithEmailAction({ fullName, username, email, phone, password, nextPath });
+        : await registerWithEmailAction({
+            fullName,
+            username,
+            email,
+            phone,
+            password,
+            businessName,
+            taxId,
+            city,
+            nextPath,
+          });
 
       setMessage(result.message);
 
@@ -447,60 +460,110 @@ export function AuthCard({ mode }: AuthCardProps) {
 
           {!registrationEmailSent ? <div className="space-y-3">
             {!isLogin ? (
-              <Input
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                placeholder="Nombre completo"
-                autoComplete="name"
-                disabled={loading}
-                required
-              />
+              <AuthField label="Nombre completo" htmlFor="auth-full-name">
+                <Input
+                  id="auth-full-name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                  autoComplete="name"
+                  disabled={loading}
+                  required
+                />
+              </AuthField>
             ) : null}
             {!isLogin ? (
+              <AuthField label="Nombre de usuario" htmlFor="auth-username">
+                <Input
+                  id="auth-username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  minLength={3}
+                  maxLength={30}
+                  disabled={loading}
+                  required
+                />
+              </AuthField>
+            ) : null}
+            <AuthField label={isLogin ? "Correo electrónico o usuario" : "Correo electrónico"} htmlFor="auth-email">
               <Input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                placeholder="Nombre de usuario"
-                autoComplete="username"
-                minLength={3}
-                maxLength={30}
+                id="auth-email"
+                value={email}
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  setVerificationDetected(false);
+                }}
+                type={isLogin ? "text" : "email"}
+                autoComplete={isLogin ? "username" : "email"}
                 disabled={loading}
                 required
               />
-            ) : null}
-            <Input
-              value={email}
-              onChange={(event) => {
-                setEmail(event.target.value);
-                setVerificationDetected(false);
-              }}
-              placeholder={isLogin ? "Correo electrónico o usuario" : "Correo electrónico"}
-              type={isLogin ? "text" : "email"}
-              autoComplete={isLogin ? "username" : "email"}
-              disabled={loading}
-              required
-            />
+            </AuthField>
             {!isLogin ? (
-              <Input
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="Teléfono"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
+              <AuthField label="Teléfono" htmlFor="auth-phone">
+                <Input
+                  id="auth-phone"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  disabled={loading}
+                  required
+                />
+              </AuthField>
+            ) : null}
+            <AuthField label="Contraseña" htmlFor="auth-password">
+              <PasswordInput
+                id="auth-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={isLogin ? undefined : 8}
+                autoComplete={isLogin ? "current-password" : "new-password"}
                 disabled={loading}
                 required
               />
+            </AuthField>
+            {!isLogin ? (
+              <fieldset className="space-y-3 rounded-lg border border-black/10 bg-[#fafafa] p-4">
+                <legend className="px-1 text-sm font-semibold">Datos del negocio (opcional)</legend>
+                <p className="text-xs leading-5 text-black/55">
+                  Puedes dejarlos vacíos y completarlos una sola vez desde tu cuenta después de verificar el correo.
+                </p>
+                <AuthField label="Nombre del negocio (opcional)" htmlFor="auth-business-name">
+                  <Input
+                    id="auth-business-name"
+                    value={businessName}
+                    onChange={(event) => setBusinessName(event.target.value)}
+                    maxLength={160}
+                    autoComplete="organization"
+                    disabled={loading}
+                  />
+                </AuthField>
+                <AuthField label="RTN (opcional)" htmlFor="auth-tax-id">
+                  <Input
+                    id="auth-tax-id"
+                    value={taxId}
+                    onChange={(event) => setTaxId(event.target.value)}
+                    maxLength={40}
+                    inputMode="numeric"
+                    disabled={loading}
+                    aria-describedby="auth-tax-id-help"
+                  />
+                  <span id="auth-tax-id-help" className="mt-1 block text-xs text-black/50">14 dígitos; puedes usar espacios o guiones.</span>
+                </AuthField>
+                <AuthField label="Ubicación (ciudad/municipio) (opcional)" htmlFor="auth-city">
+                  <Input
+                    id="auth-city"
+                    value={city}
+                    onChange={(event) => setCity(event.target.value)}
+                    maxLength={120}
+                    autoComplete="address-level2"
+                    disabled={loading}
+                  />
+                </AuthField>
+              </fieldset>
             ) : null}
-            <PasswordInput
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Contraseña"
-              minLength={isLogin ? undefined : 8}
-              autoComplete={isLogin ? "current-password" : "new-password"}
-              disabled={loading}
-              required
-            />
             {!isLogin ? <WholesaleSignupInfo /> : null}
           </div> : null}
 
@@ -558,7 +621,7 @@ export function AuthCard({ mode }: AuthCardProps) {
             </div>
           ) : null}
 
-          {!registrationEmailSent ? <Button type="submit" variant="dark" className="mt-5 w-full py-3" disabled={loading}>
+          {!registrationEmailSent ? <Button type="submit" variant="dark" className="mt-5 min-h-11 w-full py-3" disabled={loading}>
             {loading ? <Loader2 className="animate-spin" size={18} /> : isLogin ? <LogIn size={18} /> : <UserPlus size={18} />}
             {loading ? "Procesando..." : isLogin ? "Ingresar" : "Crear cuenta"}
           </Button> : null}
@@ -572,6 +635,23 @@ export function AuthCard({ mode }: AuthCardProps) {
         </form>
       </div>
     </section>
+  );
+}
+
+function AuthField({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block" htmlFor={htmlFor}>
+      <span className="mb-1 block text-sm font-medium text-black/70">{label}</span>
+      {children}
+    </label>
   );
 }
 

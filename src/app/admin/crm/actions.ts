@@ -10,6 +10,7 @@ import { writeErrorLog } from "@/lib/error-logging";
 import { processCriticalEmailQueue } from "@/lib/notifications/email-queue";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { customerCommercialProfileSchema, normalizeCustomerRtn } from "@/lib/validation/customer-commercial-profile";
 import { getAdminCustomerProfile } from "@/services/supabase/admin-crm.service";
 import type { AppRole, AuthProfile } from "@/types/auth";
 import type { CrmCustomerIdentityInput, CrmCustomerProfile, CrmFollowupInput, CrmFollowupStatus, CrmLeadInput, CrmNoteInput } from "@/types/crm";
@@ -507,7 +508,7 @@ export async function updateCustomerIdentityAction(
   const email = optionalText(input.email)?.toLowerCase() ?? null;
   const rawPhone = optionalText(input.phone);
   const phone = rawPhone ? validateHondurasPhone(rawPhone) : { ok: true as const, value: null };
-  const taxId = optionalText(input.tax_id);
+  let taxId = optionalText(input.tax_id);
   const city = optionalText(input.city);
   const expected = optionalDateTime(input.expected_updated_at);
   const fieldErrors: CustomerIdentityMutationResult["fieldErrors"] = {};
@@ -521,6 +522,24 @@ export async function updateCustomerIdentityAction(
   if (!expected.ok) fieldErrors.expected_updated_at = expected.message;
   if (Object.keys(fieldErrors).length > 0 || !contactName.ok || !phone.ok || !expected.ok) {
     return { ok: false, status: "invalid_input", message: "Revisa los campos indicados.", fieldErrors };
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data: currentIdentity, error: currentIdentityError } = await admin
+    .from("customers")
+    .select("tax_id")
+    .eq("id", customer.value)
+    .maybeSingle<{ tax_id: string | null }>();
+  if (currentIdentityError || !currentIdentity) {
+    return { ok: false, status: "customer_not_found", message: "No fue posible cargar la identidad actual del cliente." };
+  }
+  if (taxId !== currentIdentity.tax_id && taxId !== null) {
+    const normalizedTaxId = normalizeCustomerRtn(taxId);
+    if (!normalizedTaxId) {
+      const message = "El RTN debe contener 14 dígitos.";
+      return { ok: false, status: "invalid_input", message: "Revisa los campos indicados.", fieldErrors: { tax_id: message } };
+    }
+    taxId = normalizedTaxId;
   }
 
   const requestHeaders = await headers();
@@ -691,18 +710,30 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
   }
 
   const normalizedPhone = phone.ok ? phone.value : "";
-  const payload = {
-    business_name: optionalText(input.business_name),
+  const commercialFields = input.id ? null : customerCommercialProfileSchema.safeParse({
+    businessName: input.business_name,
+    taxId: input.tax_id,
+    city: input.city,
+  });
+  if (commercialFields && !commercialFields.success) {
+    return { ok: false, message: commercialFields.error.issues[0]?.message ?? "Revisa los datos comerciales." };
+  }
+
+  const operationalPayload = {
     contact_name: contactName.value,
     email: optionalText(input.email),
     phone: normalizedPhone,
-    tax_id: optionalText(input.tax_id),
     address: optionalText(input.address),
-    city: optionalText(input.city),
     notes: optionalText(input.notes),
     lead_status: input.lead_status,
     estimated_value: estimatedValue.value,
     monthly_amount: monthlyAmount.value,
+  };
+  const createPayload = {
+    ...operationalPayload,
+    business_name: commercialFields?.success ? commercialFields.data.businessName : null,
+    tax_id: commercialFields?.success ? commercialFields.data.taxId : null,
+    city: commercialFields?.success ? commercialFields.data.city : null,
     active: true,
   };
 
@@ -732,8 +763,8 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
   }
 
   const query = input.id
-    ? supabase.from("customers").update(payload).eq("id", input.id).select("id").single<{ id: string }>()
-    : supabase.from("customers").insert(payload).select("id").single<{ id: string }>();
+    ? supabase.from("customers").update(operationalPayload).eq("id", input.id).select("id").single<{ id: string }>()
+    : supabase.from("customers").insert(createPayload).select("id").single<{ id: string }>();
   const { data, error } = await query;
 
   if (error) {
@@ -744,7 +775,7 @@ export async function saveCrmLeadAction(input: CrmLeadInput): Promise<CrmMutatio
     tableName: "customers",
     recordId: data.id,
     action: input.id ? "crm.lead.updated" : "crm.lead.created",
-    newData: payload,
+    newData: input.id ? operationalPayload : createPayload,
   });
 
   revalidatePath("/admin/crm");

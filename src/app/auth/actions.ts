@@ -464,6 +464,9 @@ export async function registerWithEmailAction(input: PublicRegistrationInput): P
   const username = validateUsername(validatedInput.username);
   const email = emailForLimit;
   const phone = validatedInput.phone;
+  const businessName = validatedInput.businessName;
+  const taxId = validatedInput.taxId;
+  const city = validatedInput.city;
   const nextPath = safeNextPath(validatedInput.nextPath);
 
   if (!username.ok) {
@@ -491,6 +494,9 @@ export async function registerWithEmailAction(input: PublicRegistrationInput): P
         full_name: fullName,
         username: username.username,
         phone,
+        ...(businessName ? { business_name: businessName } : {}),
+        ...(taxId ? { tax_id: taxId } : {}),
+        ...(city ? { city } : {}),
       },
     },
   });
@@ -509,6 +515,9 @@ export async function registerWithEmailAction(input: PublicRegistrationInput): P
       auth_email_provider: "supabase-auth-smtp",
       username_present: Boolean(username.username),
       phone_present: Boolean(phone),
+      business_name_present: Boolean(businessName),
+      tax_id_present: Boolean(taxId),
+      city_present: Boolean(city),
       sign_up_returned_user: Boolean(data.user),
       sign_up_returned_session: Boolean(data.session),
     });
