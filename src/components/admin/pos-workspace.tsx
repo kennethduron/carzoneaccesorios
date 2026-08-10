@@ -17,7 +17,7 @@ import { PosProductReservationsDialog } from "@/components/admin/pos-product-res
 import { resolvePosCustomerDeliveryAddress, resolvePosCustomerSelectionDeliveryAddress } from "@/lib/pos/customer-delivery-address";
 import { applyPosInventorySnapshotsToItems } from "@/lib/pos/inventory-mode";
 import { validatePosQuantity } from "@/lib/pos/cart-quantity";
-import type { PosConfirmationResult, PosCustomerContext, PosInventoryConflict, PosInventorySnapshot } from "@/types/point-of-sale";
+import type { PosConfirmationResult, PosCreditOverdueOverrideCapability, PosCustomerContext, PosInventoryConflict, PosInventorySnapshot } from "@/types/point-of-sale";
 import type { PosActiveDraftSummary, PosChargeCapabilities, PosDraftApiError, PosDraftItem, PosProductSearchResult, PosSaleDraft } from "@/types/pos-drafts";
 
 const storedDraftKey = "car-zone-pos-stage4-draft-id";
@@ -56,7 +56,10 @@ type WorkspaceDialog =
   | { kind: "abandon" }
   | { kind: "change-customer"; customer: PosCustomerContext | null };
 
-export function PosWorkspace({ operatorName }: { operatorName: string }) {
+export function PosWorkspace({ operatorName, creditOverrideCapability }: {
+  operatorName: string;
+  creditOverrideCapability: PosCreditOverdueOverrideCapability;
+}) {
   const [customer, setCustomer] = useState<PosCustomerContext | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [draft, setDraft] = useState<PosSaleDraft | null>(null);
@@ -465,7 +468,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
       <PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm xl:sticky xl:top-4"><div className="flex items-start gap-3"><ShoppingCart className="mt-0.5 shrink-0 text-[#e4252c]" size={22} /><div><h2 className="font-semibold">{customer ? "Cliente listo" : "Prepare una nueva venta"}</h2><p className="mt-1 text-sm leading-5 text-black/55">{customer ? "Inicie el borrador con las condiciones comerciales seleccionadas." : "Seleccione un cliente para habilitar productos y precios."}</p></div></div><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
     </div>
-      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} /></div>
+      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel key={draft.draftId} draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} /></div>
       : <>
         <div data-testid="pos-workspace-grid" className={POS_WORKSPACE_GRID_CLASS}>
           <div className={POS_OPERATIONAL_COLUMN_CLASS}>
@@ -479,7 +482,7 @@ export function PosWorkspace({ operatorName }: { operatorName: string }) {
           </div>
           <div id="pos-sale-summary" ref={cartPanelRef} className={POS_SUMMARY_COLUMN_CLASS}>
             <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} additionalChargeDescription={delivery.additionalChargeDescription} otherCharge={Number(delivery.otherCharge) || 0} otherChargeDescription={delivery.otherChargeDescription} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
-            {customer ? <PosConfirmationPanel draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} /> : null}
+            {customer ? <PosConfirmationPanel key={draft.draftId} draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} /> : null}
           </div>
         </div>
         <PosMobileTotalBar unitCount={cartUnits} total={provisionalTotal} hidden={keyboardOpen} onReview={() => cartPanelRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })} />

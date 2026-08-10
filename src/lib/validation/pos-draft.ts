@@ -65,7 +65,10 @@ const confirmationPaymentSchema = z.discriminatedUnion("method", [
     verified: z.literal(true),
     reference: z.string().trim().max(200).nullable(),
   }).strict(),
-  z.object({ method: z.literal("commercial_credit") }).strict(),
+  z.object({
+    method: z.literal("commercial_credit"),
+    overdueOverrideReason: z.string().trim().min(10).max(500).nullable().optional(),
+  }).strict(),
 ]);
 
 export const confirmPosSaleSchema = z.object({

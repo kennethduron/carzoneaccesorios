@@ -4,6 +4,7 @@ import { applyPosDraftInventorySnapshots } from "@/lib/pos/inventory-mode";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import type {
   PosChargeCapabilities,
+  PosCreditOverdueOverrideCapability,
   PosActiveDraftSummary,
   PosConfirmationInput,
   PosConfirmationResult,
@@ -33,6 +34,11 @@ type ConfirmationRow = {
   invoice_date: string;
   receipt_reference: string;
   accounting_status: string;
+};
+
+type CreditOverrideCapabilityRow = {
+  feature_enabled: boolean;
+  override_allowed: boolean;
 };
 
 type ProductRow = {
@@ -131,6 +137,11 @@ function throwRpcError(error: { code?: string; message?: string; details?: strin
 }
 
 const confirmationMessages: Record<string, string> = {
+  POS_CREDIT_OVERDUE: "Existe saldo vencido: el credito esta en espera.",
+  POS_CREDIT_OVERRIDE_DISABLED: "La autorizacion excepcional esta deshabilitada.",
+  POS_CREDIT_OVERRIDE_FORBIDDEN: "No tienes permiso para autorizar esta excepcion.",
+  POS_CREDIT_OVERRIDE_REASON_REQUIRED: "Escribe un motivo de autorizacion de al menos 10 caracteres.",
+  POS_CREDIT_OVERRIDE_INVALID: "La autorizacion excepcional solo aplica a credito comercial.",
   POS_DRAFT_NOT_FOUND: "No se encontró el borrador de venta.",
   POS_DRAFT_ALREADY_CONFIRMED: "La venta ya fue confirmada con otros datos.",
   POS_DRAFT_CANCELLED: "El borrador fue abandonado.",
@@ -392,7 +403,14 @@ export async function confirmPosSale(input: PosConfirmationInput) {
   const supabase = await getSupabaseServerClient();
   const paymentPayload = input.payment.method === "cash"
     ? { method: input.payment.method, amount_tendered: input.payment.amountTendered }
-    : input.payment;
+    : input.payment.method === "commercial_credit"
+      ? {
+          method: input.payment.method,
+          ...(input.payment.overdueOverrideReason
+            ? { overdue_override_reason: input.payment.overdueOverrideReason.trim() }
+            : {}),
+        }
+      : input.payment;
   const { data, error } = await supabase.rpc("confirm_pos_sale_with_charge_descriptions_v1", {
     p_draft_id: input.draftId,
     p_request_key: input.requestKey,
@@ -402,6 +420,18 @@ export async function confirmPosSale(input: PosConfirmationInput) {
   });
   if (error || !data) throwConfirmationError(error);
   return confirmationResult(data as unknown as ConfirmationRow);
+}
+
+export async function getPosCreditOverdueOverrideCapability(): Promise<PosCreditOverdueOverrideCapability> {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .rpc("get_pos_credit_overdue_override_capability_v1")
+    .single<CreditOverrideCapabilityRow>();
+  if (error || !data) throwRpcError(error, "No se pudo consultar la autorizacion excepcional de credito.");
+  return {
+    featureEnabled: Boolean(data.feature_enabled),
+    overrideAllowed: Boolean(data.override_allowed),
+  };
 }
 
 export async function recoverPosSaleConfirmation(draftId: string) {

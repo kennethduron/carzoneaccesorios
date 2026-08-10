@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { CheckCircle2, CreditCard, LoaderCircle, PlusCircle, Printer, ReceiptText } from "lucide-react";
 import type {
   PosConfirmationPaymentInput,
+  PosCreditOverdueOverrideCapability,
   PosInventoryConflict,
   PosConfirmationResult,
   PosCustomerContext,
@@ -12,6 +13,7 @@ import type {
 } from "@/types/point-of-sale";
 import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
+import { PosCreditOverdueOverrideDialog } from "@/components/admin/pos-credit-overdue-override-dialog";
 
 type Props = {
   draft: PosSaleDraft;
@@ -23,6 +25,7 @@ type Props = {
   onNewSale: () => void;
   operatorName: string;
   initialResult?: PosConfirmationResult | null;
+  creditOverrideCapability?: PosCreditOverdueOverrideCapability;
 };
 
 type ConfirmationError = { code: string; message: string };
@@ -72,7 +75,7 @@ export function printPosReceipt(
   popup.document.close();
 }
 
-export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onInventoryConflict, onViewReservations, onNewSale, operatorName, initialResult = null }: Props) {
+export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onInventoryConflict, onViewReservations, onNewSale, operatorName, initialResult = null, creditOverrideCapability = { featureEnabled: false, overrideAllowed: false } }: Props) {
   const [method, setMethod] = useState<PosPaymentMethod>("cash");
   const [invoiceDate, setInvoiceDate] = useState(hondurasDate);
   const [amountTendered, setAmountTendered] = useState(String(draft.grandTotal));
@@ -83,6 +86,8 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
   const [confirmationError, setConfirmationError] = useState<ConfirmationError | null>(null);
   const [inventoryConflicts, setInventoryConflicts] = useState<PosInventoryConflict[]>([]);
   const [result, setResult] = useState<PosConfirmationResult | null>(initialResult);
+  const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
+  const [overrideReason, setOverrideReason] = useState("");
   const requestKey = useRef<string | null>(null);
 
   const cashChange = useMemo(() => {
@@ -91,14 +96,30 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
   }, [amountTendered, draft.grandTotal]);
   const creditAllowed = customer.credit.canUseCredit
     && customer.credit.availableCredit >= draft.grandTotal;
+  const insufficientAvailableCredit = customer.credit.enabled
+    && ["active", "on_hold"].includes(customer.credit.status)
+    && customer.credit.availableCredit < draft.grandTotal;
+  const creditMessage = insufficientAvailableCredit
+    ? "El crédito disponible es insuficiente para el total de esta venta."
+    : creditAllowed
+      ? "El crédito disponible se verificará nuevamente al confirmar."
+      : customer.credit.reason;
+  const overdueOverrideApplicable = creditOverrideCapability.featureEnabled
+    && creditOverrideCapability.overrideAllowed
+    && customer.credit.status === "on_hold"
+    && customer.credit.enabled
+    && customer.credit.overdueBalance > 0
+    && customer.credit.availableCredit >= draft.grandTotal;
   const paymentReady = method === "cash"
     ? Number(amountTendered) >= draft.grandTotal
     : method === "bank_transfer" ? verified && reference.trim().length > 0
       : method === "card" ? verified
         : creditAllowed;
 
-  async function confirm() {
-    if (pending || disabled || !accepted || !paymentReady) return;
+  async function confirm(overdueOverrideReason?: string) {
+    const usingOverdueOverride = Boolean(overdueOverrideReason?.trim());
+    if (pending || disabled || !accepted || (!paymentReady && !usingOverdueOverride)) return;
+    if (usingOverdueOverride && !overdueOverrideApplicable) return;
     setPending(true);
     setConfirmationError(null);
     setInventoryConflicts([]);
@@ -109,7 +130,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
         ? { method, verified: true, reference: reference.trim() }
         : method === "card"
           ? { method, verified: true, reference: reference.trim() || null }
-          : { method };
+          : { method, ...(usingOverdueOverride ? { overdueOverrideReason: overdueOverrideReason!.trim() } : {}) };
     try {
       const response = await fetch(`/api/admin/pos/drafts/${draft.draftId}/confirm`, {
         method: "POST",
@@ -186,7 +207,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
     <label className="mt-3 block min-w-0 text-sm font-medium">Método de pago<select value={method} onChange={(event) => { setMethod(event.target.value as PosPaymentMethod); setVerified(false); setReference(""); requestKey.current = null; }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-black/15 px-3"><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia bancaria</option><option value="card">Tarjeta</option><option value="commercial_credit">Crédito comercial</option></select></label>
     {method === "cash" ? <><label className="mt-3 block min-w-0 text-sm font-medium">Efectivo recibido<input inputMode="decimal" value={amountTendered} onChange={(event) => { setAmountTendered(event.target.value); requestKey.current = null; }} className="mt-1 min-h-11 w-full min-w-0 rounded-lg border border-black/15 px-3" /></label><div className="mt-3 flex min-h-11 min-w-0 items-center justify-between self-end rounded-lg bg-black/[0.04] p-3 text-sm"><span>Cambio estimado</span><strong className={cashChange < 0 ? "text-red-700" : ""}>{formatCurrency(Math.max(0, cashChange))}</strong></div></> : null}
     {method === "bank_transfer" || method === "card" ? <div className="mt-3 space-y-3 min-[1320px]:col-span-2"><label className="block text-sm font-medium">Referencia {method === "card" ? "(opcional)" : ""}<input value={reference} maxLength={200} onChange={(event) => { setReference(event.target.value); requestKey.current = null; }} className="mt-1 min-h-11 w-full rounded-lg border border-black/15 px-3" /></label><label className="flex min-h-11 items-center gap-2 rounded-lg border border-black/10 px-3 text-sm"><input type="checkbox" checked={verified} onChange={(event) => { setVerified(event.target.checked); requestKey.current = null; }} /> Pago verificado por el operador</label></div> : null}
-    {method === "commercial_credit" ? <div className={`mt-3 rounded-lg p-3 text-sm min-[1320px]:col-span-2 ${creditAllowed ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}><p>Disponible: <strong>{formatCurrency(customer.credit.availableCredit)}</strong></p><p>{creditAllowed ? "El crédito disponible se verificará nuevamente al confirmar." : customer.credit.reason}</p></div> : null}
+    {method === "commercial_credit" ? <div className={`mt-3 rounded-lg p-3 text-sm min-[1320px]:col-span-2 ${creditAllowed ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}><p>Disponible: <strong>{formatCurrency(customer.credit.availableCredit)}</strong></p>{customer.credit.overdueBalance > 0 ? <p>Saldo vencido: <strong>{formatCurrency(customer.credit.overdueBalance)}</strong></p> : null}<p>{creditMessage}</p>{overdueOverrideApplicable ? <button type="button" disabled={disabled || pending || !accepted} onClick={() => { setConfirmationError(null); setOverrideDialogOpen(true); }} className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 bg-white px-4 font-semibold text-red-800 disabled:opacity-50">Autorizar excepcionalmente</button> : null}</div> : null}
     </div>
     <label className="mt-3 flex min-h-11 items-center gap-3 rounded-lg px-1 py-2 text-sm"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="size-5 shrink-0" /><span>Confirmo que los productos, precios y datos son correctos.</span></label>
     {confirmationError && ["POS_INSUFFICIENT_STOCK", "POS_PRODUCT_INACTIVE"].includes(confirmationError.code) && inventoryConflicts.length > 0 ? <div role="alert" data-error-code={confirmationError.code} className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900">
@@ -199,5 +220,6 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
       <p className="mt-2">Ajuste la cantidad para continuar.</p>
     </div> : confirmationError ? <p role="alert" data-error-code={confirmationError.code} className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{confirmationError.message}</p> : null}
     <button type="button" disabled={disabled || pending || !accepted || !paymentReady || !invoiceDate} onClick={() => void confirm()} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={19} /> : <CheckCircle2 size={19} />} Confirmar venta por {formatCurrency(draft.grandTotal)}</button>
+    {overrideDialogOpen ? <PosCreditOverdueOverrideDialog customerName={customer.displayName} saleTotal={draft.grandTotal} creditLimit={customer.credit.creditLimit} openBalance={customer.credit.openBalance} availableCredit={customer.credit.availableCredit} overdueBalance={customer.credit.overdueBalance} reason={overrideReason} pending={pending} error={confirmationError?.message} onReasonChange={(value) => { setOverrideReason(value); setConfirmationError(null); requestKey.current = null; }} onCancel={() => { if (!pending) setOverrideDialogOpen(false); }} onConfirm={() => void confirm(overrideReason)} /> : null}
   </section>;
 }

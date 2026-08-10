@@ -183,6 +183,11 @@ export type PosCustomerCreditSummary = {
   reason: string;
 };
 
+export type PosCreditOverdueOverrideCapability = {
+  featureEnabled: boolean;
+  overrideAllowed: boolean;
+};
+
 export type PosCustomerContext = {
   customerId: string;
   displayName: string;
@@ -456,7 +461,7 @@ export type PosConfirmationPaymentInput =
   | { method: "cash"; amountTendered: number }
   | { method: "bank_transfer"; verified: true; reference: string }
   | { method: "card"; verified: true; reference: string | null }
-  | { method: "commercial_credit" };
+  | { method: "commercial_credit"; overdueOverrideReason?: string | null };
 
 export type PosConfirmationInput = {
   draftId: string;

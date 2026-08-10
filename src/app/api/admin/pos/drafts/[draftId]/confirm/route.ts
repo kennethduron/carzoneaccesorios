@@ -10,11 +10,11 @@ export const dynamic = "force-dynamic";
 
 function errorResponse(error: unknown) {
   const status = error instanceof PosDraftServiceError
-    ? error.code === "POS_PERMISSION_DENIED" ? 403
+    ? error.code === "POS_PERMISSION_DENIED" || error.code.includes("FORBIDDEN") ? 403
       : error.code === "POS_DRAFT_NOT_FOUND" ? 404
         : error.code === "POS_INSUFFICIENT_STOCK" || error.code === "POS_PRODUCT_INACTIVE"
           || error.code.includes("CONFLICT") || error.code.includes("CHANGED")
-          || error.code.includes("CONFIRMED") ? 409 : 400
+          || error.code.includes("CONFIRMED") || error.code.startsWith("POS_CREDIT_") ? 409 : 400
     : 500;
   return Response.json({
     code: error instanceof PosDraftServiceError ? error.code : "POS_CONFIRMATION_FAILED",

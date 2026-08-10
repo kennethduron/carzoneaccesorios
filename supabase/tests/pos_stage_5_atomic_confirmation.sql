@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(63);
+select no_plan();
 
 insert into public.roles(name, description, permissions)
 values (
@@ -436,6 +436,149 @@ insert into pos5_state select 'credit_charged', public.confirm_selectable_pos_sa
 );
 select is((select value->>'payment_method' from pos5_state where key='credit_charged'),'commercial_credit','commercial credit confirms with charges');
 select is((select original_amount from public.accounts_receivable where id=((select value->>'receivable_id' from pos5_state where key='credit_charged')::uuid)),231::numeric,'receivable includes all charges');
+
+-- Overdue commercial-credit guard and one-sale authorization V1.
+update public.customer_credit_accounts
+set credit_limit = 10000
+where customer_id = 'a5200000-0000-4000-8000-000000000002';
+insert into public.accounts_receivable(
+  id, customer_id, historical_invoice_number, original_amount, balance_due,
+  due_date, status
+) values (
+  'a5800000-0000-4000-8000-000000000001',
+  'a5200000-0000-4000-8000-000000000002', 'POS5-OVERDUE', 1600, 1600,
+  (now() at time zone 'America/Tegucigalpa')::date - 1, 'open'
+);
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000090','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000090',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit'))$$,
+  'PT409', 'POS_CREDIT_OVERDUE', 'legacy selectable confirmation cannot bypass overdue guard'
+);
+select is((select count(*)::integer from public.orders where pos_draft_id='a5400000-0000-4000-8000-000000000090'),0,'overdue rejection creates no order');
+select throws_ok(
+  $$select public.confirm_pos_sale_v1('a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000091',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit'))$$,
+  'PT409', 'POS_CREDIT_OVERDUE', 'legacy core confirmation cannot bypass overdue guard'
+);
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000092',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Autorizacion local controlada'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_DISABLED', 'override is rejected while feature flag is off'
+);
+select is((select count(*)::integer from public.orders where pos_draft_id='a5400000-0000-4000-8000-000000000090'),0,'disabled override creates no economic rows');
+
+select is((select enabled from public.set_pos_credit_overdue_override_v1(true,'Habilitacion local transaccional')),true,'authorized role enables local feature flag');
+insert into pos5_state
+select 'overdue_override_result', public.confirm_pos_sale_with_charge_descriptions_v1(
+  'a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000093',1,
+  (now() at time zone 'America/Tegucigalpa')::date,
+  jsonb_build_object('method','commercial_credit','overdue_override_reason','Cliente confirma pago el viernes')
+);
+select is((select value->>'payment_method' from pos5_state where key='overdue_override_result'),'commercial_credit','authorized overdue sale confirms');
+select is((select count(*)::integer from public.orders where pos_draft_id='a5400000-0000-4000-8000-000000000090'),1,'authorized overdue sale creates exactly one order');
+select is((select count(*)::integer from public.accounts_receivable where order_id=((select value->>'order_id' from pos5_state where key='overdue_override_result')::uuid)),1,'authorized overdue sale creates exactly one receivable');
+select is((select count(*)::integer from public.invoices where id=((select value->>'invoice_id' from pos5_state where key='overdue_override_result')::uuid)),1,'authorized overdue sale creates exactly one invoice');
+select is((select count(*)::integer from public.payments where order_id=((select value->>'order_id' from pos5_state where key='overdue_override_result')::uuid)),0,'authorized credit sale creates no fictitious payment');
+select is((select count(*)::integer from public.audit_logs where table_name='pos_sale_drafts' and record_id='a5400000-0000-4000-8000-000000000090' and action='pos.credit_overdue_override_authorized'),1,'authorization writes exactly one immutable audit event');
+select is((select new_data->>'reason' from public.audit_logs where record_id='a5400000-0000-4000-8000-000000000090' and action='pos.credit_overdue_override_authorized'),'Cliente confirma pago el viernes','audit stores the required reason snapshot');
+select is((select new_data->>'scope' from public.audit_logs where record_id='a5400000-0000-4000-8000-000000000090' and action='pos.credit_overdue_override_authorized'),'single_sale','audit limits authorization scope to one sale');
+select is((select due_date from public.accounts_receivable where order_id=((select value->>'order_id' from pos5_state where key='overdue_override_result')::uuid)),(now() at time zone 'America/Tegucigalpa')::date + 30,'new receivable preserves configured credit terms');
+select is((select due_date from public.accounts_receivable where id='a5800000-0000-4000-8000-000000000001'),(now() at time zone 'America/Tegucigalpa')::date - 1,'override does not alter historic due date');
+
+select is(
+  (public.confirm_pos_sale_with_charge_descriptions_v1(
+    'a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000093',1,
+    (now() at time zone 'America/Tegucigalpa')::date,
+    jsonb_build_object('method','commercial_credit','overdue_override_reason','Cliente confirma pago el viernes')
+  )->>'order_id'),
+  (select value->>'order_id' from pos5_state where key='overdue_override_result'),
+  'same request and reason replays the original authorized sale'
+);
+select is((select count(*)::integer from public.audit_logs where record_id='a5400000-0000-4000-8000-000000000090' and action='pos.credit_overdue_override_authorized'),1,'replay does not duplicate authorization audit');
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000090','a5500000-0000-4000-8000-000000000093',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Motivo distinto para la misma llave'))$$,
+  'PT409', 'POS_REQUEST_KEY_CONFLICT', 'changed reason conflicts with the same idempotency key'
+);
+select is((select count(*)::integer from public.pos_credit_overdue_override_context),0,'override transaction context is always removed');
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000094','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$select public.confirm_selectable_pos_sale_v1('a5400000-0000-4000-8000-000000000094','a5500000-0000-4000-8000-000000000094',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit'))$$,
+  'PT409', 'POS_CREDIT_OVERDUE', 'authorization does not leak to the next sale'
+);
+
+insert into public.roles(name, description, permissions)
+select role_name, 'POS overdue override role fixture', jsonb_build_array(
+  'pos:access','pos:confirm_sale','customers:read_commercial','customers:read_credit'
+)
+from unnest(array['technical_owner','business_owner','vendedor','bodega','soporte','cliente']) role_name
+on conflict (name) do update set permissions=excluded.permissions;
+
+update public.users set role_id=(select id from public.roles where name='technical_owner') where id='a5100000-0000-4000-8000-000000000001';
+select is((select override_allowed from public.get_pos_credit_overdue_override_capability_v1()),true,'technical_owner receives override capability');
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000095','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select lives_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000095','a5500000-0000-4000-8000-000000000095',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Autorizacion del propietario tecnico'))$$,
+  'technical_owner can authorize one overdue sale'
+);
+
+update public.users set role_id=(select id from public.roles where name='business_owner') where id='a5100000-0000-4000-8000-000000000001';
+select is((select override_allowed from public.get_pos_credit_overdue_override_capability_v1()),true,'business_owner receives override capability');
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000096','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select lives_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000096','a5500000-0000-4000-8000-000000000096',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Autorizacion del propietario comercial'))$$,
+  'business_owner can authorize one overdue sale'
+);
+
+update public.users set role_id=(select id from public.roles where name='admin') where id='a5100000-0000-4000-8000-000000000001';
+select is((select override_allowed from public.get_pos_credit_overdue_override_capability_v1()),true,'admin receives override capability');
+
+update public.customer_credit_accounts
+set credit_limit=(select open_balance + 100 from public._get_customer_commercial_credit_state_v2('a5200000-0000-4000-8000-000000000002'))
+where customer_id='a5200000-0000-4000-8000-000000000002';
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000097','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000097','a5500000-0000-4000-8000-000000000097',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','No debe superar el limite comercial'))$$,
+  'PT409', 'POS_CREDIT_INSUFFICIENT', 'override never bypasses credit limit'
+);
+update public.customer_credit_accounts set credit_limit=10000,is_credit_enabled=false where customer_id='a5200000-0000-4000-8000-000000000002';
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000098','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000098','a5500000-0000-4000-8000-000000000098',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','No debe habilitar una cuenta desactivada'))$$,
+  '22023', 'POS_CREDIT_DISABLED', 'override never bypasses disabled credit account'
+);
+update public.customer_credit_accounts set is_credit_enabled=true where customer_id='a5200000-0000-4000-8000-000000000002';
+select is((select count(*)::integer from public.orders where pos_draft_id in ('a5400000-0000-4000-8000-000000000097','a5400000-0000-4000-8000-000000000098')),0,'failed limit and account checks leave no order');
+
+select pg_temp.pos5_single_line_draft('a5400000-0000-4000-8000-000000000099','a5200000-0000-4000-8000-000000000002','a5300000-0000-4000-8000-000000000003');
+update public.users set role_id=(select id from public.roles where name='contadora') where id='a5100000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000099','a5500000-0000-4000-8000-000000000110',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Rol no autorizado para la excepcion'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_FORBIDDEN', 'contadora cannot authorize overdue credit'
+);
+update public.users set role_id=(select id from public.roles where name='vendedor') where id='a5100000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000099','a5500000-0000-4000-8000-000000000111',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Rol no autorizado para la excepcion'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_FORBIDDEN', 'vendedor cannot authorize overdue credit'
+);
+update public.users set role_id=(select id from public.roles where name='bodega') where id='a5100000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000099','a5500000-0000-4000-8000-000000000112',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Rol no autorizado para la excepcion'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_FORBIDDEN', 'bodega cannot authorize overdue credit'
+);
+update public.users set role_id=(select id from public.roles where name='soporte') where id='a5100000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000099','a5500000-0000-4000-8000-000000000113',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Rol no autorizado para la excepcion'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_FORBIDDEN', 'soporte cannot authorize overdue credit'
+);
+update public.users set role_id=(select id from public.roles where name='cliente') where id='a5100000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$select public.confirm_pos_sale_with_charge_descriptions_v1('a5400000-0000-4000-8000-000000000099','a5500000-0000-4000-8000-000000000114',1,(now() at time zone 'America/Tegucigalpa')::date,jsonb_build_object('method','commercial_credit','overdue_override_reason','Rol no autorizado para la excepcion'))$$,
+  '42501', 'POS_CREDIT_OVERRIDE_FORBIDDEN', 'cliente cannot authorize overdue credit'
+);
+update public.users set role_id=(select id from public.roles where name='admin') where id='a5100000-0000-4000-8000-000000000001';
+select is((select count(*)::integer from public.orders where pos_draft_id='a5400000-0000-4000-8000-000000000099'),0,'denied roles create no economic rows');
+select is((select enabled from public.set_pos_credit_overdue_override_v1(false,'Prueba local de kill switch apagado')),false,'kill switch can turn override off without disabling overdue guard');
+select is((select enabled from public.set_pos_credit_overdue_override_v1(true,'Restauracion local del estado habilitado')),true,'kill switch can return override to on');
 
 select * from finish();
 rollback;

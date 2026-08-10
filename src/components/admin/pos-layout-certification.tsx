@@ -39,6 +39,20 @@ const certificationCustomer: PosCustomerContext = {
   summary: { orderCount: 12, invoiceCount: 9, totalBilled: 98765.43 },
 };
 
+const overdueCertificationCustomer: PosCustomerContext = {
+  ...certificationCustomer,
+  credit: {
+    ...certificationCustomer.credit,
+    status: "on_hold",
+    openBalance: 1600,
+    availableCredit: 18400,
+    overdueBalance: 1600,
+    receivableCount: 1,
+    canUseCredit: false,
+    reason: "Existe saldo vencido: el crédito está en espera.",
+  },
+};
+
 const capabilities: PosChargeCapabilities = {
   shippingFeeEnabled: true, codFeeEnabled: true, additionalChargeEnabled: true,
   externalChargeEnabled: true, otherChargeEnabled: true, disabledReason: "",
@@ -138,7 +152,7 @@ export function PosLayoutCertification({ itemCount }: { itemCount: number }) {
       </div>
       <div id="pos-sale-summary" ref={summaryRef} className={POS_SUMMARY_COLUMN_CLASS}>
         <PosDraftSummary draft={draft} pending={false} merchandiseGross={merchandise} taxableGross={merchandise} taxableBase={taxableBase} taxAmount={tax} exemptGross={0} shippingFee={draft.shippingFee} codFee={draft.codFee} additionalCharge={draft.additionalCharge} additionalChargeDescription={draft.additionalChargeDescription ?? ""} otherCharge={draft.otherCharge} otherChargeDescription={draft.otherChargeDescription ?? ""} total={total} disabled onSave={() => undefined} />
-        <PosConfirmationPanel draft={draft} customer={certificationCustomer} disabled onConfirmed={() => undefined} onInventoryConflict={async () => []} onViewReservations={() => undefined} onNewSale={() => undefined} operatorName="Operador local" />
+        <PosConfirmationPanel draft={draft} customer={overdueCertificationCustomer} disabled={false} onConfirmed={() => undefined} onInventoryConflict={async () => []} onViewReservations={() => undefined} onNewSale={() => undefined} operatorName="Operador local" creditOverrideCapability={{ featureEnabled: true, overrideAllowed: true }} />
       </div>
     </div>
     <PosMobileTotalBar unitCount={items.reduce((sum, item) => sum + item.quantity, 0)} total={total} onReview={() => summaryRef.current?.scrollIntoView({ block: "start" })} />
