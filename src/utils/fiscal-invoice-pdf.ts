@@ -21,6 +21,9 @@ export type FiscalInvoicePdfInput = OfficialInvoiceInput;
 const pageWidth = 210;
 const pageHeight = 297;
 const marginX = 10;
+const customerRightX = pageWidth - marginX - 1;
+const customerAddressX = 34;
+const customerAddressLineHeight = 3.5;
 const black: [number, number, number] = [0, 0, 0];
 const publicAssetBaseUrl = "https://carzoneaccesorios.com";
 
@@ -187,6 +190,24 @@ async function drawHeader(doc: jsPDF, invoice: FiscalInvoicePdfInput, logoDataUr
   doc.text(dates.fiscalDeadline, 130, 68);
 }
 
+export function getFiscalInvoiceCustomerLayout(doc: jsPDF, customerAddress: string | null | undefined, startY: number) {
+  const addressWidth = customerRightX - customerAddressX;
+  const addressLines = doc.splitTextToSize(valueOrDash(customerAddress), addressWidth) as string[];
+  const normalizedAddressLines = addressLines.length ? addressLines : ["-"];
+  const addressY = startY + 6;
+  const lastAddressY = addressY + (normalizedAddressLines.length - 1) * customerAddressLineHeight;
+
+  return {
+    addressLines: normalizedAddressLines,
+    addressWidth,
+    addressY,
+    lineHeight: customerAddressLineHeight,
+    lineHeightFactor: customerAddressLineHeight * doc.internal.scaleFactor / doc.getFontSize(),
+    underlineY: lastAddressY + 1.2,
+    nextY: lastAddressY + 2,
+  };
+}
+
 function drawCustomer(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number) {
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "normal");
@@ -195,10 +216,13 @@ function drawCustomer(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number
   doc.line(30, startY + 1.2, 108, startY + 1.2);
   doc.text("RTN:", 112, startY);
   doc.text(valueOrDash(invoice.customerRtn), 124, startY);
-  doc.line(124, startY + 1.2, 199, startY + 1.2);
+  doc.line(124, startY + 1.2, customerRightX, startY + 1.2);
+  const layout = getFiscalInvoiceCustomerLayout(doc, invoice.customerAddress, startY);
   doc.text("Dirección:", 18, startY + 6);
-  doc.text(valueOrDash(invoice.customerAddress), 34, startY + 6);
-  doc.line(34, startY + 7.2, 199, startY + 7.2);
+  doc.text(layout.addressLines, customerAddressX, layout.addressY, { lineHeightFactor: layout.lineHeightFactor });
+  doc.line(customerAddressX, layout.underlineY, customerRightX, layout.underlineY);
+
+  return layout.nextY;
 }
 
 function drawSummary(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number) {
@@ -299,10 +323,10 @@ export async function generateFiscalInvoicePdf(invoice: FiscalInvoicePdfInput) {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
   await drawHeader(doc, invoice, logoDataUrl);
-  drawCustomer(doc, invoice, 126);
+  const itemsStartY = drawCustomer(doc, invoice, 126);
 
   autoTable(doc, {
-    startY: 134,
+    startY: itemsStartY,
     margin: { left: marginX, right: marginX, bottom: 27 },
     head: [["Cantidad", "Código", "Descripción", "Precio ud.", "Subtotal"]],
     body: invoice.items.map((item) => [
