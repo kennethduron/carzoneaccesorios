@@ -431,11 +431,12 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
   if (input.id) {
     const { data: existing, error: existingError } = await admin
       .from("accounts_payable")
-      .select("id, status, paid_amount")
+      .select("id, status, paid_amount, automation_source")
       .eq("id", input.id)
-      .maybeSingle<{ id: string; status: AccountsPayableStatus; paid_amount: unknown }>();
+      .maybeSingle<{ id: string; status: AccountsPayableStatus; paid_amount: unknown; automation_source: string | null }>();
 
     if (existingError || !existing) return { ok: false, message: "La cuenta por pagar no existe." };
+    if (existing.automation_source === "purchase_confirmation_v1") return { ok: false, message: "Esta cuenta se administra desde la compra confirmada y no puede editarse manualmente." };
     if (["paid", "cancelled"].includes(existing.status)) return { ok: false, message: "Esta cuenta por pagar ya no se puede editar." };
     if (totalAmount < Number(existing.paid_amount ?? 0)) return { ok: false, message: "El total no puede ser menor que el monto pagado." };
 
@@ -472,7 +473,9 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
       ok: false,
       message: isSupplierPurchaseMismatch(error.message)
         ? supplierPurchaseMismatchMessage
-        : "No se pudo crear la cuenta por pagar.",
+        : error.message.includes("accounts_payable_active_purchase_v1_uidx")
+          ? "La compra ya tiene una cuenta por pagar activa. Abre la obligación existente."
+          : "No se pudo crear la cuenta por pagar.",
     };
   }
 
@@ -495,11 +498,12 @@ export async function cancelAccountsPayableAction(payableId: string): Promise<Ac
   const admin = getSupabaseAdminClient();
   const { data: payable, error: payableError } = await admin
     .from("accounts_payable")
-    .select("id, status, paid_amount")
+    .select("id, status, paid_amount, automation_source")
     .eq("id", payableId)
-    .maybeSingle<{ id: string; status: AccountsPayableStatus; paid_amount: unknown }>();
+    .maybeSingle<{ id: string; status: AccountsPayableStatus; paid_amount: unknown; automation_source: string | null }>();
 
   if (payableError || !payable) return { ok: false, message: "La cuenta por pagar no existe." };
+  if (payable.automation_source === "purchase_confirmation_v1") return { ok: false, message: "Cancela esta obligación desde la compra para mantener inventario y trazabilidad sincronizados." };
   if (["paid", "cancelled"].includes(payable.status)) return { ok: false, message: "Esta cuenta por pagar ya no se puede cancelar." };
   if (Number(payable.paid_amount ?? 0) > 0) return { ok: false, message: "No se puede cancelar una cuenta por pagar con pagos registrados." };
 

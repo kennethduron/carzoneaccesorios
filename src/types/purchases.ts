@@ -14,6 +14,7 @@
 };
 
 export type PurchaseStatus = "draft" | "confirmed" | "received" | "cancelled" | "returned";
+export type PurchasePaymentCondition = "cash" | "credit" | "partial";
 
 export type Purchase = {
   id: string;
@@ -31,10 +32,33 @@ export type Purchase = {
   created_by: string | null;
   confirmed_by: string | null;
   confirmed_at: string | null;
+  payment_condition: PurchasePaymentCondition | null;
+  confirmed_due_date: string | null;
+  confirmation_request_key: string | null;
+  confirmation_fingerprint: string | null;
+  initial_supplier_payment_id: string | null;
+  cancellation_request_key: string | null;
   cancelled_by: string | null;
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type PurchasePayableSummary = {
+  id: string;
+  status: AccountsPayableStatus;
+  total_amount: number;
+  paid_amount: number;
+  balance: number;
+  due_date: string | null;
+  automation_source: "purchase_confirmation_v1" | null;
+};
+
+export type PurchaseSupplierInvoiceSummary = {
+  id: string;
+  invoice_number: string;
+  due_date: string | null;
+  status: SupplierInvoiceStatus;
 };
 
 export type PurchaseItem = {
@@ -88,6 +112,7 @@ export type AccountsPayable = {
   balance: number;
   due_date: string | null;
   status: AccountsPayableStatus;
+  automation_source: "purchase_confirmation_v1" | null;
   currency: string;
   notes: string | null;
   created_by: string | null;
@@ -189,6 +214,8 @@ export type AdminPurchase = Purchase & {
   supplier_tax_id: string | null;
   items: PurchaseItemWithProduct[];
   returns: PurchaseReturn[];
+  payable: PurchasePayableSummary | null;
+  supplier_invoice: PurchaseSupplierInvoiceSummary | null;
 };
 
 export type PurchasesSummary = {

@@ -5,12 +5,12 @@ import { PurchasesManager } from "@/components/admin/purchases-manager";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { getAdminPurchases } from "@/services/supabase/purchases.service";
+import { getAdminPurchases, getPurchaseApAutomationConfig } from "@/services/supabase/purchases.service";
 import { getSupplierOptions } from "@/services/supabase/suppliers.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function PurchasesPage() {
+export default async function PurchasesPage({ searchParams }: { searchParams?: Promise<{ purchaseId?: string }> }) {
   const profile = await requirePermission("admin:access");
   const canRead =
     hasEffectivePermission(profile.role, profile.permissions, "purchases:read", profile.email) ||
@@ -21,10 +21,12 @@ export default async function PurchasesPage() {
     redirect("/sin-permiso");
   }
 
-  const [{ purchases, summary }, suppliers] = await Promise.all([
+  const [{ purchases, summary }, suppliers, purchaseApAutomation] = await Promise.all([
     getAdminPurchases(),
     getSupplierOptions(true),
+    getPurchaseApAutomationConfig(),
   ]);
+  const params = await searchParams;
 
   return (
     <AdminShell title="Compras">
@@ -34,7 +36,7 @@ export default async function PurchasesPage() {
           Panel administrativo
         </Link>
       </div>
-      <PurchasesManager purchases={purchases} suppliers={suppliers} summary={summary} canManage={canManage} />
+      <PurchasesManager purchases={purchases} suppliers={suppliers} summary={summary} canManage={canManage} purchaseApAutomationEnabled={purchaseApAutomation.enabled} initialPurchaseId={params?.purchaseId ?? null} />
     </AdminShell>
   );
 }

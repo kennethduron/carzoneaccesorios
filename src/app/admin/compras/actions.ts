@@ -6,9 +6,33 @@ import { requirePermission } from "@/lib/auth/session";
 import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
-import type { PurchaseStatus } from "@/types/purchases";
+import type { PurchasePaymentCondition, PurchaseStatus } from "@/types/purchases";
 
-type ActionResult = { ok: true; message: string } | { ok: false; message: string };
+export type PurchaseConfirmationInput = {
+  purchase_id: string;
+  payment_condition: PurchasePaymentCondition;
+  due_date?: string | null;
+  initial_payment_amount?: number | string | null;
+  payment_method?: "cash" | "bank_transfer" | "card_credit" | "card_debit" | null;
+  payment_date?: string | null;
+  payment_notes?: string | null;
+  request_key: string;
+};
+
+export type PurchaseConfirmationResult = {
+  purchase_id: string;
+  purchase_status: PurchaseStatus;
+  accounts_payable_id: string;
+  accounts_payable_status: "pending" | "partial" | "paid" | "cancelled" | "overdue";
+  total_amount: number;
+  paid_amount: number;
+  balance: number;
+  due_date: string | null;
+  supplier_payment_id: string | null;
+  replayed: boolean;
+};
+
+type ActionResult = { ok: true; message: string; data?: PurchaseConfirmationResult } | { ok: false; message: string };
 
 type PurchaseItemInput = {
   id?: string;
@@ -74,6 +98,33 @@ function purchaseErrorMessage(message: string) {
 }
 
 function purchaseTransitionErrorMessage(message: string, fallback: string) {
+  const purchaseApMessages: Record<string, string> = {
+    PURCHASE_AP_AUTOMATION_REQUIRED: "La automatización de cuentas por pagar está activa. Recarga la página y confirma con la condición de pago.",
+    PURCHASE_AP_AUTOMATION_DISABLED: "La automatización de cuentas por pagar está desactivada. Recarga la página.",
+    PURCHASE_REQUEST_KEY_REQUIRED: "No se pudo identificar este intento de confirmación. Cierra el diálogo e intenta de nuevo.",
+    PURCHASE_REQUEST_KEY_CONFLICT: "La clave de esta confirmación ya fue utilizada en otra compra.",
+    PURCHASE_CONFIRMATION_FINGERPRINT_CONFLICT: "Los datos financieros cambiaron durante el reintento. Revisa la confirmación.",
+    PURCHASE_ALREADY_CONFIRMED: "La compra ya fue confirmada por otra solicitud.",
+    PURCHASE_REPLAY_PAYABLE_MISSING: "La compra fue confirmada, pero su cuenta por pagar requiere revisión.",
+    PURCHASE_PAYMENT_CONDITION_INVALID: "Selecciona una condición de pago válida.",
+    PURCHASE_CREDIT_PAYMENT_MUST_BE_ZERO: "Una compra al crédito no puede incluir pago inicial.",
+    PURCHASE_PARTIAL_AMOUNT_INVALID: "El pago inicial debe ser mayor que cero y menor que el total de la compra.",
+    PURCHASE_PAYMENT_METHOD_INVALID: "Selecciona un método de pago permitido.",
+    PURCHASE_DUE_DATE_REQUIRED: "Indica la fecha de vencimiento para el saldo pendiente.",
+    PURCHASE_SUPPLIER_INVALID: "El proveedor de la compra no está activo.",
+    PURCHASE_MULTIPLE_ACTIVE_SUPPLIER_INVOICES: "La compra tiene más de una factura de proveedor activa y requiere revisión.",
+    PURCHASE_SUPPLIER_INVOICE_INCONSISTENT: "La factura de proveedor no coincide con el proveedor, total o moneda de la compra.",
+    PURCHASE_ACTIVE_PAYABLE_INCONSISTENT: "La cuenta por pagar existente no coincide con la compra y requiere revisión.",
+    PURCHASE_PAYMENTS_MUST_BE_VOIDED_FIRST: "La compra tiene pagos aplicados. Anúlalos mediante el proceso controlado antes de cancelar.",
+    PURCHASE_ACTIVE_SUPPLIER_INVOICE_BLOCKS_CANCEL: "La compra tiene una factura de proveedor activa y no puede cancelarse automáticamente.",
+    PURCHASE_ACCOUNTING_REVERSAL_REQUIRED: "La obligación ya tiene contabilidad vinculada y requiere una reversión controlada.",
+    PURCHASE_MANUAL_PAYABLE_REVIEW_REQUIRED: "La compra tiene una cuenta por pagar manual y requiere revisión antes de cancelarse.",
+    PURCHASE_NOT_AUTOMATED: "La compra pertenece al flujo anterior y se cancelará con el proceso compatible.",
+    PURCHASE_ALREADY_CANCELLED: "La compra ya fue cancelada.",
+  };
+  const mapped = Object.entries(purchaseApMessages).find(([code]) => message.includes(code));
+  if (mapped) return mapped[1];
+
   const knownMessages = [
     "La compra no existe.",
     "Solo se pueden confirmar compras en borrador.",
@@ -230,26 +281,89 @@ export async function savePurchaseAction(input: PurchaseFormInput): Promise<Acti
   };
 }
 
-export async function confirmPurchaseAction(purchaseId: string): Promise<ActionResult> {
+export async function confirmPurchaseAction(input: string | PurchaseConfirmationInput): Promise<ActionResult> {
   const profile = await requirePermission("purchases:manage");
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("confirm_purchase_locked", { target_purchase_id: purchaseId });
+
+  const { data: featureEnabled, error: featureError } = await supabase.rpc("purchase_ap_automation_enabled_v1");
+  if (featureError) {
+    return { ok: false, message: "No se pudo verificar la configuración de confirmación." };
+  }
+
+  const purchaseId = typeof input === "string" ? cleanText(input) : cleanText(input.purchase_id);
+  if (!purchaseId) return { ok: false, message: "La compra no es válida." };
+
+  if (!featureEnabled) {
+    const { data, error } = await supabase.rpc("confirm_purchase_locked", { target_purchase_id: purchaseId });
+    if (error) {
+      return { ok: false, message: purchaseTransitionErrorMessage(error.message, "No se pudo confirmar la compra.") };
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as PurchaseTransitionRow | null;
+    if (!row?.purchase_id) return { ok: false, message: "No se pudo confirmar la compra." };
+
+    await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_confirmed", triggeredBy: profile.id, route: "/admin/compras" });
+    revalidatePath("/admin/compras");
+    return { ok: true, message: "Compra confirmada." };
+  }
+
+  if (typeof input === "string") {
+    return { ok: false, message: "Recarga la página para seleccionar la condición de pago antes de confirmar." };
+  }
+
+  const initialPaymentAmount = input.initial_payment_amount === null || input.initial_payment_amount === undefined || input.initial_payment_amount === ""
+    ? null
+    : toMoney(input.initial_payment_amount);
+  if (initialPaymentAmount !== null && !Number.isFinite(initialPaymentAmount)) {
+    return { ok: false, message: "El pago inicial no es válido." };
+  }
+
+  const { data, error } = await supabase.rpc("confirm_purchase_with_payable_v1", {
+    target_purchase_id: purchaseId,
+    p_payment_condition: input.payment_condition,
+    p_due_date: cleanText(input.due_date),
+    p_initial_payment_amount: initialPaymentAmount,
+    p_payment_method: cleanText(input.payment_method),
+    p_payment_date: cleanText(input.payment_date),
+    p_payment_notes: cleanText(input.payment_notes),
+    p_request_key: cleanText(input.request_key),
+  });
   if (error) {
     return { ok: false, message: purchaseTransitionErrorMessage(error.message, "No se pudo confirmar la compra.") };
   }
 
-  const row = (Array.isArray(data) ? data[0] : data) as PurchaseTransitionRow | null;
+  const row = (Array.isArray(data) ? data[0] : data) as PurchaseConfirmationResult | null;
   if (!row?.purchase_id) return { ok: false, message: "No se pudo confirmar la compra." };
 
-  await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_confirmed", triggeredBy: profile.id, route: "/admin/compras" });
   revalidatePath("/admin/compras");
-  return { ok: true, message: "Compra confirmada." };
+  revalidatePath("/admin/cuentas-por-pagar");
+  return {
+    ok: true,
+    message: row.replayed ? "Confirmación recuperada sin duplicar movimientos." : "Compra confirmada y cuenta por pagar registrada.",
+    data: {
+      ...row,
+      total_amount: Number(row.total_amount),
+      paid_amount: Number(row.paid_amount),
+      balance: Number(row.balance),
+    },
+  };
 }
 
-export async function cancelPurchaseAction(purchaseId: string): Promise<ActionResult> {
+export async function cancelPurchaseAction(purchaseId: string, requestKey: string): Promise<ActionResult> {
   const profile = await requirePermission("purchases:manage");
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("cancel_purchase_with_inventory", { target_purchase_id: purchaseId });
+  let { data, error } = await supabase.rpc("cancel_purchase_with_payable_v1", {
+    target_purchase_id: purchaseId,
+    p_request_key: requestKey,
+  });
+  if (error?.message.includes("PURCHASE_NOT_AUTOMATED")) {
+    const legacy = await supabase.rpc("cancel_purchase_with_inventory", { target_purchase_id: purchaseId });
+    data = legacy.data;
+    error = legacy.error;
+    if (!error) {
+      await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_cancelled", triggeredBy: profile.id, route: "/admin/compras" });
+    }
+  }
   if (error) {
     return { ok: false, message: purchaseTransitionErrorMessage(error.message, "No se pudo cancelar la compra.") };
   }
@@ -257,7 +371,6 @@ export async function cancelPurchaseAction(purchaseId: string): Promise<ActionRe
   const row = (Array.isArray(data) ? data[0] : data) as PurchaseCancellationRow | null;
   if (!row?.purchase_id) return { ok: false, message: "No se pudo cancelar la compra." };
 
-  await dispatchAccountingEvent({ sourceType: "purchase", sourceId: purchaseId, eventPurpose: "purchase_cancelled", triggeredBy: profile.id, route: "/admin/compras" });
   revalidateProductAvailability({
     adminPaths: ["/admin/compras", "/admin/inventario", "/admin/productos", "/admin/reportes", "/admin/contabilidad"],
     productSlugs: (row.affected_products ?? []).map((product) => product.slug),

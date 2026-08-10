@@ -2,12 +2,14 @@
 
 import type { ReactNode } from "react";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Ban, CheckCircle2, Edit3, PlusCircle, Search, Trash2, X } from "lucide-react";
-import { cancelPurchaseAction, confirmPurchaseAction, registerPurchaseReturnAction, savePurchaseAction, type PurchaseFormInput, type PurchaseReturnFormInput } from "@/app/admin/compras/actions";
+import { cancelPurchaseAction, confirmPurchaseAction, registerPurchaseReturnAction, savePurchaseAction, type PurchaseConfirmationInput, type PurchaseFormInput, type PurchaseReturnFormInput } from "@/app/admin/compras/actions";
 import { Button, Input } from "@/components/ui";
 import { PurchaseProductCombobox } from "@/components/admin/purchase-product-combobox";
+import { PurchaseConfirmationDialog } from "@/components/admin/purchase-confirmation-dialog";
 import { useToast } from "@/contexts/toast-context";
 import type { AdminPurchase, PurchasesSummary, SupplierOption } from "@/types/purchases";
 import type { PurchaseProductSearchResult } from "@/types/admin-search";
@@ -85,11 +87,15 @@ export function PurchasesManager({
   suppliers,
   summary,
   canManage,
+  purchaseApAutomationEnabled,
+  initialPurchaseId,
 }: {
   purchases: AdminPurchase[];
   suppliers: SupplierOption[];
   summary: PurchasesSummary;
   canManage: boolean;
+  purchaseApAutomationEnabled: boolean;
+  initialPurchaseId: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -98,9 +104,12 @@ export function PurchasesManager({
   const [statusFilter, setStatusFilter] = useState("active");
   const [draft, setDraft] = useState<PurchaseDraft>(emptyDraft());
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(purchases[0]?.id ?? null);
-  const [returnDraft, setReturnDraft] = useState<ReturnDraft>(emptyReturnDraft(purchases[0]?.id ?? ""));
+  const initialSelectedId = purchases.some((purchase) => purchase.id === initialPurchaseId) ? initialPurchaseId : purchases[0]?.id ?? null;
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
+  const [returnDraft, setReturnDraft] = useState<ReturnDraft>(emptyReturnDraft(initialSelectedId ?? ""));
+  const [confirmationPurchase, setConfirmationPurchase] = useState<AdminPurchase | null>(null);
   const [isPending, startTransition] = useTransition();
+  const cancellationKeysRef = useRef(new Map<string, string>());
 
   const visiblePurchases = useMemo(() => {
     const needle = normalize(query.trim());
@@ -194,16 +203,35 @@ export function PurchasesManager({
   }
 
   function confirmPurchase(purchase: AdminPurchase) {
+    if (purchaseApAutomationEnabled) {
+      setConfirmationPurchase(purchase);
+      return;
+    }
     startTransition(async () => {
       const result = await confirmPurchaseAction(purchase.id).catch(() => ({ ok: false as const, message: "No se pudo confirmar la compra." }));
       if (result.ok) { toast.success(result.message); router.refresh(); } else { toast.error(result.message); }
     });
   }
 
-  function cancelPurchase(purchase: AdminPurchase) {
+  function confirmPurchaseWithPayable(input: PurchaseConfirmationInput) {
     startTransition(async () => {
-      const result = await cancelPurchaseAction(purchase.id).catch(() => ({ ok: false as const, message: "No se pudo cancelar la compra." }));
-      if (result.ok) { toast.success(result.message); router.refresh(); } else { toast.error(result.message); }
+      const result = await confirmPurchaseAction(input).catch(() => ({ ok: false as const, message: "No se pudo confirmar la compra." }));
+      if (result.ok) {
+        toast.success(result.message);
+        setConfirmationPurchase(null);
+        router.refresh();
+      } else {
+        toast.error(result.message);
+      }
+    });
+  }
+
+  function cancelPurchase(purchase: AdminPurchase) {
+    const requestKey = cancellationKeysRef.current.get(purchase.id) ?? globalThis.crypto.randomUUID();
+    cancellationKeysRef.current.set(purchase.id, requestKey);
+    startTransition(async () => {
+      const result = await cancelPurchaseAction(purchase.id, requestKey).catch(() => ({ ok: false as const, message: "No se pudo cancelar la compra." }));
+      if (result.ok) { cancellationKeysRef.current.delete(purchase.id); toast.success(result.message); router.refresh(); } else { toast.error(result.message); }
     });
   }
 
@@ -222,6 +250,8 @@ export function PurchasesManager({
   }
   return (
     <div className="min-w-0 space-y-5">
+      {confirmationPurchase ? <PurchaseConfirmationDialog purchase={confirmationPurchase} pending={isPending} onCancel={() => !isPending && setConfirmationPurchase(null)} onConfirm={confirmPurchaseWithPayable} /> : null}
+      {purchaseApAutomationEnabled ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"><strong>Automatización Compra → CxP activa.</strong> Toda compra nueva debe confirmar su condición de pago.</div> : null}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Borradores" value={summary.totalDraft.toLocaleString("es-HN")} />
         <Metric label="Confirmadas" value={summary.totalConfirmed.toLocaleString("es-HN")} />
@@ -330,7 +360,7 @@ export function PurchasesManager({
 }
 
 function PurchaseDetails({ purchase }: { purchase: AdminPurchase }) {
-  return <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="text-sm text-black/50">Detalle de compra</p><h3 className="break-words text-lg font-semibold [overflow-wrap:anywhere]">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div><div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[700px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripción</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin líneas registradas.</td></tr> : null}</tbody></table></div>{purchase.returns.length > 0 ? <div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[620px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Devolución</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Motivo</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.returns.map((item) => <tr key={item.id}><td className="px-3 py-2 font-semibold">{item.return_number}</td><td className="px-3 py-2">{formatDate(item.return_date)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total)}</td><td className="px-3 py-2">{item.status}</td><td className="px-3 py-2">{item.reason ?? "-"}</td></tr>)}</tbody></table></div> : null}</section>;
+  return <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0"><p className="text-sm text-black/50">Detalle de compra</p><h3 className="break-words text-lg font-semibold [overflow-wrap:anywhere]">{purchase.purchase_number}</h3></div><p className="font-semibold">{formatCurrency(purchase.total)}</p></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Proveedor" value={purchase.supplier_name} /><Mini label="Fecha" value={formatDate(purchase.purchase_date)} /><Mini label="Estado" value={statusLabels[purchase.status]} /><Mini label="Moneda" value={purchase.currency} /></div>{purchase.payable ? <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Cuenta por pagar asociada</p><p className="mt-1 font-semibold text-emerald-950">{purchase.payable.status === "paid" ? "Pagada" : purchase.payable.status === "partial" ? "Pago parcial" : "Pendiente"}</p></div><Link href={`/admin/cuentas-por-pagar?purchaseId=${purchase.id}`} className="inline-flex min-h-11 items-center justify-center rounded-md border border-emerald-300 bg-white px-3 text-sm font-semibold text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">Ver cuenta por pagar</Link></div><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><Mini label="Original" value={formatCurrency(purchase.payable.total_amount)} /><Mini label="Pagado" value={formatCurrency(purchase.payable.paid_amount)} /><Mini label="Saldo" value={formatCurrency(purchase.payable.balance)} /><Mini label="Vencimiento" value={purchase.payable.due_date ? formatDate(purchase.payable.due_date) : "Sin vencimiento"} /></div></div> : null}<div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[700px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Descripción</th><th className="px-3 py-2">Producto</th><th className="px-3 py-2">Cantidad</th><th className="px-3 py-2">Costo</th><th className="px-3 py-2">Impuesto</th><th className="px-3 py-2">Descuento</th><th className="px-3 py-2">Total</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.items.map((item) => <tr key={item.id}><td className="px-3 py-2">{item.description}</td><td className="px-3 py-2">{item.product_sku ?? item.product_name ?? "Sin producto"}</td><td className="px-3 py-2">{item.quantity.toLocaleString("es-HN")}</td><td className="px-3 py-2">{formatCurrency(item.unit_cost)}</td><td className="px-3 py-2">{formatCurrency(item.tax_amount)}</td><td className="px-3 py-2">{formatCurrency(item.discount_amount)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total_cost)}</td></tr>)}{purchase.items.length === 0 ? <tr><td colSpan={7} className="px-3 py-5 text-center text-black/55">Sin líneas registradas.</td></tr> : null}</tbody></table></div>{purchase.returns.length > 0 ? <div className="mt-4 min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[620px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Devolución</th><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Monto</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Motivo</th></tr></thead><tbody className="divide-y divide-black/10">{purchase.returns.map((item) => <tr key={item.id}><td className="px-3 py-2 font-semibold">{item.return_number}</td><td className="px-3 py-2">{formatDate(item.return_date)}</td><td className="px-3 py-2 font-semibold">{formatCurrency(item.total)}</td><td className="px-3 py-2">{item.status}</td><td className="px-3 py-2">{item.reason ?? "-"}</td></tr>)}</tbody></table></div> : null}</section>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 rounded-lg border border-black/10 bg-white p-4"><p className="text-sm text-black/50">{label}</p><p className="mt-1 break-words text-2xl font-semibold [overflow-wrap:anywhere]">{value}</p></div>; }

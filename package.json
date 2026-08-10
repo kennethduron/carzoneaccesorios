@@ -31,6 +31,7 @@
     "test:supplier-purchase-integrity": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-purchase-integrity.mjs",
     "test:supplier-payment-row-wizard": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-supplier-payment-row-wizard.mjs",
     "test:supplier-multi-payment:concurrency": "node scripts/test-supplier-multi-invoice-payment-concurrency.mjs",
+    "test:purchase-ap-automation:concurrency": "node scripts/test-purchase-ap-automation-concurrency.mjs",
     "test:opening-balance-supplier-payment-accounting": "node scripts/test-opening-balance-supplier-payment-accounting.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",
     "test:order-price-review-v2": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-price-review-v2.mjs",

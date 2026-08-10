@@ -16,7 +16,7 @@ import { getSupplierOptions } from "@/services/supabase/suppliers.service";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountsPayablePage({ searchParams }: { searchParams?: Promise<{ importBatch?: string }> }) {
+export default async function AccountsPayablePage({ searchParams }: { searchParams?: Promise<{ importBatch?: string; purchaseId?: string }> }) {
   const profile = await requirePermission("admin:access");
   const canRead =
     hasEffectivePermission(profile.role, profile.permissions, "payables:read", profile.email) ||
@@ -70,7 +70,7 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
           canRepair={canRepairSupplierPayment}
         />
         <AccountsPayableImportManager data={importData} />
-        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} multiPaymentConfig={multiPaymentConfig} multiPaymentHistory={multiPaymentHistory} />
+        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} multiPaymentConfig={multiPaymentConfig} multiPaymentHistory={multiPaymentHistory} initialPurchaseId={params?.purchaseId ?? null} />
       </div>
     </AdminShell>
   );

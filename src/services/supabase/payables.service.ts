@@ -194,6 +194,7 @@ export async function getAdminPayables(): Promise<{ payables: AdminAccountsPayab
         created_by,
         cancelled_by,
         cancelled_at,
+        automation_source,
         created_at,
         updated_at,
         suppliers(name, tax_id),

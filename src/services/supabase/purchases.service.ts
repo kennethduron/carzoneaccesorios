@@ -4,11 +4,13 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type {
   AdminPurchase,
   PurchaseItemWithProduct,
+  PurchasePayableSummary,
   PurchaseReturn,
+  PurchaseSupplierInvoiceSummary,
   PurchasesSummary,
 } from "@/types/purchases";
 
-type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" | "items" | "returns"> & {
+type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" | "items" | "returns" | "payable" | "supplier_invoice"> & {
   suppliers: { name: string; tax_id: string | null } | null;
   purchase_items: Array<
     Omit<PurchaseItemWithProduct, "product_name" | "product_sku"> & {
@@ -16,6 +18,8 @@ type PurchaseQueryRow = Omit<AdminPurchase, "supplier_name" | "supplier_tax_id" 
     }
   > | null;
   purchase_returns: PurchaseReturn[] | null;
+  accounts_payable: PurchasePayableSummary[] | null;
+  supplier_invoices: PurchaseSupplierInvoiceSummary[] | null;
 };
 
 function toNumber(value: unknown) {
@@ -32,6 +36,8 @@ function normalizeReturn(row: PurchaseReturn): PurchaseReturn {
 }
 
 function normalizePurchase(row: PurchaseQueryRow): AdminPurchase {
+  const activePayable = (row.accounts_payable ?? []).find((item) => item.status !== "cancelled") ?? null;
+  const activeInvoice = (row.supplier_invoices ?? []).find((item) => item.status !== "cancelled") ?? null;
   return {
     ...row,
     subtotal: toNumber(row.subtotal),
@@ -52,7 +58,26 @@ function normalizePurchase(row: PurchaseQueryRow): AdminPurchase {
       product_sku: item.products?.sku ?? null,
     })),
     returns: (row.purchase_returns ?? []).map(normalizeReturn).sort((left, right) => right.return_date.localeCompare(left.return_date)),
+    payable: activePayable ? {
+      ...activePayable,
+      total_amount: toNumber(activePayable.total_amount),
+      paid_amount: toNumber(activePayable.paid_amount),
+      balance: toNumber(activePayable.balance),
+    } : null,
+    supplier_invoice: activeInvoice,
   };
+}
+
+export async function getPurchaseApAutomationConfig() {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("purchase_feature_flags")
+    .select("enabled, version, enabled_at")
+    .eq("key", "purchase_ap_automation_v1")
+    .maybeSingle<{ enabled: boolean; version: number; enabled_at: string | null }>();
+
+  if (error) throw new Error(error.message);
+  return { enabled: data?.enabled ?? false, version: data?.version ?? 1, enabledAt: data?.enabled_at ?? null };
 }
 
 export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[]; summary: PurchasesSummary }> {
@@ -76,6 +101,12 @@ export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[];
       created_by,
       confirmed_by,
       confirmed_at,
+      payment_condition,
+      confirmed_due_date,
+      confirmation_request_key,
+      confirmation_fingerprint,
+      initial_supplier_payment_id,
+      cancellation_request_key,
       cancelled_by,
       cancelled_at,
       created_at,
@@ -114,6 +145,21 @@ export async function getAdminPurchases(): Promise<{ purchases: AdminPurchase[];
         cancelled_at,
         created_at,
         updated_at
+      ),
+      accounts_payable(
+        id,
+        status,
+        total_amount,
+        paid_amount,
+        balance,
+        due_date,
+        automation_source
+      ),
+      supplier_invoices(
+        id,
+        invoice_number,
+        due_date,
+        status
       )
     `,
     )
@@ -143,7 +189,7 @@ export async function getPurchaseById(purchaseId: string) {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("purchases")
-    .select("id, supplier_id, purchase_number, purchase_date, status, subtotal, tax_amount, discount_amount, shipping_amount, total, currency, notes, created_by, confirmed_by, confirmed_at, cancelled_by, cancelled_at, created_at, updated_at")
+    .select("id, supplier_id, purchase_number, purchase_date, status, subtotal, tax_amount, discount_amount, shipping_amount, total, currency, notes, created_by, confirmed_by, confirmed_at, payment_condition, confirmed_due_date, confirmation_request_key, confirmation_fingerprint, initial_supplier_payment_id, cancellation_request_key, cancelled_by, cancelled_at, created_at, updated_at")
     .eq("id", purchaseId)
     .maybeSingle();
 
