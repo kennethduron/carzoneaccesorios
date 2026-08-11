@@ -32,11 +32,16 @@ const blockerLabels: Record<string, string> = {
   CUSTOMER_MERGE_TWO_PORTAL_ACCOUNTS: "Los registros tienen dos cuentas de portal diferentes.",
   CUSTOMER_MERGE_CHECKOUT_IN_PROGRESS: "Existe una solicitud Checkout V4 en curso.",
   CUSTOMER_MERGE_POS_DRAFT_ACTIVE: "Existe un borrador POS activo.",
+  CUSTOMER_MERGE_SECONDARY_NOT_ACTIVE_ROOT: "El registro secundario no cumple las condiciones para una unión canónica.",
+  CUSTOMER_MERGE_PENDING_SECONDARY_HAS_AUTH: "El registro pendiente tiene una cuenta de acceso vinculada.",
+  CUSTOMER_MERGE_PENDING_SECONDARY_HAS_ECONOMY: "El registro pendiente tiene actividad económica y requiere revisión manual.",
 };
 const warningLabels: Record<string, string> = {
   CUSTOMER_MERGE_TAX_ID_CONFLICT: "Los RTN son diferentes. Debes elegir el RTN válido para documentos futuros.",
   CUSTOMER_MERGE_CREDIT_CONFLICT: "Ambos registros tienen crédito. Los límites nunca se suman.",
   CUSTOMER_MERGE_WHOLESALE_CONFLICT: "Las configuraciones de mayoreo son diferentes.",
+  CUSTOMER_MERGE_CREDIT_EXPOSURE_EXCEEDS_LIMIT: "El saldo pendiente consolidado excede el límite de crédito actual.",
+  CUSTOMER_MERGE_PENDING_SECONDARY_REQUIRES_ARCHIVE: "El registro secundario está pendiente e inactivo; puede archivarse únicamente con tu confirmación.",
 };
 
 function display(value: string | null) {
@@ -56,6 +61,8 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
   const [identityDecisions, setIdentityDecisions] = useState<Record<string, CustomerMergeDecision>>({});
   const [creditSource, setCreditSource] = useState<"primary" | "secondary" | "">("");
   const [commercialSource, setCommercialSource] = useState<"primary" | "secondary" | "">("");
+  const [creditOverLimitConfirmed, setCreditOverLimitConfirmed] = useState(false);
+  const [pendingSecondaryConfirmed, setPendingSecondaryConfirmed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -69,6 +76,8 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
       setPreview(result.preview);
       setHistoryDetails(result.historyDetails);
       setExecutionEnabled(result.executionEnabled === true);
+      setCreditOverLimitConfirmed(false);
+      setPendingSecondaryConfirmed(false);
       const defaults: Record<string, CustomerMergeDecision> = {};
       for (const field of result.preview.identity) {
         if (field.state === "conflict") {
@@ -92,8 +101,10 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
   );
   const commercialComplete = !preview?.requiredDecisions.includes("credit") || Boolean(creditSource);
   const wholesaleComplete = !preview?.requiredDecisions.includes("commercial") || Boolean(commercialSource);
+  const creditResolutionComplete = !preview?.requiredDecisions.includes("creditOverLimitResolution") || creditOverLimitConfirmed;
+  const pendingResolutionComplete = !preview?.requiredDecisions.includes("pendingSecondaryResolution") || pendingSecondaryConfirmed;
   const canSubmit = Boolean(
-    preview?.allowed && historyDetails && executionEnabled && requiredIdentityComplete && commercialComplete && wholesaleComplete && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
+    preview?.allowed && historyDetails && executionEnabled && requiredIdentityComplete && commercialComplete && wholesaleComplete && creditResolutionComplete && pendingResolutionComplete && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
   );
 
   function choose(field: string, sourceChoice: "primary" | "secondary") {
@@ -119,8 +130,14 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
       expectedSecondaryCommercialVersion: preview.secondaryCommercialVersion,
       previewHash: preview.previewHash,
       identityDecisions,
-      creditDecision: creditSource ? { selectedSource: creditSource } : {},
-      commercialDecision: commercialSource ? { selectedSource: commercialSource } : {},
+      creditDecision: {
+        ...(creditSource ? { selectedSource: creditSource } : {}),
+        ...(creditOverLimitConfirmed ? { overLimitResolution: "DISABLE_AND_ZERO_LIMIT" as const } : {}),
+      },
+      commercialDecision: {
+        ...(commercialSource ? { selectedSource: commercialSource } : {}),
+        ...(pendingSecondaryConfirmed ? { pendingSecondaryResolution: "ARCHIVE_PENDING_SECONDARY_AS_MERGED" as const } : {}),
+      },
       reason: reason.trim(),
       source: "crm" as const,
     });
@@ -205,6 +222,30 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
                   <CommercialChoice title="Mayoreo" primary={`${preview.wholesale.primary.enabled ? "Sí" : "No"} · ${preview.wholesale.primary.status}`} secondary={`${preview.wholesale.secondary.enabled ? "Sí" : "No"} · ${preview.wholesale.secondary.status}`} value={commercialSource} onChange={preview.requiredDecisions.includes("commercial") ? setCommercialSource : undefined} />
                   <CommercialChoice title="Crédito" primary={creditLabel(preview.credit.primary)} secondary={creditLabel(preview.credit.secondary)} value={creditSource} onChange={preview.requiredDecisions.includes("credit") ? setCreditSource : undefined} />
                   <p className="rounded-lg bg-[#f4f4f5] p-4 text-sm text-black/60">Saldo abierto consolidado: <strong>{formatCurrency(Number(preview.financialTotals.receivableOpenBalance ?? 0))}</strong>. Los límites de crédito nunca se suman.</p>
+                  {preview.requiredDecisions.includes("creditOverLimitResolution") ? (
+                    <label className={`block rounded-lg border p-4 ${creditOverLimitConfirmed ? "border-[#e4252c] bg-[#fff1f2]" : "border-[#f59e0b]/50 bg-[#fff7ed]"}`}>
+                      <span className="flex items-start gap-3">
+                        <input className="mt-1" type="checkbox" checked={creditOverLimitConfirmed} onChange={(event) => setCreditOverLimitConfirmed(event.target.checked)} />
+                        <span>
+                          <strong className="block">Deshabilitar temporalmente el Crédito Comercial y dejar el límite en L0</strong>
+                          <span className="mt-2 block text-sm text-black/65">
+                            Al consolidar estos clientes, el saldo pendiente de {formatCurrency(preview.creditExposure.consolidatedOpenBalance)} excede el límite actual de {formatCurrency(preview.creditExposure.currentCreditLimit ?? 0)} por {formatCurrency(preview.creditExposure.overexposure)}. Las Cuentas por Cobrar, sus saldos, pagos y vencimientos no serán modificados. El propietario podrá establecer posteriormente un nuevo límite.
+                          </span>
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
+                  {preview.requiredDecisions.includes("pendingSecondaryResolution") ? (
+                    <label className={`block rounded-lg border p-4 ${pendingSecondaryConfirmed ? "border-[#e4252c] bg-[#fff1f2]" : "border-[#f59e0b]/50 bg-[#fff7ed]"}`}>
+                      <span className="flex items-start gap-3">
+                        <input className="mt-1" type="checkbox" checked={pendingSecondaryConfirmed} onChange={(event) => setPendingSecondaryConfirmed(event.target.checked)} />
+                        <span>
+                          <strong className="block">Archivar el registro pendiente como duplicado</strong>
+                          <span className="mt-2 block text-sm text-black/65">El servidor confirmó que está inactivo, no tiene cuenta de acceso, actividad económica ni borrador POS activo. Sus notas y seguimientos CRM se conservarán en el cliente principal.</span>
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -222,6 +263,8 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
                       commercialSource={commercialSource}
                     />
                   ) : null}
+                  {creditOverLimitConfirmed ? <p className="rounded-lg border border-[#e4252c]/30 bg-[#fff1f2] p-4 text-sm"><strong>Resolución de crédito:</strong> quedará deshabilitado y con límite L0; deuda, pagos y vencimientos permanecen intactos.</p> : null}
+                  {pendingSecondaryConfirmed ? <p className="rounded-lg border border-[#e4252c]/30 bg-[#fff1f2] p-4 text-sm"><strong>Resolución del registro pendiente:</strong> será archivado como alias unido, sin eliminarlo.</p> : null}
                   <div className="rounded-lg border border-[#22c55e]/30 bg-[#f0fdf4] p-4"><p className="flex items-center gap-2 font-semibold text-[#166534]"><ShieldCheck size={19} /> Confirmación transaccional</p><p className="mt-2 text-sm text-[#166534]">Facturas emitidas, partidas publicadas, eventos financieros e inventario no se reescriben. Cualquier invariante distinta produce rollback total.</p></div>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Razón de la unión</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={1000} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder="Describe la evidencia y autorización empresarial (mínimo 10 caracteres)." /></label>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Escribe el nombre del cliente principal</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder={target.display_name} /><span className="mt-1 block text-xs text-black/50">Confirmación requerida: {target.display_name}</span></label>
@@ -230,7 +273,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
 
               <footer className="mt-6 flex flex-col-reverse gap-2 border-t border-black/10 pt-5 sm:flex-row sm:justify-between">
                 <Button type="button" variant="ghost" onClick={() => (step === 0 ? onCancel() : setStep((current) => current - 1))}><ArrowLeft size={16} />{step === 0 ? "Cancelar" : "Anterior"}</Button>
-                {step < steps.length - 1 ? <Button type="button" variant="dark" disabled={!executionEnabled || !preview.allowed || (step === 1 && !requiredIdentityComplete) || (step === 2 && (!commercialComplete || !wholesaleComplete))} onClick={() => setStep((current) => current + 1)}>Continuar<ArrowRight size={16} /></Button> : <Button type="button" variant="dark" disabled={!canSubmit || submitting} onClick={submit}>{submitting ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{submitting ? "Unificando…" : "Confirmar unión canónica"}</Button>}
+                {step < steps.length - 1 ? <Button type="button" variant="dark" disabled={!executionEnabled || !preview.allowed || (step === 1 && !requiredIdentityComplete) || (step === 2 && (!commercialComplete || !wholesaleComplete || !creditResolutionComplete || !pendingResolutionComplete))} onClick={() => setStep((current) => current + 1)}>Continuar<ArrowRight size={16} /></Button> : <Button type="button" variant="dark" disabled={!canSubmit || submitting} onClick={submit}>{submitting ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{submitting ? "Unificando…" : "Confirmar unión canónica"}</Button>}
               </footer>
             </>
           ) : null}

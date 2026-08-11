@@ -34,6 +34,32 @@ export type CustomerMergePreview = {
   accountingHashes: Record<string, string>;
   portal: { primaryUserId: string | null; secondaryUserId: string | null };
   credit: { primary: Record<string, unknown> | null; secondary: Record<string, unknown> | null };
+  creditExposure: {
+    targetOpenBalance: number;
+    sourceOpenBalance: number;
+    consolidatedOpenBalance: number;
+    currentCreditLimit: number | null;
+    overexposure: number;
+    enabled: boolean | null;
+    status: string | null;
+    termsDays: number | null;
+    canonicalCreditAccountId: string | null;
+    resolutionRequired: boolean;
+    requiredResolution: "DISABLE_AND_ZERO_LIMIT" | null;
+  };
+  pendingSecondary: {
+    candidate: boolean;
+    eligible: boolean;
+    status: string;
+    active: boolean;
+    userId: string | null;
+    economy: Record<string, number>;
+  };
+  resolutionContract: {
+    version: 2;
+    creditOverLimitResolution: "DISABLE_AND_ZERO_LIMIT";
+    pendingSecondaryResolution: "ARCHIVE_PENDING_SECONDARY_AS_MERGED";
+  };
   wholesale: {
     primary: { enabled: boolean; status: string; type: string };
     secondary: { enabled: boolean; status: string; type: string };
@@ -110,6 +136,16 @@ export type CustomerMergeDecision = {
   preserveOtherAsHistorical?: boolean;
 };
 
+export type CustomerMergeCreditDecision = {
+  selectedSource?: "primary" | "secondary";
+  overLimitResolution?: "DISABLE_AND_ZERO_LIMIT";
+};
+
+export type CustomerMergeCommercialDecision = {
+  selectedSource?: "primary" | "secondary";
+  pendingSecondaryResolution?: "ARCHIVE_PENDING_SECONDARY_AS_MERGED";
+};
+
 export type CustomerMergeExecutionInput = {
   requestKey: string;
   primaryCustomerId: string;
@@ -118,8 +154,8 @@ export type CustomerMergeExecutionInput = {
   expectedSecondaryCommercialVersion: number;
   previewHash: string;
   identityDecisions: Record<string, CustomerMergeDecision>;
-  creditDecision: Record<string, unknown>;
-  commercialDecision: Record<string, unknown>;
+  creditDecision: CustomerMergeCreditDecision;
+  commercialDecision: CustomerMergeCommercialDecision;
   reason: string;
   source: "crm" | "customers" | "receivables" | "pos" | "support" | "controlled_production";
 };

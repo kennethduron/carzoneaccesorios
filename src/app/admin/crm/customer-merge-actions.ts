@@ -13,6 +13,14 @@ const decisionSchema = z.object({
   preserveOtherAsAlternate: z.boolean().optional(),
   preserveOtherAsHistorical: z.boolean().optional(),
 });
+const creditDecisionSchema = z.object({
+  selectedSource: z.enum(["primary", "secondary"]).optional(),
+  overLimitResolution: z.literal("DISABLE_AND_ZERO_LIMIT").optional(),
+}).strict();
+const commercialDecisionSchema = z.object({
+  selectedSource: z.enum(["primary", "secondary"]).optional(),
+  pendingSecondaryResolution: z.literal("ARCHIVE_PENDING_SECONDARY_AS_MERGED").optional(),
+}).strict();
 const executionSchema = z.object({
   requestKey: z.string().trim().min(12).max(200),
   primaryCustomerId: uuid,
@@ -21,8 +29,8 @@ const executionSchema = z.object({
   expectedSecondaryCommercialVersion: z.number().int().nonnegative(),
   previewHash: z.string().regex(/^[0-9a-f]{64}$/),
   identityDecisions: z.record(z.string(), decisionSchema),
-  creditDecision: z.record(z.string(), z.unknown()),
-  commercialDecision: z.record(z.string(), z.unknown()),
+  creditDecision: creditDecisionSchema,
+  commercialDecision: commercialDecisionSchema,
   reason: z.string().trim().min(10).max(1000),
   source: z.enum(["crm", "customers", "receivables", "pos", "support", "controlled_production"]),
 });
@@ -37,6 +45,12 @@ function databaseError(message: string) {
     CUSTOMER_MERGE_CHECKOUT_IN_PROGRESS: "Hay un checkout en curso. Intenta nuevamente cuando finalice.",
     CUSTOMER_MERGE_POS_DRAFT_ACTIVE: "Hay un borrador POS activo para uno de los clientes.",
     CUSTOMER_MERGE_CREDIT_CONFLICT: "Debes elegir explícitamente la configuración de crédito.",
+    CUSTOMER_MERGE_CREDIT_OVER_LIMIT_DECISION_REQUIRED: "Confirma que el crédito quedará deshabilitado y con límite L0.",
+    CUSTOMER_MERGE_CREDIT_OVER_LIMIT_DECISION_NOT_APPLICABLE: "La exposición de crédito cambió. Actualiza la vista previa.",
+    CUSTOMER_MERGE_PENDING_SECONDARY_DECISION_REQUIRED: "Confirma que el registro pendiente se archivará como duplicado.",
+    CUSTOMER_MERGE_PENDING_SECONDARY_DECISION_NOT_APPLICABLE: "El estado del registro pendiente cambió. Actualiza la vista previa.",
+    CUSTOMER_MERGE_PENDING_SECONDARY_HAS_AUTH: "El registro pendiente tiene una cuenta de acceso vinculada y no puede archivarse con esta resolución.",
+    CUSTOMER_MERGE_PENDING_SECONDARY_HAS_ECONOMY: "El registro pendiente tiene actividad económica y requiere revisión manual.",
     CUSTOMER_MERGE_TAX_ID_DECISION_REQUIRED: "El conflicto de RTN requiere una decisión fiscal explícita.",
   };
   return { code, message: labels[code] ?? "No se pudo completar la unión. No se aplicaron cambios parciales." };
