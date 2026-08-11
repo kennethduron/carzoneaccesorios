@@ -24,7 +24,7 @@ select is(public.normalize_customer_tax_id_hn_v1('0801-1999-123456'),'0801199912
 
 select ok((select permissions ? 'customers:merge' from public.roles where name='technical_owner'),'technical owner receives customers:merge');
 select ok((select permissions ? 'customers:merge' from public.roles where name='business_owner'),'business owner receives customers:merge');
-select ok(not coalesce((select permissions ? 'customers:merge' from public.roles where name='admin'),false),'admin does not receive customers:merge implicitly');
+select ok(coalesce((select permissions ? 'customers:merge' from public.roles where name='admin'),true),'admin receives customers:merge when the deployment has that role');
 select ok(not coalesce((select permissions ? 'customers:merge' from public.roles where name='vendedor'),false),'seller does not receive customers:merge');
 
 update public.customer_feature_flags set enabled=true,enabled_at=now(),reason='Enabled only inside rolled-back canonical merge tests.' where key in ('customer_merge_execution_v1','customer_duplicate_prevention_v1');

@@ -137,7 +137,7 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-black/45">Identidad del portal</p>
         <h2 className="mt-1 text-lg font-semibold">Vinculación manual de cuenta web</h2>
-        <p className="mt-2 text-sm text-black/60">La búsqueda solo muestra cuentas activas con rol Cliente. La selección nunca vincula por sí sola.</p>
+        <p className="mt-2 text-sm text-black/60">Un visitante puede existir como cliente comercial sin tener cuenta web. La búsqueda solo consulta cuentas activas ya registradas con rol Cliente: no crea usuarios, no envía correos y no vincula por coincidencia automática.</p>
       </div>
 
       {!initialCustomer ? (
@@ -193,15 +193,15 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
                 <span className="mt-1 block text-xs text-black/45">Escribe al menos 3 caracteres. La búsqueda espera 350 ms.</span>
               </label>
               {searchingAccounts ? <p className="flex items-center gap-2 text-sm text-black/55"><LoaderCircle className="animate-spin" size={15} /> Buscando cuentas elegibles...</p> : null}
-              {!searchingAccounts && debouncedAccountQuery.trim().length >= 3 && accountResults.length === 0 ? <p className="text-sm text-black/55">No se encontraron cuentas elegibles.</p> : null}
+              {!searchingAccounts && debouncedAccountQuery.trim().length >= 3 && accountResults.length === 0 && message?.startsWith("No se encontraron") ? <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">No existe una cuenta web registrada que coincida con la búsqueda. El cliente puede seguir operando como visitante; desde esta pantalla no se creará una cuenta ni se enviará un correo.</p> : null}
               {accountResults.length > 0 ? (
                 <div className="grid gap-2 md:grid-cols-2">
                   {accountResults.map((account) => (
-                    <button key={account.id} type="button" disabled={linking} onClick={() => { setSelectedAccount(account); setSelectedEvidenceIndex(0); }} aria-pressed={selectedAccount?.id === account.id} className={`rounded-md border p-3 text-left transition-colors ${selectedAccount?.id === account.id ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10 hover:bg-[#f4f4f5]"}`}>
+                    <button key={account.id} type="button" disabled={linking || account.linkedToAnotherCustomer} onClick={() => { setSelectedAccount(account); setSelectedEvidenceIndex(0); }} aria-pressed={selectedAccount?.id === account.id} className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed ${account.linkedToAnotherCustomer ? "border-[#ef4444]/30 bg-[#fef2f2] opacity-80" : selectedAccount?.id === account.id ? "border-[#e4252c] bg-[#fff1f2]" : "border-black/10 hover:bg-[#f4f4f5]"}`}>
                       <span className="font-semibold">{account.fullName || account.username || "Cuenta del portal"}</span>
                       <span className="mt-1 block text-sm text-black/55">{account.email || "Sin correo visible"}</span>
                       <span className="mt-1 block text-xs text-black/45">{account.phone || "Sin teléfono"} · {account.role ? roleLabels[account.role] : "Sin rol"}</span>
-                      <span className="mt-1 block text-xs font-medium text-[#166534]">{account.evidence.some((item) => item.exact) ? "Evidencia autenticada disponible" : "Requiere verificación manual"}</span>
+                      <span className={`mt-1 block text-xs font-medium ${account.linkedToAnotherCustomer ? "text-[#991b1b]" : "text-[#166534]"}`}>{account.linkedToAnotherCustomer ? "Conflicto: esta cuenta ya pertenece a otro cliente y no puede seleccionarse" : account.linkedToThisCustomer ? "Esta cuenta ya está vinculada a este cliente" : account.evidence.some((item) => item.exact) ? "Cuenta disponible con evidencia autenticada" : "Cuenta disponible; requiere verificación manual"}</span>
                     </button>
                   ))}
                 </div>

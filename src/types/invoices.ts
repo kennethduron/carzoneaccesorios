@@ -26,6 +26,8 @@ export type StoreInvoice = {
   customerEmail: string | null;
   customerPhone: string | null;
   customerAddress: string | null;
+  customerCity: string | null;
+  customerBusinessName: string | null;
   items: StoreOrder["items"];
   subtotal: number;
   isv: number;
@@ -73,6 +75,8 @@ export type AdminInvoiceRow = {
   customer_name: string;
   customer_phone: string | null;
   customer_address: string | null;
+  customer_city: string | null;
+  customer_business_name: string | null;
   rtn: string | null;
   cai: string | null;
   customer_rtn: string | null;

@@ -18,6 +18,7 @@ export const savePosDraftSchema = z.object({
   customerId: z.string().uuid(),
   expectedCustomerCommercialVersion: z.number().int().nonnegative(),
   items: z.array(z.object({
+    linePosition: z.number().int().positive().max(200),
     productId: z.string().uuid(),
     quantity: z.number().int().min(1).max(9999),
     finalUnitPrice: z.number().finite().positive().nullable(),

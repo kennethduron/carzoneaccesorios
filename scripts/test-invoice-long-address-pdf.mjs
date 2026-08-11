@@ -7,7 +7,7 @@ globalThis.fetch = async () => new Response(null, { status: 404 });
 
 const [
   { generateFiscalInvoicePdf, getFiscalInvoiceCustomerLayout },
-  { getOfficialInvoiceTotals, summaryRows },
+  { buildOfficialInvoiceHtml, formatDocumentCustomerAddress, getOfficialInvoiceTotals, summaryRows },
 ] = await Promise.all([
   import("../src/utils/fiscal-invoice-pdf.ts"),
   import("../src/utils/official-invoice-document.ts"),
@@ -58,6 +58,8 @@ function invoice(overrides = {}) {
     customerEmail: "cliente@example.test",
     customerPhone: "+504 9999-9999",
     customerAddress: "Col. Trejo, casa 15",
+    customerCity: "San Pedro Sula",
+    customerBusinessName: "Empresa PDF local",
     paymentMethod: "cash",
     paymentStatus: "paid",
     paymentReference: null,
@@ -82,7 +84,11 @@ const cases = [
   ["address-250", invoice({ customerAddress: exactLength(specialSeed, 250) })],
   ["address-500", invoice({ customerAddress: exactLength(specialSeed, 500) })],
   ["address-word-break-500", invoice({ customerAddress: `INICIO${"A".repeat(487)}FIN-500` })],
-  ["empty", invoice({ customerAddress: null })],
+  ["empty", invoice({ customerAddress: null, customerCity: null })],
+  ["city-only", invoice({ customerAddress: null, customerCity: "La Ceiba" })],
+  ["address-only", invoice({ customerAddress: "Barrio El Centro", customerCity: null })],
+  ["deduplicated-city", invoice({ customerAddress: "San Pedro Sula, Colonia Trejo", customerCity: "San Pedro Sula" })],
+  ["no-company", invoice({ customerBusinessName: null })],
   ["no-rtn", invoice({ customerRtn: null })],
   ["many-products", invoice({ customerAddress: exactLength(specialSeed, 500), items: Array.from({ length: 45 }, (_, index) => item(index + 1)) })],
 ];
@@ -95,11 +101,12 @@ for (const [name, fixture] of cases) {
   const measurementDocument = new jsPDF();
   measurementDocument.setFont("helvetica", "normal");
   measurementDocument.setFontSize(7.5);
-  const layout = getFiscalInvoiceCustomerLayout(measurementDocument, fixture.customerAddress, 126);
+  const documentAddress = formatDocumentCustomerAddress(fixture.customerCity, fixture.customerAddress);
+  const layout = getFiscalInvoiceCustomerLayout(measurementDocument, documentAddress, 126);
   assert.equal(layout.addressWidth, 165, `${name}: debe usar el ancho real disponible del template`);
   assert.ok(layout.addressLines.every((line) => measurementDocument.getTextWidth(line) <= layout.addressWidth + 0.01), `${name}: ninguna línea puede exceder el margen derecho`);
-  assert.equal(layout.nextY, 134 + (layout.addressLines.length - 1) * layout.lineHeight, `${name}: el cursor debe crecer con cada línea`);
-  if (name === "short" || name === "empty") assert.equal(layout.addressLines.length, 1, `${name}: no debe agregar líneas innecesarias`);
+  assert.equal(layout.nextY, 140 + (layout.addressLines.length - 1) * layout.lineHeight, `${name}: el cursor debe crecer con cada línea`);
+  if (["short", "empty", "city-only", "address-only", "deduplicated-city"].includes(name)) assert.equal(layout.addressLines.length, 1, `${name}: no debe agregar líneas innecesarias`);
   if (name === "address-250") assert.ok(layout.addressLines.length >= 2, "250 caracteres deben envolver en varias líneas");
   if (name === "address-500" || name === "address-word-break-500" || name === "many-products") assert.ok(layout.addressLines.length >= 3, `${name}: 500 caracteres deben envolver en varias líneas`);
   if (name === "empty") assert.deepEqual(layout.addressLines, ["-"], "una dirección vacía conserva el placeholder vigente");
@@ -110,6 +117,10 @@ for (const [name, fixture] of cases) {
   const pageCommands = pdfDocument.internal.pages.flat().join("\n");
   assert.match(pageCommands, new RegExp(fixture.customerName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name}: conserva el nombre del cliente`);
   assert.match(pageCommands, new RegExp((fixture.customerRtn || "-").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name}: conserva el RTN`);
+  assert.match(pageCommands, new RegExp((fixture.customerBusinessName || "-").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name}: siempre conserva Empresa o su placeholder`);
+  const html = buildOfficialInvoiceHtml(fixture);
+  assert.match(html, /Nombre \/ Razón Social:/, `${name}: HTML usa la etiqueta fiscal solicitada`);
+  assert.match(html, /Empresa:/, `${name}: HTML siempre muestra Empresa`);
   for (const product of fixture.items) {
     assert.match(pageCommands, new RegExp(product.sku.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name}: conserva el SKU ${product.sku}`);
     assert.match(pageCommands, new RegExp(product.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${name}: conserva el producto ${product.name}`);
@@ -136,6 +147,12 @@ const [mapperSource, pdfSource, adminRoute, customerRoute] = await Promise.all([
 ]);
 assert.match(mapperSource, /customerAddress: invoice\.customer_address/, "admin conserva invoices.customer_address");
 assert.match(mapperSource, /customerAddress: invoice\.customerAddress/, "portal conserva su snapshot documental mapeado");
+assert.match(mapperSource, /customerCity: invoice\.customer_city/, "admin conserva invoices.customer_city");
+assert.match(mapperSource, /customerBusinessName: invoice\.customer_business_name/, "admin conserva invoices.customer_business_name");
+assert.equal(formatDocumentCustomerAddress("San Pedro Sula", "San Pedro Sula, Colonia Trejo"), "San Pedro Sula, Colonia Trejo", "ciudad completa al inicio no se duplica");
+assert.equal(formatDocumentCustomerAddress("San Pedro Sula", "Colonia Trejo, San Pedro Sula"), "Colonia Trejo, San Pedro Sula", "ciudad como segmento final no se duplica");
+assert.equal(formatDocumentCustomerAddress("San Pedro Sula", "Colonia Trejo"), "San Pedro Sula, Colonia Trejo", "ciudad y dirección distintas se combinan");
+assert.equal(formatDocumentCustomerAddress(null, null), "-", "sin ciudad ni dirección usa placeholder");
 assert.match(pdfSource, /startY: itemsStartY/, "la tabla usa el cursor dinámico del bloque del cliente");
 assert.doesNotMatch(pdfSource, /customerAddress[^\n]*\.slice\(/, "la dirección no se trunca");
 assert.match(adminRoute, /buildInvoicePdfResponse\(adminInvoiceToOfficialInvoice\(invoice\), disposition\)/, "PDF admin conserva el generador canónico");

@@ -6,6 +6,7 @@ import {
   getOfficialInvoiceDates,
   getOfficialInvoiceLogoSrc,
   getOfficialInvoiceTotals,
+  formatDocumentCustomerAddress,
   paymentLabel,
   statusLabel,
   summaryRows,
@@ -194,7 +195,7 @@ export function getFiscalInvoiceCustomerLayout(doc: jsPDF, customerAddress: stri
   const addressWidth = customerRightX - customerAddressX;
   const addressLines = doc.splitTextToSize(valueOrDash(customerAddress), addressWidth) as string[];
   const normalizedAddressLines = addressLines.length ? addressLines : ["-"];
-  const addressY = startY + 6;
+  const addressY = startY + 12;
   const lastAddressY = addressY + (normalizedAddressLines.length - 1) * customerAddressLineHeight;
 
   return {
@@ -211,14 +212,17 @@ export function getFiscalInvoiceCustomerLayout(doc: jsPDF, customerAddress: stri
 function drawCustomer(doc: jsPDF, invoice: FiscalInvoicePdfInput, startY: number) {
   doc.setFontSize(7.5);
   doc.setFont("helvetica", "normal");
-  doc.text("Cliente:", 18, startY);
-  doc.text(valueOrDash(invoice.customerName), 30, startY);
-  doc.line(30, startY + 1.2, 108, startY + 1.2);
-  doc.text("RTN:", 112, startY);
-  doc.text(valueOrDash(invoice.customerRtn), 124, startY);
-  doc.line(124, startY + 1.2, customerRightX, startY + 1.2);
-  const layout = getFiscalInvoiceCustomerLayout(doc, invoice.customerAddress, startY);
-  doc.text("Dirección:", 18, startY + 6);
+  doc.text("Nombre / Razón Social:", 18, startY);
+  doc.text(valueOrDash(invoice.customerName), 55, startY);
+  doc.line(55, startY + 1.2, 118, startY + 1.2);
+  doc.text("RTN:", 122, startY);
+  doc.text(valueOrDash(invoice.customerRtn), 134, startY);
+  doc.line(134, startY + 1.2, customerRightX, startY + 1.2);
+  doc.text("Empresa:", 18, startY + 6);
+  doc.text(valueOrDash(invoice.customerBusinessName), customerAddressX, startY + 6);
+  doc.line(customerAddressX, startY + 7.2, customerRightX, startY + 7.2);
+  const layout = getFiscalInvoiceCustomerLayout(doc, formatDocumentCustomerAddress(invoice.customerCity, invoice.customerAddress), startY);
+  doc.text("Dirección:", 18, startY + 12);
   doc.text(layout.addressLines, customerAddressX, layout.addressY, { lineHeightFactor: layout.lineHeightFactor });
   doc.line(customerAddressX, layout.underlineY, customerRightX, layout.underlineY);
 

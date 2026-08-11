@@ -6,6 +6,8 @@ const files = {
   preview: "supabase/migrations/202607310009_customer_merge_preview_and_matching.sql",
   execution: "supabase/migrations/202607310010_customer_merge_execution.sql",
   guards: "supabase/migrations/202607310011_customer_canonical_guards_and_integrations.sql",
+  rollout: "supabase/migrations/202608100001_edgar_invoice_cart_pos_closeout.sql",
+  permissions: "src/lib/auth/permissions.ts",
   action: "src/app/admin/crm/actions.ts",
   mergeActions: "src/app/admin/crm/customer-merge-actions.ts",
   wizard: "src/components/admin/customer-merge-wizard.tsx",
@@ -27,11 +29,15 @@ assert.match(source.execution, /for update/);
 assert.match(source.execution, /CUSTOMER_MERGE_INVARIANT_FAILED/);
 assert.match(source.execution, /idempotentReplay/);
 assert.match(source.guards, /CUSTOMER_ALIAS_READ_ONLY/);
+assert.match(source.rollout, /where role\.name = 'admin'/);
+assert.match(source.rollout, /\["customers:merge"\]/);
+assert.match(source.permissions, /admin:[\s\S]*?"customers:merge"/);
 assert.match(source.action, /CUSTOMER_LEGACY_MERGE_DISABLED/);
 assert.doesNotMatch(source.action, /export async function mergeDuplicateCustomerAction[\s\S]*?Promise\.all\(updates\)/);
 assert.match(source.mergeActions, /requirePermission\("customers:merge"\)/);
 assert.match(source.wizard, /Los límites de crédito nunca se suman/);
 assert.match(source.wizard, /Facturas emitidas, partidas publicadas/);
+assert.match(source.wizard, /disabled=\{!executionEnabled \|\| !preview\.allowed/);
 assert.match(source.crm, /CustomerMergeWizard/);
 assert.doesNotMatch(source.crm, /DuplicateMergeConfirmModal/);
 

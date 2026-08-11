@@ -157,6 +157,11 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
           {error ? <div role="alert" className="mb-4 rounded-lg border border-[#ef4444]/30 bg-[#fff1f2] p-4 text-sm text-[#991b1b]">{error}</div> : null}
           {!loading && preview ? (
             <>
+              {!executionEnabled ? (
+                <div className="mb-4 rounded-lg border border-[#f59e0b]/40 bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
+                  La unificación de clientes está desactivada por configuración. Puedes revisar la vista previa, pero no avanzar ni ejecutar cambios hasta que un responsable habilite la función.
+                </div>
+              ) : null}
               {preview.blockers.length > 0 ? (
                 <div className="mb-4 rounded-lg border border-[#ef4444]/30 bg-[#fff1f2] p-4">
                   <p className="flex items-center gap-2 font-semibold text-[#991b1b]"><AlertTriangle size={18} /> Unión bloqueada</p>
@@ -217,11 +222,6 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
                       commercialSource={commercialSource}
                     />
                   ) : null}
-                  {!executionEnabled ? (
-                    <div className="rounded-lg border border-[#f59e0b]/40 bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
-                      La revisión está disponible, pero la ejecución de uniones permanece desactivada. No se generará ninguna request key.
-                    </div>
-                  ) : null}
                   <div className="rounded-lg border border-[#22c55e]/30 bg-[#f0fdf4] p-4"><p className="flex items-center gap-2 font-semibold text-[#166534]"><ShieldCheck size={19} /> Confirmación transaccional</p><p className="mt-2 text-sm text-[#166534]">Facturas emitidas, partidas publicadas, eventos financieros e inventario no se reescriben. Cualquier invariante distinta produce rollback total.</p></div>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Razón de la unión</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={1000} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder="Describe la evidencia y autorización empresarial (mínimo 10 caracteres)." /></label>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Escribe el nombre del cliente principal</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder={target.display_name} /><span className="mt-1 block text-xs text-black/50">Confirmación requerida: {target.display_name}</span></label>
@@ -230,7 +230,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
 
               <footer className="mt-6 flex flex-col-reverse gap-2 border-t border-black/10 pt-5 sm:flex-row sm:justify-between">
                 <Button type="button" variant="ghost" onClick={() => (step === 0 ? onCancel() : setStep((current) => current - 1))}><ArrowLeft size={16} />{step === 0 ? "Cancelar" : "Anterior"}</Button>
-                {step < steps.length - 1 ? <Button type="button" variant="dark" disabled={!preview.allowed || (step === 1 && !requiredIdentityComplete) || (step === 2 && (!commercialComplete || !wholesaleComplete))} onClick={() => setStep((current) => current + 1)}>Continuar<ArrowRight size={16} /></Button> : <Button type="button" variant="dark" disabled={!canSubmit || submitting} onClick={submit}>{submitting ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{submitting ? "Unificando…" : "Confirmar unión canónica"}</Button>}
+                {step < steps.length - 1 ? <Button type="button" variant="dark" disabled={!executionEnabled || !preview.allowed || (step === 1 && !requiredIdentityComplete) || (step === 2 && (!commercialComplete || !wholesaleComplete))} onClick={() => setStep((current) => current + 1)}>Continuar<ArrowRight size={16} /></Button> : <Button type="button" variant="dark" disabled={!canSubmit || submitting} onClick={submit}>{submitting ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{submitting ? "Unificando…" : "Confirmar unión canónica"}</Button>}
               </footer>
             </>
           ) : null}

@@ -170,6 +170,7 @@ export const rolePermissions: Record<AppRole, Permission[]> = {
   admin: [
     "customers:link_portal_account",
     "customers:update_identity",
+    "customers:merge",
     "admin:access",
     "products:manage",
     "inventory:read",

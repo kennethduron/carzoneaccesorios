@@ -252,6 +252,7 @@ export async function searchPortalAccountCandidatesAction(
   const candidates = rows.flatMap((row, index): PortalAccountCandidate[] => {
     const authUser = authChecks[index].data.user;
     const linkedCustomerId = links.get(row.id) ?? null;
+    const linkedElsewhere = Boolean(linkedCustomerId && linkedCustomerId !== customer.value);
     const exactEvidence = exactEvidenceByUser.get(row.id);
     const evidence: PortalLinkEvidence[] = exactEvidence ? [exactEvidence] : [];
     evidence.push({
@@ -260,18 +261,18 @@ export async function searchPortalAccountCandidatesAction(
       label: "Identidad verificada manualmente",
       exact: false,
     });
-    if (authChecks[index].error || !authUser || (linkedCustomerId && linkedCustomerId !== customer.value)) return [];
+    if (authChecks[index].error || !authUser) return [];
     return [{
       id: row.id,
-      email: row.email,
-      phone: row.phone,
-      fullName: row.full_name,
-      username: row.username,
+      email: linkedElsewhere ? null : row.email,
+      phone: linkedElsewhere ? null : row.phone,
+      fullName: linkedElsewhere ? null : row.full_name,
+      username: linkedElsewhere ? null : row.username,
       role: (Array.isArray(row.roles) ? row.roles[0]?.name : row.roles?.name) ?? null,
       active: row.active,
       authExists: true,
       linkedToThisCustomer: linkedCustomerId === customer.value,
-      linkedToAnotherCustomer: false,
+      linkedToAnotherCustomer: linkedElsewhere,
       createdAt: row.created_at,
       evidence,
       emailConfirmedAt: authUser.email_confirmed_at ?? null,
@@ -280,7 +281,9 @@ export async function searchPortalAccountCandidatesAction(
 
   return {
     ok: true,
-    message: candidates.length === 1 ? "Se encontró 1 cuenta web elegible." : `Se encontraron ${candidates.length} cuentas web elegibles.`,
+    message: candidates.length === 0
+      ? "No se encontraron cuentas web registradas."
+      : candidates.length === 1 ? "Se encontró 1 cuenta web." : `Se encontraron ${candidates.length} cuentas web.`,
     candidates,
   };
 }

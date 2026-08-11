@@ -79,6 +79,7 @@ const initialDelivery: PosDeliveryState = {
 function certificationItems(count: number): PosDraftItem[] {
   const now = "2026-08-08T12:00:00.000Z";
   return Array.from({ length: count }, (_, index) => ({
+    linePosition: index + 1,
     productId: `00000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
     productSalesVersion: 1, sku: `VIS-${String(index + 1).padStart(3, "0")}`, internalCode: `LOCAL-${index + 1}`,
     productName: `Producto sintético de certificación visual ${index + 1}`, brand: "Marca local", categoryName: "Accesorios",

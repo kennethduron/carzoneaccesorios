@@ -14,6 +14,8 @@ export type CustomerOrderInvoice = {
   customer_phone: string | null;
   customer_email: string | null;
   customer_address: string | null;
+  customer_city: string | null;
+  customer_business_name: string | null;
   company_legal_name: string | null;
   company_rtn: string | null;
   company_address: string | null;
@@ -163,6 +165,8 @@ type CustomerInvoiceQueryRow = {
   customer_phone: string | null;
   customer_email: string | null;
   customer_address: string | null;
+  customer_city: string | null;
+  customer_business_name: string | null;
   company_legal_name: string | null;
   company_rtn: string | null;
   company_address: string | null;
@@ -190,6 +194,8 @@ type CustomerInvoiceQueryRow = {
   orders: {
     order_number: string;
     customer_name: string;
+    fiscal_customer_city: string | null;
+    fiscal_customer_business_name: string | null;
     payment_method: string;
     payments: Array<{
       bank_reference_number: string | null;
@@ -328,6 +334,8 @@ function normalizeInvoice(row: CustomerInvoiceQueryRow): StoreInvoice {
     customerEmail: row.customer_email,
     customerPhone: row.customer_phone,
     customerAddress: row.customer_address,
+    customerCity: row.customer_city ?? row.orders?.fiscal_customer_city ?? null,
+    customerBusinessName: row.customer_business_name ?? row.orders?.fiscal_customer_business_name ?? null,
     items: (row.invoice_items ?? []).map((item) => ({
       productId: item.id,
       sku: item.sku,
@@ -526,6 +534,8 @@ export async function getCustomerOrdersPage(
         customer_phone,
         customer_email,
         customer_address,
+        customer_city,
+        customer_business_name,
         company_legal_name,
         company_rtn,
         company_address,
@@ -619,6 +629,8 @@ export async function getCustomerIssuedInvoicesPage(
       customer_phone,
       customer_email,
       customer_address,
+      customer_city,
+      customer_business_name,
       company_legal_name,
       company_rtn,
       company_address,
@@ -643,7 +655,7 @@ export async function getCustomerIssuedInvoicesPage(
       issued_at,
       cancelled_at,
       created_at,
-      orders(order_number, customer_name, payment_method, payments(bank_reference_number, reference)),
+      orders(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
       invoice_items(
         id,
         sku,
@@ -703,6 +715,8 @@ export async function getCustomerInvoiceDetail(userId: string, invoiceId: string
       customer_phone,
       customer_email,
       customer_address,
+      customer_city,
+      customer_business_name,
       company_legal_name,
       company_rtn,
       company_address,
@@ -727,7 +741,7 @@ export async function getCustomerInvoiceDetail(userId: string, invoiceId: string
       issued_at,
       cancelled_at,
       created_at,
-      orders(order_number, customer_name, payment_method, payments(bank_reference_number, reference)),
+      orders(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
       invoice_items(
         id,
         sku,

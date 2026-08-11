@@ -34,7 +34,7 @@ const totals = getOfficialInvoiceTotals({
   companyEmail: null, companyLogoUrl: null, cai: null, fiscalRangeStart: null,
   fiscalRangeEnd: null, caiAuthorizationDate: null, fiscalDeadline: null,
   customerName: "Fixture", customerRtn: null, customerEmail: null,
-  customerPhone: null, customerAddress: null, paymentMethod: "cash",
+  customerPhone: null, customerAddress: null, customerCity: null, customerBusinessName: null, paymentMethod: "cash",
   paymentStatus: "approved", paymentReference: null, subtotal: 200, tax: 15,
   shippingFee: 0, cashOnDeliveryFee: 0, total: 215,
   items: [

@@ -343,6 +343,7 @@ export type PosProductSearchPage = {
 
 export type PosDraftItem = {
   itemId?: string;
+  linePosition: number;
   productId: string;
   productSalesVersion: number;
   sku: string;
@@ -418,6 +419,7 @@ export type PosDraftSaveInput = {
   customerId: string;
   expectedCustomerCommercialVersion: number;
   items: Array<{
+    linePosition: number;
     productId: string;
     quantity: number;
     finalUnitPrice: number | null;

@@ -52,7 +52,7 @@ const invoice = {
   companyEmail: null, companyLogoUrl: null, cai: null, fiscalRangeStart: null,
   fiscalRangeEnd: null, caiAuthorizationDate: null, fiscalDeadline: null,
   customerName: "Cliente local", customerRtn: null, customerEmail: null,
-  customerPhone: null, customerAddress: null, paymentMethod: "cash", paymentStatus: "approved",
+  customerPhone: null, customerAddress: null, customerCity: null, customerBusinessName: null, paymentMethod: "cash", paymentStatus: "approved",
   paymentReference: null, subtotal: 100, tax: 15, shippingFee: 0, cashOnDeliveryFee: 0,
   additionalFees: describedFees, total: 515,
   items: [{ sku: "POSUI", name: "Producto local", quantity: 1, unitPrice: 115, lineTotal: 115,

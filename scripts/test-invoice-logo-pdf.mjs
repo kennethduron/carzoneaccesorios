@@ -79,6 +79,8 @@ function invoice(overrides = {}) {
     customerEmail: "cliente@example.test",
     customerPhone: "+504 9999-9999",
     customerAddress: "Colonia de prueba, Tegucigalpa",
+    customerCity: "Tegucigalpa",
+    customerBusinessName: null,
     paymentMethod: "cash",
     paymentStatus: "paid",
     paymentReference: null,

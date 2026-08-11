@@ -25,7 +25,7 @@ function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
-type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "payment_status" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total"> & {
+type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | "customer_phone" | "customer_address" | "customer_city" | "customer_business_name" | "payment_method" | "payment_id" | "bank_reference_number" | "transfer_receipt_url" | "transfer_receipt_public_id" | "payment_status" | "subtotal" | "tax" | "shipping_fee" | "cash_on_delivery_fee" | "small_order_fee" | "discount_total" | "additional_fees" | "total"> & {
   subtotal: unknown;
   tax: unknown;
   shipping_fee: unknown;
@@ -39,11 +39,15 @@ type InvoiceQueryRow = Omit<AdminInvoiceRow, "order_number" | "customer_name" | 
     customer_name: string;
     phone: string;
     delivery_address: string;
+    fiscal_customer_city: string | null;
+    fiscal_customer_business_name: string | null;
     payment_method: string;
   } | null;
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  customer_city: string | null;
+  customer_business_name: string | null;
 };
 
 type PaymentQueryRow = {
@@ -96,6 +100,8 @@ function normalizeInvoice(row: InvoiceQueryRow, paymentByOrder: Map<string, Paym
     customer_name: row.customer_name ?? row.orders?.customer_name ?? "Cliente no registrado",
     customer_phone: row.customer_phone ?? row.orders?.phone ?? null,
     customer_address: row.customer_address ?? row.orders?.delivery_address ?? null,
+    customer_city: row.customer_city ?? row.orders?.fiscal_customer_city ?? null,
+    customer_business_name: row.customer_business_name ?? row.orders?.fiscal_customer_business_name ?? null,
     rtn: row.rtn,
     cai: row.cai,
     customer_rtn: row.customer_rtn,
@@ -202,6 +208,8 @@ export async function getAdminInvoicesPage({
       customer_name,
       customer_phone,
       customer_address,
+      customer_city,
+      customer_business_name,
       rtn,
       cai,
       customer_rtn,
@@ -221,7 +229,7 @@ export async function getAdminInvoicesPage({
       cancelled_by,
       cancellation_reason,
       created_at,
-      orders(order_number, customer_name, phone, delivery_address, payment_method)
+      orders(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method)
       `,
       { count: "exact" },
     );
@@ -298,6 +306,8 @@ export async function getAdminInvoiceDetail(
       customer_phone,
       customer_email,
       customer_address,
+      customer_city,
+      customer_business_name,
       rtn,
       cai,
       customer_rtn,
@@ -327,7 +337,7 @@ export async function getAdminInvoiceDetail(
       fiscal_range_end,
       cai_authorization_date,
       created_at,
-      orders(order_number, customer_name, phone, delivery_address, payment_method),
+      orders(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method),
       invoice_items(
         id,
         sku,

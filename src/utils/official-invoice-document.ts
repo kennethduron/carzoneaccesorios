@@ -44,6 +44,8 @@ export type OfficialInvoiceInput = {
   customerEmail: string | null;
   customerPhone: string | null;
   customerAddress: string | null;
+  customerCity: string | null;
+  customerBusinessName: string | null;
   paymentMethod: string;
   paymentStatus: string | null;
   paymentReference: string | null;
@@ -199,7 +201,7 @@ export const officialInvoiceCss = `
 
   .cz-official-client-row {
     display: grid;
-    grid-template-columns: 14mm 1fr 11mm 52mm;
+    grid-template-columns: 38mm minmax(0, 1fr) 11mm 52mm;
     gap: 4px;
     align-items: end;
   }
@@ -579,6 +581,29 @@ export function valueOrDash(value: string | null | undefined) {
   return value && value.trim() ? value.trim() : "-";
 }
 
+function cleanDocumentLocationPart(value: string | null | undefined) {
+  return value?.trim().replace(/\s+/g, " ") || "";
+}
+
+export function formatDocumentCustomerAddress(
+  city: string | null | undefined,
+  address: string | null | undefined,
+) {
+  const cleanCity = cleanDocumentLocationPart(city);
+  const cleanAddress = cleanDocumentLocationPart(address);
+  if (!cleanCity) return cleanAddress || "-";
+  if (!cleanAddress) return cleanCity;
+
+  const normalizedCity = cleanCity.toLocaleLowerCase("es-HN");
+  const normalizedAddress = cleanAddress.toLocaleLowerCase("es-HN");
+  const addressSegments = normalizedAddress.split(/\s*[,;|]\s*/).filter(Boolean);
+  if (normalizedAddress === normalizedCity || addressSegments.includes(normalizedCity)) {
+    return cleanAddress;
+  }
+
+  return `${cleanCity}, ${cleanAddress}`;
+}
+
 export function paymentLabel(method: string) {
   if (method === "bank_transfer" || method === "Transferencia bancaria") return "Transferencia bancaria";
   if (method === "card" || method === "Tarjeta") return "Tarjeta mediante enlace de pago";
@@ -718,14 +743,18 @@ export function buildOfficialInvoiceHtml(invoice: OfficialInvoiceInput, options:
 
         <section class="cz-official-client">
           <div class="cz-official-client-row">
-            <span>Cliente:</span>
+            <span>Nombre / Razón Social:</span>
             <span class="cz-official-line-value">${escapeHtml(invoice.customerName)}</span>
             <span>RTN:</span>
             <span class="cz-official-line-value">${escapeHtml(valueOrDash(invoice.customerRtn))}</span>
           </div>
           <div class="cz-official-client-row">
+            <span>Empresa:</span>
+            <span class="cz-official-line-value">${escapeHtml(valueOrDash(invoice.customerBusinessName))}</span>
+          </div>
+          <div class="cz-official-client-row">
             <span>Dirección:</span>
-            <span class="cz-official-line-value">${escapeHtml(valueOrDash(invoice.customerAddress))}</span>
+            <span class="cz-official-line-value">${escapeHtml(formatDocumentCustomerAddress(invoice.customerCity, invoice.customerAddress))}</span>
           </div>
         </section>
 

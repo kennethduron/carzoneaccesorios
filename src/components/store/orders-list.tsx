@@ -110,6 +110,8 @@ function invoiceToStoreInvoice(order: CustomerOrderRow): StoreInvoice | null {
     customerEmail: invoice.customer_email ?? order.email,
     customerPhone: invoice.customer_phone ?? order.phone,
     customerAddress: invoice.customer_address ?? order.delivery_address,
+    customerCity: invoice.customer_city,
+    customerBusinessName: invoice.customer_business_name,
     items:
       invoice.invoice_items && invoice.invoice_items.length > 0
         ? invoice.invoice_items.map((item) => ({

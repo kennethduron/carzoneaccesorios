@@ -1,12 +1,23 @@
 \set ON_ERROR_STOP on
 begin;
-select plan(43);
+select plan(45);
+
+select isnt(
+  ('2026-08-11 00:30:00+00'::timestamptz at time zone 'UTC')::date,
+  ('2026-08-11 00:30:00+00'::timestamptz at time zone 'America/Tegucigalpa')::date,
+  'UTC and Honduras can be on different calendar dates'
+);
+select is(
+  ('2026-08-11 00:30:00+00'::timestamptz at time zone 'America/Tegucigalpa')::date,
+  date '2026-08-10',
+  'inventory adjustment tests use the Honduras operational date at the UTC boundary'
+);
 
 select set_config('request.jwt.claim.sub','',true);
 select set_config('request.jwt.claim.role','service_role',true);
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select throws_ok(
-  $$select public.create_inventory_adjustment_v1('ad400000-0000-4000-8000-000000000001',current_date,null,null,'[]')$$,
+  $$select public.create_inventory_adjustment_v1('ad400000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,null,null,'[]')$$,
   '42501','INVENTORY_ADJUSTMENT_FORBIDDEN','service role cannot invent an actor for a mutation'
 );
 
@@ -40,23 +51,23 @@ select (select id from public.categories where slug='exterior'),
   case when g=10 then 10 else 0 end,200,180,100
 from generate_series(1,10) g;
 
-select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000001',current_date,null,null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,null,null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',0,'reason_code','physical_count_surplus')))$$,
   '22023','INVENTORY_ADJUSTMENT_INVALID_LINES','zero quantity is rejected');
-select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000002',current_date,null,null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000002',(now() at time zone 'America/Tegucigalpa')::date,null,null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1.5,'reason_code','physical_count_surplus')))$$,
   '22023','INVENTORY_ADJUSTMENT_INVALID_LINES','fractional quantity is rejected');
-select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000003',current_date,null,null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000003',(now() at time zone 'America/Tegucigalpa')::date,null,null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1000001,'reason_code','physical_count_surplus')))$$,
   '22023','INVENTORY_ADJUSTMENT_INVALID_LINES','overflow quantity is rejected');
-select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000004',current_date,null,null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad420000-0000-4000-8000-000000000004',(now() at time zone 'America/Tegucigalpa')::date,null,null,
   jsonb_build_array(
     jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1,'reason_code','physical_count_surplus'),
     jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1,'reason_code','physical_count_surplus')))$$,
   '23505','INVENTORY_ADJUSTMENT_DUPLICATE_PRODUCT','duplicate product is rejected');
 select is((select count(*)::integer from public.inventory_adjustments),0,'invalid drafts leave no document');
 
-select lives_ok($$select public.create_inventory_adjustment_v1('ad430000-0000-4000-8000-000000000001',current_date,'TEN-LINES',null,
+select lives_ok($$select public.create_inventory_adjustment_v1('ad430000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,'TEN-LINES',null,
   (select jsonb_agg(jsonb_build_object('product_id',id,'direction','increase','quantity',1,'reason_code','physical_count_surplus') order by id)
    from public.products where sku like 'INV-ADJ-VALID-%'))$$,'ten-line draft succeeds');
 select is((select count(*)::integer from public.inventory_adjustment_lines where adjustment_id=(select id from public.inventory_adjustments where request_key='ad430000-0000-4000-8000-000000000001')),10,'ten unique lines are stored');
@@ -70,7 +81,7 @@ select lives_ok($$select public.confirm_inventory_adjustment_v1((select id from 
 select lives_ok($$select public.confirm_inventory_adjustment_v1((select id from public.inventory_adjustments where request_key='ad430000-0000-4000-8000-000000000001'),1,'ad430000-0000-4000-8000-000000000001')$$,'idempotent retry five succeeds');
 select is((select count(*)::integer from public.inventory_movements where reference_id=(select id from public.inventory_adjustments where request_key='ad430000-0000-4000-8000-000000000001')),10,'five retries create no duplicate movements');
 
-select lives_ok($$select public.create_inventory_adjustment_v1('ad430000-0000-4000-8000-000000000002',current_date,'ATOMIC-FAIL',null,
+select lives_ok($$select public.create_inventory_adjustment_v1('ad430000-0000-4000-8000-000000000002',(now() at time zone 'America/Tegucigalpa')::date,'ATOMIC-FAIL',null,
   (select jsonb_agg(jsonb_build_object('product_id',id,'direction',case when sku='INV-ADJ-VALID-010' then 'decrease' else 'increase' end,
     'quantity',case when sku='INV-ADJ-VALID-010' then 2 else 1 end,
     'reason_code',case when sku='INV-ADJ-VALID-010' then 'physical_count_shortage' else 'physical_count_surplus' end) order by id)
@@ -86,7 +97,7 @@ select set_config('request.jwt.claim.sub','ad410000-0000-4000-8000-000000000002'
 select set_config('request.jwt.claims','{"sub":"ad410000-0000-4000-8000-000000000002","role":"authenticated"}',true);
 select ok(not ((public.search_inventory_adjustment_products_v1('INV-ADJ-VALID-001',1)->0) ? 'cost_price'),'bodega product search masks cost');
 select ok(not (public.get_inventory_adjustment_v1((select id from public.inventory_adjustments where request_key='ad430000-0000-4000-8000-000000000001')) ? 'total_cost'),'bodega document masks total cost');
-select throws_ok($$select public.create_inventory_adjustment_v1('ad440000-0000-4000-8000-000000000001',current_date,null,null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad440000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,null,null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1,'reason_code','physical_count_surplus','unit_cost',123)))$$,
   '42501','INVENTORY_ADJUSTMENT_COST_FORBIDDEN','bodega cannot submit cost');
 select throws_ok($$select public.reverse_inventory_adjustment_v1((select id from public.inventory_adjustments where request_key='ad430000-0000-4000-8000-000000000001'),'ad440000-0000-4000-8000-000000000002')$$,
@@ -95,7 +106,7 @@ select throws_ok($$select public.reverse_inventory_adjustment_v1((select id from
 select set_config('request.jwt.claim.sub','ad410000-0000-4000-8000-000000000003',true);
 select set_config('request.jwt.claims','{"sub":"ad410000-0000-4000-8000-000000000003","role":"authenticated"}',true);
 select ok((public.search_inventory_adjustment_products_v1('INV-ADJ-VALID-001',1)->0) ? 'cost_price','contadora sees cost');
-select lives_ok($$select public.create_inventory_adjustment_v1('ad450000-0000-4000-8000-000000000001',current_date,'COST-SNAPSHOT',null,
+select lives_ok($$select public.create_inventory_adjustment_v1('ad450000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,'COST-SNAPSHOT',null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-001'),'direction','increase','quantity',1,'reason_code','physical_count_surplus','unit_cost',123)))$$,'contadora can create with authorized cost');
 select lives_ok($$select public.confirm_inventory_adjustment_v1((select id from public.inventory_adjustments where request_key='ad450000-0000-4000-8000-000000000001'),1,'ad450000-0000-4000-8000-000000000001')$$,'contadora can confirm');
 select is((select unit_cost_snapshot from public.inventory_adjustment_lines where adjustment_id=(select id from public.inventory_adjustments where request_key='ad450000-0000-4000-8000-000000000001')),123.00::numeric,'authorized cost is snapshotted');
@@ -105,11 +116,11 @@ select throws_ok($$select public.reverse_inventory_adjustment_v1((select id from
 
 select set_config('request.jwt.claim.sub','ad410000-0000-4000-8000-000000000001',true);
 select set_config('request.jwt.claims','{"sub":"ad410000-0000-4000-8000-000000000001","role":"authenticated"}',true);
-select lives_ok($$select public.create_inventory_adjustment_v1('ad460000-0000-4000-8000-000000000001',current_date,'PRIVATE-IDEMPOTENCY',null,
+select lives_ok($$select public.create_inventory_adjustment_v1('ad460000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,'PRIVATE-IDEMPOTENCY',null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-002'),'direction','increase','quantity',1,'reason_code','physical_count_surplus')))$$,'admin creates an idempotent draft');
 select set_config('request.jwt.claim.sub','ad410000-0000-4000-8000-000000000002',true);
 select set_config('request.jwt.claims','{"sub":"ad410000-0000-4000-8000-000000000002","role":"authenticated"}',true);
-select throws_ok($$select public.create_inventory_adjustment_v1('ad460000-0000-4000-8000-000000000001',current_date,'PRIVATE-IDEMPOTENCY',null,
+select throws_ok($$select public.create_inventory_adjustment_v1('ad460000-0000-4000-8000-000000000001',(now() at time zone 'America/Tegucigalpa')::date,'PRIVATE-IDEMPOTENCY',null,
   jsonb_build_array(jsonb_build_object('product_id',(select id from public.products where sku='INV-ADJ-VALID-002'),'direction','increase','quantity',1,'reason_code','physical_count_surplus')))$$,
   '42501','INVENTORY_ADJUSTMENT_IDEMPOTENCY_FORBIDDEN','another actor cannot probe an idempotency key');
 
