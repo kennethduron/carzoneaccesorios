@@ -11,14 +11,17 @@ type PaginationControlsProps = {
   params?: Record<string, string | number | null | undefined>;
   pageParam?: string;
   pageSizeParam?: number;
+  pageHrefBuilder?: (page: number) => string;
 };
 
-export function PaginationControls({ basePath, page, pageSize, total, label, params = {}, pageParam = "page", pageSizeParam }: PaginationControlsProps) {
+export function PaginationControls({ basePath, page, pageSize, total, label, params = {}, pageParam = "page", pageSizeParam, pageHrefBuilder }: PaginationControlsProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const firstItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastItem = Math.min(page * pageSize, total);
 
   function buildHref(nextPage: number) {
+    if (pageHrefBuilder) return pageHrefBuilder(nextPage);
+
     const search = new URLSearchParams();
 
     Object.entries(params).forEach(([key, value]) => {

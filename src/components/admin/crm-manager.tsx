@@ -63,6 +63,10 @@ import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { roleLabels } from "@/lib/auth/roles";
+import {
+  buildCustomerPaginationHref,
+  customerCriteriaChanged,
+} from "@/lib/customers/customer-pagination";
 import type {
   AdminCrmData,
   CrmCustomerOption,
@@ -386,7 +390,10 @@ export function CrmManager({
     const normalizedQuery = debouncedQuery.trim();
     const urlQuery = currentSearchParams.get("q")?.trim() ?? "";
     const urlFilter = (currentSearchParams.get("filter") as CustomerFilter | null) ?? "clients";
-    if (normalizedQuery === urlQuery && customerFilter === urlFilter) return;
+    if (!customerCriteriaChanged(
+      { query: normalizedQuery, filter: customerFilter },
+      { query: urlQuery, filter: urlFilter },
+    )) return;
 
     const params = new URLSearchParams(currentSearchParams.toString());
     if (normalizedQuery) params.set("q", normalizedQuery);
@@ -1160,6 +1167,16 @@ export function CrmManager({
             : activeTask
               ? { task: activeTask.id }
               : undefined
+        }
+        pageHrefBuilder={
+          focus === "customers"
+            ? (page) => buildCustomerPaginationHref({
+                basePath,
+                query: debouncedQuery,
+                filter: customerFilter,
+                page,
+              })
+            : undefined
         }
       />
 

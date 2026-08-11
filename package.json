@@ -83,7 +83,8 @@
     "test:customer-merge-resolution-v2:concurrency:local": "node scripts/test-customer-merge-resolution-v2-concurrency-local.mjs",
     "test:customer-profile-set-once": "node scripts/test-customer-profile-set-once.mjs",
     "test:customer-merge-wizard-details": "node scripts/test-customer-merge-wizard-details.mjs",
-    "test:customer-manual-merge": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-customer-manual-merge-name-discovery.mjs"
+    "test:customer-manual-merge": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-customer-manual-merge-name-discovery.mjs",
+    "test:customer-pagination": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-customer-pagination-navigation.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
