@@ -35,6 +35,9 @@ export default async function AdminCrmPage({
   const canManageWholesale =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
+  const canMergeCustomers =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(profile.role, profile.permissions, "customers:merge", profile.email);
 
   const params = await searchParams;
   const activeTask = params.task === "overdue" ? { id: "overdue" as const, label: "Seguimientos vencidos" } : null;
@@ -69,6 +72,7 @@ export default async function AdminCrmPage({
         canLinkPortalAccount={canLinkPortalAccount}
         canEditCustomerIdentity={canEditCustomerIdentity}
         canManageWholesale={canManageWholesale}
+        canMergeCustomers={canMergeCustomers}
         firstWholesaleMinimum={Number(settings.first_wholesale_minimum ?? 10000)}
       />
     </AdminShell>

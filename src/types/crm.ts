@@ -118,20 +118,40 @@ export type CrmNoteRow = {
 export type CrmDuplicateCandidate = {
   id: string;
   display_name: string;
+  business_name: string | null;
+  contact_name: string;
   email: string | null;
   phone: string | null;
+  tax_id: string | null;
+  status: string;
+  active: boolean;
+  account_type: "retail" | "wholesale";
+  has_portal_account: boolean;
   created_at: string;
   order_count: number;
   invoice_count: number;
+  open_receivable_count: number;
+  note_count: number;
+  has_credit_account: boolean;
   is_test_account: boolean;
   can_merge: boolean;
 };
 
+export type CrmDuplicateMatchReason = "email" | "phone" | "tax_id" | "business_name" | "contact_name";
+
 export type CrmDuplicateGroup = {
   key: string;
-  match_type: "email" | "phone";
+  match_type: CrmDuplicateMatchReason;
+  match_reasons: CrmDuplicateMatchReason[];
+  classification: "strong" | "probable" | "weak";
   label: string;
   customers: CrmDuplicateCandidate[];
+};
+
+export type CrmManualMergeCandidate = CrmDuplicateCandidate & {
+  company_name: string | null;
+  same_family: boolean;
+  canonical_customer_id: string;
 };
 
 export type CrmCustomerOrderProfileRow = {

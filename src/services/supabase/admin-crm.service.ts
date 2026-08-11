@@ -1,13 +1,17 @@
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { internalRoleLabel, isInternalRole } from "@/lib/auth/roles";
+import {
+  buildCustomerDuplicateGroups,
+  type CustomerDuplicateDiscoveryRow,
+} from "@/lib/customers/customer-duplicate-discovery";
 import { getCustomerCreditAccount, getCustomerReceivables } from "@/services/supabase/credit.service";
 import type { AppRole } from "@/types/auth";
 import type {
   AdminCrmData,
   CrmCustomerOption,
   CrmCustomerProfile,
-  CrmDuplicateGroup,
+  CrmManualMergeCandidate,
   CrmFollowupRow,
   CrmNoteRow,
 } from "@/types/crm";
@@ -135,15 +139,7 @@ type OrderActivityRow = {
   payment_timing?: "before_delivery" | "on_delivery" | null;
 };
 
-type DuplicateCustomerQueryRow = {
-  id: string;
-  user_id: string | null;
-  business_name: string | null;
-  contact_name: string;
-  email: string | null;
-  phone: string | null;
-  created_at: string;
-};
+type DuplicateCustomerQueryRow = CustomerDuplicateDiscoveryRow;
 
 type CustomerReferenceRow = {
   id: string;
@@ -321,69 +317,6 @@ function uniqueCustomers(customers: CrmCustomerOption[]) {
   }
 
   return Array.from(new Map(Array.from(byKey.values()).map((customer) => [customer.id, customer])).values());
-}
-
-function buildDuplicateGroups(
-  customers: DuplicateCustomerQueryRow[],
-  orderCounts: Map<string, number>,
-  invoiceCounts: Map<string, number>,
-): CrmDuplicateGroup[] {
-  const groups = new Map<string, CrmDuplicateGroup>();
-
-  function addCustomer(matchType: "email" | "phone", key: string | null, label: string, customer: DuplicateCustomerQueryRow) {
-    if (!key) {
-      return;
-    }
-
-    const groupKey = `${matchType}:${key}`;
-    const group =
-      groups.get(groupKey) ??
-      ({
-        key: groupKey,
-        match_type: matchType,
-        label,
-        customers: [],
-      } satisfies CrmDuplicateGroup);
-
-    const email = customer.email ? normalizeAccountEmail(customer.email) : null;
-    const orderCount = orderCounts.get(customer.id) ?? 0;
-    const invoiceCount = invoiceCounts.get(customer.id) ?? 0;
-    const isTestAccount = email ? isSafeTestAccountEmail(email) : false;
-
-    group.customers.push({
-      id: customer.id,
-      display_name: customer.business_name ?? customer.contact_name,
-      email: customer.email,
-      phone: customer.phone,
-      created_at: customer.created_at,
-      order_count: orderCount,
-      invoice_count: invoiceCount,
-      is_test_account: isTestAccount,
-      can_merge: true,
-    });
-    groups.set(groupKey, group);
-  }
-
-  for (const customer of customers) {
-    addCustomer("email", customer.email ? normalizeAccountEmail(customer.email) : null, customer.email ?? "Correo electrónico repetido", customer);
-    addCustomer("phone", normalizePhoneKey(customer.phone), normalizePhoneKey(customer.phone) ?? "Teléfono repetido", customer);
-  }
-
-  return Array.from(groups.values())
-    .map((group) => ({
-      ...group,
-      customers: group.customers.sort((a, b) => {
-        if (a.invoice_count !== b.invoice_count) {
-          return b.invoice_count - a.invoice_count;
-        }
-        if (a.order_count !== b.order_count) {
-          return b.order_count - a.order_count;
-        }
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      }),
-    }))
-    .filter((group) => group.customers.length > 1)
-    .slice(0, 12);
 }
 
 function getAccountState(input: {
@@ -721,7 +654,7 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       .returns<NoteQueryRow[]>(),
     admin
       .from("customers")
-      .select("id, user_id, business_name, contact_name, email, phone, created_at")
+      .select("id, user_id, business_name, contact_name, email, phone, tax_id, status, active, is_wholesale, created_at")
       .is("merged_into_customer_id", null)
       .order("created_at", { ascending: false })
       .limit(1000)
@@ -904,13 +837,143 @@ export async function getAdminCrm(filters: AdminCrmPageFilters = {}): Promise<Ad
       ? normalizedFollowups
       : normalizedFollowups.filter((followup) => followup.customer_profile_kind === "customer" || visibleCustomerIds.has(followup.customer_id)),
     notes: (notes ?? []).map(normalizeNote),
-    duplicateGroups: duplicatePreventionFlag?.enabled ? buildDuplicateGroups(duplicateRows, duplicateOrderCounts, duplicateInvoiceCounts) : [],
+    duplicateGroups: duplicatePreventionFlag?.enabled
+      ? buildCustomerDuplicateGroups(duplicateRows, {
+          orders: duplicateOrderCounts,
+          invoices: duplicateInvoiceCounts,
+        })
+      : [],
     customersTotal: matchedCustomersTotal,
     followupsTotal: followupsTotal ?? 0,
     customerPage,
     followupPage,
     pageSize,
   };
+}
+
+export async function searchAdminCustomerMergeCandidates(
+  currentCustomerId: string,
+  searchQuery: string,
+  limit = 12,
+): Promise<CrmManualMergeCandidate[]> {
+  const supabase = await getSupabaseServerClient();
+  const admin = getSupabaseAdminClient();
+  const normalizedLimit = Math.max(1, Math.min(Math.floor(limit), 20));
+  const query = searchQuery.trim().slice(0, 120);
+  if (query.length < 2) return [];
+
+  const { data: matches, error: matchesError } = await supabase
+    .rpc("search_admin_crm_customer_ids_v1", {
+      p_query: query,
+      p_filter: "clients",
+      p_limit: normalizedLimit + 5,
+      p_offset: 0,
+    })
+    .returns<Array<{ customer_id: string; total_count: number }>>();
+  if (matchesError) throw new Error(matchesError.message);
+
+  const matchRows = (Array.isArray(matches) ? matches : []) as Array<{ customer_id: string; total_count: number }>;
+  const orderedIds: string[] = matchRows.map((row) => row.customer_id).filter((id) => id !== currentCustomerId);
+  if (orderedIds.length === 0) return [];
+
+  const { data: rows, error: rowsError } = await admin
+    .from("customers")
+    .select("id, user_id, business_name, company_name, contact_name, email, phone, tax_id, status, active, is_wholesale, created_at, merged_into_customer_id")
+    .in("id", orderedIds)
+    .returns<Array<{
+      id: string;
+      user_id: string | null;
+      business_name: string | null;
+      company_name: string | null;
+      contact_name: string;
+      email: string | null;
+      phone: string | null;
+      tax_id: string | null;
+      status: string;
+      active: boolean;
+      is_wholesale: boolean;
+      created_at: string;
+      merged_into_customer_id: string | null;
+    }>>();
+  if (rowsError) throw new Error(rowsError.message);
+
+  const customerIds = (rows ?? []).map((row) => row.id);
+  if (customerIds.length === 0) return [];
+  const [
+    { data: orderRows, error: ordersError },
+    { data: invoiceRows, error: invoicesError },
+    { data: receivableRows, error: receivablesError },
+    { data: noteRows, error: notesError },
+    { data: creditRows, error: creditsError },
+    { data: currentRoot, error: currentRootError },
+  ] = await Promise.all([
+    admin.from("orders").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
+    admin.from("invoices").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
+    admin.from("accounts_receivable").select("id, customer_id, status").in("customer_id", customerIds).returns<Array<CustomerReferenceRow & { status: string }>>(),
+    admin.from("crm_notes").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
+    admin.from("customer_credit_accounts").select("id, customer_id").in("customer_id", customerIds).returns<CustomerReferenceRow[]>(),
+    admin.rpc("resolve_customer_root_v1", { p_customer_id: currentCustomerId }),
+  ]);
+  const relationError = ordersError ?? invoicesError ?? receivablesError ?? notesError ?? creditsError ?? currentRootError;
+  if (relationError) throw new Error(relationError.message);
+
+  const roots = await Promise.all(
+    (rows ?? []).map(async (row) => {
+      const { data, error } = await admin.rpc("resolve_customer_root_v1", { p_customer_id: row.id });
+      if (error) throw new Error(error.message);
+      return [row.id, String(data ?? row.id)] as const;
+    }),
+  );
+  const rootById = new Map(roots);
+  const orders = new Map<string, number>();
+  const invoices = new Map<string, number>();
+  const receivables = new Map<string, number>();
+  const notes = new Map<string, number>();
+  for (const row of orderRows ?? []) if (row.customer_id) orders.set(row.customer_id, (orders.get(row.customer_id) ?? 0) + 1);
+  for (const row of invoiceRows ?? []) if (row.customer_id) invoices.set(row.customer_id, (invoices.get(row.customer_id) ?? 0) + 1);
+  for (const row of receivableRows ?? []) {
+    if (row.customer_id && !["paid", "cancelled"].includes(row.status)) {
+      receivables.set(row.customer_id, (receivables.get(row.customer_id) ?? 0) + 1);
+    }
+  }
+  for (const row of noteRows ?? []) if (row.customer_id) notes.set(row.customer_id, (notes.get(row.customer_id) ?? 0) + 1);
+  const creditCustomers = new Set((creditRows ?? []).map((row) => row.customer_id).filter((id): id is string => Boolean(id)));
+  const rowById = new Map((rows ?? []).map((row) => [row.id, row]));
+  const currentCanonicalId = String(currentRoot ?? currentCustomerId);
+
+  return orderedIds
+    .map((id) => rowById.get(id))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .map((row) => {
+      const canonicalCustomerId = rootById.get(row.id) ?? row.id;
+      const sameFamily = canonicalCustomerId === currentCanonicalId;
+      return {
+        id: row.id,
+        display_name: row.business_name ?? row.company_name ?? row.contact_name,
+        business_name: row.business_name,
+        company_name: row.company_name,
+        contact_name: row.contact_name,
+        email: row.email,
+        phone: row.phone,
+        tax_id: row.tax_id,
+        status: row.status,
+        active: row.active,
+        account_type: row.is_wholesale ? "wholesale" : "retail",
+        has_portal_account: Boolean(row.user_id),
+        created_at: row.created_at,
+        order_count: orders.get(row.id) ?? 0,
+        invoice_count: invoices.get(row.id) ?? 0,
+        open_receivable_count: receivables.get(row.id) ?? 0,
+        note_count: notes.get(row.id) ?? 0,
+        has_credit_account: creditCustomers.has(row.id),
+        is_test_account: Boolean(row.email && isSafeTestAccountEmail(normalizeAccountEmail(row.email))),
+        can_merge: row.merged_into_customer_id === null && !sameFamily,
+        same_family: sameFamily,
+        canonical_customer_id: canonicalCustomerId,
+      } satisfies CrmManualMergeCandidate;
+    })
+    .filter((candidate) => candidate.can_merge || candidate.same_family)
+    .slice(0, normalizedLimit);
 }
 
 export async function getAdminCustomerProfile(customerId: string): Promise<CrmCustomerProfile | null> {

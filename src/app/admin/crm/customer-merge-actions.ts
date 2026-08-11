@@ -4,10 +4,17 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { searchAdminCustomerMergeCandidates } from "@/services/supabase/admin-crm.service";
+import type { CrmManualMergeCandidate } from "@/types/crm";
 import type { CustomerMergeActionResult, CustomerMergePreview } from "@/types/customer-merge";
 
 const uuid = z.string().uuid();
 const previewSchema = z.object({ primaryCustomerId: uuid, secondaryCustomerId: uuid });
+const searchSchema = z.object({
+  currentCustomerId: uuid,
+  query: z.string().trim().min(2).max(120),
+  limit: z.number().int().min(1).max(20).optional(),
+});
 const decisionSchema = z.object({
   primaryValueSource: z.enum(["primary", "secondary"]),
   preserveOtherAsAlternate: z.boolean().optional(),
@@ -56,8 +63,46 @@ function databaseError(message: string) {
   return { code, message: labels[code] ?? "No se pudo completar la unión. No se aplicaron cambios parciales." };
 }
 
+async function requireCustomerMergeActor() {
+  const actor = await requirePermission("customers:merge");
+  if (!["technical_owner", "business_owner", "admin"].includes(actor.role)) {
+    throw new Error("Solo propietarios técnicos, propietarios del negocio y administradores pueden unificar clientes.");
+  }
+  return actor;
+}
+
+export async function searchCustomerMergeCandidatesAction(input: unknown): Promise<{
+  ok: boolean;
+  message: string;
+  candidates: CrmManualMergeCandidate[];
+}> {
+  await requireCustomerMergeActor();
+  const parsed = searchSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: "Escribe al menos dos caracteres para buscar otro cliente.", candidates: [] };
+  }
+  try {
+    const candidates = await searchAdminCustomerMergeCandidates(
+      parsed.data.currentCustomerId,
+      parsed.data.query,
+      parsed.data.limit ?? 12,
+    );
+    return {
+      ok: true,
+      message: candidates.length > 0 ? "Candidatos encontrados." : "No encontramos otros clientes con esa búsqueda.",
+      candidates,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "No se pudo buscar clientes para unificación.",
+      candidates: [],
+    };
+  }
+}
+
 export async function previewCustomerMergeAction(input: unknown): Promise<CustomerMergeActionResult> {
-  await requirePermission("customers:merge");
+  await requireCustomerMergeActor();
   const parsed = previewSchema.safeParse(input);
   if (!parsed.success || parsed.data.primaryCustomerId === parsed.data.secondaryCustomerId) {
     return { ok: false, code: "CUSTOMER_MERGE_INVALID_PAIR", message: "Selecciona dos clientes diferentes." };
@@ -104,7 +149,7 @@ export async function previewCustomerMergeAction(input: unknown): Promise<Custom
 }
 
 export async function executeCustomerMergeAction(input: unknown): Promise<CustomerMergeActionResult> {
-  await requirePermission("customers:merge");
+  await requireCustomerMergeActor();
   const parsed = executionSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "CUSTOMER_MERGE_INVALID_INPUT", message: "Revisa las decisiones, la razón y la confirmación." };
   const value = parsed.data;

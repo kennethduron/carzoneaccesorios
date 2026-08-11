@@ -54,6 +54,7 @@ import { ActiveFilterBanner } from "@/components/admin/active-filter-banner";
 import { CreditPaymentHistory } from "@/components/admin/credit-payment-history";
 import { CustomerPortalLinkWorkspace } from "@/components/admin/customer-portal-link-workspace";
 import { CustomerIdentitySection } from "@/components/admin/customer-identity-section";
+import { CustomerManualMergePicker } from "@/components/admin/customer-manual-merge-picker";
 import { CustomerMergeWizard } from "@/components/admin/customer-merge-wizard";
 import { CustomerProfileWholesale as CustomerProfileWholesalePanel } from "@/components/admin/customer-profile-wholesale";
 import { PaginationControls } from "@/components/admin/pagination-controls";
@@ -106,6 +107,8 @@ type CustomerFilter = AdminCrmCustomerFilter;
 type DuplicateMergeRequest = {
   source: CrmDuplicateCandidate;
   target: CrmDuplicateCandidate;
+  requireBusinessConfirmation?: boolean;
+  initialReason?: string;
 };
 
 type PermanentDeleteDraft = {
@@ -115,6 +118,30 @@ type PermanentDeleteDraft = {
 };
 
 type CrmDrawerMode = "lead" | "followup" | "note" | "followup-detail" | null;
+
+function customerToMergeCandidate(customer: CrmCustomerOption, profile?: CrmCustomerProfile | null): CrmDuplicateCandidate {
+  return {
+    id: customer.id,
+    display_name: customerDisplayName(customer),
+    business_name: customer.business_name ?? customer.company_name,
+    contact_name: customer.contact_name,
+    email: customer.account_email ?? customer.email,
+    phone: customer.account_phone ?? customer.phone,
+    tax_id: customer.tax_id,
+    status: customer.status,
+    active: customer.active,
+    account_type: customer.is_wholesale ? "wholesale" : "retail",
+    has_portal_account: Boolean(customer.user_id),
+    created_at: customer.created_at,
+    order_count: customer.order_count,
+    invoice_count: customer.invoice_count,
+    open_receivable_count: profile?.receivables.filter((item) => !["paid", "cancelled"].includes(item.status)).length ?? 0,
+    note_count: profile?.notes.length ?? 0,
+    has_credit_account: Boolean(profile?.creditAccount),
+    is_test_account: customer.is_test_account,
+    can_merge: customer.profile_kind === "customer",
+  };
+}
 
 const interactionLabels: Record<CrmInteractionType, string> = {
   seguimiento: "Seguimiento",
@@ -337,6 +364,7 @@ export function CrmManager({
   const [openNoteForm] = useState(false);
   const [crmDrawer, setCrmDrawer] = useState<CrmDrawerMode>(null);
   const [mergeRequest, setMergeRequest] = useState<DuplicateMergeRequest | null>(null);
+  const [manualMergeCustomer, setManualMergeCustomer] = useState<CrmDuplicateCandidate | null>(null);
   const [permanentDeleteDraft, setPermanentDeleteDraft] = useState<PermanentDeleteDraft | null>(null);
   const [profileCustomerId, setProfileCustomerId] = useState<string | null>(null);
   const [customerProfile, setCustomerProfile] = useState<CrmCustomerProfile | null>(null);
@@ -944,6 +972,21 @@ export function CrmManager({
     setMergeRequest({ source, target });
   }
 
+  function requestManualMerge(customer: CrmCustomerOption, profile: CrmCustomerProfile | null) {
+    setManualMergeCustomer(customerToMergeCandidate(customer, profile));
+  }
+
+  function continueManualMerge(source: CrmDuplicateCandidate, target: CrmDuplicateCandidate) {
+    setManualMergeCustomer(null);
+    closeCustomerProfile();
+    setMergeRequest({
+      source,
+      target,
+      requireBusinessConfirmation: true,
+      initialReason: "Unificación manual confirmada por administración.",
+    });
+  }
+
   function applyCanonicalCustomerProfile(profile: CrmCustomerProfile) {
     if (profileCustomerIdRef.current !== profile.customer.id) return false;
     profileRequestRevisionRef.current += 1;
@@ -1413,6 +1456,7 @@ export function CrmManager({
             canLinkPortalAccount={canLinkPortalAccount}
             canEditCustomerIdentity={canEditCustomerIdentity}
             canManageWholesale={canManageWholesale}
+            canMergeCustomers={canMergeCustomers}
             firstWholesaleMinimum={firstWholesaleMinimum}
             onProfileUpdated={applyCanonicalCustomerProfile}
             onRefreshRequested={refreshCustomerProfile}
@@ -1430,6 +1474,7 @@ export function CrmManager({
             onAddNote={openNoteDrawerForCustomer}
             onCreateFollowup={openFollowupDrawerForCustomer}
             onCompleteFollowup={(id) => setStatus(id, "completed")}
+            onManualMerge={requestManualMerge}
           />
         </div>
       ) : null}
@@ -1596,6 +1641,7 @@ export function CrmManager({
           canLinkPortalAccount={canLinkPortalAccount}
           canEditCustomerIdentity={canEditCustomerIdentity}
           canManageWholesale={canManageWholesale}
+          canMergeCustomers={canMergeCustomers}
           firstWholesaleMinimum={firstWholesaleMinimum}
           onProfileUpdated={applyCanonicalCustomerProfile}
           onRefreshRequested={refreshCustomerProfile}
@@ -1613,6 +1659,7 @@ export function CrmManager({
           onAddNote={openNoteDrawerForCustomer}
           onCreateFollowup={openFollowupDrawerForCustomer}
           onCompleteFollowup={(id) => setStatus(id, "completed")}
+          onManualMerge={requestManualMerge}
         />
       ) : null}
       {permanentDeleteDraft ? (
@@ -1626,10 +1673,19 @@ export function CrmManager({
           onConfirm={confirmPermanentDeleteCustomer}
         />
       ) : null}
+      {manualMergeCustomer ? (
+        <CustomerManualMergePicker
+          current={manualMergeCustomer}
+          onCancel={() => setManualMergeCustomer(null)}
+          onSelect={continueManualMerge}
+        />
+      ) : null}
       {mergeRequest ? (
         <CustomerMergeWizard
           source={mergeRequest.source}
           target={mergeRequest.target}
+          requireBusinessConfirmation={mergeRequest.requireBusinessConfirmation}
+          initialReason={mergeRequest.initialReason}
           onCancel={() => setMergeRequest(null)}
           onComplete={(resultMessage) => {
             setMessage(resultMessage);
@@ -2020,6 +2076,14 @@ function CrmActionDrawer({
   );
 }
 
+const duplicateReasonLabels = {
+  email: "Correo",
+  phone: "Teléfono",
+  tax_id: "RTN",
+  business_name: "Empresa",
+  contact_name: "Nombre",
+} as const;
+
 function DuplicateGroupsPanel({
   groups,
   pending,
@@ -2042,7 +2106,7 @@ function DuplicateGroupsPanel({
         <div>
           <h2 className="font-semibold">Posibles clientes duplicados</h2>
           <p className="mt-1 text-sm text-black/55">
-            El sistema encontró clientes que podrían ser la misma persona por correo o teléfono.
+            El sistema encontró clientes que podrían coincidir por correo, teléfono, empresa o nombre normalizado.
           </p>
         </div>
         {groups.length > 5 ? (
@@ -2076,10 +2140,11 @@ function DuplicateGroupsPanel({
               <article key={group.key} className="rounded-lg border border-black/10 bg-[#f4f4f5] p-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="font-semibold">
-                      Coincidencia por {group.match_type === "email" ? "correo" : "teléfono"}: {group.label}
-                    </p>
-                    <p className="mt-1 text-xs text-black/50">Revisa cuál registro debe quedar como principal antes de unificar.</p>
+                    <p className="font-semibold">Posible duplicado · revisión requerida</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {group.match_reasons.map((reason) => <span key={reason} className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-black/60">{duplicateReasonLabels[reason]}</span>)}
+                    </div>
+                    <p className="mt-2 text-xs text-black/50">{group.classification === "strong" ? "Coincidencia fuerte" : group.classification === "probable" ? "Coincidencia probable" : "Coincidencia débil"}. El nombre solo descubre candidatos y nunca autoriza una unión.</p>
                   </div>
                   <span className="rounded-md bg-white px-2 py-1 text-xs">{group.customers.length} registros</span>
                 </div>
@@ -2087,7 +2152,7 @@ function DuplicateGroupsPanel({
                 <div className="mt-3 rounded-md bg-white p-3">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-xs font-semibold uppercase text-black/50">Cliente principal</p>
+                      <p className="text-xs font-semibold uppercase text-black/50">Cliente principal sugerido</p>
                       <DuplicateCustomerSummary customer={target} />
                     </div>
                     <Button type="button" variant="ghost" onClick={() => onViewProfile(target.id)}>
@@ -2309,6 +2374,7 @@ function CustomerProfileDrawer({
   canLinkPortalAccount,
   canEditCustomerIdentity,
   canManageWholesale,
+  canMergeCustomers,
   firstWholesaleMinimum,
   onProfileUpdated,
   onRefreshRequested,
@@ -2326,6 +2392,7 @@ function CustomerProfileDrawer({
   onAddNote,
   onCreateFollowup,
   onCompleteFollowup,
+  onManualMerge,
 }: {
   open: boolean;
   profile: CrmCustomerProfile | null;
@@ -2338,6 +2405,7 @@ function CustomerProfileDrawer({
   canLinkPortalAccount: boolean;
   canEditCustomerIdentity: boolean;
   canManageWholesale: boolean;
+  canMergeCustomers: boolean;
   firstWholesaleMinimum: number;
   onProfileUpdated: (profile: CrmCustomerProfile) => void;
   onRefreshRequested: (customerId: string) => Promise<boolean>;
@@ -2355,6 +2423,7 @@ function CustomerProfileDrawer({
   onAddNote: (customer: CrmCustomerOption) => void;
   onCreateFollowup: (customer: CrmCustomerOption) => void;
   onCompleteFollowup: (id: string) => void;
+  onManualMerge: (customer: CrmCustomerOption, profile: CrmCustomerProfile | null) => void;
 }) {
   const [activeTab, setActiveTab] = useState<CustomerProfileTab>("resumen");
   const customer = profile?.customer ?? fallbackCustomer;
@@ -2547,6 +2616,7 @@ function CustomerProfileDrawer({
                   pending={pending}
                   canLinkPortalAccount={canLinkPortalAccount}
                   canManageWholesale={canManageWholesale}
+                  canMergeCustomers={canMergeCustomers}
                   isWholesaleRequest={isWholesaleRequest}
                   isSuspended={isSuspended}
                   onApproveWholesale={onApproveWholesale}
@@ -2556,6 +2626,7 @@ function CustomerProfileDrawer({
                   onReactivate={onReactivate}
                   onDeleteTest={onDeleteTest}
                   onDeleteCustomer={onDeleteCustomer}
+                  onManualMerge={() => onManualMerge(customer, profile)}
                 />
               ) : null}
             </>
@@ -3336,6 +3407,7 @@ function CustomerProfileActions({
   pending,
   canLinkPortalAccount,
   canManageWholesale,
+  canMergeCustomers,
   isWholesaleRequest,
   isSuspended,
   onApproveWholesale,
@@ -3345,12 +3417,14 @@ function CustomerProfileActions({
   onReactivate,
   onDeleteTest,
   onDeleteCustomer,
+  onManualMerge,
 }: {
   customer: CrmCustomerOption;
   profile: CrmCustomerProfile | null;
   pending: boolean;
   canLinkPortalAccount: boolean;
   canManageWholesale: boolean;
+  canMergeCustomers: boolean;
   isWholesaleRequest: boolean;
   isSuspended: boolean;
   onApproveWholesale: (customerId: string, wholesaleCustomerType: WholesaleCustomerType) => void;
@@ -3360,6 +3434,7 @@ function CustomerProfileActions({
   onReactivate: (customer: CrmCustomerOption) => void;
   onDeleteTest: (customer: CrmCustomerOption) => void;
   onDeleteCustomer: (customer: CrmCustomerOption) => void;
+  onManualMerge: () => void;
 }) {
   if (customer.profile_kind === "internal") {
     return (
@@ -3409,6 +3484,12 @@ function CustomerProfileActions({
         <Link href="/admin/clientes-mayoristas" className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold hover:bg-[#f4f4f5]">
           Ver clientes mayoristas
         </Link>
+        {canMergeCustomers ? (
+          <Button type="button" variant="dark" disabled={pending} onClick={onManualMerge}>
+            <Users size={16} />
+            Unificar con otro cliente
+          </Button>
+        ) : null}
       </div>
       <div className="mt-5 flex flex-wrap gap-2 border-t border-black/10 pt-4">
         {canManageWholesale && isWholesaleRequest && !customer.is_wholesale ? (
@@ -3448,9 +3529,11 @@ function CustomerProfileActions({
           </p>
         )}
       </div>
-      <div className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Para unificar duplicados, usa el panel de posibles duplicados y revisa primero el perfil principal y el registro sugerido.
-      </div>
+      {canMergeCustomers ? (
+        <div className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          La búsqueda manual solo selecciona registros. El preview autenticado continúa siendo obligatorio y ningún bloqueo puede omitirse.
+        </div>
+      ) : null}
       {canLinkPortalAccount ? (
         <div className="mt-5 border-t border-black/10 pt-5">
           <CustomerPortalLinkWorkspace

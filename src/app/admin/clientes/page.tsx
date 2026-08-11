@@ -61,12 +61,14 @@ export default async function AdminCustomersPage({
   const canManageWholesale =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "wholesale:manage", profile.email);
-  const canMergeCustomers = hasEffectivePermission(
-    profile.role,
-    profile.permissions,
-    "customers:merge",
-    profile.email,
-  );
+  const canMergeCustomers =
+    ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
+    hasEffectivePermission(
+      profile.role,
+      profile.permissions,
+      "customers:merge",
+      profile.email,
+    );
 
   const params = await searchParams;
   const initialQuery = String(params.q ?? "").trim().slice(0, 120);

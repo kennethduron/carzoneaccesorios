@@ -13,6 +13,8 @@ import { formatCurrency } from "@/utils/pricing";
 type Props = {
   source: CrmDuplicateCandidate;
   target: CrmDuplicateCandidate;
+  requireBusinessConfirmation?: boolean;
+  initialReason?: string;
   onCancel: () => void;
   onComplete: (message: string) => void;
 };
@@ -48,7 +50,14 @@ function display(value: string | null) {
   return value?.trim() || "Sin información";
 }
 
-export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Props) {
+export function CustomerMergeWizard({
+  source,
+  target,
+  requireBusinessConfirmation = false,
+  initialReason = "",
+  onCancel,
+  onComplete,
+}: Props) {
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<CustomerMergePreview | null>(null);
   const [historyDetails, setHistoryDetails] = useState<CustomerMergeHistoryDetails | null>(null);
@@ -56,8 +65,9 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(initialReason);
   const [confirmation, setConfirmation] = useState("");
+  const [businessConfirmed, setBusinessConfirmed] = useState(false);
   const [identityDecisions, setIdentityDecisions] = useState<Record<string, CustomerMergeDecision>>({});
   const [creditSource, setCreditSource] = useState<"primary" | "secondary" | "">("");
   const [commercialSource, setCommercialSource] = useState<"primary" | "secondary" | "">("");
@@ -104,7 +114,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
   const creditResolutionComplete = !preview?.requiredDecisions.includes("creditOverLimitResolution") || creditOverLimitConfirmed;
   const pendingResolutionComplete = !preview?.requiredDecisions.includes("pendingSecondaryResolution") || pendingSecondaryConfirmed;
   const canSubmit = Boolean(
-    preview?.allowed && historyDetails && executionEnabled && requiredIdentityComplete && commercialComplete && wholesaleComplete && creditResolutionComplete && pendingResolutionComplete && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
+    preview?.allowed && historyDetails && executionEnabled && requiredIdentityComplete && commercialComplete && wholesaleComplete && creditResolutionComplete && pendingResolutionComplete && (!requireBusinessConfirmation || businessConfirmed) && reason.trim().length >= 10 && confirmation.trim() === target.display_name,
   );
 
   function choose(field: string, sourceChoice: "primary" | "secondary") {
@@ -170,7 +180,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
         </nav>
 
         <div className="p-4 sm:p-6">
-          {loading ? <div className="grid min-h-72 place-items-center text-sm text-black/55"><LoaderCircle className="animate-spin" /> Calculando vista previa segura…</div> : null}
+          {loading ? <div className="grid min-h-72 place-items-center text-sm text-black/55"><LoaderCircle className="animate-spin" /> Analizando ambos registros…</div> : null}
           {error ? <div role="alert" className="mb-4 rounded-lg border border-[#ef4444]/30 bg-[#fff1f2] p-4 text-sm text-[#991b1b]">{error}</div> : null}
           {!loading && preview ? (
             <>
@@ -266,6 +276,14 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
                   {creditOverLimitConfirmed ? <p className="rounded-lg border border-[#e4252c]/30 bg-[#fff1f2] p-4 text-sm"><strong>Resolución de crédito:</strong> quedará deshabilitado y con límite L0; deuda, pagos y vencimientos permanecen intactos.</p> : null}
                   {pendingSecondaryConfirmed ? <p className="rounded-lg border border-[#e4252c]/30 bg-[#fff1f2] p-4 text-sm"><strong>Resolución del registro pendiente:</strong> será archivado como alias unido, sin eliminarlo.</p> : null}
                   <div className="rounded-lg border border-[#22c55e]/30 bg-[#f0fdf4] p-4"><p className="flex items-center gap-2 font-semibold text-[#166534]"><ShieldCheck size={19} /> Confirmación transaccional</p><p className="mt-2 text-sm text-[#166534]">Facturas emitidas, partidas publicadas, eventos financieros e inventario no se reescriben. Cualquier invariante distinta produce rollback total.</p></div>
+                  {requireBusinessConfirmation ? (
+                    <label className={`block rounded-lg border p-4 ${businessConfirmed ? "border-[#22c55e]/40 bg-[#f0fdf4]" : "border-[#f59e0b]/50 bg-[#fff7ed]"}`}>
+                      <span className="flex items-start gap-3">
+                        <input className="mt-1" type="checkbox" checked={businessConfirmed} onChange={(event) => setBusinessConfirmed(event.target.checked)} />
+                        <span><strong className="block">Confirmo que ambos registros corresponden al mismo cliente o negocio.</strong><span className="mt-1 block text-sm text-black/60">Esta confirmación registra la decisión humana; no omite blockers, versiones ni validaciones del servidor.</span></span>
+                      </span>
+                    </label>
+                  ) : null}
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Razón de la unión</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={1000} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder="Describe la evidencia y autorización empresarial (mínimo 10 caracteres)." /></label>
                   <label className="block"><span className="mb-1 block text-sm font-semibold">Escribe el nombre del cliente principal</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} className="w-full rounded-lg border border-black/15 p-3 outline-none focus:border-[#e4252c]" placeholder={target.display_name} /><span className="mt-1 block text-xs text-black/50">Confirmación requerida: {target.display_name}</span></label>
                 </div>
@@ -284,7 +302,7 @@ export function CustomerMergeWizard({ source, target, onCancel, onComplete }: Pr
 }
 
 function CustomerCard({ title, customer, tone }: { title: string; customer: CrmDuplicateCandidate; tone?: "primary" }) {
-  return <div className={`rounded-lg border p-4 ${tone === "primary" ? "border-[#e4252c]/30 bg-[#fff1f2]" : "border-black/10 bg-[#f4f4f5]"}`}><p className="text-xs font-semibold uppercase text-black/50">{title}</p><p className="mt-2 text-lg font-semibold">{customer.display_name}</p><p className="mt-1 text-sm text-black/55">{display(customer.email)}</p><p className="text-sm text-black/55">{display(customer.phone)}</p><p className="mt-3 text-xs text-black/50">Pedidos {customer.order_count} · Facturas {customer.invoice_count}</p></div>;
+  return <div className={`rounded-lg border p-4 ${tone === "primary" ? "border-[#e4252c]/30 bg-[#fff1f2]" : "border-black/10 bg-[#f4f4f5]"}`}><p className="text-xs font-semibold uppercase text-black/50">{title}</p><p className="mt-2 text-lg font-semibold">{customer.display_name}</p><p className="mt-1 text-sm text-black/55">{display(customer.email)}</p><p className="text-sm text-black/55">{display(customer.phone)}</p><p className="text-sm text-black/55">RTN: {display(customer.tax_id)}</p><div className="mt-3 flex flex-wrap gap-1.5 text-xs text-black/55"><span className="rounded bg-white px-2 py-1">{customer.status}</span><span className="rounded bg-white px-2 py-1">{customer.account_type === "wholesale" ? "Mayorista" : "Cliente"}</span><span className="rounded bg-white px-2 py-1">Portal: {customer.has_portal_account ? "sí" : "no"}</span><span className="rounded bg-white px-2 py-1">Pedidos {customer.order_count}</span><span className="rounded bg-white px-2 py-1">Facturas {customer.invoice_count}</span><span className="rounded bg-white px-2 py-1">CxC {customer.open_receivable_count}</span><span className="rounded bg-white px-2 py-1">Crédito: {customer.has_credit_account ? "sí" : "no"}</span><span className="rounded bg-white px-2 py-1">Notas {customer.note_count}</span></div></div>;
 }
 
 function IdentityBadge({ state }: { state: string }) {
