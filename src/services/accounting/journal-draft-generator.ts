@@ -1225,6 +1225,21 @@ export async function generateJournalDraftFromFinancialEvent(
     return { ok: false, message: "Este tipo de evento financiero no está soportado para generar borradores." };
   }
 
+  if (
+    event.posting_version === "v1"
+    && event.source_type === "accounts_payable"
+    && event.event_purpose === "accounts_payable_created"
+    && Array.isArray(event.validation_errors)
+    && event.validation_errors.some((issue: unknown) => String(issue) === "SUPERSEDED_BY_V2")
+  ) {
+    return {
+      ok: false,
+      message: "Este reconocimiento de compra pertenece al flujo contable V2 y no admite un segundo borrador V1.",
+      status: "skipped",
+      validationErrors: ["SUPERSEDED_BY_V2"],
+    };
+  }
+
   const existingDraft = await findExistingDraft(event, dataClient);
   if (existingDraft) {
     if (!event.journal_entry_id) {
@@ -1292,6 +1307,14 @@ export async function generateJournalDraftFromFinancialEvent(
   });
 
   if (createError) {
+    if (createError.message.includes("SUPERSEDED_BY_V2")) {
+      return {
+        ok: false,
+        message: "Este reconocimiento de compra pertenece al flujo contable V2 y no admite un segundo borrador V1.",
+        status: "skipped",
+        validationErrors: ["SUPERSEDED_BY_V2"],
+      };
+    }
     if (createError.code === "23505" || createError.message.includes("ya tiene una partida")) {
       return { ok: false, message: duplicateDraftMessage };
     }
