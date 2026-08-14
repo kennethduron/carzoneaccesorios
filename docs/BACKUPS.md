@@ -1,5 +1,7 @@
 # Backups y recuperacion - Car Zone Accesorios
 
+> Modern Backup V2 Phase 4B.3 agrega el formato controlado para Auth, metadata/objetos de Storage y originales de Cloudinary. La estrategia, exclusiones y controles están documentados en [`security/modern-backup-v2-phase4b3.md`](security/modern-backup-v2-phase4b3.md). No está programado ni conectado a producción.
+
 ## Objetivo operativo
 
 Car Zone Accesorios maneja clientes, pedidos, pagos, facturacion, inventario, CRM, mayoristas y datos sensibles. La meta no es solo "tener backups", sino poder restaurar operacion con evidencia, responsables y un RPO/RTO claro.

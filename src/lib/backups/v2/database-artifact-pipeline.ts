@@ -1,26 +1,17 @@
 import "server-only";
 
-import {
-  createCipheriv,
-  createDecipheriv,
-  createHash,
-  randomBytes,
-  timingSafeEqual,
-  type CipherGCM,
-} from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import { lstat, open, readFile } from "node:fs/promises";
-import { Transform, Writable, type TransformCallback } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { createGunzip, createGzip } from "node:zlib";
+import { Writable } from "node:stream";
 
 import { validateArtifactEvidence, type ValidatedBackupArtifactEvidence } from "./artifact.ts";
 import {
-  DATABASE_ARTIFACT_HEADER_BYTES,
+  verifyBackupV2EncryptedArtifact,
+  writeBackupV2EncryptedArtifact,
+  type ArtifactLayerEvidence,
+} from "./artifact-crypto-pipeline.ts";
+import {
   DATABASE_ARTIFACT_MAGIC,
-  DATABASE_ARTIFACT_MIN_BYTES,
-  DATABASE_AUTH_TAG_BYTES,
-  DATABASE_NONCE_BYTES,
   createDatabaseArtifactManifest,
   databaseArtifactAadBytes,
   parseDatabaseArtifactManifest,
@@ -133,70 +124,6 @@ function fail(code: string, message: string): never {
 
 function toBuffer(chunk: Buffer | string, encoding: BufferEncoding): Buffer {
   return Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
-}
-
-class HashMeter extends Transform {
-  #bytes = BigInt(0);
-  readonly #hash = createHash("sha256");
-  #digest: string | null = null;
-
-  override _transform(chunk: Buffer | string, encoding: BufferEncoding, callback: TransformCallback): void {
-    const value = toBuffer(chunk, encoding);
-    this.#bytes += BigInt(value.byteLength);
-    this.#hash.update(value);
-    callback(null, value);
-  }
-
-  get bytes(): bigint {
-    return this.#bytes;
-  }
-
-  digest(): string {
-    if (this.#digest === null) this.#digest = this.#hash.digest("hex");
-    return this.#digest;
-  }
-}
-
-class GcmEnvelopeTransform extends Transform {
-  readonly #cipher: CipherGCM;
-  readonly #nonce: Buffer;
-  #headerWritten = false;
-  #authTag: Buffer | null = null;
-
-  constructor(cipher: CipherGCM, nonce: Buffer) {
-    super();
-    this.#cipher = cipher;
-    this.#nonce = nonce;
-  }
-
-  #writeHeader(): void {
-    if (this.#headerWritten) return;
-    this.push(Buffer.concat([DATABASE_ARTIFACT_MAGIC, this.#nonce]));
-    this.#headerWritten = true;
-  }
-
-  override _transform(chunk: Buffer | string, encoding: BufferEncoding, callback: TransformCallback): void {
-    this.#writeHeader();
-    callback(null, toBuffer(chunk, encoding));
-  }
-
-  override _flush(callback: TransformCallback): void {
-    try {
-      this.#writeHeader();
-      this.#authTag = this.#cipher.getAuthTag();
-      this.push(this.#authTag);
-      callback();
-    } catch {
-      callback(new BackupV2FailClosedError(
-        "BACKUP_V2_ENCRYPTION_FAILED", "AES-GCM authentication tag could not be finalized",
-      ));
-    }
-  }
-
-  authTag(): Buffer {
-    if (this.#authTag === null) fail("BACKUP_V2_ENCRYPTION_FAILED", "AES-GCM authentication tag is unavailable");
-    return Buffer.from(this.#authTag);
-  }
 }
 
 class LimitedPostgresDumpSink extends Writable {
@@ -340,35 +267,6 @@ async function assertRegularArtifactFile(filePath: string, label: string): Promi
   return BigInt(stat.size);
 }
 
-async function hashFile(filePath: string): Promise<{ bytes: bigint; hash: string }> {
-  const meter = new HashMeter();
-  await pipeline(createReadStream(filePath), meter, new Writable({
-    write(_chunk, _encoding, callback) { callback(); },
-  }));
-  return { bytes: meter.bytes, hash: meter.digest() };
-}
-
-async function readArtifactEnvelope(filePath: string, size: bigint): Promise<{ nonce: Buffer; authTag: Buffer }> {
-  if (size < BigInt(DATABASE_ARTIFACT_MIN_BYTES) || size > BigInt(Number.MAX_SAFE_INTEGER)) {
-    fail("BACKUP_V2_TRUNCATED_DATABASE_ARTIFACT", "Encrypted artifact size is invalid");
-  }
-  const handle = await open(filePath, "r");
-  try {
-    const header = Buffer.alloc(DATABASE_ARTIFACT_HEADER_BYTES);
-    const headerRead = await handle.read(header, 0, header.length, 0);
-    const authTag = Buffer.alloc(DATABASE_AUTH_TAG_BYTES);
-    const tagPosition = Number(size - BigInt(DATABASE_AUTH_TAG_BYTES));
-    const tagRead = await handle.read(authTag, 0, authTag.length, tagPosition);
-    if (headerRead.bytesRead !== header.length || tagRead.bytesRead !== authTag.length ||
-        !header.subarray(0, DATABASE_ARTIFACT_MAGIC.length).equals(DATABASE_ARTIFACT_MAGIC)) {
-      fail("BACKUP_V2_TRUNCATED_DATABASE_ARTIFACT", "Encrypted artifact header or tag is invalid");
-    }
-    return { nonce: header.subarray(DATABASE_ARTIFACT_MAGIC.length), authTag };
-  } finally {
-    await handle.close();
-  }
-}
-
 function assertExpectedIdentity(
   manifest: DatabaseArtifactManifest,
   expected: DatabaseArtifactExpectedIdentity,
@@ -395,19 +293,8 @@ export async function verifyDatabaseArtifact(
       fail("BACKUP_V2_WRONG_ENCRYPTION_KEY", "Encryption key fingerprint does not match the manifest");
     }
 
-    const artifactSize = await assertRegularArtifactFile(input.artifactPath, "Encrypted artifact");
-    const measuredArtifact = await hashFile(input.artifactPath);
-    if (measuredArtifact.bytes.toString() !== manifest.byte_counts.encrypted_artifact ||
-        !safeEqualHex(measuredArtifact.hash, manifest.hashes.encrypted_artifact)) {
-      fail("BACKUP_V2_ENCRYPTED_ARTIFACT_INTEGRITY_FAILED", "Encrypted artifact bytes or hash do not match");
-    }
-    const envelope = await readArtifactEnvelope(input.artifactPath, artifactSize);
     const manifestNonce = Buffer.from(manifest.encryption.nonce_base64, "base64");
     const manifestTag = Buffer.from(manifest.encryption.auth_tag_base64, "base64");
-    if (!timingSafeEqual(envelope.nonce, manifestNonce) || !timingSafeEqual(envelope.authTag, manifestTag)) {
-      fail("BACKUP_V2_ENCRYPTION_METADATA_MISMATCH", "Artifact envelope does not match manifest encryption metadata");
-    }
-
     const aad = databaseArtifactAadBytes({
       runId: manifest.run_id,
       generationKey: manifest.generation_key,
@@ -423,43 +310,31 @@ export async function verifyDatabaseArtifact(
       exportToolVersion: manifest.export.tool_version,
       compressionLevel: manifest.compression.level,
     });
-    const decipher = createDecipheriv("aes-256-gcm", key, envelope.nonce, { authTagLength: DATABASE_AUTH_TAG_BYTES });
-    decipher.setAAD(aad);
-    decipher.setAuthTag(envelope.authTag);
-    const compressedMeter = new HashMeter();
-    const plaintextMeter = new HashMeter();
     const plaintextLimit = requirePlaintextLimit(input.maxPlaintextBytes);
     const sink = new LimitedPostgresDumpSink(plaintextLimit);
-    const ciphertextEnd = Number(artifactSize - BigInt(DATABASE_AUTH_TAG_BYTES) - BigInt(1));
-    try {
-      await pipeline(
-        createReadStream(input.artifactPath, { start: DATABASE_ARTIFACT_HEADER_BYTES, end: ciphertextEnd }),
-        decipher,
-        compressedMeter,
-        createGunzip(),
-        plaintextMeter,
-        sink,
-      );
-    } catch (error) {
-      if (error instanceof BackupV2FailClosedError) throw error;
-      fail("BACKUP_V2_DECRYPTION_OR_COMPRESSION_FAILED", "Artifact authentication or decompression failed");
-    }
+    const layers = await verifyBackupV2EncryptedArtifact({
+      artifactPath: input.artifactPath,
+      encryptionKey: key,
+      aad,
+      magic: DATABASE_ARTIFACT_MAGIC,
+      nonce: manifestNonce,
+      authTag: manifestTag,
+      plaintextBytes: BigInt(manifest.byte_counts.plaintext_export),
+      compressedBytes: BigInt(manifest.byte_counts.compressed),
+      encryptedArtifactBytes: BigInt(manifest.byte_counts.encrypted_artifact),
+      plaintextHash: manifest.hashes.plaintext_export,
+      compressedHash: manifest.hashes.compressed,
+      encryptedArtifactHash: manifest.hashes.encrypted_artifact,
+      maxPlaintextBytes: plaintextLimit,
+      maxCompressionRatio: requireCompressionRatio(input.maxCompressionRatio),
+      plaintextSink: sink,
+    });
     sink.assertValid();
-    const maxRatio = requireCompressionRatio(input.maxCompressionRatio);
-    if (compressedMeter.bytes === BigInt(0) || plaintextMeter.bytes > compressedMeter.bytes * BigInt(maxRatio)) {
-      fail("BACKUP_V2_DECOMPRESSION_RATIO_EXCEEDED", "Decompressed export exceeded its compression ratio limit");
-    }
-    if (plaintextMeter.bytes.toString() !== manifest.byte_counts.plaintext_export ||
-        compressedMeter.bytes.toString() !== manifest.byte_counts.compressed ||
-        !safeEqualHex(plaintextMeter.digest(), manifest.hashes.plaintext_export) ||
-        !safeEqualHex(compressedMeter.digest(), manifest.hashes.compressed)) {
-      fail("BACKUP_V2_INNER_ARTIFACT_INTEGRITY_FAILED", "Decrypted export bytes or hashes do not match");
-    }
     return {
       manifest,
-      plaintextBytes: plaintextMeter.bytes,
-      compressedBytes: compressedMeter.bytes,
-      encryptedArtifactBytes: artifactSize,
+      plaintextBytes: layers.plaintextBytes,
+      compressedBytes: layers.compressedBytes,
+      encryptedArtifactBytes: layers.encryptedArtifactBytes,
     };
   } finally {
     key.fill(0);
@@ -569,7 +444,6 @@ export async function runDatabaseArtifactPipeline(
     const plaintextLimit = requirePlaintextLimit(input.maxPlaintextBytes);
     const createdAt = clock();
     const keyFingerprint = sha256Hex(key);
-    const nonce = randomBytes(DATABASE_NONCE_BYTES);
     const aadInput = {
       runId: initialAuthority.runId,
       generationKey: initialAuthority.generationKey,
@@ -588,31 +462,22 @@ export async function runDatabaseArtifactPipeline(
     const aad = databaseArtifactAadBytes(aadInput);
 
     await runStage(input.stageHook, "compression_start");
-    const gzip = createGzip({ level: compressionLevel });
     await runStage(input.stageHook, "encryption_start");
-    const cipher = createCipheriv("aes-256-gcm", key, nonce, { authTagLength: DATABASE_AUTH_TAG_BYTES });
-    cipher.setAAD(aad);
-    const envelope = new GcmEnvelopeTransform(cipher, nonce);
-    const plaintextMeter = new HashMeter();
-    const compressedMeter = new HashMeter();
-    const encryptedMeter = new HashMeter();
-    const artifactOutput = createWriteStream(partial.partialArtifactPath, { flags: "wx", mode: 0o600 });
-
     await runStage(input.stageHook, "export_start");
     const exportSession = input.exporter.open(input.signal);
     let streamError: unknown = null;
+    let layers: ArtifactLayerEvidence | null = null;
     try {
-      await pipeline(
-        exportSession.stream,
-        plaintextMeter,
-        gzip,
-        compressedMeter,
-        cipher,
-        envelope,
-        encryptedMeter,
-        artifactOutput,
-        { signal: input.signal },
-      );
+      layers = await writeBackupV2EncryptedArtifact({
+        source: exportSession.stream,
+        outputPath: partial.partialArtifactPath,
+        encryptionKey: key,
+        aad,
+        magic: DATABASE_ARTIFACT_MAGIC,
+        compressionLevel,
+        maxPlaintextBytes: plaintextLimit,
+        signal: input.signal,
+      });
     } catch (error) {
       streamError = error;
       exportSession.cancel();
@@ -623,34 +488,25 @@ export async function runDatabaseArtifactPipeline(
     } catch (error) {
       exportError = error;
     }
-    if (streamError || exportError) {
+    if (streamError || exportError || layers === null) {
       if (exportError instanceof BackupV2FailClosedError) throw exportError;
       if (input.signal?.aborted) fail("BACKUP_V2_EXPORT_CANCELLED", "Database export was cancelled");
       fail("BACKUP_V2_EXPORT_FAILED", "Database export, compression, or encryption stream failed");
     }
     await runStage(input.stageHook, "stream_complete");
-    if (plaintextMeter.bytes === BigInt(0) || plaintextMeter.bytes > plaintextLimit ||
-        compressedMeter.bytes === BigInt(0) ||
-        encryptedMeter.bytes < BigInt(DATABASE_ARTIFACT_MIN_BYTES)) {
-      fail(
-        "BACKUP_V2_INVALID_EXPORT_SIZE",
-        `Database artifact contains invalid or excessive byte counts (export=${plaintextMeter.bytes}, ` +
-        `compressed=${compressedMeter.bytes}, encrypted=${encryptedMeter.bytes})`,
-      );
-    }
     await hardenArtifactFile(partial.partialArtifactPath);
     await syncFile(partial.partialArtifactPath);
 
     const manifest = createDatabaseArtifactManifest({
       ...aadInput,
-      nonce,
-      authTag: envelope.authTag(),
-      plaintextBytes: plaintextMeter.bytes,
-      compressedBytes: compressedMeter.bytes,
-      encryptedArtifactBytes: encryptedMeter.bytes,
-      plaintextHash: plaintextMeter.digest(),
-      compressedHash: compressedMeter.digest(),
-      encryptedArtifactHash: encryptedMeter.digest(),
+      nonce: layers.nonce,
+      authTag: layers.authTag,
+      plaintextBytes: layers.plaintextBytes,
+      compressedBytes: layers.compressedBytes,
+      encryptedArtifactBytes: layers.encryptedArtifactBytes,
+      plaintextHash: layers.plaintextHash,
+      compressedHash: layers.compressedHash,
+      encryptedArtifactHash: layers.encryptedArtifactHash,
       compatibilityRef: input.compatibilityRef,
     });
     await runStage(input.stageHook, "manifest_write");
