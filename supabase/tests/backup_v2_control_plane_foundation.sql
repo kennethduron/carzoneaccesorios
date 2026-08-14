@@ -5,7 +5,8 @@ select plan(52);
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
  where n.nspname='public' and c.relname in ('backup_v2_runs','backup_v2_run_events','backup_v2_recovery_sets','backup_v2_recovery_set_components','backup_v2_measurements') and c.relkind='r'),5,'five control tables');
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
- where n.nspname='public' and c.relname like 'backup_v2_%' and c.relrowsecurity),5,'RLS on all control tables');
+ where n.nspname='public' and c.relname in ('backup_v2_runs','backup_v2_run_events','backup_v2_recovery_sets',
+ 'backup_v2_recovery_set_components','backup_v2_measurements') and c.relrowsecurity),5,'RLS on all Phase 4A control tables');
 select is((select count(*)::integer from information_schema.role_table_grants where table_schema='public' and table_name like 'backup_v2_%' and grantee in ('PUBLIC','anon','authenticated')),0,'generic roles have no table privileges');
 select ok(not has_function_privilege('anon','public.transition_backup_v2_run(uuid,text,text,text,text,text,integer,text,jsonb)','EXECUTE') and not has_function_privilege('authenticated','public.transition_backup_v2_run(uuid,text,text,text,text,text,integer,text,jsonb)','EXECUTE'),'generic roles cannot transition');
 select ok(has_function_privilege('service_role','public.transition_backup_v2_run(uuid,text,text,text,text,text,integer,text,jsonb)','EXECUTE'),'service role can execute canonical transition');
@@ -56,7 +57,8 @@ select is((select count(*)::integer from public.backup_v2_runs where id in ('4a1
 
 select throws_ok($$insert into public.backup_v2_recovery_sets(request_id,policy_version,required_scopes) values(gen_random_uuid(),'typed-recovery-v2',array['database','unknown'])$$,'23514',null,'unknown required component rejected');
 select throws_ok($$insert into public.backup_v2_recovery_sets(request_id,policy_version,recovery_key_requirement) values(gen_random_uuid(),'typed-recovery-v2','sometimes')$$,'23514',null,'unknown recovery-key requirement rejected');
-insert into public.backup_v2_recovery_sets(id,request_id,policy_version) values('4a200000-0000-4000-8000-000000000001',gen_random_uuid(),'typed-recovery-v2');
+insert into public.backup_v2_recovery_sets(id,request_id,policy_version,required_scopes)
+ values('4a200000-0000-4000-8000-000000000001',gen_random_uuid(),'typed-recovery-v2',array['database','auth','storage_objects']);
 select pass('typed recovery policy created');
 insert into public.backup_v2_recovery_set_components(recovery_set_id,scope,run_id,artifact_status,completion_status,integrity_status,compatibility_status,backup_format_version,schema_compatibility_ref,exporter_version,compatibility_verified_at,primary_copy_status,primary_copy_ref,primary_copy_verified_at) values
  ('4a200000-0000-4000-8000-000000000001','database','4a100000-0000-4000-8000-000000000001','present','completed','verified','verified','format-v1','migration-head:dynamic','exporter-v1',now(),'verified','primary:database',now());

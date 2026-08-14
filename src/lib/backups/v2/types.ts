@@ -1,4 +1,6 @@
-export const BACKUP_V2_SCOPES = ["database", "auth", "storage_objects"] as const;
+export const BACKUP_V2_SCOPES = [
+  "database", "auth", "storage_metadata", "storage_objects", "external_assets",
+] as const;
 export type BackupV2Scope = (typeof BACKUP_V2_SCOPES)[number];
 
 export const BACKUP_V2_STATES = [
@@ -62,6 +64,8 @@ export interface RecoveryCopyEvidence {
   status: VerificationEvidence;
   verifiedAt: string | null;
   providerNeutralRef: string | null;
+  copyId?: string | null;
+  independenceDomain?: string | null;
 }
 
 export interface RecoverySetComponent {
@@ -83,11 +87,35 @@ export interface RecoveryKeyEvidence {
   attestedAt: string | null;
 }
 
+export interface CanonicalRecoveryCopyEvidence {
+  copyRole: "primary" | "secondary_independent" | "optional_offline";
+  verificationStatus: "planned" | "unverified" | "verified" | "failed";
+  ciphertextSizeBytes: ExactDecimalBytes;
+  ciphertextHash: string;
+  providerNeutralRef: string;
+  physicalObjectIdentity: string;
+  independenceDomain: string | null;
+  evidenceOrigin: RecoveryEvidenceOrigin;
+}
+
+export interface CanonicalRecoveryArtifactEvidence {
+  artifactId: string;
+  generationKey: string;
+  component: BackupV2Scope;
+  verificationStatus: "planned" | "unverified" | "verified" | "failed";
+  ciphertextSizeBytes: ExactDecimalBytes | null;
+  ciphertextHash: string | null;
+  evidenceOrigin: RecoveryEvidenceOrigin;
+  copies: readonly CanonicalRecoveryCopyEvidence[];
+}
+
 export const RECOVERY_EVALUATION_ENVIRONMENTS = ["runtime", "synthetic_test"] as const;
 export type RecoveryEvaluationEnvironment = (typeof RECOVERY_EVALUATION_ENVIRONMENTS)[number];
 export interface RecoverySetEvaluationInput {
   policy: RecoverySetPolicy;
   components: readonly RecoverySetComponent[];
+  generationKey?: string;
+  canonicalArtifacts?: readonly CanonicalRecoveryArtifactEvidence[];
   recoveryKey: RecoveryKeyEvidence | null;
   environment?: RecoveryEvaluationEnvironment;
   evaluatedAt: string;
@@ -104,16 +132,31 @@ export const MEASUREMENT_SCOPES = [
 ] as const;
 export type MeasurementScope = (typeof MEASUREMENT_SCOPES)[number];
 
+export const MEASUREMENT_QUALITIES = ["measured", "observed", "estimated", "unknown"] as const;
+export type MeasurementQuality = (typeof MEASUREMENT_QUALITIES)[number];
+export type ExactDecimalBytes = string;
+
 export interface BackupV2Measurement {
   scope: MeasurementScope;
-  source: "synthetic_local";
+  source: "synthetic_local" | "runtime_verified";
   measuredAt: string;
-  encryptedBytes: number;
-  temporaryPeakBytes: number;
+  quality?: MeasurementQuality;
+  encryptedBytes: number | bigint | ExactDecimalBytes;
+  temporaryPeakBytes: number | bigint | ExactDecimalBytes;
   objectCount: number;
   operationCount: number;
   runtimeSeconds: number;
   githubActionsMinutes: number;
+  databaseTotalBytes?: ExactDecimalBytes | null;
+  tableBytes?: ExactDecimalBytes | null;
+  indexBytes?: ExactDecimalBytes | null;
+  estimatedLogicalBytes?: ExactDecimalBytes | null;
+  observedArtifactBytes?: ExactDecimalBytes | null;
+  storageMetadataBytes?: ExactDecimalBytes | null;
+  storageObjectBytes?: ExactDecimalBytes | null;
+  externalAssetBytes?: ExactDecimalBytes | null;
+  runnerTempDiskAvailableBytes?: ExactDecimalBytes | null;
+  providerQuotaBytes?: ExactDecimalBytes | null;
 }
 
 export interface MeasurementFreshnessPolicy {

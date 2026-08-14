@@ -1,0 +1,8 @@
+[
+  {"schemaName":"public","relationName":"products","relationKind":"base_table","estimatedRows":"25","totalBytes":"8192","tableBytes":"4096","indexBytes":"4096","discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"},
+  {"schemaName":"public","relationName":"inventory_movements","relationKind":"base_table","estimatedRows":"100","totalBytes":"16384","tableBytes":"8192","indexBytes":"8192","discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"},
+  {"schemaName":"public","relationName":"accounts_payable","relationKind":"base_table","estimatedRows":"10","totalBytes":"8192","tableBytes":"4096","indexBytes":"4096","discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"},
+  {"schemaName":"public","relationName":"backup_v2_runs","relationKind":"base_table","estimatedRows":"0","totalBytes":"0","tableBytes":"0","indexBytes":"0","discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"},
+  {"schemaName":"public","relationName":"rate_limits","relationKind":"base_table","estimatedRows":"0","totalBytes":"0","tableBytes":"0","indexBytes":"0","discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"},
+  {"schemaName":"public","relationName":"accounting_balance_view","relationKind":"view","estimatedRows":null,"totalBytes":null,"tableBytes":null,"indexBytes":null,"discoveredAt":"2026-08-14T12:00:00.000Z","evidenceOrigin":"synthetic_fixture"}
+]

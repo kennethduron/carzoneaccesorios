@@ -1,12 +1,14 @@
 import {
   BACKUP_V2_SCOPES, RECOVERY_EVIDENCE_ORIGIN_CAPABILITIES, BackupV2FailClosedError,
   type BackupV2Scope,
+  type CanonicalRecoveryArtifactEvidence,
   type CompatibilityEvidence, type CopyKind, type RecoveryCopyEvidence,
   type RecoveryEvaluationEnvironment, type RecoveryKeyEvidence,
   type RecoverySetComponent, type RecoverySetEvaluation, type RecoverySetEvaluationInput,
   type RecoverySetPolicy, isRecoveryEvidenceOrigin, requireBackupV2Scope,
   requireRecoveryEvaluationEnvironment,
 } from "./types.ts";
+import { serializeExactByteQuantity } from "./measurement.ts";
 
 const COPY_KINDS: readonly CopyKind[] = ["primary", "independent_offsite"];
 const REQUIREMENTS = ["required", "optional"] as const;
@@ -134,7 +136,75 @@ function componentBlockers(
   for (const kind of requiredCopyKinds) {
     blockers.push(...copyBlockers(component.scope, byKind.get(kind), kind, evaluatedAtMs, maxEvidenceAgeMs));
   }
+  if (requiredCopyKinds.includes("independent_offsite")) {
+    const primary = byKind.get("primary");
+    const secondary = byKind.get("independent_offsite");
+    if (primary && secondary && (
+      primary.providerNeutralRef === secondary.providerNeutralRef ||
+      (primary.copyId && secondary.copyId && primary.copyId === secondary.copyId) ||
+      (primary.independenceDomain && secondary.independenceDomain &&
+        primary.independenceDomain === secondary.independenceDomain)
+    )) blockers.push(`${component.scope}:copy_independence_failed`);
+  }
   for (const reason of component.failClosedReasons) blockers.push(`${component.scope}:fail_closed:${reason}`);
+  return blockers;
+}
+
+function canonicalArtifactBlockers(
+  scope: BackupV2Scope,
+  artifacts: readonly CanonicalRecoveryArtifactEvidence[],
+  generationKey: string,
+): string[] {
+  const matches = artifacts.filter((artifact) => artifact.component === scope);
+  if (matches.length === 0) return [`${scope}:canonical_artifact_missing`];
+  if (matches.length !== 1) return [`${scope}:canonical_artifact_ambiguous`];
+  const artifact = matches[0];
+  const blockers: string[] = [];
+  if (artifact.generationKey !== generationKey) {
+    blockers.push(`${scope}:canonical_artifact_generation_mismatch`);
+  }
+  if (artifact.verificationStatus !== "verified" || artifact.evidenceOrigin !== "runtime_verified") {
+    blockers.push(`${scope}:canonical_artifact_unverified`);
+  }
+  if (artifact.ciphertextHash === null || !/^[0-9a-f]{64}$/.test(artifact.ciphertextHash)) {
+    blockers.push(`${scope}:canonical_artifact_hash_invalid`);
+  }
+  let artifactBytes: string | null = null;
+  try {
+    if (artifact.ciphertextSizeBytes !== null) {
+      artifactBytes = serializeExactByteQuantity(artifact.ciphertextSizeBytes, "ciphertextSizeBytes");
+    }
+  } catch {
+    blockers.push(`${scope}:canonical_artifact_bytes_invalid`);
+  }
+  if (artifactBytes === null) blockers.push(`${scope}:canonical_artifact_bytes_missing`);
+
+  const primary = artifact.copies.filter(({ copyRole }) => copyRole === "primary");
+  const secondary = artifact.copies.filter(({ copyRole }) => copyRole === "secondary_independent");
+  if (primary.length !== 1) blockers.push(`${scope}:canonical_primary_copy_missing_or_ambiguous`);
+  if (secondary.length !== 1) blockers.push(`${scope}:canonical_secondary_copy_missing_or_ambiguous`);
+  for (const copy of [...primary, ...secondary]) {
+    let copyBytes: string | null = null;
+    try {
+      copyBytes = serializeExactByteQuantity(copy.ciphertextSizeBytes, "copyCiphertextSizeBytes");
+    } catch {
+      blockers.push(`${scope}:${copy.copyRole}_bytes_invalid`);
+    }
+    if (copy.verificationStatus !== "verified" || copy.evidenceOrigin !== "runtime_verified") {
+      blockers.push(`${scope}:${copy.copyRole}_unverified`);
+    }
+    if (copy.ciphertextHash !== artifact.ciphertextHash || copyBytes !== artifactBytes) {
+      blockers.push(`${scope}:${copy.copyRole}_equivalence_failed`);
+    }
+    requireNonEmpty(copy.providerNeutralRef, `${scope}:${copy.copyRole}_reference_missing`, blockers);
+    requireNonEmpty(copy.physicalObjectIdentity, `${scope}:${copy.copyRole}_physical_identity_missing`, blockers);
+  }
+  if (primary.length === 1 && secondary.length === 1 && (
+    primary[0].providerNeutralRef === secondary[0].providerNeutralRef ||
+    primary[0].physicalObjectIdentity === secondary[0].physicalObjectIdentity ||
+    primary[0].independenceDomain === null || secondary[0].independenceDomain === null ||
+    primary[0].independenceDomain === secondary[0].independenceDomain
+  )) blockers.push(`${scope}:canonical_copy_independence_failed`);
   return blockers;
 }
 
@@ -201,6 +271,15 @@ export function evaluateRecoverySet(input: RecoverySetEvaluationInput): Recovery
     blockingReasons.push(...componentBlockers(
       component, requiredCopies, evaluatedAtMs, input.policy.maxEvidenceAgeMs,
     ));
+    if (input.policy.policyVersion.includes("phase4b1")) {
+      if (!input.generationKey || !/^backup-v2-generation:[0-9a-f]{64}$/.test(input.generationKey)) {
+        blockingReasons.push("recovery_set:generation_key_missing_or_invalid");
+      } else {
+        blockingReasons.push(...canonicalArtifactBlockers(
+          requirement.scope, input.canonicalArtifacts ?? [], input.generationKey,
+        ));
+      }
+    }
   }
   if (input.policy.recoveryKeyRequirement === "required") {
     blockingReasons.push(...recoveryKeyBlockers(
@@ -222,3 +301,15 @@ export function assertFullDrReady(input: RecoverySetEvaluationInput): void {
 }
 
 export const CURRENT_RECOVERY_SCOPES: readonly BackupV2Scope[] = BACKUP_V2_SCOPES;
+
+export const CAR_ZONE_RECOVERY_POLICY: RecoverySetPolicy = {
+  policyVersion: "car-zone-phase4b1-v1",
+  components: BACKUP_V2_SCOPES.map((scope) => ({
+    scope, requirement: "required", copies: [
+      { kind: "primary", requirement: "required" },
+      { kind: "independent_offsite", requirement: "required" },
+    ],
+  })),
+  recoveryKeyRequirement: "required",
+  maxEvidenceAgeMs: 24 * 60 * 60 * 1000,
+};

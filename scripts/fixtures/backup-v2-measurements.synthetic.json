@@ -22,6 +22,17 @@
     "githubActionsMinutes": 1
   },
   {
+    "scope": "storage_metadata",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 1048576,
+    "temporaryPeakBytes": 2097152,
+    "objectCount": 2,
+    "operationCount": 2,
+    "runtimeSeconds": 30,
+    "githubActionsMinutes": 0.5
+  },
+  {
     "scope": "storage_objects",
     "source": "synthetic_local",
     "measuredAt": "2026-08-13T12:00:00.000Z",
@@ -31,6 +42,17 @@
     "operationCount": 84,
     "runtimeSeconds": 720,
     "githubActionsMinutes": 12
+  },
+  {
+    "scope": "external_assets",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 52428800,
+    "temporaryPeakBytes": 62914560,
+    "objectCount": 20,
+    "operationCount": 24,
+    "runtimeSeconds": 180,
+    "githubActionsMinutes": 3
   },
   {
     "scope": "full_recovery_set",
