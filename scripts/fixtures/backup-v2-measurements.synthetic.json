@@ -1,0 +1,57 @@
+[
+  {
+    "scope": "database",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 125829120,
+    "temporaryPeakBytes": 314572800,
+    "objectCount": 1,
+    "operationCount": 4,
+    "runtimeSeconds": 420,
+    "githubActionsMinutes": 7
+  },
+  {
+    "scope": "auth",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 10485760,
+    "temporaryPeakBytes": 20971520,
+    "objectCount": 1,
+    "operationCount": 3,
+    "runtimeSeconds": 60,
+    "githubActionsMinutes": 1
+  },
+  {
+    "scope": "storage_objects",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 524288000,
+    "temporaryPeakBytes": 629145600,
+    "objectCount": 80,
+    "operationCount": 84,
+    "runtimeSeconds": 720,
+    "githubActionsMinutes": 12
+  },
+  {
+    "scope": "full_recovery_set",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 660602880,
+    "temporaryPeakBytes": 629145600,
+    "objectCount": 82,
+    "operationCount": 91,
+    "runtimeSeconds": 1200,
+    "githubActionsMinutes": 20
+  },
+  {
+    "scope": "runtime",
+    "source": "synthetic_local",
+    "measuredAt": "2026-08-13T12:00:00.000Z",
+    "encryptedBytes": 0,
+    "temporaryPeakBytes": 943718400,
+    "objectCount": 0,
+    "operationCount": 91,
+    "runtimeSeconds": 1200,
+    "githubActionsMinutes": 20
+  }
+]
