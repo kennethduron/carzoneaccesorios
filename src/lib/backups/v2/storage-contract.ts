@@ -5,8 +5,10 @@ import type { Readable } from "node:stream";
 import { BackupV2FailClosedError, type BackupV2Scope } from "./types.ts";
 
 export const BACKUP_V2_STORAGE_CONTRACT_VERSION = "backup-v2-storage-v1" as const;
-export const BACKUP_V2_STORAGE_PROVIDER_TYPES = ["disposable_filesystem"] as const;
+export const BACKUP_V2_STORAGE_PROVIDER_TYPES = ["disposable_filesystem", "backblaze_b2"] as const;
 export type BackupV2StorageProviderType = (typeof BACKUP_V2_STORAGE_PROVIDER_TYPES)[number];
+export const BACKUP_V2_STORAGE_COPY_ROLES = ["primary", "secondary_independent", "optional_offline"] as const;
+export type BackupV2StorageCopyRole = (typeof BACKUP_V2_STORAGE_COPY_ROLES)[number];
 
 export interface BackupV2StorageCapabilities {
   streamingWrite: true;
@@ -25,6 +27,7 @@ export interface BackupV2StorageDescriptor {
   providerInstanceId: string;
   namespaceId: string;
   failureDomain: string | null;
+  allowedCopyRoles: readonly BackupV2StorageCopyRole[];
   capabilities: BackupV2StorageCapabilities;
 }
 
@@ -68,12 +71,20 @@ export type BackupV2StorageErrorKind =
 export class BackupV2StorageError extends BackupV2FailClosedError {
   readonly kind: BackupV2StorageErrorKind;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
 
-  constructor(code: string, message: string, kind: BackupV2StorageErrorKind, retryable = false) {
+  constructor(
+    code: string,
+    message: string,
+    kind: BackupV2StorageErrorKind,
+    retryable = false,
+    retryAfterMs: number | null = null,
+  ) {
     super(code, message);
     this.name = "BackupV2StorageError";
     this.kind = kind;
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -136,6 +147,7 @@ export function registerBackupV2StorageProvider<T extends BackupV2StorageProvide
     fail("BACKUP_V2_UNSUPPORTED_STORAGE_PROVIDER", "Storage provider operations are incomplete");
   }
   Object.freeze(provider.descriptor.capabilities);
+  Object.freeze(provider.descriptor.allowedCopyRoles);
   Object.freeze(provider.descriptor);
   Object.freeze(provider);
   registeredProviders.add(provider);
@@ -160,6 +172,11 @@ export function assertStorageProviderDescriptor(value: BackupV2StorageDescriptor
   requireStorageIdentity(value.providerInstanceId, "providerInstanceId");
   requireStorageIdentity(value.namespaceId, "namespaceId");
   if (value.failureDomain !== null) requireStorageIdentity(value.failureDomain, "failureDomain");
+  if (!Array.isArray(value.allowedCopyRoles) || value.allowedCopyRoles.length === 0 ||
+      new Set(value.allowedCopyRoles).size !== value.allowedCopyRoles.length ||
+      value.allowedCopyRoles.some((role) => !BACKUP_V2_STORAGE_COPY_ROLES.includes(role))) {
+    fail("BACKUP_V2_UNSUPPORTED_STORAGE_PROVIDER", "Storage provider copy-role policy is invalid");
+  }
 }
 
 export function providerNeutralObjectRef(descriptor: BackupV2StorageDescriptor, objectKey: string): string {
@@ -181,7 +198,7 @@ export function sanitizeStorageError(error: unknown, fallbackCode = "BACKUP_V2_P
       timeout: "Storage provider operation timed out",
       unavailable: "Storage provider is unavailable",
     };
-    return new BackupV2StorageError(error.code, messages[error.kind], error.kind, error.retryable);
+    return new BackupV2StorageError(error.code, messages[error.kind], error.kind, error.retryable, error.retryAfterMs);
   }
   if (error instanceof DOMException && error.name === "AbortError") {
     return new BackupV2StorageError("BACKUP_V2_STORAGE_CANCELLED", "Storage operation was cancelled", "cancelled");

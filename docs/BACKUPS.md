@@ -390,3 +390,11 @@ El sistema registra `notification_logs` como `sent`, `failed` o `skipped`. Si fa
 - Cloudinary signed URLs protegen acceso temporal, pero quien reciba la URL puede verla hasta que expire.
 - Los backups de base de datos no restauran archivos eliminados de Cloudinary.
 - Restauracion real debe probarse en un ambiente separado antes de considerarse confiable.
+
+## Modern Backup V2 — Backblaze B2 (Phase 4B.5)
+
+Backblaze B2 queda seleccionado como destino cloud primario mediante su API compatible con S3. La configuración no secreta aprobada usa región `us-east-005`, bucket privado `carzone-backup-v2-kencode` y endpoint `https://s3.us-east-005.backblazeb2.com`. Solo se permite una Application Key restringida al bucket; nunca la Master Application Key. Los nombres de variables, controles de capacidad y límites técnicos se documentan en `docs/security/modern-backup-v2-phase4b5.md` sin incluir credenciales.
+
+El comando seguro por defecto es `npm run backup:v2:manual -- --plan`. El modo sintético usa datos, clave efímera y transporte falsos. El preflight real queda bloqueado hasta un release controlado y la ejecución real devuelve `REAL_BACKUP_V2_EXECUTION_BLOCKED_UNTIL_PHASE_4B6` antes de cualquier conexión. No existe endpoint HTTP público, scheduler, credencial instalada, copia remota, recovery key de producción ni restore validado.
+
+B2 representa un único dominio de falla y solo puede aportar evidencia `primary`. B2 por sí solo no satisface la copia secundaria independiente ni puede producir `full_dr_ready`. Object Lock permanece deshabilitado y Lifecycle conserva todas las versiones; esta fase no cambia ninguna política del bucket ni elimina objetos automáticamente.

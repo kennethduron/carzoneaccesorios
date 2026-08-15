@@ -289,7 +289,9 @@ async function attempt<T>(input: StorageOperationOptions, operation: (signal: Ab
     } finally {
       clearTimeout(timer); input.signal?.removeEventListener("abort", relay); controller.abort();
     }
-    await wait(settings.delay * current, input.signal);
+    const retryAfterMs = last.retryAfterMs ?? 0;
+    const exponentialDelayMs = settings.delay * (2 ** (current - 1));
+    await wait(Math.min(Math.max(exponentialDelayMs, retryAfterMs), 10_000), input.signal);
   }
   throw last ?? new BackupV2StorageError("BACKUP_V2_PROVIDER_OPERATION_FAILED", "Storage provider operation failed", "unavailable");
 }
@@ -378,6 +380,9 @@ export async function storeBackupV2Artifact(input: StoreBackupV2ArtifactInput): 
   });
   assertRegisteredBackupV2StorageProvider(request.provider);
   if (!ARTIFACT_COPY_ROLES.includes(request.copyRole)) fail("BACKUP_V2_UNKNOWN_COPY_ROLE", "Unknown copy role");
+  if (!request.provider.descriptor.allowedCopyRoles.includes(request.copyRole)) {
+    fail("BACKUP_V2_STORAGE_COPY_ROLE_DENIED", "Configured provider does not permit the requested copy role");
+  }
   if (!preparedSources.has(request.source)) fail("BACKUP_V2_UNVERIFIED_STORAGE_SOURCE", "Storage source was not prepared by runtime verification");
   const now = canonicalClock(request.clock);
   await stage(request, "authority_start");

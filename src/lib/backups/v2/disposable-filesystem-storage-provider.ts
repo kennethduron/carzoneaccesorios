@@ -172,6 +172,7 @@ export async function createDisposableFilesystemStorageProvider(
       providerInstanceId,
       namespaceId,
       failureDomain,
+      allowedCopyRoles: ["primary", "secondary_independent", "optional_offline"],
       capabilities: {
         streamingWrite: true, streamingRead: true, stat: true, conditionalCreate: true,
         readAfterWrite: true, atomicFinalize: true, immutableVersion: false, serverChecksum: false,
