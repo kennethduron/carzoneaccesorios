@@ -52,6 +52,16 @@ function sha256(value: unknown, field: string): string {
   return value;
 }
 
+function safeProviderReference(value: unknown, field: string): string {
+  const result = nonEmpty(value, field);
+  if (result.length > 1024 || /[\u0000-\u001f\u007f]/.test(result) || result.includes("://") || /[?&#]/.test(result)) {
+    throw new BackupV2FailClosedError(
+      "BACKUP_V2_UNSAFE_PROVIDER_REFERENCE", `${field} must not contain credentials, URLs, or control characters`,
+    );
+  }
+  return result;
+}
+
 export function validateArtifactEvidence(value: BackupArtifactEvidence): ValidatedBackupArtifactEvidence {
   for (const [field, fieldValue] of Object.entries({
     artifactId: value.artifactId, recoverySetId: value.recoverySetId, runId: value.runId,
@@ -115,8 +125,8 @@ export function validateArtifactCopyEvidence(value: BackupArtifactCopyEvidence):
     throw new BackupV2FailClosedError("BACKUP_V2_INVALID_COPY_EVIDENCE", "Unknown verification status");
   }
   nonEmpty(value.copyId, "copyId"); nonEmpty(value.artifactId, "artifactId");
-  nonEmpty(value.providerNeutralRef, "providerNeutralRef");
-  nonEmpty(value.physicalObjectIdentity, "physicalObjectIdentity");
+  safeProviderReference(value.providerNeutralRef, "providerNeutralRef");
+  safeProviderReference(value.physicalObjectIdentity, "physicalObjectIdentity");
   nonEmpty(value.recordedByOwnerRef, "recordedByOwnerRef");
   if (!Number.isSafeInteger(value.leaseGeneration) || value.leaseGeneration <= 0) {
     throw new BackupV2FailClosedError("BACKUP_V2_INVALID_COPY_EVIDENCE", "Lease generation is invalid");

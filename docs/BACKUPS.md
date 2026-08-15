@@ -1,6 +1,6 @@
 # Backups y recuperacion - Car Zone Accesorios
 
-> Modern Backup V2 Phase 4B.3 agrega el formato controlado para Auth, metadata/objetos de Storage y originales de Cloudinary. La estrategia, exclusiones y controles están documentados en [`security/modern-backup-v2-phase4b3.md`](security/modern-backup-v2-phase4b3.md). No está programado ni conectado a producción.
+> Modern Backup V2 Phase 4B.4 agrega transporte y verificación de copias provider-neutral para los artefactos cifrados de Phase 4B.2/4B.3. El contrato, la inmutabilidad y los límites de seguridad están documentados en [`security/modern-backup-v2-phase4b4.md`](security/modern-backup-v2-phase4b4.md). No selecciona proveedor real, no está programado y no se conecta a producción.
 
 ## Objetivo operativo
 
