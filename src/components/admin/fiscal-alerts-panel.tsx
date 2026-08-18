@@ -5,14 +5,26 @@ type FiscalAlertsPanelProps = {
   alerts: FiscalAlert[];
 };
 
+const cancelledInvoiceReviewMessage = "facturas anuladas para revisión contable";
+
+export function getVisibleAdminFiscalAlerts(alerts: FiscalAlert[]) {
+  return alerts.filter((alert) => {
+    if (alert.type === "danger") return true;
+
+    return !alert.message.toLocaleLowerCase("es-HN").includes(cancelledInvoiceReviewMessage);
+  });
+}
+
 export function FiscalAlertsPanel({ alerts }: FiscalAlertsPanelProps) {
-  if (alerts.length === 0) {
+  const visibleAlerts = getVisibleAdminFiscalAlerts(alerts);
+
+  if (visibleAlerts.length === 0) {
     return null;
   }
 
   return (
     <section className="grid gap-2">
-      {alerts.map((alert) => (
+      {visibleAlerts.map((alert) => (
         <div
           key={alert.message}
           className={`flex items-start gap-3 rounded-md border p-3 text-sm font-medium ${

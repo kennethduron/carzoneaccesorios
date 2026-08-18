@@ -524,10 +524,10 @@ export default async function AdminUsagePage() {
             <p className="text-sm text-black/55">Reservas activas</p>
             <p className="mt-1 text-2xl font-semibold">{formatNumber(usage.reservedOrderCount)}</p>
           </div>
-          <div className="rounded-md border border-black/10 bg-[#fff7ed] p-4">
-            <p className="text-sm text-[#7c2d12]">Reservas vencidas que requieren revisión</p>
-            <p className="mt-1 text-2xl font-semibold text-[#7c2d12]">{formatNumber(usage.expiredReservationCount)}</p>
-            <p className="mt-2 text-xs leading-5 text-[#7c2d12]">
+          <div className={`rounded-md border border-black/10 p-4 ${usage.expiredReservationCount > 0 ? "bg-[#fff7ed]" : "bg-[#f4f4f5]"}`}>
+            <p className={`text-sm ${usage.expiredReservationCount > 0 ? "text-[#7c2d12]" : "text-black/55"}`}>Reservas vencidas que requieren revisión</p>
+            <p className={`mt-1 text-2xl font-semibold ${usage.expiredReservationCount > 0 ? "text-[#7c2d12]" : "text-black"}`}>{formatNumber(usage.expiredReservationCount)}</p>
+            <p className={`mt-2 text-xs leading-5 ${usage.expiredReservationCount > 0 ? "text-[#7c2d12]" : "text-black/55"}`}>
               Endpoint cron: GET /api/cron/check-expired-reservations con Authorization Bearer del secreto configurado. Solo alerta; no libera stock automáticamente.
             </p>
           </div>

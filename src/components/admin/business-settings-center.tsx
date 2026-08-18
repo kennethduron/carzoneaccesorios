@@ -402,10 +402,6 @@ export function BusinessSettingsCenter({ settings, currentRole }: BusinessSettin
             <TechnicalLink href="/admin/seguridad" title="Seguridad" text="Auditoría, usuarios, roles y controles administrativos." />
             <TechnicalLink href="/admin/revision-bac" title="Pagos mediante enlace" text="Lista de verificación técnica y comercial del flujo manual por WhatsApp." />
           </div>
-          <div className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
-            Las variables de Vercel, Supabase, Cloudinary, Resend, Brevo y cron no se exponen ni se editan desde
-            esta UI.
-          </div>
         </SettingsPanel>
       ) : null}
 

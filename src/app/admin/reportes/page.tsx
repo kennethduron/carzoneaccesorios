@@ -3,7 +3,7 @@ import nextDynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
+import { FiscalAlertsPanel, getVisibleAdminFiscalAlerts } from "@/components/admin/fiscal-alerts-panel";
 import { requireSession } from "@/lib/auth/session";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminFiscalReports, getAdminReports } from "@/services/supabase/admin-reports.service";
@@ -71,6 +71,7 @@ export default async function AdminReportsPage({
     ? await getFiscalSettings()
     : null;
   const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, reports.invoices) : [];
+  const visibleFiscalAlerts = getVisibleAdminFiscalAlerts(fiscalAlerts);
 
   return (
     <AdminShell title="Reportes">
@@ -83,19 +84,11 @@ export default async function AdminReportsPage({
           Panel administrativo
         </Link>
       </div>
-      {fiscalAlerts.length > 0 ? (
+      {visibleFiscalAlerts.length > 0 ? (
         <div className="mb-5">
-          <FiscalAlertsPanel alerts={fiscalAlerts} />
+          <FiscalAlertsPanel alerts={visibleFiscalAlerts} />
         </div>
       ) : null}
-      <section className="mb-5 rounded-lg border border-[#f2b8a0] bg-[#fff7ed] p-4 text-sm text-[#7c2d12]">
-        <p className="font-semibold">Reportes paginados con filtros server-side</p>
-        <p className="mt-1">
-          Esta vista carga hasta {reports.pageSize} registros por tabla y aplica filtros antes de traer datos al panel.
-          Para cierres contables grandes, usa filtros por fecha, cliente, factura, producto o método de pago y exporta
-          cada segmento.
-        </p>
-      </section>
       <ReportsDashboard
         data={reports}
         fiscalSettings={fiscalSettings}

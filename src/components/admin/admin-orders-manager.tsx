@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
 import { cancelInvoiceAction, getInvoiceDetailAction } from "@/app/admin/facturas/actions";
 import {
   correctOrderFiscalCustomerDataAction,
@@ -37,7 +37,6 @@ import {
   isPaymentConfirmed,
   orderStatusLabels,
   paymentDisplayLabel,
-  recommendedOrderAction,
 } from "@/utils/order-workflow";
 import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
@@ -266,13 +265,13 @@ export function AdminOrdersManager({
     () => filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? orders[0] ?? null,
     [filteredOrders, orders, selectedOrderId],
   );
-  const pricingInconsistencies = useMemo(
+  const hasPriceReviewAttention = useMemo(
     () => orderPriceReviewEnabled
-      ? orders.filter((order) => order.price_review.status === "action_required")
-      : orders.filter((order) =>
+      ? orders.some((order) => order.price_review.status === "action_required")
+      : orders.some((order) =>
         order.order_items.some((item) => {
           const expectedSnapshot =
-            item.applied_price_mode === 'wholesale'
+            item.applied_price_mode === "wholesale"
               ? item.wholesale_price_snapshot
               : item.retail_price_snapshot;
           return (
@@ -283,7 +282,6 @@ export function AdminOrdersManager({
       ),
     [orderPriceReviewEnabled, orders],
   );
-
   function generateInvoice(order: AdminOrderRow) {
     if (orderHasActiveInvoice(order)) {
       if (!order.invoice_id) {
@@ -479,32 +477,8 @@ export function AdminOrdersManager({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-price-review-attention={hasPriceReviewAttention ? "present" : undefined}>
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
-      {orderPriceReviewEnabled && pricingInconsistencies.length > 0 ? (
-        <section className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
-          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
-          <div>
-            <p className="font-semibold">{"Revisi\u00f3n de precio requerida"}</p>
-            <p className="mt-1">
-              {"Existe evidencia incompleta o una diferencia econ\u00f3mica accionable en "}
-              {pricingInconsistencies.map((order) => order.order_number).join(", ")}.
-            </p>
-          </div>
-        </section>
-      ) : null}
-      {!orderPriceReviewEnabled && pricingInconsistencies.length > 0 ? (
-        <section className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
-          <AlertTriangle className="mt-0.5 shrink-0" size={18} />
-          <div>
-            <p className="font-semibold">Revisión de precio requerida</p>
-            <p className="mt-1">
-              La modalidad de precio de la cabecera no coincide con una o más líneas en{' '}
-              {pricingInconsistencies.map((order) => order.order_number).join(', ')}.
-            </p>
-          </div>
-        </section>
-      ) : null}
       <PaginationControls
         basePath="/admin/pedidos"
         page={page}
@@ -921,7 +895,7 @@ function OrderDetail({
 
       <div className="space-y-4 p-4">
         {normalizedStatus === "cancelado" ? (
-          <div className="rounded-md border border-[#9b341b]/25 bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          <div className="rounded-md border border-black/10 bg-[#f4f4f5] p-3 text-sm text-black/60">
             Este pedido está cancelado. No requiere avance operativo.
           </div>
         ) : null}
@@ -936,11 +910,6 @@ function OrderDetail({
             onAddInternalNote={onAddInternalNote}
           />
         ) : null}
-
-        <div className="rounded-md border border-[#f59e0b]/30 bg-[#fffbeb] p-3">
-          <p className="text-sm font-semibold text-[#7c2d12]">Acción recomendada</p>
-          <p className="mt-1 text-sm text-[#7c2d12]">{recommendedOrderAction(order)}</p>
-        </div>
 
         {canViewFinancialData ? (
           <>
@@ -1176,7 +1145,7 @@ function OrderDetail({
               </div>
             ) : null}
             {invoiceIsCancelled ? (
-              <p className="mt-3 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+              <p className="mt-3 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
                 Factura anulada. Motivo: {order.invoice_cancellation_reason ?? "motivo registrado en auditoría"}.
               </p>
             ) : null}
@@ -1283,11 +1252,6 @@ function OrderDetail({
           </div>
         </div>
 
-        {canViewFinancialData ? (
-          <p className="rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-            Validar tratamiento fiscal de envío y comisión con la contadora.
-          </p>
-        ) : null}
       </div>
     </article>
   );

@@ -126,12 +126,6 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
   const selectedEvidence = selectedAccount?.evidence[selectedEvidenceIndex] ?? null;
   const reasonMinimumLength = selectedEvidence?.source === "manual_verified_identity" ? 20 : 10;
 
-  const hasDifferences = Boolean(selectedCustomer && selectedAccount && (
-    normalize(selectedCustomer.displayName) !== normalize(selectedAccount.fullName || selectedAccount.username) ||
-    normalize(selectedCustomer.email) !== normalize(selectedAccount.email) ||
-    normalize(selectedCustomer.phone) !== normalize(selectedAccount.phone)
-  ));
-
   return (
     <section className={compact ? "space-y-4" : "rounded-lg border border-black/10 bg-white p-5 shadow-sm"}>
       <div>
@@ -219,7 +213,6 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
                     ["Correo confirmado", selectedAccount.emailConfirmedAt ? "Sí" : "No"],
                     ["Vinculación", selectedAccount.linkedToThisCustomer ? "Ya vinculada a este cliente" : "Disponible"],
                   ]} />
-                  {hasDifferences ? <p className="mt-3 rounded-md bg-[#fffbeb] p-3 text-sm text-[#78350f]">Los datos comerciales y los de acceso no coinciden por completo. Esto es informativo: la vinculación no copiará ni reemplazará ningún dato.</p> : null}
                   <p className="mt-3 text-sm text-black/60">El historial existente se conservará y el correo de acceso seguirá separado del correo comercial.</p>
                   <label className="mt-3 block text-sm font-medium">
                     Evidencia de identidad
@@ -270,10 +263,6 @@ export function CustomerPortalLinkWorkspace({ initialCustomer = null, compact = 
       ) : null}
     </section>
   );
-}
-
-function normalize(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? "";
 }
 
 function ReviewCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {

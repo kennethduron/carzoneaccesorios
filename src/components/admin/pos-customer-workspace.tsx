@@ -643,8 +643,6 @@ function CustomerFormPanel({
         <FormField label="Notas comerciales no sensibles" wide><textarea maxLength={1000} rows={3} value={form.commercialNotes} onChange={field("commercialNotes")} className="pos-input resize-y py-3" /></FormField>
         </div>
       </fieldset>
-      {!form.phone.trim() && !form.email.trim() && !form.taxId.trim() ? <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Puedes crear el perfil solo con el nombre. Completa teléfono, correo o RTN después para facilitar la identificación.</p> : null}
-
       {mode === 'create' && (duplicateState !== 'idle' || duplicateSuggestions.length > 0) ? (
         <section className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4" aria-labelledby="pos-duplicate-suggestions-title">
           <div className="flex items-center gap-2">

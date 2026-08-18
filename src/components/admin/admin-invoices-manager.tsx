@@ -372,13 +372,6 @@ export function AdminInvoicesManager({
 
       <FiscalAlertsPanel alerts={fiscalAlerts} />
 
-      <section className="rounded-lg border border-[#f59e0b]/30 bg-[#fffbeb] p-4 text-sm text-[#7c2d12]">
-        <p className="font-semibold">Validación fiscal</p>
-        <p className="mt-1">
-          Antes de emitir facturas reales, valide CAI, rango y datos fiscales con la contadora.
-        </p>
-      </section>
-
       <PaginationControls
         basePath="/admin/facturas"
         page={page}
@@ -857,7 +850,7 @@ function InvoiceModal({
             </div>
           </section>
         ) : invoice.status === "anulada" || invoice.status === "cancelled" ? (
-          <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
+          <p className="mt-5 rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">
             No se pueden corregir datos de una factura anulada.
           </p>
         ) : null}
@@ -897,10 +890,6 @@ function InvoiceModal({
           </table>
           </div>
         </div>
-
-        <p className="mt-5 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-          Validar tratamiento fiscal de envío y comisión con la contadora.
-        </p>
 
         <div className="mt-5 grid gap-2 text-sm md:grid-cols-5">
           <p>Subtotal antes de ISV: {formatCurrency(invoice.subtotal)}</p>

@@ -1957,7 +1957,6 @@ export function ProductManager({
         {importPreview ? (
           <ImportPreviewPanel
             preview={importPreview}
-            mode={importMode}
             canAdjustStock={capabilities.adjustStock}
             pending={isImportingProducts}
             onConfirm={() => void confirmProductImport()}
@@ -2182,14 +2181,12 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ImportPreviewPanel({
   preview,
-  mode,
   canAdjustStock,
   pending,
   onConfirm,
   onCancel,
 }: {
   preview: ProductImportPreview;
-  mode: ProductImportMode;
   canAdjustStock: boolean;
   pending: boolean;
   onConfirm: () => void;
@@ -2203,12 +2200,6 @@ function ImportPreviewPanel({
   const foundImages = preview.rows.filter((row) => row.imageFile).length;
   const missingImages = preview.rows.filter((row) => row.imageName && !row.imageFile).length;
   const detectedErrors = errorRows.length + preview.criticalErrors.length;
-  const existingSkippedRows = skippedRows.filter((row) => row.exists);
-  const newSkippedRows = skippedRows.filter((row) => !row.exists);
-  const hasModeWarning =
-    (mode === "create_only" && existingSkippedRows.length > 0) ||
-    (mode === "update_only" && newSkippedRows.length > 0);
-
   return (
     <div className="mt-4 rounded-lg border border-black/10 bg-[#f8fafc] p-4">
       <p className="text-sm font-semibold">
@@ -2223,26 +2214,9 @@ function ImportPreviewPanel({
         <PreviewMetric label="Errores detectados" value={detectedErrors} tone={detectedErrors > 0 ? "danger" : "neutral"} />
       </div>
 
-      <div className={`mt-3 rounded-md px-3 py-2 text-sm ${hasModeWarning ? "bg-[#fff7ed] text-[#7c2d12]" : "bg-[#f1faf8] text-[#166534]"}`}>
-        {mode === "create_and_update"
-          ? "Este modo creará productos nuevos y actualizará los existentes según el SKU."
-          : mode === "create_only" && existingSkippedRows.length > 0
-            ? `Hay ${existingSkippedRows.length} productos que ya existen y no serán modificados porque seleccionaste Crear solo productos nuevos.`
-            : mode === "update_only" && newSkippedRows.length > 0
-              ? `Hay ${newSkippedRows.length} productos nuevos que no serán creados porque seleccionaste Actualizar productos existentes.`
-              : productImportModeCopy[mode].description}
-      </div>
-
       {preview.criticalErrors.length > 0 ? (
         <div className="mt-3 rounded-md bg-[#fff0ea] px-3 py-2 text-sm text-[#9b341b]">
           {preview.criticalErrors.map((error) => <p key={error}>{error}</p>)}
-        </div>
-      ) : null}
-
-      {preview.zipWarnings.length > 0 ? (
-        <div className="mt-3 rounded-md bg-[#fff7ed] px-3 py-2 text-sm text-[#7c2d12]">
-          {preview.zipWarnings.slice(0, 6).map((warning) => <p key={warning}>{warning}</p>)}
-          {preview.zipWarnings.length > 6 ? <p>Hay {preview.zipWarnings.length - 6} advertencias adicionales del ZIP.</p> : null}
         </div>
       ) : null}
 

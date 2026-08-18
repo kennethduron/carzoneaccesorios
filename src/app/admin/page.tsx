@@ -27,7 +27,7 @@ import {
 } from "@/components/admin/admin-dashboard-frame";
 import { AdminNotificationStatusCard } from "@/components/admin/admin-notification-status-card";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { FiscalAlertsPanel } from "@/components/admin/fiscal-alerts-panel";
+import { FiscalAlertsPanel, getVisibleAdminFiscalAlerts } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
 import { hasEffectivePermission, isTechnicalOwner } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
@@ -312,6 +312,7 @@ export default async function AdminPage() {
     ? await Promise.all([getFiscalSettings(), canReadInvoices ? getAdminInvoices() : Promise.resolve([])])
     : [null, []];
   const fiscalAlerts = fiscalSettings ? getFiscalAlerts(fiscalSettings, invoices) : [];
+  const visibleFiscalAlerts = getVisibleAdminFiscalAlerts(fiscalAlerts);
 
   if (isAccountant) {
     const todayKey = hnDateKey(new Date());
@@ -352,9 +353,9 @@ export default async function AdminPage() {
           <LogoutButton />
         </div>
 
-        {fiscalAlerts.length > 0 ? (
+        {visibleFiscalAlerts.length > 0 ? (
           <div className="mb-4">
-            <FiscalAlertsPanel alerts={fiscalAlerts} />
+            <FiscalAlertsPanel alerts={visibleFiscalAlerts} />
           </div>
         ) : null}
 
@@ -690,7 +691,7 @@ export default async function AdminPage() {
     });
   });
 
-  fiscalAlerts.forEach((alert, index) => {
+  visibleFiscalAlerts.forEach((alert, index) => {
     notificationItems.push({
       id: dashboardFiscalNotificationKey(alert.message, index),
       title: alert.type === "danger" ? "Alerta fiscal crítica" : "Alerta fiscal",
@@ -797,7 +798,7 @@ export default async function AdminPage() {
             </div>
           </div>
 
-          {fiscalAlerts.length > 0 ? <div className="mb-4"><FiscalAlertsPanel alerts={fiscalAlerts} /></div> : null}
+          {visibleFiscalAlerts.length > 0 ? <div className="mb-4"><FiscalAlertsPanel alerts={visibleFiscalAlerts} /></div> : null}
 
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-w-0 space-y-4">
@@ -848,10 +849,10 @@ export default async function AdminPage() {
               <section className="rounded-lg border border-black/10 bg-white p-3 shadow-sm sm:p-4">
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div><h2 className="text-base font-semibold">Estado del sistema</h2><p className="text-xs text-black/50">Última verificación: hace 2 min</p></div>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${statusTone(fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "risk" : "success")}`}><CheckCircle2 size={14} />{fiscalAlerts.length > 0 || overview.failedEmails > 0 ? "Revisar" : "Todo bien"}</span>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${statusTone(visibleFiscalAlerts.length > 0 || overview.failedEmails > 0 ? "risk" : "success")}`}><CheckCircle2 size={14} />{visibleFiscalAlerts.length > 0 || overview.failedEmails > 0 ? "Revisar" : "Todo bien"}</span>
                 </div>
                 <div className="space-y-2">
-                  <StatusRow label="Fiscal" value={`${fiscalAlerts.length.toLocaleString("es-HN")} alertas`} status={fiscalAlerts.length > 0 ? "risk" : "success"} />
+                  <StatusRow label="Fiscal" value={`${visibleFiscalAlerts.length.toLocaleString("es-HN")} alertas`} status={visibleFiscalAlerts.length > 0 ? "risk" : "success"} />
                   <StatusRow label="Correos" value={`${overview.failedEmails.toLocaleString("es-HN")} fallidos`} status={overview.failedEmails > 0 ? "failed" : "success"} />
                   {canViewTechnical && visibleCards.backup_cron_status ? <><StatusRow label="Cron" value={overview.latestCronJob ? `${overview.latestCronJob}` : "Sin registro"} status={overview.latestCronStatus} /><StatusRow label="Backups" value={formatDate(overview.latestBackupAt)} status={overview.latestBackupStatus} /></> : null}
                 </div>

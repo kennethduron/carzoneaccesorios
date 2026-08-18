@@ -117,10 +117,6 @@ export function CommerceSettingsForm({ settings, canEdit }: CommerceSettingsForm
         ))}
       </div>
 
-      <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm text-[#7c2d12]">
-        Valida el tratamiento fiscal del envío y la comisión con la contadora. Los pagos con tarjeta se coordinan mediante un enlace externo enviado por WhatsApp.
-      </p>
-
       {canEdit ? (
         <Button onClick={save} disabled={isPending} variant="primary" className="mt-4">
           {isPending ? "Guardando..." : "Guardar configuración comercial"}

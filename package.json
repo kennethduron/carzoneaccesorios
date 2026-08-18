@@ -25,6 +25,7 @@
     "test:auth-security": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-security-s3.mjs",
     "test:auth-session-handling": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-auth-session-handling.mjs",
     "test:admin-mobile-user-menu": "node scripts/test-admin-mobile-user-menu.mjs",
+    "test:admin-warning-banners": "node scripts/test-admin-warning-banners.mjs",
     "test:cart-hydration": "node scripts/test-cart-hydration.mjs",
     "test:cart-quantity": "node scripts/test-cart-quantity-input.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
