@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
-import { requirePermission } from "@/lib/auth/session";
+import { getSessionProfile, requirePermission } from "@/lib/auth/session";
+import {
+  autoCentroExt100Incident,
+  getPendingAutoCentroExt100Recovery,
+  isCommercialReversalRecoveryRole,
+} from "@/lib/incidents/auto-centro-ext100-commercial-reversal";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 
@@ -95,6 +100,154 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
     message: status === "ALREADY_REVERSED"
       ? "La factura y la venta ya estaban revertidas; no se duplicó ningún efecto."
       : "Factura anulada y venta revertida correctamente. El inventario, el pedido, la cuenta por cobrar y la contabilidad quedaron reconciliados.",
+  };
+}
+
+const incidentRecoveryConfirmation = "CONFIRM_AUTO_CENTRO_EXT100_COMMERCIAL_REVERSAL";
+
+function commercialReversalErrorMessage(code: string | undefined) {
+  const messages: Record<string, string> = {
+    SALE_REVERSAL_PERMISSION_DENIED: "Tu sesión no tiene todos los permisos requeridos para completar esta reversión.",
+    SALE_REVERSAL_RECOVERY_PERMISSION_DENIED: "Tu rol no está autorizado para completar esta reversión histórica.",
+    SALE_REVERSAL_RECOVERY_INVOICE_MISMATCH: "La factura o el pedido cambiaron desde la auditoría. La reversión fue denegada sin aplicar cambios.",
+    SALE_REVERSAL_RECOVERY_INVENTORY_MISMATCH: "El inventario ya no coincide con la evidencia auditada. La reversión fue denegada sin aplicar cambios.",
+    SALE_REVERSAL_RECOVERY_LATER_MOVEMENT_FOUND: "Existe un movimiento posterior de inventario. La reversión fue denegada sin aplicar cambios.",
+    SALE_REVERSAL_RECOVERY_PAYMENT_FOUND: "Apareció un pago vinculado. La reversión requiere revisión y no aplicó cambios.",
+    SALE_REVERSAL_RECOVERY_RECEIVABLE_MISMATCH: "La cuenta por cobrar cambió desde la auditoría. La reversión fue denegada sin aplicar cambios.",
+    SALE_REVERSAL_RECOVERY_ACCOUNTING_MISMATCH: "La contabilidad cambió desde la auditoría. La reversión fue denegada sin aplicar cambios.",
+    SALE_REVERSAL_MOVEMENT_ALREADY_REVERSED: "El movimiento de inventario ya fue revertido.",
+    SALE_REVERSAL_ORDER_ALREADY_CANCELLED: "La venta ya fue revertida o cancelada.",
+  };
+  return messages[code ?? ""] ?? "No se pudo completar la reversión comercial. Ningún cambio parcial fue aplicado.";
+}
+
+function revalidateCommercialReversalPaths() {
+  for (const path of [
+    "/admin/facturas",
+    "/admin/pedidos",
+    "/admin/productos",
+    "/admin/reportes",
+    "/admin/crm",
+    "/admin/contabilidad",
+    "/facturas",
+    "/mis-pedidos",
+    "/cuenta",
+    "/rastreo",
+  ]) {
+    revalidatePath(path);
+  }
+}
+
+export async function completeAnnulledInvoiceCommercialReversalAction(
+  invoiceId: string,
+  confirmation: string,
+) {
+  const profile = await getSessionProfile();
+  if (!profile || !isCommercialReversalRecoveryRole(profile.role)) {
+    return { ok: false, message: "No tienes autorización para completar esta reversión histórica." };
+  }
+
+  if (invoiceId !== autoCentroExt100Incident.invoiceId || confirmation !== incidentRecoveryConfirmation) {
+    return { ok: false, message: "La solicitud no coincide con el incidente autorizado." };
+  }
+
+  const pending = await getPendingAutoCentroExt100Recovery(profile.role);
+  if (!pending || pending.invoiceId !== invoiceId) {
+    return { ok: false, message: "Las condiciones auditadas cambiaron o la reversión ya fue completada. No se aplicaron cambios." };
+  }
+
+  const incident = autoCentroExt100Incident;
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("cancel_sale_invoice_v1", {
+    p_invoice_id: incident.invoiceId,
+    p_reason: incident.cancellationReason,
+    p_recovery_mode: true,
+    p_recovery_expected: {
+      order_id: incident.orderId,
+      order_status: "entregado",
+      customer_id: incident.customerId,
+      product_id: incident.productId,
+      original_movement_id: incident.movementId,
+      original_movement_count: 1,
+      quantity: incident.quantity,
+      current_stock: incident.stock,
+      receivable_id: incident.receivableId,
+      receivable_balance: incident.receivableBalance,
+      cancellation_reason: incident.cancellationReason,
+    },
+  });
+
+  if (error) {
+    return { ok: false, message: commercialReversalErrorMessage(error.message) };
+  }
+
+  const result = data as {
+    status?: string;
+    invoice_status?: string;
+    order_status?: string;
+    reversal_movement_ids?: string[];
+    receivable_effect?: string;
+    accounting_effects?: unknown[];
+  } | null;
+
+  const [product, invoice, order, receivable, inverseMovements, reversalAudit] = await Promise.all([
+    supabase.from("products").select("stock").eq("id", incident.productId).maybeSingle(),
+    supabase.from("invoices").select("status").eq("id", incident.invoiceId).maybeSingle(),
+    supabase.from("orders").select("status,commercial_reversal_invoice_id").eq("id", incident.orderId).maybeSingle(),
+    supabase.from("accounts_receivable").select("status,balance_due").eq("id", incident.receivableId).maybeSingle(),
+    supabase.from("inventory_movements")
+      .select("id,quantity,reversal_of_movement_id")
+      .eq("reversal_of_movement_id", incident.movementId),
+    supabase.from("invoice_commercial_reversals")
+      .select("id,actor_id,mode,reversal_movement_ids,receivable_effect,accounting_effects")
+      .eq("invoice_id", incident.invoiceId).maybeSingle(),
+  ]);
+
+  const verificationFailed = [product, invoice, order, receivable, inverseMovements, reversalAudit]
+    .some((query) => query.error);
+  const inverse = inverseMovements.data ?? [];
+  const verified = !verificationFailed
+    && product.data?.stock === 4
+    && ["anulada", "cancelled"].includes(invoice.data?.status ?? "")
+    && ["cancelado", "cancelled"].includes(order.data?.status ?? "")
+    && order.data?.commercial_reversal_invoice_id === incident.invoiceId
+    && receivable.data?.status === "cancelled"
+    && Number(receivable.data?.balance_due) === 0
+    && inverse.length === 1
+    && inverse[0]?.quantity === 1
+    && inverse[0]?.reversal_of_movement_id === incident.movementId
+    && reversalAudit.data?.actor_id === profile.id
+    && reversalAudit.data?.mode === "incident_repair"
+    && (reversalAudit.data?.reversal_movement_ids?.length ?? 0) === 1
+    && reversalAudit.data?.receivable_effect === "cancelled_unpaid"
+    && (reversalAudit.data?.accounting_effects?.length ?? 0) >= 4
+    && ["REVERSED", "ALREADY_REVERSED"].includes(result?.status ?? "")
+    && result?.invoice_status === "anulada"
+    && result?.order_status === "cancelado"
+    && result?.receivable_effect === "cancelled_unpaid"
+    && (result?.reversal_movement_ids?.length ?? 0) === 1
+    && (result?.accounting_effects?.length ?? 0) >= 4;
+
+  revalidateCommercialReversalPaths();
+  if (!verified) {
+    return {
+      ok: false,
+      message: "La transacción terminó, pero la verificación canónica no pudo confirmarse por completo. No repitas la acción y solicita revisión técnica.",
+    };
+  }
+
+  return {
+    ok: true,
+    message: "Reversión comercial completada correctamente.",
+    evidence: {
+      stock: 4,
+      inverseMovementCount: 1,
+      invoiceStatus: "anulada",
+      orderStatus: "cancelado",
+      receivableCollectible: false,
+      accountingCompensated: true,
+      auditRecorded: true,
+    },
   };
 }
 

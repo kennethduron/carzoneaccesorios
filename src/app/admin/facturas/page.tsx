@@ -3,6 +3,7 @@ import nextDynamic from "next/dynamic";
 import { ArrowLeft, Settings } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requirePermission } from "@/lib/auth/session";
+import { getPendingAutoCentroExt100Recovery } from "@/lib/incidents/auto-centro-ext100-commercial-reversal";
 import { writeErrorLog } from "@/lib/error-logging";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { adminInvoiceTaskLabels, getAdminInvoicesPage, normalizeAdminInvoiceTask, type AdminInvoicesPage } from "@/services/supabase/admin-invoices.service";
@@ -62,9 +63,10 @@ export default async function AdminInvoicesPage({
   const canCancelInvoices = profile.permissions.includes("invoices:manage");
   const canCorrectInvoices = profile.permissions.includes("invoices:correct");
   const page = Number(params.page ?? 1) || 1;
-  const [{ invoicesPage, errorMessage: invoicesErrorMessage }, fiscalSettings] = await Promise.all([
+  const [{ invoicesPage, errorMessage: invoicesErrorMessage }, fiscalSettings, pendingCommercialReversal] = await Promise.all([
     getSafeAdminInvoicesPage({ page, task, focusInvoiceId }),
     getFiscalSettings(),
+    getPendingAutoCentroExt100Recovery(profile.role),
   ]);
   const fiscalAlerts = getFiscalAlerts(fiscalSettings, invoicesPage.invoices);
 
@@ -95,6 +97,7 @@ export default async function AdminInvoicesPage({
         canCancelInvoices={canCancelInvoices}
         canCorrectInvoices={canCorrectInvoices}
         canUseTechnicalExports={canUseTechnicalExports}
+        pendingCommercialReversal={pendingCommercialReversal}
         errorMessage={invoicesErrorMessage}
         activeTask={task ? { id: task, label: adminInvoiceTaskLabels[task] } : null}
       />

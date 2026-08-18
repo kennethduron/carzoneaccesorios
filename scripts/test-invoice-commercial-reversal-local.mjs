@@ -14,6 +14,7 @@ const execAsync = promisify(execFile);
 const root = new URL("../", import.meta.url);
 const preludePath = new URL("scripts/fixtures/invoice-commercial-reversal-prelude.sql", root);
 const migrationPath = new URL("supabase/migrations/202608170001_full_invoice_commercial_reversal.sql", root);
+const adminRecoveryMigrationPath = new URL("supabase/migrations/202608170002_full_invoice_reversal_admin_recovery.sql", root);
 const fixturePath = new URL("scripts/fixtures/invoice-commercial-reversal-local.sql", root);
 const protectedProductionRef = "mbowrapstbufzzfefipn";
 const runId = randomUUID().replaceAll("-", "").slice(0, 12);
@@ -72,6 +73,7 @@ try {
 
   docker(["cp", preludePath.pathname.replace(/^\/(.:)/, "$1"), `${container}:/tmp/prelude.sql`]);
   docker(["cp", migrationPath.pathname.replace(/^\/(.:)/, "$1"), `${container}:/tmp/reversal.sql`]);
+  docker(["cp", adminRecoveryMigrationPath.pathname.replace(/^\/(.:)/, "$1"), `${container}:/tmp/admin-recovery.sql`]);
   docker(["cp", fixturePath.pathname.replace(/^\/(.:)/, "$1"), `${container}:/tmp/reversal-test.sql`]);
   docker([
     "exec", container, "psql", "-U", "postgres", "-d", database,
@@ -81,12 +83,18 @@ try {
     "exec", container, "psql", "-U", "postgres", "-d", database,
     "-v", "ON_ERROR_STOP=1", "-f", "/tmp/reversal.sql",
   ]);
+  docker([
+    "exec", container, "psql", "-U", "postgres", "-d", database,
+    "-v", "ON_ERROR_STOP=1", "-f", "/tmp/admin-recovery.sql",
+  ]);
   const fixtureOutput = docker([
     "exec", container, "psql", "-U", "postgres", "-d", database,
     "-v", "ON_ERROR_STOP=1", "-f", "/tmp/reversal-test.sql",
   ]);
   assert.match(fixtureOutput, /"atomic_rollback": "PASS"/);
   assert.match(fixtureOutput, /"reinvoice_flow": "PASS"/);
+  assert.match(fixtureOutput, /"recovery_role_matrix": "PASS"/);
+  assert.match(fixtureOutput, /"recovery_replay": "PASS"/);
 
   const raceSql = [
     "begin",
@@ -128,6 +136,8 @@ try {
     accountingExactlyOnce: true,
     rollback: true,
     reinvoiceIndependentSale: true,
+    recoveryRoleMatrix: true,
+    recoveryReplayExactlyOnce: true,
     productionConnections: 0,
   });
 } finally {

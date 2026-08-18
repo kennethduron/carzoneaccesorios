@@ -14,6 +14,26 @@ insert into public.users (id, role_id, active)
 values ('10000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', true)
 on conflict (id) do update set role_id = excluded.role_id, active = true;
 
+insert into public.roles (id, name, permissions) values
+  ('11000000-0000-0000-0000-000000000001', 'business_owner', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('12000000-0000-0000-0000-000000000001', 'admin', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('13000000-0000-0000-0000-000000000001', 'vendedor', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('14000000-0000-0000-0000-000000000001', 'bodega', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('15000000-0000-0000-0000-000000000001', 'contadora', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('16000000-0000-0000-0000-000000000001', 'soporte', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb),
+  ('17000000-0000-0000-0000-000000000001', 'cliente', '["invoices:manage","invoices:read","orders:manage","inventory:manage","credit:manage","accounting:manage","audit:read"]'::jsonb)
+on conflict (name) do update set permissions = excluded.permissions;
+
+insert into public.users (id, role_id, active) values
+  ('11000000-0000-0000-0000-000000000002', '11000000-0000-0000-0000-000000000001', true),
+  ('12000000-0000-0000-0000-000000000002', '12000000-0000-0000-0000-000000000001', true),
+  ('13000000-0000-0000-0000-000000000002', '13000000-0000-0000-0000-000000000001', true),
+  ('14000000-0000-0000-0000-000000000002', '14000000-0000-0000-0000-000000000001', true),
+  ('15000000-0000-0000-0000-000000000002', '15000000-0000-0000-0000-000000000001', true),
+  ('16000000-0000-0000-0000-000000000002', '16000000-0000-0000-0000-000000000001', true),
+  ('17000000-0000-0000-0000-000000000002', '17000000-0000-0000-0000-000000000001', true)
+on conflict (id) do update set role_id = excluded.role_id, active = true;
+
 insert into public.customers (id, contact_name, business_name, phone, address)
 values (
   '10000000-0000-0000-0000-000000000003',
@@ -324,6 +344,74 @@ insert into public.order_items (
 
 set session_replication_role = origin;
 
+-- The recovery gate recognizes exactly the three authorized application roles.
+do $$
+declare
+  actor uuid;
+  denied_actor uuid;
+  expected jsonb := jsonb_build_object(
+    'order_id','ffffffff-0000-0000-0000-000000000001',
+    'order_status','entregado',
+    'customer_id','10000000-0000-0000-0000-000000000003',
+    'product_id','a0000000-0000-0000-0000-000000000003',
+    'original_movement_id','a0000000-0000-0000-0000-000000000005',
+    'original_movement_count',1,'quantity',1,'current_stock',3,
+    'receivable_id','a0000000-0000-0000-0000-000000000006',
+    'receivable_balance',115,
+    'cancellation_reason','equivocacion en codigo facturado',
+    'actor_id','13000000-0000-0000-0000-000000000002',
+    'actor_role','technical_owner'
+  );
+begin
+  foreach actor in array array[
+    '10000000-0000-0000-0000-000000000002'::uuid,
+    '11000000-0000-0000-0000-000000000002'::uuid,
+    '12000000-0000-0000-0000-000000000002'::uuid
+  ] loop
+    perform set_config('request.jwt.claim.sub', actor::text, true);
+    begin
+      perform public.cancel_sale_invoice_v1(
+        'a0000000-0000-0000-0000-000000000002',
+        'equivocacion en codigo facturado', true, expected
+      );
+      raise exception 'AUTHORIZED_RECOVERY_GATE_NOT_REACHED';
+    exception when sqlstate 'PT409' then
+      if sqlerrm <> 'SALE_REVERSAL_RECOVERY_INVOICE_MISMATCH' then raise; end if;
+    end;
+  end loop;
+
+  foreach denied_actor in array array[
+    '13000000-0000-0000-0000-000000000002'::uuid,
+    '14000000-0000-0000-0000-000000000002'::uuid,
+    '15000000-0000-0000-0000-000000000002'::uuid,
+    '16000000-0000-0000-0000-000000000002'::uuid,
+    '17000000-0000-0000-0000-000000000002'::uuid
+  ] loop
+    perform set_config('request.jwt.claim.sub', denied_actor::text, true);
+    begin
+      perform public.cancel_sale_invoice_v1(
+        'a0000000-0000-0000-0000-000000000002',
+        'equivocacion en codigo facturado', true, expected
+      );
+      raise exception 'UNAUTHORIZED_RECOVERY_WAS_ALLOWED';
+    exception when insufficient_privilege then
+      if sqlerrm <> 'SALE_REVERSAL_RECOVERY_PERMISSION_DENIED' then raise; end if;
+    end;
+  end loop;
+
+  perform set_config('request.jwt.claim.sub', '', true);
+  begin
+    perform public.cancel_sale_invoice_v1(
+      'a0000000-0000-0000-0000-000000000002',
+      'equivocacion en codigo facturado', true, expected
+    );
+    raise exception 'UNAUTHENTICATED_RECOVERY_WAS_ALLOWED';
+  exception when insufficient_privilege then
+    if sqlerrm <> 'SALE_REVERSAL_PERMISSION_DENIED' then raise; end if;
+  end;
+end;
+$$;
+
 begin;
 select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000002', true);
 select public.cancel_sale_invoice_v1(
@@ -359,7 +447,7 @@ end $$;
 
 -- Exact recovery mode: no new fiscal cancellation, same commercial reversal transaction.
 begin;
-select set_config('request.jwt.claim.sub', '10000000-0000-0000-0000-000000000002', true);
+select set_config('request.jwt.claim.sub', '12000000-0000-0000-0000-000000000002', true);
 select public.cancel_sale_invoice_v1(
   'a0000000-0000-0000-0000-000000000002',
   'equivocacion en codigo facturado',
@@ -379,7 +467,32 @@ select public.cancel_sale_invoice_v1(
 commit;
 do $$ begin
   if (select stock from public.products where id='a0000000-0000-0000-0000-000000000003') <> 4 then raise exception 'RECOVERY_STOCK_FAILED'; end if;
-  if not exists (select 1 from public.invoice_commercial_reversals where invoice_id='a0000000-0000-0000-0000-000000000002' and mode='incident_repair') then raise exception 'RECOVERY_HEADER_FAILED'; end if;
+  if not exists (select 1 from public.invoice_commercial_reversals where invoice_id='a0000000-0000-0000-0000-000000000002' and mode='incident_repair' and actor_id='12000000-0000-0000-0000-000000000002') then raise exception 'RECOVERY_HEADER_FAILED'; end if;
+end $$;
+
+-- Replaying the same authorized historical repair cannot create stock 5.
+begin;
+select set_config('request.jwt.claim.sub', '12000000-0000-0000-0000-000000000002', true);
+select public.cancel_sale_invoice_v1(
+  'a0000000-0000-0000-0000-000000000002',
+  'equivocacion en codigo facturado',
+  true,
+  jsonb_build_object(
+    'order_id','a0000000-0000-0000-0000-000000000001',
+    'order_status','entregado',
+    'customer_id','10000000-0000-0000-0000-000000000003',
+    'product_id','a0000000-0000-0000-0000-000000000003',
+    'original_movement_id','a0000000-0000-0000-0000-000000000005',
+    'original_movement_count',1,'quantity',1,'current_stock',3,
+    'receivable_id','a0000000-0000-0000-0000-000000000006',
+    'receivable_balance',115,
+    'cancellation_reason','equivocacion en codigo facturado'
+  )
+);
+commit;
+do $$ begin
+  if (select stock from public.products where id='a0000000-0000-0000-0000-000000000003') <> 4 then raise exception 'RECOVERY_REPLAY_STOCK_FAILED'; end if;
+  if (select count(*) from public.inventory_movements where reversal_of_movement_id='a0000000-0000-0000-0000-000000000005') <> 1 then raise exception 'RECOVERY_REPLAY_DUPLICATE_FAILED'; end if;
 end $$;
 
 -- Quantity three restores 7 -> 10.
@@ -495,4 +608,6 @@ select jsonb_build_object(
   'atomic_rollback', 'PASS'
   , 'reinvoice_flow', 'PASS'
   , 'existing_incident_recovery', 'PASS'
+  , 'recovery_role_matrix', 'PASS'
+  , 'recovery_replay', 'PASS'
 ) as synthetic_result;

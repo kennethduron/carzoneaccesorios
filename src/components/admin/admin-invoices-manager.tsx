@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Download, ExternalLink, Eye, FilePenLine, FileSpreadsheet, FileText, Printer } from "lucide-react";
+import { Ban, Download, ExternalLink, Eye, FilePenLine, FileSpreadsheet, FileText, Printer, RotateCcw } from "lucide-react";
 import {
   cancelInvoiceAction,
+  completeAnnulledInvoiceCommercialReversalAction,
   getInvoiceDetailAction,
   updateInvoiceCustomerDataAction,
 } from "@/app/admin/facturas/actions";
@@ -34,6 +35,7 @@ type AdminInvoicesManagerProps = {
   canCancelInvoices: boolean;
   canCorrectInvoices: boolean;
   canUseTechnicalExports: boolean;
+  pendingCommercialReversal: { invoiceId: string; cancellationReason: string } | null;
   errorMessage?: string | null;
   activeTask?: { id: string; label: string } | null;
 };
@@ -124,6 +126,7 @@ export function AdminInvoicesManager({
   canCancelInvoices,
   canCorrectInvoices,
   canUseTechnicalExports,
+  pendingCommercialReversal,
   errorMessage = null,
   activeTask = null,
 }: AdminInvoicesManagerProps) {
@@ -135,7 +138,9 @@ export function AdminInvoicesManager({
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [invoiceToCancel, setInvoiceToCancel] = useState<AdminInvoiceRow | null>(null);
   const [message, setMessage] = useState("");
+  const [commercialReversalInFlight, setCommercialReversalInFlight] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const commercialReversalSubmission = useRef(false);
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
 
@@ -261,6 +266,42 @@ export function AdminInvoicesManager({
       if (result.ok) {
         setInvoiceToCancel(null);
         router.refresh();
+      }
+    });
+  }
+
+  async function completePendingCommercialReversal(invoice: AdminInvoiceRow) {
+    if (commercialReversalSubmission.current || pendingCommercialReversal?.invoiceId !== invoice.id) {
+      return;
+    }
+
+    const confirmed = await toast.confirm({
+      title: "Completar reversión comercial pendiente",
+      message: `Esta factura ya está anulada, pero su reversión comercial quedó pendiente. Al completarla, el sistema devolverá los productos al inventario, reconciliará la venta y el pedido, ajustará la cuenta por cobrar cuando corresponda y compensará los efectos contables relacionados. Motivo registrado: “${pendingCommercialReversal.cancellationReason}”. ¿Deseas continuar?`,
+      confirmLabel: "Completar reversión comercial",
+      cancelLabel: "Volver",
+      tone: "danger",
+    });
+
+    if (!confirmed || commercialReversalSubmission.current) {
+      return;
+    }
+
+    commercialReversalSubmission.current = true;
+    setCommercialReversalInFlight(true);
+    startTransition(async () => {
+      try {
+        const result = await completeAnnulledInvoiceCommercialReversalAction(
+          invoice.id,
+          "CONFIRM_AUTO_CENTRO_EXT100_COMMERCIAL_REVERSAL",
+        );
+        showInvoiceMessage(result.message, result.ok);
+        if (result.ok) {
+          router.refresh();
+        }
+      } finally {
+        commercialReversalSubmission.current = false;
+        setCommercialReversalInFlight(false);
       }
     });
   }
@@ -495,6 +536,17 @@ export function AdminInvoicesManager({
                     Anular
                   </Button>
                 ) : null}
+                {pendingCommercialReversal?.invoiceId === invoice.id ? (
+                  <Button
+                    onClick={() => completePendingCommercialReversal(invoice)}
+                    disabled={isPending || commercialReversalInFlight}
+                    variant="ghost"
+                    className="mt-2 w-full justify-center border border-[#e4252c]/25 bg-[#fff1f2] text-[#9f1239]"
+                  >
+                    <RotateCcw size={16} />
+                    Completar reversión comercial
+                  </Button>
+                ) : null}
               </article>
             ))
           )}
@@ -561,6 +613,17 @@ export function AdminInvoicesManager({
                           >
                             <Ban size={16} />
                           </IconButton>
+                        ) : null}
+                        {pendingCommercialReversal?.invoiceId === invoice.id ? (
+                          <Button
+                            onClick={() => completePendingCommercialReversal(invoice)}
+                            disabled={isPending || commercialReversalInFlight}
+                            variant="ghost"
+                            className="whitespace-nowrap border border-[#e4252c]/25 bg-[#fff1f2] text-[#9f1239]"
+                          >
+                            <RotateCcw size={16} />
+                            Completar reversión comercial
+                          </Button>
                         ) : null}
                       </div>
                     </td>
