@@ -421,7 +421,7 @@ async function getAdminReportsAttempt(input: ReportFilters, attempt: number): Pr
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      invoices(id, invoice_number, invoice_date, issued_at, status, cancelled_at),
+      invoices!invoices_order_id_fkey(id, invoice_number, invoice_date, issued_at, status, cancelled_at),
       payments(payment_status, status),
       customers(tax_id, business_name, email, is_wholesale)
       `,

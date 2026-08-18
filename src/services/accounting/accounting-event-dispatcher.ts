@@ -179,7 +179,7 @@ async function buildOrderCandidate(input: DispatchAccountingEventInput): Promise
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("orders")
-    .select("id, order_number, customer_id, customer_name, payment_method, subtotal, tax, shipping_fee, shipping_total, cash_on_delivery_fee, small_order_fee, discount_total, total, status, created_at, updated_at, invoices(invoice_number, status)")
+    .select("id, order_number, customer_id, customer_name, payment_method, subtotal, tax, shipping_fee, shipping_total, cash_on_delivery_fee, small_order_fee, discount_total, total, status, created_at, updated_at, invoices!invoices_order_id_fkey(invoice_number, status)")
     .eq("id", input.sourceId)
     .maybeSingle<OrderEventRow>();
 

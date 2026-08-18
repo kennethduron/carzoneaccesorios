@@ -868,7 +868,7 @@ export async function generateInvoiceFromOrderAction(orderId: string, requestKey
   const supabase = await getSupabaseServerClient();
   const { data: order, error: orderError } = await supabase
     .from("orders")
-    .select("id, status, payment_method, payment_timing, delivery_mode, cash_on_delivery_fee, order_reservation_status, payments(payment_status, status), invoices(id, invoice_number, status)")
+    .select("id, status, payment_method, payment_timing, delivery_mode, cash_on_delivery_fee, order_reservation_status, payments(payment_status, status), invoices!invoices_order_id_fkey(id, invoice_number, status)")
     .eq("id", orderId)
     .maybeSingle<{
       id: string;
@@ -1003,7 +1003,7 @@ export async function updateCashOnDeliveryFeeAction(orderId: string, rawFee: num
       small_order_fee,
       discount_total,
       additional_fees,
-      invoices(id, invoice_number, status)
+      invoices!invoices_order_id_fkey(id, invoice_number, status)
     `,
     )
     .eq("id", orderId)
@@ -1103,7 +1103,7 @@ export async function correctOrderFiscalCustomerDataAction(input: {
       fiscal_customer_phone,
       fiscal_customer_email,
       fiscal_customer_address,
-      invoices(id, invoice_number, status)
+      invoices!invoices_order_id_fkey(id, invoice_number, status)
     `,
     )
     .eq("id", input.orderId)

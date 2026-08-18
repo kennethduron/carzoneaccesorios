@@ -310,7 +310,7 @@ export async function getAdminOrdersPage({
       ),
       ${paymentRelation}(id, payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id),
       order_internal_notes(id, note, actor_role, created_at),
-      invoices(id, invoice_number, invoice_date, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
+      invoices!invoices_order_id_fkey(id, invoice_number, invoice_date, issued_at, status, cancelled_at, cancellation_reason, customer_name, customer_rtn, customer_phone, customer_email, customer_address),
       accounts_receivable(id, status, due_date, balance_due, paid_at, payment_received_method, payment_received_reference, payment_recorded_by),
       customers(tax_id)
     `,

@@ -1026,7 +1026,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     async () =>
       admin
         .from("orders")
-        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+        .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices!invoices_order_id_fkey(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
         .in("customer_id", familyIds)
         .order("created_at", { ascending: false })
         .limit(30)
@@ -1038,7 +1038,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices!invoices_order_id_fkey(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .eq("user_id", customerRow.user_id)
           .order("created_at", { ascending: false })
           .limit(30)
@@ -1051,7 +1051,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
       async () =>
         admin
           .from("orders")
-          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
+          .select("id, order_number, tracking_code, customer_id, user_id, email, created_at, status, payment_method, payment_timing, price_mode, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, invoices!invoices_order_id_fkey(invoice_number, status), payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url, transfer_receipt_public_id)")
           .ilike("email", normalizedEmail)
           .is("user_id", null)
           .order("created_at", { ascending: false })

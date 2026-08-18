@@ -523,7 +523,7 @@ export async function getCustomerOrdersPage(
       ),
       payments(payment_status, status, bank_reference_number, reference, transfer_receipt_url),
       accounts_receivable(id, status, due_date, balance_due, paid_at, payment_received_method, payment_received_reference, payment_recorded_by),
-      invoices(
+      invoices!invoices_order_id_fkey(
         id,
         invoice_number,
         status,
