@@ -13,6 +13,7 @@ type InventoryMovementEventRow = {
   reference_type: string | null;
   reference_id: string | null;
   order_item_id: string | null;
+  reversal_of_movement_id: string | null;
   unit_cost_snapshot: unknown;
   total_cost_snapshot: unknown;
   cost_source: string | null;
@@ -148,6 +149,7 @@ export async function getInventoryFinancialEventCandidates(): Promise<FinancialE
       reference_type,
       reference_id,
       order_item_id,
+      reversal_of_movement_id,
       unit_cost_snapshot,
       total_cost_snapshot,
       cost_source,
@@ -165,7 +167,9 @@ export async function getInventoryFinancialEventCandidates(): Promise<FinancialE
     throw new Error(error.message);
   }
 
-  const rows = (data ?? []).filter((row) => !isReservationOnlyMovement(row));
+  const rows = (data ?? []).filter((row) =>
+    !isReservationOnlyMovement(row) && !row.reversal_of_movement_id
+  );
   const orderIds = [...new Set(rows.map(orderIdForMovement).filter((id): id is string => Boolean(id)))];
   const orderStatusById = new Map<string, string | null>();
 

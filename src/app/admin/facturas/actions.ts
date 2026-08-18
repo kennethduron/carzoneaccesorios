@@ -5,7 +5,6 @@ import { headers } from "next/headers";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
-import { dispatchAccountingEvent } from "@/services/accounting/accounting-event-dispatcher";
 import { getAdminInvoiceDetail } from "@/services/supabase/admin-invoices.service";
 
 function normalizeOptionalRtn(value: string) {
@@ -52,7 +51,7 @@ export async function getInvoiceDetailAction(invoiceId: string) {
 }
 
 export async function cancelInvoiceAction(invoiceId: string, cancellationReason: string) {
-  const profile = await requirePermission("invoices:manage");
+  await requirePermission("invoices:manage");
   const reason = cancellationReason.trim();
 
   if (reason.length < 8) {
@@ -60,22 +59,26 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
   }
 
   const supabase = await getSupabaseServerClient();
-  const { error } = await supabase.rpc("cancel_fiscal_invoice", {
-    target_invoice_id: invoiceId,
-    cancellation_reason: reason,
+  const { data, error } = await supabase.rpc("cancel_sale_invoice_v1", {
+    p_invoice_id: invoiceId,
+    p_reason: reason,
+    p_recovery_mode: false,
+    p_recovery_expected: null,
   });
 
   if (error) {
-    return { ok: false, message: error.message };
+    const messages: Record<string, string> = {
+      SALE_REVERSAL_PERMISSION_DENIED: "No tienes todos los permisos requeridos para revertir la venta.",
+      SALE_REVERSAL_INVOICE_NOT_ELIGIBLE: "La factura no está en un estado permitido para anulación.",
+      SALE_REVERSAL_REQUIRES_PAYMENT_REFUND: "La venta tiene un pago aplicado. Debe completarse primero el proceso autorizado de devolución del dinero.",
+      SALE_REVERSAL_REQUIRES_RECEIVABLE_REFUND: "La cuenta por cobrar tiene pagos o un saldo parcial. Debe completarse primero el proceso autorizado de devolución.",
+      SALE_REVERSAL_UNLINKED_RETURN_EXISTS: "Ya existe una devolución no vinculada que requiere revisión antes de anular la venta.",
+      SALE_REVERSAL_ORIGINAL_MOVEMENTS_MISSING: "No se encontraron los movimientos originales necesarios para devolver el inventario.",
+      SALE_REVERSAL_MOVEMENT_ALREADY_REVERSED: "El inventario de esta venta ya fue revertido.",
+      SALE_REVERSAL_ORDER_ALREADY_CANCELLED: "La venta ya está cancelada o revertida.",
+    };
+    return { ok: false, message: messages[error.message] ?? "No se pudo anular y revertir la venta de forma completa. Ningún cambio fue aplicado." };
   }
-
-  const accountingResult = await dispatchAccountingEvent({
-    sourceType: "invoice",
-    sourceId: invoiceId,
-    eventPurpose: "invoice_cancelled",
-    triggeredBy: profile.id,
-    route: "/admin/facturas",
-  });
 
   revalidatePath("/admin/facturas");
   revalidatePath("/admin/pedidos");
@@ -86,8 +89,13 @@ export async function cancelInvoiceAction(invoiceId: string, cancellationReason:
   revalidatePath("/mis-pedidos");
   revalidatePath("/cuenta");
   revalidatePath("/rastreo");
-  const accountingWarning = accountingResult.ok ? "" : " Advertencia: no se pudo registrar el evento contable.";
-  return { ok: true, message: "Factura anulada correctamente." + accountingWarning };
+  const status = (data as { status?: string } | null)?.status;
+  return {
+    ok: true,
+    message: status === "ALREADY_REVERSED"
+      ? "La factura y la venta ya estaban revertidas; no se duplicó ningún efecto."
+      : "Factura anulada y venta revertida correctamente. El inventario, el pedido, la cuenta por cobrar y la contabilidad quedaron reconciliados.",
+  };
 }
 
 export async function updateInvoiceCustomerDataAction(input: {

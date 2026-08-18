@@ -244,9 +244,9 @@ export function AdminInvoicesManager({
 
   async function cancelInvoiceWithReason(invoice: AdminInvoiceRow, cancellationReason: string) {
     const confirmed = await toast.confirm({
-      title: "Confirmar anulación",
-      message: "Esta acción será definitiva y quedará registrada en auditoría. ¿Confirmas que deseas anular esta factura?",
-      confirmLabel: "Confirmar anulación",
+      title: "Confirmar anulación y reversión",
+      message: "Se anulará el documento fiscal y se revertirá la venta elegible: los productos volverán al inventario, el pedido quedará cancelado, la CxC abierta se conciliará y se compensará la contabilidad. ¿Deseas continuar?",
+      confirmLabel: "Anular y revertir venta",
       cancelLabel: "Volver",
       tone: "danger",
     });
@@ -917,14 +917,16 @@ function CancelInvoiceModal({
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
       <section className="mx-auto my-4 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
-          <p className="text-sm font-semibold text-[#9b341b]">Anular factura</p>
+          <p className="text-sm font-semibold text-[#9b341b]">Anular factura y revertir venta</p>
           <h2 className="mt-1 text-2xl font-semibold">{invoice.invoice_number}</h2>
           <p className="mt-2 text-sm text-black/60">
-            Esta acción queda auditada y requiere motivo formal. No elimina la factura ni libera el correlativo fiscal.
+            Esta operación queda auditada, requiere un motivo formal y no elimina la factura ni libera el correlativo fiscal.
           </p>
         </div>
         <p className="mt-4 rounded-md bg-[#fff7ed] p-3 text-sm font-medium text-[#7c2d12]">
-          Esta acción será definitiva y quedará registrada en auditoría.
+          <span className="block font-semibold">Impacto de la operación:</span>
+          <span className="mt-1 block">Los productos regresarán al inventario, el pedido se marcará como cancelado, la CxC abierta se anulará y los efectos contables se compensarán.</span>
+          <span className="mt-1 block">Las ventas con pagos parciales o completos se rechazarán hasta completar el proceso autorizado de devolución de dinero.</span>
         </p>
         <label className="mt-4 block">
           <span className="mb-1 block text-xs font-medium uppercase text-black/50">Motivo de anulación</span>
@@ -938,7 +940,7 @@ function CancelInvoiceModal({
           <Button onClick={onClose} variant="ghost">Cerrar</Button>
           <Button onClick={() => onCancel(invoice, reason)} disabled={isPending || !canSubmit} variant="secondary">
             <Ban size={16} />
-            Anular factura
+            {isPending ? "Revirtiendo..." : "Anular y revertir venta"}
           </Button>
         </div>
       </section>
