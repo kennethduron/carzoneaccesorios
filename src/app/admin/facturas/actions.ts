@@ -187,7 +187,7 @@ export async function completeAnnulledInvoiceCommercialReversalAction(
     order_status?: string;
     reversal_movement_ids?: string[];
     receivable_effect?: string;
-    accounting_effects?: unknown[];
+    accounting_effects?: Array<{ event_purpose?: string; status?: string }>;
   } | null;
 
   const [product, invoice, order, receivable, inverseMovements, reversalAudit] = await Promise.all([
@@ -206,6 +206,16 @@ export async function completeAnnulledInvoiceCommercialReversalAction(
   const verificationFailed = [product, invoice, order, receivable, inverseMovements, reversalAudit]
     .some((query) => query.error);
   const inverse = inverseMovements.data ?? [];
+  const expectedAccountingPurposes = new Set(["sale_recognized", "inventory_cogs"]);
+  const accountingEffectsVerified = (effects: Array<{ event_purpose?: string; status?: string }>) =>
+    effects.length === 2
+      && effects.every((effect) => effect.status === "cancelled")
+      && new Set(effects.map((effect) => effect.event_purpose)).size === 2
+      && effects.every((effect) => expectedAccountingPurposes.has(effect.event_purpose ?? ""));
+  const storedAccountingEffects = Array.isArray(reversalAudit.data?.accounting_effects)
+    ? reversalAudit.data.accounting_effects as Array<{ event_purpose?: string; status?: string }>
+    : [];
+  const resultAccountingEffects = result?.accounting_effects ?? [];
   const verified = !verificationFailed
     && product.data?.stock === 4
     && ["anulada", "cancelled"].includes(invoice.data?.status ?? "")
@@ -220,13 +230,13 @@ export async function completeAnnulledInvoiceCommercialReversalAction(
     && reversalAudit.data?.mode === "incident_repair"
     && (reversalAudit.data?.reversal_movement_ids?.length ?? 0) === 1
     && reversalAudit.data?.receivable_effect === "cancelled_unpaid"
-    && (reversalAudit.data?.accounting_effects?.length ?? 0) >= 4
+    && accountingEffectsVerified(storedAccountingEffects)
     && ["REVERSED", "ALREADY_REVERSED"].includes(result?.status ?? "")
     && result?.invoice_status === "anulada"
     && result?.order_status === "cancelado"
     && result?.receivable_effect === "cancelled_unpaid"
     && (result?.reversal_movement_ids?.length ?? 0) === 1
-    && (result?.accounting_effects?.length ?? 0) >= 4;
+    && accountingEffectsVerified(resultAccountingEffects);
 
   revalidateCommercialReversalPaths();
   if (!verified) {
