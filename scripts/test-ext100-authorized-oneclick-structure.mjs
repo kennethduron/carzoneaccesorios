@@ -3,12 +3,17 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const [action, incident, page, ui, migration] = await Promise.all([
+const [action, incident, page, ui, migration, invoiceService, invoiceDispatcher, invoiceAdapter, crmService, customerAccount] = await Promise.all([
   read("src/app/admin/facturas/actions.ts"),
   read("src/lib/incidents/auto-centro-ext100-commercial-reversal.ts"),
   read("src/app/admin/facturas/page.tsx"),
   read("src/components/admin/admin-invoices-manager.tsx"),
   read("supabase/migrations/202608170002_full_invoice_reversal_admin_recovery.sql"),
+  read("src/services/supabase/admin-invoices.service.ts"),
+  read("src/services/accounting/accounting-event-dispatcher.ts"),
+  read("src/services/accounting/adapters/invoice-financial-events.ts"),
+  read("src/services/supabase/admin-crm.service.ts"),
+  read("src/services/supabase/customer-account.service.ts"),
 ]);
 
 for (const role of ["technical_owner", "business_owner", "admin"]) {
@@ -47,6 +52,17 @@ assert.ok(ui.includes('className="mt-2 w-full justify-center'));
 assert.ok(migration.includes("occurrence_count <> 1"));
 assert.ok(migration.includes("pg_get_functiondef"));
 assert.equal(/\b(insert|update|delete|truncate)\b\s+(into\s+|from\s+)?public\./i.test(migration), false);
+
+for (const [label, source] of [
+  ["admin invoices", invoiceService],
+  ["invoice dispatcher", invoiceDispatcher],
+  ["invoice adapter", invoiceAdapter],
+  ["CRM invoices", crmService],
+  ["customer invoices", customerAccount],
+]) {
+  assert.equal(/\.from\("invoices"\)[\s\S]{0,1800}?orders\(/.test(source), false, `${label} has an ambiguous invoices-to-orders embed`);
+}
+assert.ok(invoiceService.includes("orders!invoices_order_id_fkey("));
 
 console.log("EXT-100 authenticated one-click bridge structural contracts: PASS", {
   normalSessionOnly: true,

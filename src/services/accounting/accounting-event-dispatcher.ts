@@ -230,7 +230,7 @@ async function buildInvoiceCandidate(input: DispatchAccountingEventInput): Promi
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin
     .from("invoices")
-    .select("id, invoice_number, order_id, customer_id, customer_name, status, subtotal, tax, total, invoice_date, issued_at, cancelled_at, created_at, updated_at, orders(order_number, customer_name, payment_method)")
+    .select("id, invoice_number, order_id, customer_id, customer_name, status, subtotal, tax, total, invoice_date, issued_at, cancelled_at, created_at, updated_at, orders!invoices_order_id_fkey(order_number, customer_name, payment_method)")
     .eq("id", input.sourceId)
     .maybeSingle<InvoiceEventRow>();
 

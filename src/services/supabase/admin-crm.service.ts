@@ -1074,7 +1074,7 @@ export async function getAdminCustomerProfile(customerId: string): Promise<CrmCu
     Promise.all(orderQueries.map((query) => query())),
     admin
       .from("invoices")
-      .select("id, invoice_number, order_id, customer_id, status, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, issued_at, created_at, orders(order_number)")
+      .select("id, invoice_number, order_id, customer_id, status, subtotal, tax, shipping_fee, cash_on_delivery_fee, small_order_fee, discount_total, additional_fees, total, issued_at, created_at, orders!invoices_order_id_fkey(order_number)")
       .in("customer_id", familyIds)
       .order("created_at", { ascending: false })
       .limit(30)

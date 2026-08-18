@@ -655,7 +655,7 @@ export async function getCustomerIssuedInvoicesPage(
       issued_at,
       cancelled_at,
       created_at,
-      orders(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
+      orders!invoices_order_id_fkey(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
       invoice_items(
         id,
         sku,
@@ -741,7 +741,7 @@ export async function getCustomerInvoiceDetail(userId: string, invoiceId: string
       issued_at,
       cancelled_at,
       created_at,
-      orders(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
+      orders!invoices_order_id_fkey(order_number, customer_name, fiscal_customer_city, fiscal_customer_business_name, payment_method, payments(bank_reference_number, reference)),
       invoice_items(
         id,
         sku,

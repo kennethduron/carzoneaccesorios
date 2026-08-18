@@ -229,7 +229,7 @@ export async function getAdminInvoicesPage({
       cancelled_by,
       cancellation_reason,
       created_at,
-      orders(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method)
+      orders!invoices_order_id_fkey(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method)
       `,
       { count: "exact" },
     );
@@ -337,7 +337,7 @@ export async function getAdminInvoiceDetail(
       fiscal_range_end,
       cai_authorization_date,
       created_at,
-      orders(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method),
+      orders!invoices_order_id_fkey(order_number, customer_name, phone, delivery_address, fiscal_customer_city, fiscal_customer_business_name, payment_method),
       invoice_items(
         id,
         sku,
