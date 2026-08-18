@@ -42,6 +42,7 @@ assert.ok(adminOrders.includes("invoices!invoices_order_id_fkey(id, invoice_numb
 
 const adminReports = sources.get("admin reports");
 assert.ok(adminReports.includes("invoices!invoices_order_id_fkey(id, invoice_number, invoice_date, issued_at, status, cancelled_at)"));
+assert.equal(adminReports.split("orders!invoices_order_id_fkey(").length - 1, 2);
 
 const migration = await read("supabase/migrations/202608170001_full_invoice_commercial_reversal.sql");
 assert.ok(migration.includes("commercial_reversal_invoice_id uuid"));
@@ -49,15 +50,18 @@ assert.ok(migration.includes("references public.invoices(id) on delete restrict"
 assert.ok(migration.includes("commercial_reversal_invoice_id = invoice_row.id"));
 
 const invoiceRootFiles = [
+  ...Object.values(affectedFiles).map(([path]) => path),
   "src/services/supabase/admin-invoices.service.ts",
   "src/services/accounting/adapters/invoice-financial-events.ts",
 ];
-for (const path of invoiceRootFiles) {
+for (const path of new Set(invoiceRootFiles)) {
   const source = await read(path);
-  assert.ok(source.includes("orders!invoices_order_id_fkey("), `${path}: invoice-root order embed regressed`);
   const invoiceQueries = [...source.matchAll(/\.from\("invoices"\)([\s\S]*?);/g)].map((match) => match[1]);
   for (const query of invoiceQueries) {
     assert.equal(/\borders\s*\(/.test(query), false, `${path}: ambiguous invoice-root orders embed`);
+    if (/\borders(?:!\w+)?\s*\(/.test(query)) {
+      assert.ok(query.includes("orders!invoices_order_id_fkey("), `${path}: wrong invoice-root order relationship`);
+    }
   }
 }
 

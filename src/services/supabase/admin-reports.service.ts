@@ -498,7 +498,7 @@ async function getAdminReportsAttempt(input: ReportFilters, attempt: number): Pr
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      orders(order_number, payment_method, customers(business_name))
+      orders!invoices_order_id_fkey(order_number, payment_method, customers(business_name))
       `,
       { count: "exact" },
     );
@@ -812,7 +812,7 @@ async function getAdminFiscalReportsAttempt(input: ReportFilters, attempt: numbe
         retail_price_snapshot,
         wholesale_price_snapshot
       ),
-      orders(order_number, payment_method, customers(business_name))
+      orders!invoices_order_id_fkey(order_number, payment_method, customers(business_name))
       `,
       { count: "exact" },
     );
