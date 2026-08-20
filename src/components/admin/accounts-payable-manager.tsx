@@ -9,6 +9,7 @@ import { Ban, CheckCircle2, Edit3, PlusCircle, ReceiptText, Search, X } from "lu
 import {
   cancelAccountsPayableAction,
   cancelSupplierInvoiceAction,
+  completeManualAccountsPayableRecognitionAction,
   receiveSupplierInvoiceAction,
   registerSupplierPaymentAction,
   registerSupplierCreditAction,
@@ -20,6 +21,7 @@ import {
   type SupplierPaymentFormInput,
   type SupplierCreditFormInput,
 } from "@/app/admin/cuentas-por-pagar/actions";
+import { AccountingAccountCombobox } from "@/components/admin/accounting-account-combobox";
 import { SupplierMultiPaymentWizard } from "@/components/admin/supplier-multi-payment-wizard";
 import {
   createSupplierPaymentSelectionRequest,
@@ -30,6 +32,7 @@ import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import type { SupplierMultiPaymentConfig, SupplierMultiPaymentHistoryItem } from "@/services/supabase/supplier-multi-payment.service";
 import type { AdminAccountsPayable, AdminSupplierCredit, AdminSupplierInvoice, PayablesSummary, SupplierOption } from "@/types/purchases";
+import type { AccountingAccountSearchResult } from "@/types/admin-search";
 import { formatCurrency } from "@/utils/pricing";
 import { todayCivilDate } from "@/lib/civil-date";
 
@@ -54,8 +57,36 @@ function emptyInvoiceDraft(): InvoiceDraft {
 }
 
 function emptyPayableDraft(): PayableDraft {
-  return { supplier_id: "", purchase_id: "", supplier_invoice_id: "", total_amount: 0, due_date: "", currency: "HNL", notes: "" };
+  return {
+    supplier_id: "",
+    purchase_id: "",
+    supplier_invoice_id: "",
+    total_amount: 0,
+    due_date: "",
+    currency: "HNL",
+    notes: "",
+    recognition_mode: null,
+    accounting_date: todayValue(),
+    debit_account_id: "",
+    concept: "",
+    source_reference: "",
+    subtotal: 0,
+    tax_amount: 0,
+    discount_amount: 0,
+    request_key: globalThis.crypto.randomUUID(),
+  };
 }
+
+type RecognitionCompletionDraft = {
+  payable: AdminAccountsPayable;
+  accountingDate: string;
+  concept: string;
+  sourceReference: string;
+  subtotal: number | string;
+  taxAmount: number | string;
+  discountAmount: number | string;
+  requestKey: string;
+};
 
 function emptyPaymentDraft(): PaymentDraft {
   return {
@@ -104,6 +135,7 @@ export function AccountsPayableManager({
   purchases,
   summary,
   canManage,
+  canRecognize,
   multiPaymentConfig,
   multiPaymentHistory,
   initialPurchaseId,
@@ -115,6 +147,7 @@ export function AccountsPayableManager({
   purchases: PurchaseOption[];
   summary: PayablesSummary;
   canManage: boolean;
+  canRecognize: boolean;
   multiPaymentConfig: SupplierMultiPaymentConfig;
   multiPaymentHistory: SupplierMultiPaymentHistoryItem[];
   initialPurchaseId: string | null;
@@ -128,6 +161,9 @@ export function AccountsPayableManager({
   const [tab, setTab] = useState<"payables" | "invoices" | "credits">("payables");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceDraft>(emptyInvoiceDraft());
   const [payableDraft, setPayableDraft] = useState<PayableDraft>(emptyPayableDraft());
+  const [payableDebitAccount, setPayableDebitAccount] = useState<AccountingAccountSearchResult | null>(null);
+  const [recognitionDraft, setRecognitionDraft] = useState<RecognitionCompletionDraft | null>(null);
+  const [recognitionDebitAccount, setRecognitionDebitAccount] = useState<AccountingAccountSearchResult | null>(null);
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>(emptyPaymentDraft());
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardSelectionRequest, setWizardSelectionRequest] =
@@ -218,12 +254,14 @@ export function AccountsPayableManager({
 
   function editPayable(payable: AdminAccountsPayable) {
     setTab("payables");
-    setPayableDraft({ id: payable.id, supplier_id: payable.supplier_id, purchase_id: payable.purchase_id ?? "", supplier_invoice_id: payable.supplier_invoice_id ?? "", total_amount: payable.total_amount, due_date: payable.due_date ?? "", currency: payable.currency, notes: payable.notes ?? "" });
+    setPayableDraft({ ...emptyPayableDraft(), id: payable.id, supplier_id: payable.supplier_id, purchase_id: payable.purchase_id ?? "", supplier_invoice_id: payable.supplier_invoice_id ?? "", total_amount: payable.total_amount, due_date: payable.due_date ?? "", currency: payable.currency, notes: payable.notes ?? "" });
+    setPayableDebitAccount(null);
   }
 
   function createPayableFromInvoice(invoice: AdminSupplierInvoice) {
     setTab("payables");
-    setPayableDraft({ supplier_id: invoice.supplier_id, purchase_id: invoice.purchase_id ?? "", supplier_invoice_id: invoice.id, total_amount: invoice.total, due_date: invoice.due_date ?? "", currency: invoice.currency, notes: "" });
+    setPayableDraft({ ...emptyPayableDraft(), supplier_id: invoice.supplier_id, purchase_id: invoice.purchase_id ?? "", supplier_invoice_id: invoice.id, total_amount: invoice.total, due_date: invoice.due_date ?? "", currency: invoice.currency, notes: "" });
+    setPayableDebitAccount(null);
   }
 
   function selectInvoiceForPayable(invoiceId: string) {
@@ -257,6 +295,12 @@ export function AccountsPayableManager({
   }
 
   function selectPayableForPayment(payable: AdminAccountsPayable) {
+    if (["pending_accounting_recognition", "draft_pending_publication", "blocked"].includes(payable.recognition_state)) {
+      toast.warning(payable.recognition_state === "draft_pending_publication"
+        ? "El reconocimiento contable está pendiente de publicar."
+        : "Complete el reconocimiento contable antes de incluir esta obligación en un pago.");
+      return;
+    }
     if (multiPaymentConfig.enabled) {
       if (
         payable.balance <= 0 ||
@@ -296,6 +340,44 @@ export function AccountsPayableManager({
     });
   }
 
+  function openRecognition(payable: AdminAccountsPayable) {
+    setRecognitionDebitAccount(null);
+    setRecognitionDraft({
+      payable,
+      accountingDate: todayValue(),
+      concept: payable.notes ?? "",
+      sourceReference: "",
+      subtotal: 0,
+      taxAmount: 0,
+      discountAmount: 0,
+      requestKey: globalThis.crypto.randomUUID(),
+    });
+  }
+
+  function completeRecognition() {
+    if (!recognitionDraft || !recognitionDebitAccount) {
+      toast.error("Selecciona una cuenta contable de débito.");
+      return;
+    }
+    runAction(
+      completeManualAccountsPayableRecognitionAction({
+        accounts_payable_id: recognitionDraft.payable.id,
+        accounting_date: recognitionDraft.accountingDate,
+        debit_account_id: recognitionDebitAccount.id,
+        concept: recognitionDraft.concept,
+        source_reference: recognitionDraft.sourceReference,
+        subtotal: recognitionDraft.subtotal,
+        tax_amount: recognitionDraft.taxAmount,
+        discount_amount: recognitionDraft.discountAmount,
+        request_key: recognitionDraft.requestKey,
+      }),
+      () => {
+        setRecognitionDraft(null);
+        setRecognitionDebitAccount(null);
+      },
+    );
+  }
+
   function changeWizardOpen(nextOpen: boolean) {
     wizardOpenRef.current = nextOpen;
     setWizardOpen(nextOpen);
@@ -325,6 +407,13 @@ export function AccountsPayableManager({
       supplier_invoice_id: payable?.supplier_invoice_id ?? creditDraft.supplier_invoice_id,
       amount: payable ? payable.balance.toFixed(2) : creditDraft.amount,
     });
+  }
+
+  const standaloneManualMode = !payableDraft.id && !payableDraft.purchase_id && !payableDraft.supplier_invoice_id;
+
+  function resetPayableForm() {
+    setPayableDraft(emptyPayableDraft());
+    setPayableDebitAccount(null);
   }
 
   return (
@@ -357,7 +446,7 @@ export function AccountsPayableManager({
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
           <div className="min-w-0 space-y-4">
             {tab === "payables" ? (
-              <PayablesTable payables={visiblePayables} canManage={canManage} isPending={isPending} onEdit={editPayable} onPay={selectPayableForPayment} onCancel={(payable) => runAction(cancelAccountsPayableAction(payable.id))} onVoid={voidPayment} />
+              <RecognitionAwarePayablesTable payables={visiblePayables} canManage={canManage} canRecognize={canRecognize} isPending={isPending} onEdit={editPayable} onPay={selectPayableForPayment} onRecognize={openRecognition} onCancel={(payable) => runAction(cancelAccountsPayableAction(payable.id))} onVoid={voidPayment} />
             ) : tab === "invoices" ? (
               <InvoicesTable invoices={visibleInvoices} canManage={canManage} isPending={isPending} onEdit={editInvoice} onCreatePayable={createPayableFromInvoice} onReceive={(invoice) => runAction(receiveSupplierInvoiceAction(invoice.id))} onCancel={(invoice) => runAction(cancelSupplierInvoiceAction(invoice.id))} />
             ) : (
@@ -377,18 +466,41 @@ export function AccountsPayableManager({
               <Button type="button" onClick={() => runAction(saveSupplierInvoiceAction(invoiceDraft), () => setInvoiceDraft(emptyInvoiceDraft()))} disabled={!canManage || isPending}><ReceiptText size={16} />Guardar factura</Button>
             </FormPanel>
 
-            <FormPanel title={payableDraft.id ? "Editar cuenta por pagar" : "Crear cuenta por pagar"} onReset={() => setPayableDraft(emptyPayableDraft())} showReset={Boolean(payableDraft.id)}>
+            <FormPanel title={payableDraft.id ? "Editar cuenta por pagar" : "Crear cuenta por pagar"} onReset={resetPayableForm} showReset={Boolean(payableDraft.id)}>
               <Field label="Factura opcional"><select value={payableDraft.supplier_invoice_id ?? ""} onChange={(event) => selectInvoiceForPayable(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Sin factura</option>{payableInvoiceOptions.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} - {invoice.supplier_name}</option>)}</select></Field>
               <Field label="Proveedor"><select value={payableDraft.supplier_id} onChange={(event) => selectSupplierForPayable(event.target.value)} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}</select></Field>
               <Field label="Compra opcional"><select value={payableDraft.purchase_id ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, purchase_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending || !payableDraft.supplier_id}><option value="">Sin compra</option>{payablePurchaseOptions.map((purchase) => <option key={purchase.id} value={purchase.id}>{purchase.purchase_number}</option>)}</select>{payableDraft.supplier_id && payablePurchaseOptions.length === 0 ? <span className="text-xs font-normal text-black/50">Este proveedor no tiene compras compatibles.</span> : null}</Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Total"><Input type="number" min="0.01" step="0.01" value={payableDraft.total_amount} onChange={(event) => setPayableDraft({ ...payableDraft, total_amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Vencimiento"><Input type="date" value={payableDraft.due_date ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, due_date: event.target.value })} disabled={!canManage || isPending} /></Field></div>
               <Field label="Notas"><textarea value={payableDraft.notes ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
-              <Button type="button" onClick={() => runAction(saveAccountsPayableAction(payableDraft), () => setPayableDraft(emptyPayableDraft()))} disabled={!canManage || isPending}><PlusCircle size={16} />Guardar cuenta</Button>
+              {standaloneManualMode ? (
+                <div className="space-y-3 rounded-lg border border-black/10 bg-[#fafafa] p-3">
+                  <div>
+                    <p className="text-sm font-semibold">Reconocimiento contable manual</p>
+                    <p className="mt-1 text-xs leading-5 text-black/55">Complete la clasificación ahora o guarde explícitamente la obligación como pendiente. Una obligación pendiente no podrá pagarse.</p>
+                  </div>
+                  <Field label="Fecha contable"><Input type="date" value={payableDraft.accounting_date ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, accounting_date: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                  <AccountingAccountCombobox value={payableDebitAccount?.id ?? ""} selectedOption={payableDebitAccount} onChange={(account) => { setPayableDebitAccount(account); setPayableDraft({ ...payableDraft, debit_account_id: account?.id ?? "" }); }} disabled={!canRecognize || isPending} label="Cuenta de débito" manualPayableDebitOnly />
+                  <Field label="Concepto contable"><Input value={payableDraft.concept ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, concept: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                  <Field label="Referencia de respaldo"><Input value={payableDraft.source_reference ?? ""} onChange={(event) => setPayableDraft({ ...payableDraft, source_reference: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <Field label="Subtotal"><Input type="number" min="0" step="0.01" value={payableDraft.subtotal ?? 0} onChange={(event) => setPayableDraft({ ...payableDraft, subtotal: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                    <Field label="Impuesto"><Input type="number" min="0" step="0.01" value={payableDraft.tax_amount ?? 0} onChange={(event) => setPayableDraft({ ...payableDraft, tax_amount: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                    <Field label="Descuento"><Input type="number" min="0" step="0.01" value={payableDraft.discount_amount ?? 0} onChange={(event) => setPayableDraft({ ...payableDraft, discount_amount: event.target.value })} disabled={!canRecognize || isPending} /></Field>
+                  </div>
+                  <p className="text-xs text-black/55">Desglose: {formatCurrency(Number(payableDraft.subtotal ?? 0) + Number(payableDraft.tax_amount ?? 0) - Number(payableDraft.discount_amount ?? 0))} · Obligación: {formatCurrency(Number(payableDraft.total_amount ?? 0))}</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Button type="button" variant="ghost" onClick={() => runAction(saveAccountsPayableAction({ ...payableDraft, recognition_mode: "pending", debit_account_id: null }), resetPayableForm)} disabled={!canManage || isPending}><PlusCircle size={16} />Guardar como pendiente</Button>
+                    <Button type="button" onClick={() => runAction(saveAccountsPayableAction({ ...payableDraft, recognition_mode: "complete", debit_account_id: payableDebitAccount?.id ?? "" }), resetPayableForm)} disabled={!canRecognize || isPending}><CheckCircle2 size={16} />Crear con reconocimiento</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button type="button" onClick={() => runAction(saveAccountsPayableAction(payableDraft), resetPayableForm)} disabled={!canManage || isPending}><PlusCircle size={16} />Guardar cuenta</Button>
+              )}
             </FormPanel>
 
             {!multiPaymentConfig.enabled ? (
             <FormPanel title="Registrar pago a proveedor">
-              <Field label="Cuenta por pagar"><select value={paymentDraft.accounts_payable_id} onChange={(event) => setPaymentDraft({ ...paymentDraft, accounts_payable_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>
+              <Field label="Cuenta por pagar"><select value={paymentDraft.accounts_payable_id} onChange={(event) => setPaymentDraft({ ...paymentDraft, accounts_payable_id: event.target.value })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option>{payables.filter((payable) => payable.balance > 0 && !["paid", "cancelled"].includes(payable.status) && !["pending_accounting_recognition", "draft_pending_publication", "blocked"].includes(payable.recognition_state)).map((payable) => <option key={payable.id} value={payable.id}>{payable.supplier_name} - {formatCurrency(payable.balance)}</option>)}</select></Field>
               <div className="grid gap-3 sm:grid-cols-2"><Field label="Monto"><Input type="number" min="0.01" step="0.01" value={paymentDraft.amount} onChange={(event) => setPaymentDraft({ ...paymentDraft, amount: event.target.value })} disabled={!canManage || isPending} /></Field><Field label="Fecha de pago"><Input type="date" value={paymentDraft.paid_at ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, paid_at: event.target.value })} disabled={!canManage || isPending} /></Field></div>
               <Field label="Método de pago"><select value={paymentDraft.payment_method} onChange={(event) => setPaymentDraft({ ...paymentDraft, payment_method: event.target.value as PaymentDraft["payment_method"] })} className="rounded-md border border-black/10 bg-white px-3 py-2 text-sm" disabled={!canManage || isPending}><option value="">Seleccionar</option><option value="cash">Efectivo</option><option value="bank_transfer">Transferencia bancaria</option><option value="card_credit">Tarjeta de crédito</option><option value="card_debit">Tarjeta de débito</option></select></Field>
               <Field label="Notas"><textarea value={paymentDraft.notes ?? ""} onChange={(event) => setPaymentDraft({ ...paymentDraft, notes: event.target.value })} rows={2} className="rounded-md border border-black/10 px-3 py-2 text-sm" disabled={!canManage || isPending} /></Field>
@@ -406,12 +518,59 @@ export function AccountsPayableManager({
           </div>
         </div>
       </section>
+
+      {recognitionDraft ? (
+        <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="manual-recognition-title">
+          <div className="my-6 w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div><h2 id="manual-recognition-title" className="text-lg font-semibold">Completar reconocimiento contable</h2><p className="mt-1 text-sm text-black/55">{recognitionDraft.payable.supplier_name} · {formatCurrency(recognitionDraft.payable.total_amount)}</p></div>
+              <Button type="button" variant="ghost" onClick={() => { setRecognitionDraft(null); setRecognitionDebitAccount(null); }} disabled={isPending} aria-label="Cerrar"><X size={18} /></Button>
+            </div>
+            <div className="mt-5 grid gap-3">
+              <Field label="Fecha contable"><Input type="date" value={recognitionDraft.accountingDate} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, accountingDate: event.target.value })} disabled={isPending} /></Field>
+              <AccountingAccountCombobox value={recognitionDebitAccount?.id ?? ""} selectedOption={recognitionDebitAccount} onChange={setRecognitionDebitAccount} disabled={isPending} label="Cuenta de débito" manualPayableDebitOnly />
+              <Field label="Concepto contable"><Input value={recognitionDraft.concept} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, concept: event.target.value })} disabled={isPending} /></Field>
+              <Field label="Referencia de respaldo"><Input value={recognitionDraft.sourceReference} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, sourceReference: event.target.value })} disabled={isPending} /></Field>
+              <div className="grid gap-3 sm:grid-cols-3"><Field label="Subtotal"><Input type="number" min="0" step="0.01" value={recognitionDraft.subtotal} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, subtotal: event.target.value })} disabled={isPending} /></Field><Field label="Impuesto"><Input type="number" min="0" step="0.01" value={recognitionDraft.taxAmount} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, taxAmount: event.target.value })} disabled={isPending} /></Field><Field label="Descuento"><Input type="number" min="0" step="0.01" value={recognitionDraft.discountAmount} onChange={(event) => setRecognitionDraft({ ...recognitionDraft, discountAmount: event.target.value })} disabled={isPending} /></Field></div>
+              <p className="text-xs text-black/55">La partida quedará en borrador y vinculada a esta obligación. El pago se habilitará únicamente después de publicarla en el flujo contable vigente.</p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={() => { setRecognitionDraft(null); setRecognitionDebitAccount(null); }} disabled={isPending}>Cancelar</Button><Button type="button" onClick={completeRecognition} disabled={isPending || !recognitionDebitAccount}><CheckCircle2 size={16} />Crear partida de reconocimiento</Button></div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+// Kept temporarily as a layout reference while the recognition-aware table is reviewed.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function PayablesTable({ payables, canManage, isPending, onEdit, onPay, onCancel, onVoid }: { payables: AdminAccountsPayable[]; canManage: boolean; isPending: boolean; onEdit: (payable: AdminAccountsPayable) => void; onPay: (payable: AdminAccountsPayable) => void; onCancel: (payable: AdminAccountsPayable) => void; onVoid: (paymentId: string) => void }) {
   return <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10"><table className="w-full min-w-[980px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]"><thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Factura</th><th className="px-3 py-2">Vencimiento</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Pagado</th><th className="px-3 py-2">Saldo</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Historial</th><th className="px-3 py-2">Acciones</th></tr></thead><tbody className="divide-y divide-black/10">{payables.map((payable) => <tr key={payable.id}><td className="px-3 py-3 align-top"><p className="font-semibold">{payable.supplier_name}</p><p className="text-xs text-black/50">{payable.purchase_number ?? "Sin compra"}</p>{payable.automation_source === "purchase_confirmation_v1" ? <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800">Origen: compra automática</span> : null}{payable.purchase_id ? <Link href={`/admin/compras?purchaseId=${payable.purchase_id}`} className="mt-2 inline-flex min-h-11 items-center font-semibold text-[#b91c25] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]">Ver compra</Link> : null}</td><td className="px-3 py-3 align-top">{payable.invoice_number ?? "Sin factura"}</td><td className="px-3 py-3 align-top">{formatDate(payable.due_date)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.total_amount)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.paid_amount)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(payable.balance)}</td><td className="px-3 py-3 align-top">{payableLabels[payable.status]}</td><td className="px-3 py-3 align-top"><div className="grid gap-1">{payable.payments.length === 0 ? <span className="text-xs text-black/45">Sin pagos</span> : payable.payments.map((payment) => <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs"><p className="font-semibold">{formatCurrency(payment.amount)} - {paymentLabels[payment.status]}</p><p>{paymentMethodLabel(payment.payment_method)} - {formatDate(payment.paid_at ?? payment.created_at)}</p>{payment.status === "paid" && canManage ? <button type="button" onClick={() => onVoid(payment.id)} disabled={isPending} className="mt-1 font-semibold text-[#b91c25]">Anular pago</button> : null}</div>)}</div></td><td className="px-3 py-3 align-top"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" onClick={() => onEdit(payable)} disabled={!canManage || isPending || payable.automation_source === "purchase_confirmation_v1" || ["paid", "cancelled"].includes(payable.status)} title={payable.automation_source === "purchase_confirmation_v1" ? "Se administra desde la compra confirmada" : undefined}><Edit3 size={16} />Editar</Button><Button type="button" variant="ghost" onClick={() => onPay(payable)} disabled={!canManage || isPending || payable.balance <= 0 || ["paid", "cancelled"].includes(payable.status)}><ReceiptText size={16} />Registrar pago</Button><Button type="button" variant="ghost" onClick={() => onCancel(payable)} disabled={!canManage || isPending || payable.automation_source === "purchase_confirmation_v1" || ["paid", "cancelled"].includes(payable.status) || payable.paid_amount > 0} title={payable.automation_source === "purchase_confirmation_v1" ? "Cancélala desde la compra para mantener inventario y trazabilidad sincronizados" : undefined}><Ban size={16} />Anular</Button></div></td></tr>)}{payables.length === 0 ? <tr><td colSpan={9} className="px-3 py-6 text-center text-black/55">No hay cuentas por pagar para este filtro.</td></tr> : null}</tbody></table></div>;
+}
+
+function RecognitionAwarePayablesTable({ payables, canManage, canRecognize, isPending, onEdit, onPay, onRecognize, onCancel, onVoid }: { payables: AdminAccountsPayable[]; canManage: boolean; canRecognize: boolean; isPending: boolean; onEdit: (payable: AdminAccountsPayable) => void; onPay: (payable: AdminAccountsPayable) => void; onRecognize: (payable: AdminAccountsPayable) => void; onCancel: (payable: AdminAccountsPayable) => void; onVoid: (paymentId: string) => void }) {
+  const recognitionLabel = (payable: AdminAccountsPayable) => payable.recognition_state === "pending_accounting_recognition" ? "Reconocimiento pendiente" : payable.recognition_state === "draft_pending_publication" ? "Partida por publicar" : payable.recognition_state === "blocked" ? "Reconocimiento bloqueado" : payable.recognition_state === "recognized" ? "Reconocida" : "Reconocida desde origen";
+  return (
+    <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-black/10">
+      <table className="w-full min-w-[1060px] text-left text-sm [&_td]:break-words [&_td]:[overflow-wrap:anywhere]">
+        <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55"><tr><th className="px-3 py-2">Proveedor</th><th className="px-3 py-2">Factura</th><th className="px-3 py-2">Vencimiento</th><th className="px-3 py-2">Total</th><th className="px-3 py-2">Pagado</th><th className="px-3 py-2">Saldo</th><th className="px-3 py-2">Estado</th><th className="px-3 py-2">Historial</th><th className="px-3 py-2">Acciones</th></tr></thead>
+        <tbody className="divide-y divide-black/10">
+          {payables.map((payable) => {
+            const recognitionLocked = ["draft_pending_publication", "recognized"].includes(payable.recognition_state);
+            const paymentBlocked = ["pending_accounting_recognition", "draft_pending_publication", "blocked"].includes(payable.recognition_state);
+            return <tr key={payable.id}>
+              <td className="px-3 py-3 align-top"><p className="font-semibold">{payable.supplier_name}</p><p className="text-xs text-black/50">{payable.purchase_number ?? "Sin compra"}</p>{payable.purchase_id ? <Link href={`/admin/compras?purchaseId=${payable.purchase_id}`} className="mt-2 inline-flex min-h-11 items-center font-semibold text-[#b91c25] hover:underline">Ver compra</Link> : null}</td>
+              <td className="px-3 py-3 align-top">{payable.invoice_number ?? "Sin factura"}</td><td className="px-3 py-3 align-top">{formatDate(payable.due_date)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.total_amount)}</td><td className="px-3 py-3 align-top">{formatCurrency(payable.paid_amount)}</td><td className="px-3 py-3 align-top font-semibold">{formatCurrency(payable.balance)}</td>
+              <td className="px-3 py-3 align-top"><p>{payableLabels[payable.status]}</p><span className="mt-1 inline-flex rounded-full bg-[#f0efee] px-2 py-1 text-[11px] font-semibold text-black/70">{recognitionLabel(payable)}</span></td>
+              <td className="px-3 py-3 align-top"><div className="grid gap-1">{payable.payments.length === 0 ? <span className="text-xs text-black/45">Sin pagos</span> : payable.payments.map((payment) => <div key={payment.id} className="rounded-md bg-[#f4f4f5] p-2 text-xs"><p className="font-semibold">{formatCurrency(payment.amount)} - {paymentLabels[payment.status]}</p><p>{paymentMethodLabel(payment.payment_method)} - {formatDate(payment.paid_at ?? payment.created_at)}</p>{payment.status === "paid" && canManage ? <button type="button" onClick={() => onVoid(payment.id)} disabled={isPending} className="mt-1 font-semibold text-[#b91c25]">Anular pago</button> : null}</div>)}</div></td>
+              <td className="px-3 py-3 align-top"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" onClick={() => onEdit(payable)} disabled={!canManage || isPending || payable.automation_source === "purchase_confirmation_v1" || recognitionLocked || ["paid", "cancelled"].includes(payable.status)}><Edit3 size={16} />Editar</Button>{payable.recognition_state === "pending_accounting_recognition" ? <Button type="button" variant="ghost" onClick={() => onRecognize(payable)} disabled={!canRecognize || isPending}><CheckCircle2 size={16} />Completar reconocimiento</Button> : null}<Button type="button" variant="ghost" onClick={() => onPay(payable)} disabled={!canManage || isPending || paymentBlocked || payable.balance <= 0 || ["paid", "cancelled"].includes(payable.status)} title={paymentBlocked ? "Complete y publique el reconocimiento contable antes de pagar" : undefined}><ReceiptText size={16} />Registrar pago</Button><Button type="button" variant="ghost" onClick={() => onCancel(payable)} disabled={!canManage || isPending || payable.automation_source === "purchase_confirmation_v1" || recognitionLocked || ["paid", "cancelled"].includes(payable.status) || payable.paid_amount > 0}><Ban size={16} />Anular</Button></div></td>
+            </tr>;
+          })}
+          {payables.length === 0 ? <tr><td colSpan={9} className="px-3 py-6 text-center text-black/55">No hay cuentas por pagar para este filtro.</td></tr> : null}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function InvoicesTable({ invoices, canManage, isPending, onEdit, onCreatePayable, onReceive, onCancel }: { invoices: AdminSupplierInvoice[]; canManage: boolean; isPending: boolean; onEdit: (invoice: AdminSupplierInvoice) => void; onCreatePayable: (invoice: AdminSupplierInvoice) => void; onReceive: (invoice: AdminSupplierInvoice) => void; onCancel: (invoice: AdminSupplierInvoice) => void }) {

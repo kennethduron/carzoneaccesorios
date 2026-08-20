@@ -11,6 +11,7 @@ const accountTypeLabels: Record<AccountingAccountSearchResult["accountType"], st
   cost: "Costo",
   expense: "Gasto",
 };
+const manualPayableDebitSearchParams = { classification: "manual-payable-debit" };
 
 export function AccountingAccountCombobox({
   value,
@@ -18,12 +19,14 @@ export function AccountingAccountCombobox({
   onChange,
   disabled = false,
   label = "Cuenta",
+  manualPayableDebitOnly = false,
 }: {
   value: string;
   selectedOption?: AccountingAccountSearchResult | null;
   onChange: (account: AccountingAccountSearchResult | null) => void;
   disabled?: boolean;
   label?: string;
+  manualPayableDebitOnly?: boolean;
 }) {
   return (
     <AsyncSearchCombobox
@@ -39,6 +42,7 @@ export function AccountingAccountCombobox({
       getMeta={(account) => account.isActive && account.isSelectable ? null : "Cuenta no seleccionable"}
       disabled={disabled}
       required
+      searchParams={manualPayableDebitOnly ? manualPayableDebitSearchParams : undefined}
     />
   );
 }

@@ -43,13 +43,11 @@ export async function GET(request: Request) {
   const query = (url.searchParams.get("q") ?? "").trim().replace(/\s+/g, " ").slice(0, 80);
   const limit = Math.max(1, boundedInteger(url.searchParams.get("limit"), 25, 50));
   const offset = boundedInteger(url.searchParams.get("offset"), 0, 10000);
+  const manualPayableDebitOnly = url.searchParams.get("classification") === "manual-payable-debit";
   const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("search_accounting_accounts_v1", {
-    p_query: query,
-    p_limit: limit,
-    p_offset: offset,
-    p_include_inactive: false,
-  });
+  const { data, error } = manualPayableDebitOnly
+    ? await supabase.rpc("search_manual_payable_debit_accounts_v1", { p_query: query, p_limit: limit, p_offset: offset })
+    : await supabase.rpc("search_accounting_accounts_v1", { p_query: query, p_limit: limit, p_offset: offset, p_include_inactive: false });
 
   if (error) {
     const status = error.code === "42501" ? 403 : 500;
@@ -66,7 +64,9 @@ export async function GET(request: Request) {
     isActive: Boolean(row.is_active),
     parentId: row.parent_id,
     isSelectable: Boolean(row.is_selectable),
-  }));
+  })).filter((account) => !manualPayableDebitOnly || (
+    account.isActive && account.isSelectable && account.normalBalance === "debit" && ["asset", "cost", "expense"].includes(account.accountType)
+  ));
   const total = Number(rows[0]?.total_count ?? 0);
   const payload: AdminSearchResponse<AccountingAccountSearchResult> = {
     results,

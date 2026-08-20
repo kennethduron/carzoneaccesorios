@@ -102,6 +102,32 @@ export type SupplierInvoice = {
 
 export type AccountsPayableStatus = "pending" | "partial" | "paid" | "cancelled" | "overdue";
 
+export type AccountsPayableRecognitionState =
+  | "pending_accounting_recognition"
+  | "draft_pending_publication"
+  | "recognized"
+  | "blocked"
+  | "source_backed";
+
+export type ManualAccountsPayableRecognition = {
+  id: string;
+  accounts_payable_id: string;
+  state: Exclude<AccountsPayableRecognitionState, "source_backed">;
+  accounting_date: string | null;
+  debit_account_id: string | null;
+  debit_account_code: string | null;
+  debit_account_name: string | null;
+  concept: string | null;
+  source_reference: string | null;
+  subtotal: number | null;
+  tax_amount: number | null;
+  discount_amount: number | null;
+  financial_event_id: string | null;
+  journal_entry_id: string | null;
+  journal_status: "borrador" | "publicada" | "reversada" | "anulada" | null;
+  updated_at: string;
+};
+
 export type AccountsPayable = {
   id: string;
   supplier_id: string;
@@ -113,6 +139,7 @@ export type AccountsPayable = {
   due_date: string | null;
   status: AccountsPayableStatus;
   automation_source: "purchase_confirmation_v1" | null;
+  accounting_recognition_version: "v2" | null;
   currency: string;
   notes: string | null;
   created_by: string | null;
@@ -241,6 +268,8 @@ export type AdminAccountsPayable = AccountsPayable & {
   supplier_tax_id: string | null;
   purchase_number: string | null;
   invoice_number: string | null;
+  recognition_state: AccountsPayableRecognitionState;
+  recognition: ManualAccountsPayableRecognition | null;
   payments: SupplierPaymentWithActor[];
 };
 

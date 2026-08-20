@@ -255,7 +255,7 @@ export function SupplierMultiPaymentWizard({
       .then((response) => {
         if (activeSelectionRequestRef.current !== selectionRequest.requestId) return;
         const payable = response.ok ? response.items[0] : null;
-        if (!isEligibleSupplierPaymentPayable(payable, selectionRequest)) {
+        if (!isEligibleSupplierPaymentPayable(payable, selectionRequest) || !payable?.payment_eligible) {
           setDraft((current) =>
             current && current.supplierId === selectionRequest.supplierId
               ? {
@@ -402,7 +402,7 @@ export function SupplierMultiPaymentWizard({
     selected.length <= 200 &&
     selected.every((payable) => {
       const applied = cents(draft?.amounts[payable.id] ?? 0);
-      return applied > 0 && applied <= cents(payable.balance);
+      return payable.payment_eligible && applied > 0 && applied <= cents(payable.balance);
     });
   const selectedSupplier = suppliers.find(
     (supplier) => supplier.id === draft?.supplierId,
@@ -445,6 +445,12 @@ export function SupplierMultiPaymentWizard({
 
   function togglePayable(payable: SupplierOpenPayable) {
     if (!draft) return;
+    if (!payable.payment_eligible) {
+      toast.warning(payable.recognition_state === "draft_pending_publication"
+        ? "Publique la partida de reconocimiento antes de pagar esta obligación."
+        : "Complete el reconocimiento contable antes de pagar esta obligación.");
+      return;
+    }
     const exists = draft.selectedIds.includes(payable.id);
     if (exists) {
       const amounts = { ...draft.amounts };
@@ -805,6 +811,7 @@ export function SupplierMultiPaymentWizard({
                                   type="checkbox"
                                   checked={draft.selectedIds.includes(payable.id)}
                                   onChange={() => togglePayable(payable)}
+                                  disabled={!payable.payment_eligible}
                                   aria-label={`Seleccionar ${payable.invoice_number ?? payable.id}`}
                                 />
                               </td>
@@ -815,6 +822,7 @@ export function SupplierMultiPaymentWizard({
                                     Preseleccionada
                                   </span>
                                 ) : null}
+                                {!payable.payment_eligible ? <span className="ml-2 rounded-full bg-[#f0efee] px-2 py-1 text-[11px] text-black/65">{payable.recognition_state === "draft_pending_publication" ? "Partida por publicar" : "Reconocimiento pendiente"}</span> : null}
                               </td>
                               <td className="px-3 py-3">{dateLabel(payable.invoice_date)}</td>
                               <td className="px-3 py-3">{dateLabel(payable.due_date)}</td>
@@ -838,11 +846,13 @@ export function SupplierMultiPaymentWizard({
                               type="checkbox"
                               checked={draft.selectedIds.includes(payable.id)}
                               onChange={() => togglePayable(payable)}
+                              disabled={!payable.payment_eligible}
                             />
                           </span>
                           <span className="text-xs text-black/55">Fecha {dateLabel(payable.invoice_date)}</span>
                           <span className="text-xs text-black/55">Vence {dateLabel(payable.due_date)}</span>
                           <span className="text-sm font-semibold">Saldo {formatCurrency(payable.balance)}</span>
+                          {!payable.payment_eligible ? <span className="text-xs text-black/55">{payable.recognition_state === "draft_pending_publication" ? "Partida contable pendiente de publicación" : "Reconocimiento contable pendiente"}</span> : null}
                         </label>
                       ))}
                     </div>

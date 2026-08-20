@@ -22,6 +22,10 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
     hasEffectivePermission(profile.role, profile.permissions, "payables:read", profile.email) ||
     hasEffectivePermission(profile.role, profile.permissions, "payables:manage", profile.email);
   const canManage = hasEffectivePermission(profile.role, profile.permissions, "payables:manage", profile.email);
+  const canRecognize =
+    ["technical_owner", "business_owner", "admin", "contadora"].includes(profile.role) &&
+    canManage &&
+    hasEffectivePermission(profile.role, profile.permissions, "accounting:manage", profile.email);
   const canImport = hasEffectivePermission(profile.role, profile.permissions, "payables:import", profile.email);
   const canApply = hasEffectivePermission(profile.role, profile.permissions, "payables:apply", profile.email);
   const canAssign = hasEffectivePermission(profile.role, profile.permissions, "payables:assign", profile.email);
@@ -70,7 +74,7 @@ export default async function AccountsPayablePage({ searchParams }: { searchPara
           canRepair={canRepairSupplierPayment}
         />
         <AccountsPayableImportManager data={importData} />
-        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} multiPaymentConfig={multiPaymentConfig} multiPaymentHistory={multiPaymentHistory} initialPurchaseId={params?.purchaseId ?? null} />
+        <AccountsPayableManager payables={payables} invoices={invoices} credits={credits} suppliers={suppliers} purchases={purchases} summary={summary} canManage={canManage} canRecognize={canRecognize} multiPaymentConfig={multiPaymentConfig} multiPaymentHistory={multiPaymentHistory} initialPurchaseId={params?.purchaseId ?? null} />
       </div>
     </AdminShell>
   );

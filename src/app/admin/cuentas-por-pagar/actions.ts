@@ -36,6 +36,23 @@ import type { SupplierPaymentRepairResult } from "@/types/supplier-payment-accou
 import { isCivilDate } from "@/lib/civil-date";
 
 type ActionResult = { ok: true; message: string } | { ok: false; message: string };
+export type AccountsPayableRecognitionActionCode =
+  | "CXP_CREATED_PENDING_RECOGNITION"
+  | "CXP_CREATED_RECOGNITION_DRAFT"
+  | "CXP_CREATED_SOURCE_BACKED_PENDING"
+  | "CXP_RECOGNITION_DRAFT_CREATED"
+  | "CXP_RECOGNITION_DRAFT_EXISTS"
+  | "CXP_ALREADY_RECOGNIZED";
+export type AccountsPayableRecognitionActionResult =
+  | {
+      ok: true;
+      message: string;
+      code: AccountsPayableRecognitionActionCode;
+      recognitionState: "pending_accounting_recognition" | "draft_pending_publication" | "recognized" | "source_backed";
+      accountsPayableId: string;
+      journalEntryId: string | null;
+    }
+  | { ok: false; message: string; code?: string };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const supplierPurchaseMismatchMessage =
   "La compra seleccionada pertenece a otro proveedor. Seleccione una compra del mismo proveedor antes de continuar.";
@@ -65,6 +82,27 @@ export type AccountsPayableFormInput = {
   due_date?: string | null;
   currency?: string | null;
   notes?: string | null;
+  recognition_mode?: "pending" | "complete" | null;
+  accounting_date?: string | null;
+  debit_account_id?: string | null;
+  concept?: string | null;
+  source_reference?: string | null;
+  subtotal?: number | string | null;
+  tax_amount?: number | string | null;
+  discount_amount?: number | string | null;
+  request_key?: string | null;
+};
+
+export type ManualAccountsPayableRecognitionInput = {
+  accounts_payable_id: string;
+  accounting_date: string;
+  debit_account_id: string;
+  concept: string;
+  source_reference: string;
+  subtotal: number | string;
+  tax_amount: number | string;
+  discount_amount: number | string;
+  request_key: string;
 };
 
 
@@ -95,6 +133,19 @@ function cleanText(value: unknown) {
 function toMoney(value: unknown) {
   const amount = Number(value ?? 0);
   return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : NaN;
+}
+
+function manualRecognitionErrorMessage(error: { code?: string | null; message?: string | null }) {
+  const message = error.message ?? "";
+  if (error.code === "42501") return "No tienes permiso para completar reconocimientos contables.";
+  if (message.includes("período abierto") || message.includes("periodo abierto")) return "La fecha contable no pertenece a un período abierto.";
+  if (message.includes("cuenta de débito") || message.includes("cuenta de debito")) return "Selecciona una cuenta contable de débito activa y válida.";
+  if (message.includes("no coincide con el total")) return "La información contable no coincide con el total de la obligación.";
+  if (message.includes("desglose fiscal")) return "El desglose fiscal contiene importes inválidos.";
+  if (message.includes("vinculación") || message.includes("vinculacion")) return "La vinculación contable de esta obligación requiere revisión técnica.";
+  if (message.includes("ya no admite") || message.includes("ya tiene una partida")) return "Esta cuenta por pagar ya no admite un reconocimiento nuevo.";
+  if (message.includes("HNL")) return "El reconocimiento manual solo admite obligaciones en HNL.";
+  return "No se pudo completar el reconocimiento contable.";
 }
 
 function invoiceErrorMessage(message: string) {
@@ -376,7 +427,7 @@ export async function cancelSupplierInvoiceAction(invoiceId: string): Promise<Ac
   return { ok: true, message: "Factura cancelada." };
 }
 
-export async function saveAccountsPayableAction(input: AccountsPayableFormInput): Promise<ActionResult> {
+export async function saveAccountsPayableAction(input: AccountsPayableFormInput): Promise<ActionResult | AccountsPayableRecognitionActionResult> {
   const profile = await requirePermission("payables:manage");
   const supplierId = cleanText(input.supplier_id);
   const purchaseId = cleanText(input.purchase_id);
@@ -462,6 +513,70 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
     return { ok: true, message: "Cuenta por pagar actualizada." };
   }
 
+  if (!purchaseId && !invoiceId) {
+    const recognitionMode = input.recognition_mode;
+    const requestKey = cleanText(input.request_key);
+    if (!recognitionMode) {
+      return { ok: false, code: "RECOGNITION_MODE_REQUIRED", message: "Elige si completarás el reconocimiento ahora o guardarás la obligación como pendiente." };
+    }
+    if (!requestKey || !uuidPattern.test(requestKey)) {
+      return { ok: false, code: "REQUEST_KEY_INVALID", message: "La solicitud de creación no es válida. Recarga el formulario." };
+    }
+
+    const accountingDate = cleanText(input.accounting_date);
+    const debitAccountId = cleanText(input.debit_account_id);
+    const concept = cleanText(input.concept);
+    const sourceReference = cleanText(input.source_reference);
+    const subtotal = toMoney(input.subtotal);
+    const taxAmount = toMoney(input.tax_amount);
+    const discountAmount = toMoney(input.discount_amount);
+    if (recognitionMode === "complete") {
+      if (!accountingDate || !isCivilDate(accountingDate)) return { ok: false, code: "ACCOUNTING_DATE_REQUIRED", message: "Selecciona una fecha contable válida." };
+      if (!debitAccountId || !uuidPattern.test(debitAccountId)) return { ok: false, code: "DEBIT_ACCOUNT_REQUIRED", message: "Selecciona una cuenta contable de débito." };
+      if (!concept || concept.length < 3) return { ok: false, code: "CONCEPT_REQUIRED", message: "Ingresa un concepto contable." };
+      if (!sourceReference || sourceReference.length < 2) return { ok: false, code: "SOURCE_REFERENCE_REQUIRED", message: "Ingresa una referencia de respaldo." };
+      if (![subtotal, taxAmount, discountAmount].every(Number.isFinite)) return { ok: false, code: "FISCAL_BREAKDOWN_INVALID", message: "Completa el desglose fiscal con importes válidos." };
+    }
+
+    const supabase = await getSupabaseServerClient();
+    const { data: rpcData, error: rpcError } = await supabase.rpc("create_manual_accounts_payable_v1", {
+      p_supplier_id: supplierId,
+      p_total_amount: totalAmount,
+      p_due_date: dueDate,
+      p_currency: currency,
+      p_notes: cleanText(input.notes),
+      p_recognition_mode: recognitionMode,
+      p_accounting_date: recognitionMode === "complete" ? accountingDate : null,
+      p_debit_account_id: recognitionMode === "complete" ? debitAccountId : null,
+      p_concept: recognitionMode === "complete" ? concept : null,
+      p_source_reference: recognitionMode === "complete" ? sourceReference : null,
+      p_subtotal: recognitionMode === "complete" ? subtotal : null,
+      p_tax_amount: recognitionMode === "complete" ? taxAmount : null,
+      p_discount_amount: recognitionMode === "complete" ? discountAmount : null,
+      p_request_key: requestKey,
+    });
+    if (rpcError) return { ok: false, code: rpcError.code ?? "MANUAL_RECOGNITION_FAILED", message: manualRecognitionErrorMessage(rpcError) };
+
+    const result = rpcData as {
+      code: AccountsPayableRecognitionActionCode;
+      accounts_payable_id: string;
+      recognition_state: "pending_accounting_recognition" | "draft_pending_publication" | "recognized";
+      journal_entry_id: string | null;
+    };
+    revalidatePath("/admin/cuentas-por-pagar");
+    revalidatePath("/admin/contabilidad");
+    return {
+      ok: true,
+      code: result.code,
+      accountsPayableId: result.accounts_payable_id,
+      recognitionState: result.recognition_state,
+      journalEntryId: result.journal_entry_id,
+      message: result.recognition_state === "pending_accounting_recognition"
+        ? "Cuenta por pagar creada como pendiente de reconocimiento contable. No podrá incluirse en pagos hasta completar y publicar su reconocimiento."
+        : "Cuenta por pagar creada y borrador contable vinculado. Revísalo y publícalo antes de pagar.",
+    };
+  }
+
   const { data, error } = await admin
     .from("accounts_payable")
     .insert({ ...payload, paid_amount: 0, status: "pending", created_by: profile.id })
@@ -488,9 +603,75 @@ export async function saveAccountsPayableAction(input: AccountsPayableFormInput)
   }
 
   await writeAuditLog({ tableName: "accounts_payable", recordId: data.id, action: "accounts_payable.create", newData: { total_amount: data.total_amount, status: data.status, supplier_invoice_id: data.supplier_invoice_id } });
-  await dispatchAccountingEvent({ sourceType: "accounts_payable", sourceId: data.id, eventPurpose: "accounts_payable_created", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
+  const accountingDispatch = await dispatchAccountingEvent({ sourceType: "accounts_payable", sourceId: data.id, eventPurpose: "accounts_payable_created", triggeredBy: profile.id, route: "/admin/cuentas-por-pagar" });
   revalidatePath("/admin/cuentas-por-pagar");
-  return { ok: true, message: "Cuenta por pagar registrada." };
+  revalidatePath("/admin/contabilidad");
+  return {
+    ok: true,
+    code: "CXP_CREATED_SOURCE_BACKED_PENDING",
+    accountsPayableId: data.id,
+    recognitionState: "source_backed",
+    journalEntryId: null,
+    message: accountingDispatch.draftCreated
+      ? "Cuenta por pagar registrada con borrador contable vinculado."
+      : "Cuenta por pagar registrada desde su documento origen; la preparación contable continúa pendiente de revisión.",
+  };
+}
+
+export async function completeManualAccountsPayableRecognitionAction(
+  input: ManualAccountsPayableRecognitionInput,
+): Promise<AccountsPayableRecognitionActionResult> {
+  await requirePermission("accounting:manage");
+  const payableId = cleanText(input.accounts_payable_id);
+  const accountingDate = cleanText(input.accounting_date);
+  const debitAccountId = cleanText(input.debit_account_id);
+  const concept = cleanText(input.concept);
+  const sourceReference = cleanText(input.source_reference);
+  const requestKey = cleanText(input.request_key);
+  const subtotal = toMoney(input.subtotal);
+  const taxAmount = toMoney(input.tax_amount);
+  const discountAmount = toMoney(input.discount_amount);
+
+  if (!payableId || !uuidPattern.test(payableId)) return { ok: false, code: "PAYABLE_INVALID", message: "La cuenta por pagar no es válida." };
+  if (!accountingDate || !isCivilDate(accountingDate)) return { ok: false, code: "ACCOUNTING_DATE_REQUIRED", message: "Selecciona una fecha contable válida." };
+  if (!debitAccountId || !uuidPattern.test(debitAccountId)) return { ok: false, code: "DEBIT_ACCOUNT_REQUIRED", message: "Selecciona una cuenta contable de débito." };
+  if (!concept || concept.length < 3) return { ok: false, code: "CONCEPT_REQUIRED", message: "Ingresa un concepto contable." };
+  if (!sourceReference || sourceReference.length < 2) return { ok: false, code: "SOURCE_REFERENCE_REQUIRED", message: "Ingresa una referencia de respaldo." };
+  if (!requestKey || !uuidPattern.test(requestKey)) return { ok: false, code: "REQUEST_KEY_INVALID", message: "La solicitud de reconocimiento no es válida. Recarga el formulario." };
+  if (![subtotal, taxAmount, discountAmount].every(Number.isFinite)) return { ok: false, code: "FISCAL_BREAKDOWN_INVALID", message: "Completa el desglose fiscal con importes válidos." };
+
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase.rpc("complete_manual_accounts_payable_recognition_v1", {
+    p_accounts_payable_id: payableId,
+    p_accounting_date: accountingDate,
+    p_debit_account_id: debitAccountId,
+    p_concept: concept,
+    p_source_reference: sourceReference,
+    p_subtotal: subtotal,
+    p_tax_amount: taxAmount,
+    p_discount_amount: discountAmount,
+    p_request_key: requestKey,
+  });
+  if (error) return { ok: false, code: error.code ?? "MANUAL_RECOGNITION_FAILED", message: manualRecognitionErrorMessage(error) };
+
+  const result = data as {
+    code: AccountsPayableRecognitionActionCode;
+    accounts_payable_id: string;
+    recognition_state: "draft_pending_publication" | "recognized";
+    journal_entry_id: string | null;
+  };
+  revalidatePath("/admin/cuentas-por-pagar");
+  revalidatePath("/admin/contabilidad");
+  return {
+    ok: true,
+    code: result.code,
+    accountsPayableId: result.accounts_payable_id,
+    recognitionState: result.recognition_state,
+    journalEntryId: result.journal_entry_id,
+    message: result.recognition_state === "recognized"
+      ? "La obligación ya tiene reconocimiento contable publicado."
+      : "Reconocimiento completado. El borrador contable quedó listo para revisión y publicación.",
+  };
 }
 
 export async function cancelAccountsPayableAction(payableId: string): Promise<ActionResult> {

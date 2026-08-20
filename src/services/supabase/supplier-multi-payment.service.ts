@@ -7,6 +7,7 @@ import type {
   SupplierMultiPaymentRpcResult,
   SupplierOpenPayablesQuery,
 } from "@/schemas/supplier-multi-payment";
+import { todayCivilDate } from "@/lib/civil-date";
 
 export type SupplierOpenPayable = {
   id: string;
@@ -22,6 +23,9 @@ export type SupplierOpenPayable = {
   balance: number;
   status: "pending" | "partial" | "overdue";
   currency: string;
+  recognition_state: "pending_accounting_recognition" | "draft_pending_publication" | "recognized" | "blocked";
+  recognition_reason: string | null;
+  payment_eligible: boolean;
 };
 
 export type SupplierMultiPaymentHistoryItem = {
@@ -44,7 +48,7 @@ export type SupplierMultiPaymentHistoryItem = {
 
 type OpenPayableRow = Omit<
   SupplierOpenPayable,
-  "purchase_number" | "invoice_number" | "invoice_date" | "total_amount" | "paid_amount" | "balance"
+  "purchase_number" | "invoice_number" | "invoice_date" | "total_amount" | "paid_amount" | "balance" | "recognition_state" | "recognition_reason" | "payment_eligible"
 > & {
   total_amount: unknown;
   paid_amount: unknown;
@@ -56,6 +60,9 @@ type OpenPayableRow = Omit<
   purchases: {
     purchase_number: string;
   } | null;
+  manual_recognition: Array<{
+    state: "pending_accounting_recognition" | "draft_pending_publication" | "recognized" | "blocked";
+  }> | null;
 };
 
 export type SupplierPaymentMethodAccount = {
@@ -220,7 +227,8 @@ export async function getSupplierOpenPayables(
         status,
         currency,
         supplier_invoices(invoice_number, invoice_date),
-        purchases(purchase_number)
+        purchases(purchase_number),
+        manual_recognition:manual_accounts_payable_recognitions!manual_ap_recognition_payable_fkey(state)
       `,
     )
     .eq("supplier_id", input.supplier_id)
@@ -254,21 +262,38 @@ export async function getSupplierOpenPayables(
   const rows = data ?? [];
   const hasMore = rows.length > input.page_size;
   const pageRows = rows.slice(0, input.page_size);
-  const items = pageRows.map((row) => ({
-    id: row.id,
-    supplier_id: row.supplier_id,
-    purchase_id: row.purchase_id,
-    supplier_invoice_id: row.supplier_invoice_id,
-    purchase_number: row.purchases?.purchase_number ?? null,
-    invoice_number: row.supplier_invoices?.invoice_number ?? null,
-    invoice_date: row.supplier_invoices?.invoice_date ?? null,
-    due_date: row.due_date,
-    total_amount: toNumber(row.total_amount),
-    paid_amount: toNumber(row.paid_amount),
-    balance: toNumber(row.balance),
-    status: row.status,
-    currency: row.currency,
+  const recognitionResults = await Promise.all(pageRows.map(async (row) => {
+    const { data: recognition, error: recognitionError } = await admin.rpc(
+      "resolve_accounts_payable_accounting_recognition_v1",
+      { p_accounts_payable_id: row.id, p_proposed_journal_date: todayCivilDate(), p_payment_id: null },
+    );
+    const resolved = recognition as { recognized?: boolean; reason_code?: string } | null;
+    return recognitionError ? { recognized: false, reason: "recognition_check_failed" } : { recognized: resolved?.recognized === true, reason: resolved?.reason_code ?? null };
   }));
+  const items = pageRows.map((row, index) => {
+    const resolved = recognitionResults[index];
+    const state = resolved.recognized
+      ? "recognized"
+      : row.manual_recognition?.[0]?.state ?? "blocked";
+    return {
+      id: row.id,
+      supplier_id: row.supplier_id,
+      purchase_id: row.purchase_id,
+      supplier_invoice_id: row.supplier_invoice_id,
+      purchase_number: row.purchases?.purchase_number ?? null,
+      invoice_number: row.supplier_invoices?.invoice_number ?? null,
+      invoice_date: row.supplier_invoices?.invoice_date ?? null,
+      due_date: row.due_date,
+      total_amount: toNumber(row.total_amount),
+      paid_amount: toNumber(row.paid_amount),
+      balance: toNumber(row.balance),
+      status: row.status,
+      currency: row.currency,
+      recognition_state: state,
+      recognition_reason: resolved.reason,
+      payment_eligible: resolved.recognized,
+    } satisfies SupplierOpenPayable;
+  });
   const last = items.at(-1);
 
   return {

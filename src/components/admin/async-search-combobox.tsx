@@ -21,6 +21,7 @@ type AsyncSearchComboboxProps<T extends SearchOption> = {
   getMeta?: (option: T) => string | null;
   disabled?: boolean;
   required?: boolean;
+  searchParams?: Record<string, string>;
 };
 
 export function AsyncSearchCombobox<T extends SearchOption>({
@@ -36,6 +37,7 @@ export function AsyncSearchCombobox<T extends SearchOption>({
   getMeta,
   disabled = false,
   required = false,
+  searchParams,
 }: AsyncSearchComboboxProps<T>) {
   const inputId = useId();
   const listboxId = useId();
@@ -59,7 +61,7 @@ export function AsyncSearchCombobox<T extends SearchOption>({
       setIsLoading(true);
       setError("");
       try {
-        const params = new URLSearchParams({ q: query.trim(), limit: "25", offset: "0" });
+        const params = new URLSearchParams({ ...(searchParams ?? {}), q: query.trim(), limit: "25", offset: "0" });
         const response = await fetch(`${endpoint}?${params.toString()}`, {
           method: "GET",
           cache: "no-store",
@@ -85,7 +87,7 @@ export function AsyncSearchCombobox<T extends SearchOption>({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [disabled, endpoint, isOpen, query]);
+  }, [disabled, endpoint, isOpen, query, searchParams]);
 
   async function loadMore() {
     if (isLoading || results.length >= total) return;
@@ -96,6 +98,7 @@ export function AsyncSearchCombobox<T extends SearchOption>({
     setError("");
     try {
       const params = new URLSearchParams({
+        ...(searchParams ?? {}),
         q: query.trim(),
         limit: "25",
         offset: String(results.length),
