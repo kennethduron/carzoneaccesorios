@@ -9,7 +9,7 @@ import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
 import { markProductAvailabilityStale, revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { isOfficialProductCategory } from "@/lib/product-categories";
-import { runProductPostSaveTasks } from "@/lib/product-create-hardening";
+import { canonicalProductCreateIdentity, runProductPostSaveTasks } from "@/lib/product-create-hardening";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { productTaxCategorySchema } from "@/lib/validation/product-tax";
 import type { ProductFormInput, ProductImageInput, ProductStatus, ProductTaxCategory } from "@/types/products";
@@ -249,10 +249,9 @@ function friendlyProductError(message: string) {
 }
 
 function productPayload(input: ProductFormInput): ProductDbPayload {
-  const sku = input.sku.trim().toUpperCase();
+  const { sku, slug } = canonicalProductCreateIdentity(input);
   const name = input.name.trim();
   const status = input.active ? input.status : "inactive";
-  const slug = cleanText(input.slug) ?? slugify(`${sku}-${name}`);
   const categoryId = cleanText(input.category_id);
 
   if (!sku || !name || !input.brand.trim()) {

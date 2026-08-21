@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const [migration, schema, paymentService, wizard, productAction, productManager, cache] = await Promise.all([
+const [migration, schema, paymentService, wizard, productAction, productManager, confirmationRoute, cache] = await Promise.all([
   read("supabase/migrations/202608200001_payment_effective_date_product_creation_hardening_v1.sql"),
   read("src/schemas/supplier-multi-payment.ts"),
   read("src/services/supabase/supplier-multi-payment.service.ts"),
   read("src/components/admin/supplier-multi-payment-wizard.tsx"),
   read("src/app/admin/productos/actions.ts"),
   read("src/components/admin/product-manager.tsx"),
+  read("src/app/api/admin/productos/confirm-create/route.ts"),
   read("src/lib/product-availability-cache.ts"),
 ]);
 
@@ -64,11 +65,24 @@ contains(productAction, [
 ], "product action contract");
 contains(productManager, [
   "saveExecutionGuard.tryStart()",
+  "runProductCreateWithConfirmation",
+  "confirmProductCreateOutcome",
+  "/api/admin/productos/confirm-create",
   "try {",
   "catch {",
-  "Conservamos el formulario",
+  "actualiza la vista antes de volver a guardar",
   "saveExecutionGuard.finish()",
 ], "product client containment");
+contains(confirmationRoute, [
+  "getSessionProfile",
+  "getProductCapabilities(profile).create",
+  "classifyProductCreateConfirmation",
+  "PRODUCT_CREATED_CONFIRMED",
+  "PRODUCT_NOT_CREATED",
+  "PRODUCT_CONFIRMATION_CONFLICT",
+  ".from(\"products\").select(\"id, sku, slug\")",
+], "read-only confirmation route");
+assert.ok(!/\.(insert|update|delete|upsert|rpc)\(/.test(confirmationRoute), "confirmation route must remain read-only");
 assert.ok(!productManager.includes("router.refresh()"), "a committed save must not be coupled to a fallible route refresh");
 contains(cache, ["revalidateTag(tag, \"max\")"], "deferred cache invalidation");
 

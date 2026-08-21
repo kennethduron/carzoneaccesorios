@@ -36,7 +36,11 @@ import type { ProductImportResult, ProductImportSummary } from "@/app/admin/prod
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { normalizeImportedProductCategoryName, officialProductCategories } from "@/lib/product-categories";
-import { createProductSaveSingleFlightGuard } from "@/lib/product-create-hardening";
+import {
+  createProductSaveSingleFlightGuard,
+  runProductCreateWithConfirmation,
+  type ProductCreateConfirmationResponse,
+} from "@/lib/product-create-hardening";
 import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
@@ -172,6 +176,21 @@ const maxProductImages = 5;
 const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detalle", "otro"];
 const integerInputPattern = /^\d*$/;
 const decimalInputPattern = /^$|^\d+(?:\.\d{0,2})?$/;
+
+async function confirmProductCreateOutcome(product: ProductFormInput): Promise<ProductCreateConfirmationResponse> {
+  const response = await fetch("/api/admin/productos/confirm-create", {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sku: product.sku, slug: product.slug, name: product.name }),
+  });
+  const result = await response.json().catch(() => null) as ProductCreateConfirmationResponse | null;
+  if (!result || typeof result.ok !== "boolean" || typeof result.code !== "string" || typeof result.message !== "string") {
+    throw new Error("Invalid product confirmation response");
+  }
+  return result;
+}
 
 const productImportModeCopy: Record<ProductImportMode, { label: string; description: string; confirmation: string }> = {
   create_and_update: {
@@ -1000,7 +1019,12 @@ export function ProductManager({
     startTransition(async () => {
       try {
         setEditing(normalizedProduct);
-        const result = await saveProductAction(normalizedProduct);
+        const result = normalizedProduct.id
+          ? await saveProductAction(normalizedProduct)
+          : await runProductCreateWithConfirmation(
+              () => saveProductAction(normalizedProduct),
+              () => confirmProductCreateOutcome(normalizedProduct),
+            );
         showMessage(result.message, result.ok ? "success" : "error");
         if (result.ok) {
           persistProductDraft(null);
@@ -1009,7 +1033,7 @@ export function ProductManager({
         }
       } catch {
         showMessage(
-          "No se pudo confirmar el resultado. Conservamos el formulario; revisa la lista antes de volver a guardar.",
+          "No se pudo consultar el catálogo. Conservamos el formulario; actualiza la vista antes de volver a guardar.",
           "error",
         );
       } finally {
