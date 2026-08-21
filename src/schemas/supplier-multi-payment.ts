@@ -67,13 +67,24 @@ export const supplierMultiPaymentSchema = z
 export const supplierOpenPayablesQuerySchema = z
   .object({
     supplier_id: z.uuid(),
+    effective_payment_date: z.iso.date(),
     accounts_payable_id: z.uuid().optional(),
+    accounts_payable_ids: z.array(z.uuid()).min(1).max(200).optional(),
     query: z.string().trim().max(120).optional().default(""),
     cursor_due_date: z.iso.date().nullable().optional(),
     cursor_id: z.uuid().nullable().optional(),
-    page_size: z.number().int().min(1).max(50).optional().default(30),
+    page_size: z.number().int().min(1).max(200).optional().default(30),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.accounts_payable_id && value.accounts_payable_ids) {
+      context.addIssue({
+        code: "custom",
+        path: ["accounts_payable_ids"],
+        message: "Usa un solo modo de selección de cuentas por pagar.",
+      });
+    }
+  });
 
 export const supplierMultiPaymentVoidSchema = z
   .object({

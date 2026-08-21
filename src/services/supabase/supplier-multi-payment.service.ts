@@ -7,7 +7,6 @@ import type {
   SupplierMultiPaymentRpcResult,
   SupplierOpenPayablesQuery,
 } from "@/schemas/supplier-multi-payment";
-import { todayCivilDate } from "@/lib/civil-date";
 
 export type SupplierOpenPayable = {
   id: string;
@@ -242,6 +241,10 @@ export async function getSupplierOpenPayables(
     query = query.eq("id", input.accounts_payable_id);
   }
 
+  if (input.accounts_payable_ids) {
+    query = query.in("id", input.accounts_payable_ids);
+  }
+
   if (invoiceIds) {
     query = query.in("supplier_invoice_id", invoiceIds);
   }
@@ -264,8 +267,12 @@ export async function getSupplierOpenPayables(
   const pageRows = rows.slice(0, input.page_size);
   const recognitionResults = await Promise.all(pageRows.map(async (row) => {
     const { data: recognition, error: recognitionError } = await admin.rpc(
-      "resolve_accounts_payable_accounting_recognition_v1",
-      { p_accounts_payable_id: row.id, p_proposed_journal_date: todayCivilDate(), p_payment_id: null },
+      "resolve_accounts_payable_payment_recognition_v2",
+      {
+        p_accounts_payable_id: row.id,
+        p_effective_payment_date: input.effective_payment_date,
+        p_payment_id: null,
+      },
     );
     const resolved = recognition as { recognized?: boolean; reason_code?: string } | null;
     return recognitionError ? { recognized: false, reason: "recognition_check_failed" } : { recognized: resolved?.recognized === true, reason: resolved?.reason_code ?? null };

@@ -36,6 +36,7 @@ import type { ProductImportResult, ProductImportSummary } from "@/app/admin/prod
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { normalizeImportedProductCategoryName, officialProductCategories } from "@/lib/product-categories";
+import { createProductSaveSingleFlightGuard } from "@/lib/product-create-hardening";
 import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
@@ -529,6 +530,7 @@ export function ProductManager({
   capabilities,
   filters,
 }: ProductManagerProps) {
+  const saveExecutionGuard = useRef(createProductSaveSingleFlightGuard()).current;
   const [query, setQuery] = useState(filters.query);
   const [status, setStatus] = useState<ProductStatus | "all">(filters.status as ProductStatus | "all");
   const [categoryId, setCategoryId] = useState(filters.categoryId);
@@ -983,7 +985,7 @@ export function ProductManager({
   }
 
   function submitProduct() {
-    if (!editing) {
+    if (!editing || isPending) {
       return;
     }
 
@@ -994,14 +996,24 @@ export function ProductManager({
       return;
     }
 
+    if (!saveExecutionGuard.tryStart()) return;
     startTransition(async () => {
-      setEditing(normalizedProduct);
-      const result = await saveProductAction(normalizedProduct);
-      showMessage(result.message, result.ok ? "success" : "error");
-      if (result.ok) {
-        persistProductDraft(null);
-        setEditing(null);
-        setImageUploads({});
+      try {
+        setEditing(normalizedProduct);
+        const result = await saveProductAction(normalizedProduct);
+        showMessage(result.message, result.ok ? "success" : "error");
+        if (result.ok) {
+          persistProductDraft(null);
+          setEditing(null);
+          setImageUploads({});
+        }
+      } catch {
+        showMessage(
+          "No se pudo confirmar el resultado. Conservamos el formulario; revisa la lista antes de volver a guardar.",
+          "error",
+        );
+      } finally {
+        saveExecutionGuard.finish();
       }
     });
   }

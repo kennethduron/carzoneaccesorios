@@ -12,6 +12,7 @@ const manager = read("src/components/admin/product-manager.tsx");
 const migration = read("supabase/migrations/202607150001_granular_product_permissions.sql");
 const fiscalProductMigration = read("supabase/migrations/202607280007_pos_product_tax_and_calculator.sql");
 const stockGrantMigration = read("supabase/migrations/202607200001_grant_contadora_product_stock_adjustment.sql");
+const hardeningMigration = read("supabase/migrations/202608200001_payment_effective_date_product_creation_hardening_v1.sql");
 const stockGrantStatements = stockGrantMigration.replace(/^--.*$/gm, "");
 const imageRules = read("src/utils/product-image-rules.ts");
 
@@ -49,11 +50,13 @@ assert.match(page, /capabilities=\{capabilities\}/);
 assert.match(adminPage, /permissions: \["products:read", "products:manage"\]/);
 
 assert.match(actions, /requireProductCapability\("manageImages"\)/);
-assert.match(actions, /requireProductCapability\(input\.id \? "update" : "create"\)/);
+assert.match(actions, /getSessionProfile\(\)/);
+assert.match(actions, /capabilities\[requiredCapability\]/);
+assert.match(actions, /PERMISSION_DENIED/);
 assert.match(actions, /requireProductCapability\("deleteProducts"\)/);
 assert.match(actions, /requireProductCapability\("importProducts"\)/);
-assert.match(actions, /save_product_catalog_v2_locked/);
-assert.match(actions, /capabilities\.adjustStock \? await setProductStockLocked/);
+assert.match(actions, /save_product_catalog_v3_locked/);
+assert.doesNotMatch(actions.match(/export async function saveProductAction[\s\S]*?export async function setProductActiveAction/)?.[0] ?? "", /setProductStockLocked\(/);
 assert.match(actions, /product_save_compensation/);
 assert.match(actions, /cloudinary_reference_check_failed/);
 assert.doesNotMatch(actions, /requirePermission\("products:manage"\)/);
@@ -92,6 +95,9 @@ assert.match(migration, /create policy "Product image managers can insert produc
 const saveV2Rpc = fiscalProductMigration.match(/create or replace function public\.save_product_catalog_v2_locked(.*?)revoke all on function public\.save_product_catalog_v2_locked/s)?.[1] ?? "";
 assert.ok(saveV2Rpc, "save_product_catalog_v2_locked definition missing");
 assert.match(saveV2Rpc, /public\.save_product_catalog_locked/, "V2 catalog save must retain the locked V1 permission and image contract");
+assert.match(hardeningMigration, /public\.save_product_catalog_v3_locked/);
+assert.match(hardeningMigration, /public\.save_product_catalog_v2_locked/);
+assert.match(hardeningMigration, /public\.set_product_stock_locked/);
 
 const authenticatedInsertGrant = migration.match(/grant insert \((.*?)\) on public\.products to authenticated;/s)?.[1] ?? "";
 const authenticatedUpdateGrant = migration.match(/grant update \((.*?)\) on public\.products to authenticated;/s)?.[1] ?? "";

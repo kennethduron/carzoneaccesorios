@@ -1,13 +1,15 @@
 "use server";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
+import { getSessionProfile } from "@/lib/auth/session";
 import { configureCloudinary } from "@/lib/cloudinary";
 import { writeErrorLog } from "@/lib/error-logging";
-import { revalidateProductAvailability } from "@/lib/product-availability-cache";
+import { markProductAvailabilityStale, revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { isOfficialProductCategory } from "@/lib/product-categories";
+import { runProductPostSaveTasks } from "@/lib/product-create-hardening";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { productTaxCategorySchema } from "@/lib/validation/product-tax";
 import type { ProductFormInput, ProductImageInput, ProductStatus, ProductTaxCategory } from "@/types/products";
@@ -39,6 +41,33 @@ type ProductMutationResult = {
   ok: boolean;
   message: string;
 };
+
+export type ProductSaveActionResult =
+  | {
+      ok: true;
+      code:
+        | "PRODUCT_CREATED"
+        | "PRODUCT_UPDATED"
+        | "PRODUCT_SAVED_REFRESH_PENDING"
+        | "PRODUCT_SAVED_POST_SAVE_WARNING";
+      message: string;
+      productId: string;
+      correlationId: string;
+    }
+  | {
+      ok: false;
+      code:
+        | "AUTHENTICATION_REQUIRED"
+        | "PERMISSION_DENIED"
+        | "VALIDATION_FAILED"
+        | "CATEGORY_INVALID"
+        | "DUPLICATE_PRODUCT"
+        | "PRODUCT_WRITE_FAILED"
+        | "PRODUCT_WRITE_UNCONFIRMED";
+      message: string;
+      correlationId: string;
+      stage: "authorization" | "validation" | "database_write";
+    };
 
 export type ProductImportMode = "create_and_update" | "create_only" | "update_only";
 
@@ -88,16 +117,13 @@ type ProductHistoryCounts = {
   inventoryMovements: number;
 };
 
-type ProductStockRpcResult = {
-  movement_id: string | null;
-  stock_before: number;
-  stock_after: number;
-  quantity: number;
-};
-
 type ProductCatalogSaveRpcResult = {
   product_id: string;
   removed_asset_ids: string[] | null;
+  stock_movement_id: string | null;
+  stock_before: number;
+  stock_after: number;
+  stock_quantity: number;
 };
 
 type ProductImportRowRpcResult = {
@@ -245,6 +271,17 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     throw new Error("El precio mayorista no puede ser mayor que el precio al detalle.");
   }
 
+  const numericValues = [input.stock, input.min_stock, input.cost_price, input.retail_price, input.wholesale_price];
+  if (numericValues.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    throw new Error("Stock y precios deben contener valores numéricos no negativos.");
+  }
+  if (!Number.isInteger(Number(input.stock)) || !Number.isInteger(Number(input.min_stock))) {
+    throw new Error("Stock y stock mínimo deben ser números enteros.");
+  }
+  if (Number(input.retail_price) <= 0) {
+    throw new Error("El precio al detalle debe ser mayor que cero.");
+  }
+
   if (!productTaxCategorySchema.safeParse(input.tax_category).success) {
     throw new Error("Selecciona una clasificación fiscal válida.");
   }
@@ -283,6 +320,12 @@ function productPayload(input: ProductFormInput): ProductDbPayload {
     status,
     active: status === "active" && input.active,
   };
+}
+
+function productCatalogPayload(payload: ProductDbPayload): Omit<ProductDbPayload, "stock"> {
+  const { stock, ...catalogPayload } = payload;
+  void stock;
+  return catalogPayload;
 }
 
 function imagePayload(images: ProductImageInput[]) {
@@ -366,21 +409,6 @@ async function removeCloudinaryImages(publicIds: string[], context: Record<strin
     }),
   );
   return deletedAssets.filter((publicId): publicId is string => Boolean(publicId));
-}
-
-async function setProductStockLocked(productId: string, nextStock: number): Promise<ProductStockRpcResult | null> {
-  const supabase = await getSupabaseServerClient();
-  const { data, error } = await supabase.rpc("set_product_stock_locked", {
-    target_product_id: productId,
-    target_stock: nextStock,
-    movement_notes: "Ajuste desde el módulo de productos",
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return (Array.isArray(data) ? data[0] : data) as ProductStockRpcResult | null;
 }
 
 export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
@@ -522,88 +550,298 @@ export async function deleteUploadedProductImageAction(publicId: string): Promis
   return { ok: true, message: "Imagen eliminada correctamente." };
 }
 
-export async function saveProductAction(input: ProductFormInput): Promise<ProductMutationResult> {
-  const profile = await requireProductCapability(input.id ? "update" : "create");
-  const capabilities = getProductCapabilities(profile);
-  const candidateAssetIds = capabilities.manageImages
-    ? input.images.map((image) => image.public_id ?? image.storage_path).filter((value): value is string => Boolean(value))
-    : [];
+export async function saveProductAction(input: ProductFormInput): Promise<ProductSaveActionResult> {
+  const correlationId = randomUUID();
+  const requiredCapability = input.id ? "update" : "create";
+  let profile: Awaited<ReturnType<typeof getSessionProfile>>;
 
   try {
-    const supabase = await getSupabaseServerClient();
-    const payload = productPayload(input);
-    const { data: category, error: categoryError } = await supabase
-      .from("categories")
-      .select("name, slug, active")
-      .eq("id", payload.category_id)
-      .maybeSingle<{ name: string; slug: string; active: boolean }>();
-
-    if (categoryError || !isOfficialProductCategory(category)) {
-      throw new Error("Selecciona una categoría oficial para guardar el producto.");
-    }
-
-    const { stock: targetStock, ...catalogPayload } = payload;
-    const authorizedTargetStock = capabilities.adjustStock ? stockIntegerForAdjustment(input.stock) : targetStock;
-    const { data, error } = await supabase.rpc("save_product_catalog_v2_locked", {
-      target_product_id: input.id ?? null,
-      product_data: catalogPayload,
-      images_data: capabilities.manageImages ? imagePayload(input.images) : null,
-    });
-    if (error) throw new Error(error.message);
-
-    const saved = (Array.isArray(data) ? data[0] : data) as ProductCatalogSaveRpcResult | null;
-    if (!saved?.product_id) throw new Error("No se pudo confirmar el producto guardado.");
-
-    await removeCloudinaryImages(saved.removed_asset_ids ?? [], {
-      product_id: saved.product_id,
-      reason: "product_images_replaced",
-    });
-
-    const stockMovement = capabilities.adjustStock ? await setProductStockLocked(saved.product_id, authorizedTargetStock) : null;
-    const effectiveStock = capabilities.adjustStock
-      ? stockMovement?.stock_after ?? authorizedTargetStock
-      : input.id
-        ? "preserved"
-        : 0;
-
-    await writeAuditLog({
-      tableName: "products",
-      recordId: saved.product_id,
-      action: input.id ? "product.updated" : "product.created",
-      oldData: input.id ? { stock: stockMovement?.stock_before ?? "preserved" } : null,
-      newData: {
-        ...catalogPayload,
-        stock: effectiveStock,
-        stock_adjustment_authorized: capabilities.adjustStock,
-        images_updated: capabilities.manageImages,
-      },
-    });
-
-    revalidateProductCatalog(payload.slug);
-    const stockMessage = capabilities.adjustStock
-      ? ""
-      : input.id
-        ? " El stock y las reservas se conservaron sin cambios."
-        : " El producto se creó con stock 0.";
-    return {
-      ok: true,
-      message: `${input.id ? "Producto actualizado" : "Producto creado"} correctamente.${stockMessage}`,
-    };
+    profile = await getSessionProfile();
   } catch (error) {
-    await removeCloudinaryImages(candidateAssetIds, {
-      product_id: input.id ?? null,
-      reason: "product_save_compensation",
-    });
-    const message = friendlyProductError(error instanceof Error ? error.message : "No se pudo guardar el producto.");
     await writeErrorLog({
       route: "/admin/productos",
-      action: "products.save_failed",
-      errorMessage: message,
+      action: "products.authorization_check_failed",
+      errorMessage: error instanceof Error ? error.message : "No se pudo verificar la sesión.",
       errorStack: error instanceof Error ? error.stack : null,
-      metadata: { product_id: input.id ?? null, sku: input.sku },
-    });
-    return { ok: false, message };
+      errorCode: "PRODUCT_AUTH_CHECK_FAILED",
+      metadata: { correlation_id: correlationId },
+    }).catch(() => undefined);
+    return {
+      ok: false,
+      code: "PRODUCT_WRITE_FAILED",
+      message: `No se pudo verificar la sesión. Referencia: ${correlationId}.`,
+      correlationId,
+      stage: "authorization",
+    };
   }
+
+  if (!profile) {
+    return {
+      ok: false,
+      code: "AUTHENTICATION_REQUIRED",
+      message: "La sesión terminó. Inicia sesión nuevamente; el producto no fue guardado.",
+      correlationId,
+      stage: "authorization",
+    };
+  }
+
+  const capabilities = getProductCapabilities(profile);
+  if (!capabilities[requiredCapability]) {
+    return {
+      ok: false,
+      code: "PERMISSION_DENIED",
+      message: "No tienes permiso para guardar este producto.",
+      correlationId,
+      stage: "authorization",
+    };
+  }
+
+  const safeImages = Array.isArray(input.images) ? input.images : [];
+  const candidateAssetIds = capabilities.manageImages
+    ? safeImages.map((image) => image.public_id ?? image.storage_path).filter((value): value is string => Boolean(value))
+    : [];
+  const compensateCandidateAssets = (reason: string) => removeCloudinaryImages(candidateAssetIds, {
+    product_id: input.id ?? null,
+    reason,
+    correlation_id: correlationId,
+  }).catch(() => undefined);
+  let payload: ProductDbPayload;
+
+  try {
+    payload = productPayload(input);
+  } catch (error) {
+    await compensateCandidateAssets("product_validation_failed");
+    return {
+      ok: false,
+      code: "VALIDATION_FAILED",
+      message: friendlyProductError(error instanceof Error ? error.message : "Revisa los datos del producto."),
+      correlationId,
+      stage: "validation",
+    };
+  }
+
+  let supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>;
+  try {
+    supabase = await getSupabaseServerClient();
+  } catch (error) {
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.database_client_failed",
+      errorMessage: error instanceof Error ? error.message : "No se pudo iniciar la operación de guardado.",
+      errorStack: error instanceof Error ? error.stack : null,
+      errorCode: "PRODUCT_DATABASE_CLIENT_FAILED",
+      metadata: { correlation_id: correlationId, actor_role: profile.role, stage: "database_write" },
+    }).catch(() => undefined);
+    return {
+      ok: false,
+      code: "PRODUCT_WRITE_FAILED",
+      message: `No se pudo iniciar el guardado. Referencia: ${correlationId}.`,
+      correlationId,
+      stage: "database_write",
+    };
+  }
+  const { data: category, error: categoryError } = await supabase
+    .from("categories")
+    .select("name, slug, active")
+    .eq("id", payload.category_id)
+    .maybeSingle<{ name: string; slug: string; active: boolean }>();
+
+  if (categoryError) {
+    await compensateCandidateAssets("product_category_check_failed");
+    await writeErrorLog({
+        route: "/admin/productos",
+        action: "products.category_validation_failed",
+        errorMessage: categoryError.message,
+        errorCode: categoryError.code,
+        metadata: { correlation_id: correlationId, product_id: input.id ?? null, actor_role: profile.role },
+      }).catch(() => undefined);
+    return {
+      ok: false,
+      code: "PRODUCT_WRITE_FAILED",
+      message: `No se pudo validar la categoría. Referencia: ${correlationId}.`,
+      correlationId,
+      stage: "database_write",
+    };
+  }
+  if (!isOfficialProductCategory(category)) {
+    await compensateCandidateAssets("product_category_invalid");
+    return {
+      ok: false,
+      code: "CATEGORY_INVALID",
+      message: "Selecciona una categoría oficial y activa para guardar el producto.",
+      correlationId,
+      stage: "validation",
+    };
+  }
+
+  const catalogPayload = productCatalogPayload(payload);
+  let authorizedTargetStock: number | null;
+  try {
+    authorizedTargetStock = capabilities.adjustStock ? stockIntegerForAdjustment(input.stock) : null;
+  } catch (error) {
+    await compensateCandidateAssets("product_stock_validation_failed");
+    return {
+      ok: false,
+      code: "VALIDATION_FAILED",
+      message: error instanceof Error ? error.message : "El stock no es válido.",
+      correlationId,
+      stage: "validation",
+    };
+  }
+
+  let data: unknown = null;
+  let rpcError: { code?: string; message: string } | null = null;
+  try {
+    const response = await supabase.rpc("save_product_catalog_v3_locked", {
+      target_product_id: input.id ?? null,
+      product_data: catalogPayload,
+      images_data: capabilities.manageImages ? imagePayload(safeImages) : null,
+      target_stock: authorizedTargetStock,
+    });
+    data = response.data;
+    rpcError = response.error;
+  } catch (error) {
+    rpcError = {
+      code: undefined,
+      message: error instanceof Error ? error.message : "No se recibió respuesta del guardado.",
+    };
+  }
+
+  if (rpcError) {
+    const duplicate = rpcError.code === "23505" || rpcError.message.toLowerCase().includes("duplicate key");
+    const unconfirmed = !rpcError.code || rpcError.code.startsWith("PGRST0");
+    if (!unconfirmed) {
+      await compensateCandidateAssets("product_save_compensation");
+    }
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: unconfirmed ? "products.save_unconfirmed" : "products.save_failed",
+      errorMessage: rpcError.message,
+      errorCode: rpcError.code,
+      metadata: {
+        correlation_id: correlationId,
+        product_id: input.id ?? null,
+        stage: "database_write",
+        actor_role: profile.role,
+        rpc_name: "save_product_catalog_v3_locked",
+      },
+    }).catch(() => undefined);
+    return {
+      ok: false,
+      code: unconfirmed
+        ? "PRODUCT_WRITE_UNCONFIRMED"
+        : duplicate
+          ? "DUPLICATE_PRODUCT"
+          : "PRODUCT_WRITE_FAILED",
+      message: unconfirmed
+        ? `No se pudo confirmar el resultado. Revisa la lista antes de reintentar. Referencia: ${correlationId}.`
+        : duplicate
+          ? friendlyProductError(rpcError.message)
+          : `No se pudo guardar el producto. Revisa los datos e intenta nuevamente. Referencia: ${correlationId}.`,
+      correlationId,
+      stage: "database_write",
+    };
+  }
+
+  const saved = (Array.isArray(data) ? data[0] : data) as ProductCatalogSaveRpcResult | null;
+  if (!saved?.product_id) {
+    await writeErrorLog({
+      route: "/admin/productos",
+      action: "products.save_response_unconfirmed",
+      errorMessage: "El RPC terminó sin devolver product_id.",
+      errorCode: "PRODUCT_WRITE_UNCONFIRMED",
+      metadata: { correlation_id: correlationId, product_id: input.id ?? null },
+    }).catch(() => undefined);
+    return {
+      ok: false,
+      code: "PRODUCT_WRITE_UNCONFIRMED",
+      message: `No se pudo confirmar el resultado. Revisa la lista antes de reintentar. Referencia: ${correlationId}.`,
+      correlationId,
+      stage: "database_write",
+    };
+  }
+
+  const postSave = await runProductPostSaveTasks([
+    {
+      stage: "asset_cleanup",
+      run: () => removeCloudinaryImages(saved.removed_asset_ids ?? [], {
+        product_id: saved.product_id,
+        reason: "product_images_replaced",
+        correlation_id: correlationId,
+      }).then(() => undefined),
+      onFailure: (cleanupError) => writeErrorLog({
+        route: "/admin/productos",
+        action: "products.post_save_asset_cleanup_failed",
+        errorMessage: cleanupError instanceof Error ? cleanupError.message : "Falló la limpieza posterior al guardado.",
+        errorStack: cleanupError instanceof Error ? cleanupError.stack : null,
+        errorCode: "PRODUCT_POST_SAVE_CLEANUP_FAILED",
+        metadata: { correlation_id: correlationId, product_id: saved.product_id, actor_role: profile.role },
+      }),
+    },
+    {
+      stage: "audit",
+      run: async () => {
+        const auditWritten = await writeAuditLog({
+          tableName: "products",
+          recordId: saved.product_id,
+          action: input.id ? "product.updated" : "product.created",
+          oldData: input.id ? { stock: capabilities.adjustStock ? saved.stock_before : "preserved" } : null,
+          newData: {
+            ...catalogPayload,
+            stock: capabilities.adjustStock ? saved.stock_after : input.id ? "preserved" : 0,
+            stock_adjustment_authorized: capabilities.adjustStock,
+            stock_movement_id: saved.stock_movement_id,
+            images_updated: capabilities.manageImages,
+            correlation_id: correlationId,
+          },
+        });
+        if (!auditWritten) throw new Error("El registro de auditoría fue rechazado.");
+      },
+      onFailure: (auditError) => writeErrorLog({
+        route: "/admin/productos",
+        action: "products.post_save_audit_failed",
+        errorMessage: auditError instanceof Error ? auditError.message : "Falló la auditoría posterior al guardado.",
+        errorStack: auditError instanceof Error ? auditError.stack : null,
+        errorCode: "PRODUCT_POST_SAVE_AUDIT_FAILED",
+        metadata: { correlation_id: correlationId, product_id: saved.product_id, actor_role: profile.role },
+      }),
+    },
+    {
+      stage: "cache_revalidation",
+      run: markProductAvailabilityStale,
+      onFailure: (refreshError) => writeErrorLog({
+        route: "/admin/productos",
+        action: "products.post_save_revalidation_failed",
+        errorMessage: refreshError instanceof Error ? refreshError.message : "Falló la revalidación posterior al guardado.",
+        errorStack: refreshError instanceof Error ? refreshError.stack : null,
+        errorCode: "PRODUCT_POST_SAVE_REVALIDATION_FAILED",
+        metadata: { correlation_id: correlationId, product_id: saved.product_id, actor_role: profile.role },
+      }),
+    },
+  ]);
+  const refreshPending = postSave.failedStages.includes("cache_revalidation");
+  const postSaveWarning = postSave.failedStages.length > 0;
+
+  const stockMessage = capabilities.adjustStock
+    ? ""
+    : input.id
+      ? " El stock y las reservas se conservaron sin cambios."
+      : " El producto se creó con stock 0.";
+  return {
+    ok: true,
+    code: refreshPending
+      ? "PRODUCT_SAVED_REFRESH_PENDING"
+      : postSaveWarning
+        ? "PRODUCT_SAVED_POST_SAVE_WARNING"
+      : input.id
+        ? "PRODUCT_UPDATED"
+        : "PRODUCT_CREATED",
+    message: postSaveWarning
+      ? `${input.id ? "Producto actualizado" : "Producto creado"} correctamente. Una tarea posterior requiere revisión; no repitas el guardado. Referencia: ${correlationId}.${stockMessage}`
+      : `${input.id ? "Producto actualizado" : "Producto creado"} correctamente.${stockMessage}`,
+    productId: saved.product_id,
+    correlationId,
+  };
 }
 
 export async function setProductActiveAction(id: string, active: boolean): Promise<ProductMutationResult> {

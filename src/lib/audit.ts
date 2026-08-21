@@ -25,7 +25,10 @@ export async function writeAuditLog(input: AuditInput, client?: SupabaseClient) 
 
   if (error) {
     console.error("Audit log failed", error.message);
+    return false;
   }
+
+  return true;
 }
 
 export function safeErrorMessage(error: unknown, fallback: string) {

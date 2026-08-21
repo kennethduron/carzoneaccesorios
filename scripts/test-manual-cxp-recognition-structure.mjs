@@ -72,7 +72,8 @@ contains(manager + payables, [
   "recognition_state",
 ], "hybrid UI");
 contains(paymentService + paymentWizard, [
-  "resolve_accounts_payable_accounting_recognition_v1",
+  "resolve_accounts_payable_payment_recognition_v2",
+  "effective_payment_date",
   "payment_eligible",
   "Complete el reconocimiento contable antes de pagar",
   "Publique la partida de reconocimiento antes de pagar",

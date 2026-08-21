@@ -190,6 +190,7 @@ export function SupplierMultiPaymentWizard({
   const [voidReason, setVoidReason] = useState("");
   const [focusRequest, setFocusRequest] = useState(0);
   const [validatingInitialSelection, setValidatingInitialSelection] = useState(false);
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
 
 
   useEffect(() => {
@@ -249,6 +250,7 @@ export function SupplierMultiPaymentWizard({
     setValidatingInitialSelection(true);
     return getSupplierOpenPayablesAction({
       supplier_id: selectionRequest.supplierId,
+      effective_payment_date: todayValue(),
       accounts_payable_id: selectionRequest.accountsPayableId,
       page_size: 1,
     })
@@ -326,6 +328,7 @@ export function SupplierMultiPaymentWizard({
       const nextCursor = append ? cursor : null;
       const response = await getSupplierOpenPayablesAction({
         supplier_id: activeSupplierId,
+        effective_payment_date: draft?.paidDate ?? todayValue(),
         query: options?.searchValue ?? search,
         cursor_due_date: nextCursor?.dueDate ?? null,
         cursor_id: nextCursor?.id ?? null,
@@ -371,7 +374,7 @@ export function SupplierMultiPaymentWizard({
       });
       setCursor(response.nextCursor);
     },
-    [activeSupplierId, cursor, search, toast],
+    [activeSupplierId, cursor, draft?.paidDate, search, toast],
   );
 
   useEffect(() => {
@@ -381,6 +384,50 @@ export function SupplierMultiPaymentWizard({
     }, 250);
     return () => window.clearTimeout(timer);
   }, [draft?.step, draft?.supplierId, loadPayables, open, search]);
+
+  const selectedIdsKey = draft?.selectedIds.join(",") ?? "";
+  useEffect(() => {
+    if (!open || !draft?.supplierId || !isCivilDate(draft.paidDate) || !selectedIdsKey) return;
+    let active = true;
+    const selectedIds = selectedIdsKey.split(",").filter(Boolean);
+    const timer = window.setTimeout(() => {
+      if (!active) return;
+      setCheckingEligibility(true);
+      void getSupplierOpenPayablesAction({
+        supplier_id: draft.supplierId,
+        effective_payment_date: draft.paidDate,
+        accounts_payable_ids: selectedIds,
+        page_size: selectedIds.length,
+      })
+        .then((response) => {
+          if (!active || !response.ok) return;
+          const refreshedById = Object.fromEntries(response.items.map((payable) => [payable.id, payable]));
+          setPayables((current) => current.map((payable) => refreshedById[payable.id] ?? payable));
+          setDraft((current) => current
+            ? {
+                ...current,
+                selectedPayables: {
+                  ...current.selectedPayables,
+                  ...refreshedById,
+                },
+              }
+            : current);
+          if (response.items.some((payable) => !payable.payment_eligible)) {
+            toast.warning("La fecha efectiva seleccionada deja al menos una obligación fuera del pago.");
+          }
+        })
+        .catch(() => {
+          if (active) toast.error("No se pudo reevaluar el reconocimiento para la fecha efectiva.");
+        })
+        .finally(() => {
+          if (active) setCheckingEligibility(false);
+        });
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [draft?.paidDate, draft?.supplierId, open, selectedIdsKey, toast]);
 
   const selected = useMemo(
     () =>
@@ -398,6 +445,7 @@ export function SupplierMultiPaymentWizard({
     [draft?.amounts, selected],
   );
   const applicationsValid =
+    !checkingEligibility &&
     selected.length > 0 &&
     selected.length <= 200 &&
     selected.every((payable) => {

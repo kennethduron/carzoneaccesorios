@@ -164,6 +164,7 @@ assert.match(productActions, /auto_disabled_by_stock/);
 
 assert.match(cache, /updateTag\("products"\)|for \(const tag of \["products"/);
 assert.match(cache, /revalidatePath\("\/sitemap\.xml"\)|"\/sitemap\.xml"/);
-assert.doesNotMatch(cache, /revalidateTag/);
+assert.match(cache, /revalidateTag\(tag, "max"\)/);
+assert.doesNotMatch(cache, /revalidateTag\([^,\n]+\);/, "deprecated single-argument revalidateTag must remain absent");
 
 console.log("Product stock automation and purchase inventory structure: OK");
