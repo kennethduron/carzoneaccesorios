@@ -57,7 +57,7 @@ assert.deepEqual(
 );
 
 const manager = read("src/components/admin/product-manager.tsx");
-const actions = read("src/app/admin/productos/actions.ts");
+const productSaveService = read("src/services/product-save.service.ts");
 const adminService = read("src/services/supabase/admin-products.service.ts");
 const adminInventoryService = read("src/services/supabase/admin-inventory.service.ts");
 const publicService = read("src/services/supabase/products.service.ts");
@@ -76,9 +76,9 @@ assert.match(manager, /findImportedCategory\(categories, categoryName\)/, "Excel
 assert.match(manager, /allowBlank: false/, "Excel category list is mandatory");
 assert.match(manager, /officialProductCategories\.map\(\(category\) => category\.name\)/, "Excel uses the official list");
 
-assert.match(actions, /if \(!categoryId\)/, "server rejects empty category");
-assert.match(actions, /isOfficialProductCategory\(category\)/, "server rejects non-official category IDs");
-assert.match(actions, /\.from\("categories"\)/, "server verifies the referenced category");
+assert.match(productSaveService, /if \(!categoryId\)/, "server rejects empty category");
+assert.match(productSaveService, /isOfficialProductCategory\(category\)/, "server rejects non-official category IDs");
+assert.match(productSaveService, /\.from\("categories"\)/, "server verifies the referenced category");
 
 assert.match(adminService, /officialProductCategories\.map\(\(category\) => category\.slug\)/, "admin options are official-only");
 assert.match(adminService, /sortOfficialProductCategories/, "admin options keep official order");

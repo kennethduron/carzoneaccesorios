@@ -54,6 +54,8 @@
     "test:product-create-hardening": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-create-hardening-unit.mjs",
     "test:product-create-api-transport": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-create-api-transport.mjs",
     "test:product-create-atomic:local": "node scripts/test-product-create-atomic-local.mjs",
+    "test:product-update-api-transport": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-update-api-transport.mjs",
+    "test:product-code-edit:local": "node scripts/test-product-code-edit-local.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",
     "test:order-price-review-v2": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-price-review-v2.mjs",
     "test:order-price-confirmation:local": "node scripts/test-order-price-confirmation-local.mjs",

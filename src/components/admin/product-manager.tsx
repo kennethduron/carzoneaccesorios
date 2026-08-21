@@ -28,7 +28,6 @@ import {
   getProductImportSkuStatusAction,
   importProductsAction,
   preflightProductImportFileAction,
-  saveProductAction,
   setProductActiveAction,
   uploadProductImageAction,
 } from "@/app/admin/productos/actions";
@@ -42,6 +41,7 @@ import {
   type ProductCreateConfirmationResponse,
 } from "@/lib/product-create-hardening";
 import { createProductViaHttpApi } from "@/lib/product-create-http";
+import { updateProductViaHttpApi } from "@/lib/product-update-http";
 import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
@@ -1044,7 +1044,7 @@ export function ProductManager({
         setEditing(normalizedProduct);
         const requestId = crypto.randomUUID();
         const result = normalizedProduct.id
-          ? await saveProductAction(normalizedProduct)
+          ? await updateProductViaHttpApi({ ...normalizedProduct, id: normalizedProduct.id }, requestId)
           : await runProductCreateWithConfirmation(
               () => createProductViaHttpApi(normalizedProduct, requestId),
               () => confirmProductCreateOutcome(normalizedProduct, requestId),
