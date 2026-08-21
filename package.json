@@ -52,6 +52,8 @@
     "test:payment-effective-date-product-hardening": "node scripts/test-payment-effective-date-product-hardening.mjs",
     "test:payment-effective-date-product-hardening:local": "node scripts/test-effective-date-product-hardening-local.mjs",
     "test:product-create-hardening": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-create-hardening-unit.mjs",
+    "test:product-create-api-transport": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-create-api-transport.mjs",
+    "test:product-create-atomic:local": "node scripts/test-product-create-atomic-local.mjs",
     "test:order-commercial-terms": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-commercial-terms.mjs",
     "test:order-price-review-v2": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-order-price-review-v2.mjs",
     "test:order-price-confirmation:local": "node scripts/test-order-price-confirmation-local.mjs",

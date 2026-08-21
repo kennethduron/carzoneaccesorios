@@ -41,6 +41,7 @@ import {
   runProductCreateWithConfirmation,
   type ProductCreateConfirmationResponse,
 } from "@/lib/product-create-hardening";
+import { createProductViaHttpApi } from "@/lib/product-create-http";
 import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
 import { productShortDescriptionMaxLength } from "@/utils/product-content";
@@ -177,19 +178,41 @@ const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detall
 const integerInputPattern = /^\d*$/;
 const decimalInputPattern = /^$|^\d+(?:\.\d{0,2})?$/;
 
-async function confirmProductCreateOutcome(product: ProductFormInput): Promise<ProductCreateConfirmationResponse> {
-  const response = await fetch("/api/admin/productos/confirm-create", {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sku: product.sku, slug: product.slug, name: product.name }),
-  });
-  const result = await response.json().catch(() => null) as ProductCreateConfirmationResponse | null;
-  if (!result || typeof result.ok !== "boolean" || typeof result.code !== "string" || typeof result.message !== "string") {
-    throw new Error("Invalid product confirmation response");
+async function confirmProductCreateOutcome(
+  product: ProductFormInput,
+  requestId: string,
+): Promise<ProductCreateConfirmationResponse> {
+  const retryDelaysMs = [0, 1_500, 3_000];
+  for (const [index, delayMs] of retryDelaysMs.entries()) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch("/api/admin/productos/confirm-create", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: product.sku, slug: product.slug, name: product.name, requestId }),
+        signal: controller.signal,
+      });
+      const result = await response.json().catch(() => null) as ProductCreateConfirmationResponse | null;
+      if (
+        !result
+        || typeof result.ok !== "boolean"
+        || typeof result.code !== "string"
+        || typeof result.message !== "string"
+        || result.correlationId !== requestId
+        || (result.ok && typeof result.productId !== "string")
+      ) {
+        throw new Error("Invalid product confirmation response");
+      }
+      if (result.code !== "PRODUCT_NOT_CREATED" || index === retryDelaysMs.length - 1) return result;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
-  return result;
+  throw new Error("Product confirmation exhausted without a result");
 }
 
 const productImportModeCopy: Record<ProductImportMode, { label: string; description: string; confirmation: string }> = {
@@ -1019,11 +1042,12 @@ export function ProductManager({
     startTransition(async () => {
       try {
         setEditing(normalizedProduct);
+        const requestId = crypto.randomUUID();
         const result = normalizedProduct.id
           ? await saveProductAction(normalizedProduct)
           : await runProductCreateWithConfirmation(
-              () => saveProductAction(normalizedProduct),
-              () => confirmProductCreateOutcome(normalizedProduct),
+              () => createProductViaHttpApi(normalizedProduct, requestId),
+              () => confirmProductCreateOutcome(normalizedProduct, requestId),
             );
         showMessage(result.message, result.ok ? "success" : "error");
         if (result.ok) {
@@ -1033,7 +1057,7 @@ export function ProductManager({
         }
       } catch {
         showMessage(
-          "No se pudo consultar el catálogo. Conservamos el formulario; actualiza la vista antes de volver a guardar.",
+          "No fue posible confirmar el guardado. La información permanece en el formulario; revisa la lista antes de volver a guardar.",
           "error",
         );
       } finally {

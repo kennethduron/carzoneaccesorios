@@ -13,14 +13,17 @@ type ConfirmationRequest = {
   sku?: unknown;
   slug?: unknown;
   name?: unknown;
+  requestId?: unknown;
 };
+
+const requestIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(result: ProductCreateConfirmationResponse, status = 200) {
   return Response.json(result, { status, headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request) {
-  const correlationId = randomUUID();
+  let correlationId: string = randomUUID();
   const profile = await getSessionProfile().catch(() => null);
   if (!profile) {
     return json({
@@ -50,6 +53,10 @@ export async function POST(request: Request) {
       message: "No se pudo validar la identidad del producto.",
       correlationId,
     }, 400);
+  }
+
+  if (typeof input.requestId === "string" && requestIdPattern.test(input.requestId)) {
+    correlationId = input.requestId;
   }
 
   const identity = canonicalProductCreateIdentity({
@@ -97,7 +104,7 @@ export async function POST(request: Request) {
     return json({
       ok: true,
       code: "PRODUCT_CREATED_CONFIRMED",
-      message: "El producto está guardado correctamente. No vuelvas a guardarlo; actualiza la lista para verlo.",
+      message: "Producto guardado correctamente.",
       productId: confirmation.productId,
       correlationId,
     });
@@ -107,7 +114,7 @@ export async function POST(request: Request) {
     return json({
       ok: false,
       code: "PRODUCT_NOT_CREATED",
-      message: "El producto no fue creado. Conservamos el formulario; puedes volver a guardar cuando la conexión esté estable.",
+      message: "El producto no fue creado. La información permanece en el formulario; puedes volver a guardar.",
       correlationId,
     });
   }

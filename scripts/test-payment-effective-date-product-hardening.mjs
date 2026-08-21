@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
-const [migration, schema, paymentService, wizard, productAction, productManager, confirmationRoute, cache] = await Promise.all([
+const [migration, schema, paymentService, wizard, productAction, productSaveService, productManager, confirmationRoute, cache] = await Promise.all([
   read("supabase/migrations/202608200001_payment_effective_date_product_creation_hardening_v1.sql"),
   read("src/schemas/supplier-multi-payment.ts"),
   read("src/services/supabase/supplier-multi-payment.service.ts"),
   read("src/components/admin/supplier-multi-payment-wizard.tsx"),
   read("src/app/admin/productos/actions.ts"),
+  read("src/services/product-save.service.ts"),
   read("src/components/admin/product-manager.tsx"),
   read("src/app/api/admin/productos/confirm-create/route.ts"),
   read("src/lib/product-availability-cache.ts"),
@@ -48,7 +49,7 @@ contains(schema + paymentService + wizard, [
 ], "effective-date UI contract");
 assert.ok(!paymentService.includes("todayCivilDate"), "explicit payment eligibility must not depend on todayCivilDate");
 
-contains(productAction, [
+contains(productAction + productSaveService, [
   "ProductSaveActionResult",
   "AUTHENTICATION_REQUIRED",
   "PERMISSION_DENIED",
@@ -70,7 +71,7 @@ contains(productManager, [
   "/api/admin/productos/confirm-create",
   "try {",
   "catch {",
-  "actualiza la vista antes de volver a guardar",
+  "revisa la lista antes de volver a guardar",
   "saveExecutionGuard.finish()",
 ], "product client containment");
 contains(confirmationRoute, [
@@ -92,6 +93,7 @@ const saveBlock = productAction.slice(
 );
 assert.ok(!saveBlock.includes("revalidateProductCatalog("), "product save must not force an immediate current-route Server Action rerender");
 assert.ok(!saveBlock.includes("setProductStockLocked("), "catalog and stock must use the single transactional V3 RPC");
-assert.ok(saveBlock.includes("productId: saved.product_id"), "committed success must return the canonical product ID");
+assert.ok(saveBlock.includes("saveProductCanonical(input)"), "the legacy action must delegate to the canonical server-only service");
+assert.ok(productSaveService.includes("productId: saved.product_id"), "committed success must return the canonical product ID");
 
 console.log("payment effective-date and product-create hardening structure: PASS");
