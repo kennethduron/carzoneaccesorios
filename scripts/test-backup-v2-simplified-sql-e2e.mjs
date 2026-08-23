@@ -427,33 +427,34 @@ try {
     namespaceId: "synthetic-plain-sql-namespace",
     failureDomain: "local-synthetic-only",
   });
+  const syntheticSources = Object.freeze({
+    database: exporter,
+    auth,
+    storageMetadata,
+    storageObjects,
+    externalAssets,
+    mutationMethods: Object.freeze([]),
+    async measureCanonicalSource() {
+      return Object.freeze({
+        databaseBytes: BigInt(2_000_000),
+        databaseObjects: BigInt(10),
+        authBytes: BigInt(Buffer.byteLength(authBody)),
+        authObjects: BigInt(1),
+        storageMetadataBytes: BigInt(Buffer.byteLength(bucketMetadataBody) + Buffer.byteLength(metadataBody)),
+        storageMetadataObjects: BigInt(2),
+        storageObjectBytes: BigInt(storageBody.length),
+        storageObjects: BigInt(1),
+        externalAssetBytes: BigInt(externalBody.length),
+        externalAssets: BigInt(1),
+      });
+    },
+    async cleanup() {},
+  });
 
   const stages = [];
   const result = await runSimplifiedBackup({
     stateParent,
-    sources: Object.freeze({
-      database: exporter,
-      auth,
-      storageMetadata,
-      storageObjects,
-      externalAssets,
-      mutationMethods: Object.freeze([]),
-      async measureCanonicalSource() {
-        return Object.freeze({
-          databaseBytes: BigInt(2_000_000),
-          databaseObjects: BigInt(10),
-          authBytes: BigInt(Buffer.byteLength(authBody)),
-          authObjects: BigInt(1),
-          storageMetadataBytes: BigInt(Buffer.byteLength(bucketMetadataBody) + Buffer.byteLength(metadataBody)),
-          storageMetadataObjects: BigInt(2),
-          storageObjectBytes: BigInt(storageBody.length),
-          storageObjects: BigInt(1),
-          externalAssetBytes: BigInt(externalBody.length),
-          externalAssets: BigInt(1),
-        });
-      },
-      async cleanup() {},
-    }),
+    sources: syntheticSources,
     recoveryKey,
     storageProvider,
     sourceDatabaseUrl: "postgresql://synthetic-source.invalid/carzone_synthetic_source",
@@ -527,6 +528,29 @@ try {
     .filter((entry) => entry.isFile());
   assert.equal(remoteFiles.length, 12);
 
+  const operationalStages = [];
+  const operational = await runSimplifiedBackup({
+    stateParent: path.join(root, "operational-state"),
+    sources: syntheticSources,
+    recoveryKey,
+    storageProvider,
+    executionMode: "OPERATIONAL_GENERATION",
+    availableDiskBytes: async () => BigInt(100_000_000_000),
+    minimumDiskSafetyMarginBytes: BigInt(0),
+    stageHook: (stageName) => { operationalStages.push(stageName); },
+  });
+  assert.equal(operational.report.backupV2Simplified, "BACKUP_VERIFIED");
+  assert.equal(operational.report.status, "VERIFIED");
+  assert.equal(operational.report.backupVerified, true);
+  assert.equal(operational.report.recoverabilityProven, false);
+  assert.equal(operational.report.remoteObjectsVerified, 12);
+  assert.equal(operational.report.cleanup, "PASS");
+  assert.ok(!operationalStages.includes("ISOLATED_RESTORE"));
+  assert.ok(!operationalStages.includes("RECOVERY_VERIFICATION"));
+  for (const removed of ["staging", "download", "restore"]) {
+    await assert.rejects(stat(path.join(operational.stateRoot, removed)), { code: "ENOENT" });
+  }
+
   const psqlMidRestoreFailure = await actualPsqlFailureProof();
   const concurrentRestoreIsolation = await concurrentIsolationProof();
 
@@ -540,6 +564,7 @@ try {
     fileBasedPsql: "PASS",
     pgDumpVersion: exporter.toolVersion,
     plaintextCleanup: "PASS",
+    scheduledGenerationMode: "PASS",
     postgresComponent: "PASS",
     postgresRepresentation: "postgres_plain_sql_v1",
     postgresTargetVersion: "17",

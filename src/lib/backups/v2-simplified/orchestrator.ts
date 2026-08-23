@@ -85,6 +85,13 @@ export class SimplifiedBackupRunError extends BackupV2FailClosedError {
 }
 
 export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Promise<SimplifiedRunResult> {
+  const executionMode = input.executionMode ?? "RECOVERY_PROOF";
+  if (executionMode === "RECOVERY_PROOF" && typeof input.restore !== "function") {
+    throw new BackupV2FailClosedError("BACKUP_V2_SIMPLIFIED_RESTORE_REQUIRED", "Recovery proof requires an isolated restore provision");
+  }
+  if (executionMode === "OPERATIONAL_GENERATION" && input.restore !== undefined) {
+    throw new BackupV2FailClosedError("BACKUP_V2_OPERATIONAL_RESTORE_DENIED", "Scheduled generation must not perform a daily restore");
+  }
   const clock = input.clock ?? (() => new Date().toISOString());
   const runId = createSimplifiedRunId(clock, input.randomUuid ?? randomUUID);
   const startedAt = canonicalTimestamp(clock);
@@ -125,7 +132,9 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
     await writeCanonicalJsonFile(statePath, {
       schema: "car-zone-backup-v2-simplified-state-v1",
       run_id: runId,
-      status: stage === "COMPLETE" ? "RECOVERABILITY_PROVEN" : backupVerified ? "VERIFIED" : "RUNNING",
+      status: stage === "COMPLETE"
+        ? executionMode === "RECOVERY_PROOF" ? "RECOVERABILITY_PROVEN" : "VERIFIED"
+        : backupVerified ? "VERIFIED" : "RUNNING",
       stage,
       production_mutation: "NONE",
       updated_at: canonicalTimestamp(clock),
@@ -277,20 +286,22 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
     backupVerified = true;
     remoteObjectsVerified = descriptors.length;
 
-    await enter("ISOLATED_RESTORE");
-    await mkdir(restoreRoot, { mode: 0o700 });
-    provision = await input.restore();
-    await restoreAndVerifySimplifiedBackup({
-      manifest: remoteManifest,
-      descriptors,
-      downloadedPaths: downloaded,
-      restoreRoot,
-      recoveryKey: key,
-      provision,
-      sourceDatabaseUrl: input.sourceDatabaseUrl,
-    });
-    restoreVerified = true;
-    await enter("RECOVERY_VERIFICATION");
+    if (executionMode === "RECOVERY_PROOF") {
+      await enter("ISOLATED_RESTORE");
+      await mkdir(restoreRoot, { mode: 0o700 });
+      provision = await input.restore!();
+      await restoreAndVerifySimplifiedBackup({
+        manifest: remoteManifest,
+        descriptors,
+        downloadedPaths: downloaded,
+        restoreRoot,
+        recoveryKey: key,
+        provision,
+        sourceDatabaseUrl: input.sourceDatabaseUrl,
+      });
+      restoreVerified = true;
+      await enter("RECOVERY_VERIFICATION");
+    }
     await enter("TEMP_CLEANUP");
     const cleanupResult = await cleanup(true);
     if (cleanupResult !== "PASS") {
@@ -299,11 +310,11 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
     await enter("COMPLETE");
     const report: SimplifiedFinalReport = Object.freeze({
       schema: "car-zone-backup-v2-simplified-report-v1",
-      backupV2Simplified: "RECOVERABILITY_PROVEN",
+      backupV2Simplified: executionMode === "RECOVERY_PROOF" ? "RECOVERABILITY_PROVEN" : "BACKUP_VERIFIED",
       runId,
       startedAt,
       completedAt: canonicalTimestamp(clock),
-      status: "RECOVERABILITY_PROVEN",
+      status: executionMode === "RECOVERY_PROOF" ? "RECOVERABILITY_PROVEN" : "VERIFIED",
       failedStage: null,
       code: null,
       retryability: null,
@@ -319,7 +330,7 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
       componentEvidence: componentEvidence(),
       remoteObjectsVerified,
       backupVerified,
-      recoverabilityProven: true,
+      recoverabilityProven: executionMode === "RECOVERY_PROOF",
       independentSecondaryPresent: false,
       fullDrReady: false,
       cleanup: "PASS",

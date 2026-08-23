@@ -13,6 +13,7 @@ export type SimplifiedComponent = (typeof SIMPLIFIED_COMPONENTS)[number];
 
 export const SIMPLIFIED_RUN_STATUSES = ["PENDING", "RUNNING", "FAILED", "VERIFIED", "RECOVERABILITY_PROVEN"] as const;
 export type SimplifiedRunStatus = (typeof SIMPLIFIED_RUN_STATUSES)[number];
+export type SimplifiedExecutionMode = "RECOVERY_PROOF" | "OPERATIONAL_GENERATION";
 
 export type SimplifiedStage =
   | "CONFIG_VALIDATION" | "SOURCE_PREFLIGHT" | "DATABASE_EXPORT" | "AUTH_EXPORT"
@@ -105,7 +106,7 @@ export interface SimplifiedComponentResult {
 
 export interface SimplifiedFinalReport {
   readonly schema: "car-zone-backup-v2-simplified-report-v1";
-  readonly backupV2Simplified: "FAILED" | "RECOVERABILITY_PROVEN";
+  readonly backupV2Simplified: "FAILED" | "BACKUP_VERIFIED" | "RECOVERABILITY_PROVEN";
   readonly runId: string; readonly startedAt: string; readonly completedAt: string;
   readonly status: SimplifiedRunStatus; readonly failedStage: SimplifiedStage | null;
   readonly code: string | null; readonly retryability: "TRANSIENT" | "NON_RETRYABLE" | "UNKNOWN" | null;
@@ -135,7 +136,8 @@ export interface SimplifiedFinalReport {
 export interface RunSimplifiedBackupInput {
   readonly stateParent: string; readonly sources: SimplifiedBackupSources;
   readonly recoveryKey: Uint8Array; readonly storageProvider: BackupV2StorageProvider;
-  readonly restore: () => Promise<SimplifiedRestoreProvision>;
+  readonly executionMode?: SimplifiedExecutionMode;
+  readonly restore?: () => Promise<SimplifiedRestoreProvision>;
   readonly sourceDatabaseUrl?: string;
   readonly clock?: () => string; readonly randomUuid?: () => string;
   readonly availableDiskBytes?: (pathValue: string) => Promise<bigint>;

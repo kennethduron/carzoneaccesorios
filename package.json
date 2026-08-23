@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "backup:v2:simplified:first-real-sql": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/backup-v2-simplified-first-real-sql.mjs",
+    "backup:v2:simplified:scheduled": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/backup-v2-simplified-scheduled.mjs",
+    "backup:v2:operational:test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-backup-v2-operational.mjs && powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-backup-v2-windows-runtime.ps1",
     "backup:v2:simplified:test-sql": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-backup-v2-simplified-sql-contract.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-backup-v2-simplified-sql-e2e.mjs",
     "backup:v2:simplified:restore-synthetic-sql": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-backup-v2-simplified-sql-e2e.mjs",
     "audit:auto-centro-ext100-reversal": "node scripts/auto-centro-ext100-commercial-reversal.mjs --dry-run",
