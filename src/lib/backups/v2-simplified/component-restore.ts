@@ -364,7 +364,18 @@ export async function restoreSimplifiedComponents(input: {
     }
     const metadata = results.find((item) => item.component === "storage_metadata")!;
     const objects = results.find((item) => item.component === "storage_objects")!;
-    const missing = metadata.recordIds.filter((id) => !objects.recordIds.includes(id));
+    const metadataObjectIds = metadata.recordIds.filter((id) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(id); }
+      catch { fail("BACKUP_V2_STORAGE_RESTORE_CROSS_VERIFY_FAILED", "Storage metadata identity is invalid"); }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
+          typeof (parsed as { bucket?: unknown }).bucket !== "string" ||
+          !(typeof (parsed as { key?: unknown }).key === "string" || (parsed as { key?: unknown }).key === null)) {
+        fail("BACKUP_V2_STORAGE_RESTORE_CROSS_VERIFY_FAILED", "Storage metadata identity is invalid");
+      }
+      return (parsed as { key: string | null }).key !== null;
+    });
+    const missing = metadataObjectIds.filter((id) => !objects.recordIds.includes(id));
     const unexpected = objects.recordIds.filter((id) => !metadata.recordIds.includes(id));
     if (missing.length > 0 || unexpected.length > 0) {
       fail("BACKUP_V2_STORAGE_RESTORE_CROSS_VERIFY_FAILED", "Storage metadata and object identities differ");

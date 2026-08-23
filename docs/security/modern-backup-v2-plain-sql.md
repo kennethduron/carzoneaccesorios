@@ -58,6 +58,18 @@ The restore argv inside the isolated container is:
 psql -X --set ON_ERROR_STOP=on -f /tmp/<isolated-run>/database.sql
 ```
 
+The qualified isolated target is the official, version-pinned
+`supabase/postgres:17.6.1.121` image. The disposable database is created by
+the image's built-in `supabase_admin` role after initialization. This keeps
+the Supabase PostgreSQL 17 extension set available, including
+`supabase_vault`, while preserving the loopback-only, positively identified
+disposable-target boundary.
+
+Vault ciphertext is only semantically recoverable when the original
+project-specific root encryption key is available. The recovery procedure
+must never invent or substitute that key; a generation containing Vault rows
+requires the separately authorized managed key-portability procedure.
+
 The SQL payload is never sent through Node or Docker stdin. A nonzero `psql`
 result is terminal; there is no automatic `pg_restore` fallback. Semantic and
 structural validation must pass before recoverability is reported.

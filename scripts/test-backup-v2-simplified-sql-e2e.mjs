@@ -402,7 +402,9 @@ try {
   assert.match(exporter.toolVersion, /^pg_dump \(PostgreSQL\) 17\./);
 
   const storageIdentity = canonicalJson({ bucket: "synthetic", key: "products/fixture.bin" });
+  const storageBucketIdentity = canonicalJson({ bucket: "synthetic", key: null });
   const authBody = canonicalJson({ email: "synthetic-user@example.invalid", id: "synthetic-auth-user-1" });
+  const bucketMetadataBody = canonicalJson({ bucket: "synthetic", key: null, public: false });
   const metadataBody = canonicalJson({ bucket: "synthetic", key: "products/fixture.bin", size: 22 });
   const storageBody = Buffer.from("synthetic-object-body", "utf8");
   const externalBody = Buffer.from("synthetic-cloudinary-original", "utf8");
@@ -410,6 +412,7 @@ try {
     sourceRecord(canonicalJson({ table: "users", pk: { id: "synthetic-auth-user-1" } }), authBody, { table: "users" }),
   ]);
   const storageMetadata = source("storage_metadata", [
+    sourceRecord(storageBucketIdentity, bucketMetadataBody, { bucket: "synthetic", key: null }),
     sourceRecord(storageIdentity, metadataBody, { bucket: "synthetic", key: "products/fixture.bin" }),
   ]);
   const storageObjects = source("storage_objects", [
@@ -441,8 +444,8 @@ try {
           databaseObjects: BigInt(10),
           authBytes: BigInt(Buffer.byteLength(authBody)),
           authObjects: BigInt(1),
-          storageMetadataBytes: BigInt(Buffer.byteLength(metadataBody)),
-          storageMetadataObjects: BigInt(1),
+          storageMetadataBytes: BigInt(Buffer.byteLength(bucketMetadataBody) + Buffer.byteLength(metadataBody)),
+          storageMetadataObjects: BigInt(2),
           storageObjectBytes: BigInt(storageBody.length),
           storageObjects: BigInt(1),
           externalAssetBytes: BigInt(externalBody.length),
@@ -509,7 +512,7 @@ try {
   });
   assert.deepEqual(recoveryWorkspaceEvidence, {
     auth: 1,
-    storage_metadata: 1,
+    storage_metadata: 2,
     storage_objects: 1,
     external_assets: 1,
   });

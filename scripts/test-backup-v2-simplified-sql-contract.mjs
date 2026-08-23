@@ -426,13 +426,16 @@ try {
     "BACKUP_V2_SIMPLIFIED_MANIFEST_INVALID",
   );
 
-  const [plainModule, productionModule, configModule, commandScript, b2Transport, b2Provider] = await Promise.all([
+  const [plainModule, productionModule, configModule, commandScript, b2Transport, b2Provider,
+    postgresRunnerModule, disposableTargetModule] = await Promise.all([
     readFile(new URL("../src/lib/backups/v2-simplified/plain-sql.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/backups/v2-simplified/production.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/backups/v2-simplified/config.ts", import.meta.url), "utf8"),
     readFile(new URL("./backup-v2-simplified-first-real-sql.mjs", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/backups/v2/b2-s3-transport.ts", import.meta.url), "utf8"),
     readFile(new URL("../src/lib/backups/v2/backblaze-b2-storage-provider.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/backups/v2/postgres-tool-runner.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/backups/v2/disposable-postgres-target.ts", import.meta.url), "utf8"),
   ]);
   assert.match(plainModule, /"--format=plain"/);
   assert.match(plainModule, /"-X"/);
@@ -445,6 +448,10 @@ try {
   assert.match(configModule, /loadPhase4B6SessionSecrets/);
   assert.doesNotMatch(b2Transport, /IfNoneMatch|ifNoneMatch/);
   assert.doesNotMatch(b2Provider, /IfNoneMatch|ifNoneMatch/);
+  assert.match(postgresRunnerModule, /supabase\/postgres:17\.6\.1\.121/);
+  assert.doesNotMatch(postgresRunnerModule, /postgres:17-alpine/);
+  assert.match(disposableTargetModule, /const USER = "supabase_admin"/);
+  assert.match(disposableTargetModule, /CREATE DATABASE \$\{database\} OWNER \$\{USER\}/);
   assert.doesNotMatch(
     `${plainModule}\n${productionModule}\n${commandScript}`,
     /BACKUP_V2_B2_APPLICATION_KEY\s*=\s*["'][^"']+|SUPABASE_SERVICE_ROLE_KEY\s*=\s*["'][^"']+/,

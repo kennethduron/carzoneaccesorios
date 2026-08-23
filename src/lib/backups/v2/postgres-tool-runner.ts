@@ -14,7 +14,7 @@ import {
 } from "./postgres-failure-observability.ts";
 import { BackupV2FailClosedError } from "./types.ts";
 
-export const BACKUP_V2_POSTGRES_IMAGE = "postgres:17-alpine";
+export const BACKUP_V2_POSTGRES_IMAGE = "supabase/postgres:17.6.1.121";
 export const BACKUP_V2_POSTGRES_TOOL_MAJOR = 17;
 const MAX_STDERR = 8_192;
 const SAFE_CONTAINER = /^carzone-backup-v2-(?:restore|tool)-[a-z0-9-]{8,80}$/;

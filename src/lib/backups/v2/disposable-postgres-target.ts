@@ -16,7 +16,9 @@ const MARKER_LABEL = "com.carzone.backup-v2.identity";
 const OWNER_LABEL = "com.carzone.backup-v2.owner";
 const PURPOSE = "disposable-restore-target";
 const OWNER = "simplified-sql-operator-executor";
-const USER = "carzone_backup_v2_restore";
+const USER = "supabase_admin";
+const BOOTSTRAP_USER = "supabase_admin";
+const BOOTSTRAP_DATABASE = "postgres";
 
 export interface VerifiedDisposablePostgresTarget extends PostgresConnection {
   readonly user: string;
@@ -36,7 +38,7 @@ export interface DisposablePostgresProvision {
 export interface DisposablePostgresIdentity {
   readonly containerName: string;
   readonly database: string;
-  readonly user: "carzone_backup_v2_restore";
+  readonly user: "supabase_admin";
 }
 
 function fail(code: string, message: string): never {
@@ -143,8 +145,6 @@ export async function provisionDisposablePostgresTarget(input: {
       "--label", `${OWNER_LABEL}=${OWNER}`,
       "--publish", "127.0.0.1::5432",
       "--env", "POSTGRES_PASSWORD",
-      "--env", `POSTGRES_USER=${USER}`,
-      "--env", `POSTGRES_DB=${database}`,
       "--tmpfs", "/var/lib/postgresql/data:rw,noexec,nosuid,size=512m",
       BACKUP_V2_POSTGRES_IMAGE,
     ], dockerEnvironment);
@@ -154,8 +154,19 @@ export async function provisionDisposablePostgresTarget(input: {
       fail("BACKUP_V2_RESTORE_TARGET_IDENTITY_DENIED", "Disposable container labels do not match the provisioned identity");
     }
     const runner = createPostgresToolRunner({ mode: "CONTAINER" });
+    const bootstrapConnection = Object.freeze({
+      host: "127.0.0.1", port: 5432, database: BOOTSTRAP_DATABASE,
+      username: BOOTSTRAP_USER, password: input.password,
+    });
+    await waitForServer(runner, bootstrapConnection, containerName);
     const internalConnection = Object.freeze({ host: "127.0.0.1", port: 5432, database, username: USER, password: input.password });
-    await waitForServer(runner, internalConnection, containerName);
+    await runner.capture({
+      tool: "psql",
+      operation: "RESTORE_DB_SCHEMA_INITIALIZE",
+      args: ["--no-psqlrc", "--set=ON_ERROR_STOP=1", `--command=CREATE DATABASE ${database} OWNER ${USER}`],
+      connection: bootstrapConnection,
+      containerName,
+    });
     await runner.capture({
       tool: "psql",
       operation: "RESTORE_DB_SCHEMA_INITIALIZE",
