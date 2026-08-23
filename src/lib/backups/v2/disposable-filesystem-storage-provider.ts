@@ -10,7 +10,7 @@ import { pipeline } from "node:stream/promises";
 import {
   BACKUP_V2_STORAGE_CONTRACT_VERSION,
   BackupV2StorageError,
-  assertCanonicalBackupV2ObjectKey,
+  assertSupportedBackupV2ObjectKey,
   registerBackupV2StorageProvider,
   requireStorageIdentity,
   type BackupV2StorageProvider,
@@ -86,7 +86,7 @@ function withinRoot(root: string, candidate: string): boolean {
 }
 
 async function safeObjectPath(root: string, objectKeyValue: string, createParents: boolean): Promise<string> {
-  const objectKey = assertCanonicalBackupV2ObjectKey(objectKeyValue);
+  const objectKey = assertSupportedBackupV2ObjectKey(objectKeyValue);
   const parts = objectKey.split("/");
   let parent = root;
   for (const segment of parts.slice(0, -1)) {

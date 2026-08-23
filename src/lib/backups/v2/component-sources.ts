@@ -252,6 +252,24 @@ function externalBody(item: CloudinaryOriginalRecord, reader: CloudinaryResource
   })());
 }
 
+export function openVerifiedCloudinaryOriginal(
+  item: CloudinaryOriginalRecord,
+  cloudName: string,
+  policy: ExternalFetchPolicy,
+  signal?: AbortSignal,
+): Readable {
+  return externalBody(
+    item,
+    {
+      cloudName,
+      async listOriginalsPage() {
+        fail("BACKUP_V2_INTERNAL_READER_MISUSE", "Listing is unavailable in a byte-only Cloudinary reader");
+      },
+    },
+    policy,
+  )(signal);
+}
+
 export function createCloudinaryOriginalsSource(reader: CloudinaryResourceReader, policy: ExternalFetchPolicy): ComponentSource {
   string(reader.cloudName, "cloudinary.cloud_name", 255);
   return {

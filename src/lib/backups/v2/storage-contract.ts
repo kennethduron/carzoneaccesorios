@@ -140,6 +140,22 @@ export function assertCanonicalBackupV2ObjectKey(value: unknown): string {
   return value;
 }
 
+export function assertSupportedBackupV2ObjectKey(value: unknown): string {
+  if (typeof value === "string" && value.startsWith("backup-v2/")) {
+    return assertCanonicalBackupV2ObjectKey(value);
+  }
+  if (typeof value !== "string" || value.length > 480 || value.includes("\\") || value.includes("\0") ||
+      value.startsWith("/") || value.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    fail("BACKUP_V2_STORAGE_PATH_VIOLATION", "Storage object key is unsafe", "path_violation");
+  }
+  const run = "\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
+  const simplified = new RegExp(`^car-zone/v2-simplified/${run}/(?:database|auth|storage_metadata|storage_objects|external_assets|manifest)/[A-Za-z0-9._-]{1,200}$`);
+  if (!simplified.test(value)) {
+    fail("BACKUP_V2_STORAGE_PATH_VIOLATION", "Storage object key is not a supported Backup V2 key", "path_violation");
+  }
+  return value;
+}
+
 export function registerBackupV2StorageProvider<T extends BackupV2StorageProvider>(provider: T): T {
   assertStorageProviderDescriptor(provider.descriptor);
   if (typeof provider.write !== "function" || typeof provider.stat !== "function" ||

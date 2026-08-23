@@ -49,7 +49,6 @@ export interface BackblazeB2S3Transport {
     contentLength: bigint;
     contentType: "application/octet-stream";
     metadata: Readonly<Record<string, string>>;
-    ifNoneMatch: "*";
     signal: AbortSignal;
   }): Promise<void>;
   createMultipartUpload(input: {
@@ -72,7 +71,6 @@ export interface BackblazeB2S3Transport {
     key: string;
     uploadId: string;
     parts: readonly B2UploadedPart[];
-    ifNoneMatch: "*";
     signal: AbortSignal;
   }): Promise<void>;
   abortMultipartUpload(input: {
@@ -169,7 +167,6 @@ export function createAwsSdkBackblazeB2Transport(config: BackblazeB2RuntimeConfi
         ContentLength: Number(input.contentLength),
         ContentType: input.contentType,
         Metadata: { ...input.metadata },
-        IfNoneMatch: input.ifNoneMatch,
       }), { abortSignal: input.signal });
     },
 
@@ -214,7 +211,6 @@ export function createAwsSdkBackblazeB2Transport(config: BackblazeB2RuntimeConfi
         Bucket: input.bucket,
         Key: input.key,
         UploadId: input.uploadId,
-        IfNoneMatch: input.ifNoneMatch,
         MultipartUpload: {
           Parts: input.parts.map((part) => ({ ETag: part.etag, PartNumber: part.partNumber })),
         },

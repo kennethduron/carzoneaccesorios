@@ -12,7 +12,7 @@ import type {
 import {
   BACKUP_V2_STORAGE_CONTRACT_VERSION,
   BackupV2StorageError,
-  assertCanonicalBackupV2ObjectKey,
+  assertSupportedBackupV2ObjectKey,
   registerBackupV2StorageProvider,
   type BackupV2StorageErrorKind,
   type BackupV2StorageProvider,
@@ -31,6 +31,21 @@ export interface CreateBackblazeB2StorageProviderInput {
   readonly multipartThresholdBytes?: bigint;
   readonly multipartPartSizeBytes?: number;
   readonly multipartConcurrency?: number;
+  readonly realExecutionAuthorization?: SimplifiedBackupV2RealStorageAuthorization;
+}
+
+export interface SimplifiedBackupV2RealStorageAuthorization {
+  readonly system: "SIMPLIFIED_BACKUP_V2";
+  readonly operatorCommandBound: true;
+  readonly representation: "postgres_plain_sql_v1";
+}
+
+export function simplifiedBackupV2RealStorageAuthorization(): SimplifiedBackupV2RealStorageAuthorization {
+  return Object.freeze({
+    system: "SIMPLIFIED_BACKUP_V2",
+    operatorCommandBound: true,
+    representation: "postgres_plain_sql_v1",
+  });
 }
 
 interface ProviderErrorShape {
@@ -236,7 +251,6 @@ async function multipartWrite(input: {
       key: input.objectKey,
       uploadId,
       parts: completedParts,
-      ifNoneMatch: "*",
       signal: input.signal,
     });
     uploadId = null;
@@ -274,8 +288,12 @@ function statFromHead(
   };
 }
 
-function assertPhase4B5SyntheticTransport(transport: BackblazeB2S3Transport): void {
-  if (transport.executionClass !== "synthetic") {
+function assertAuthorizedTransport(input: CreateBackblazeB2StorageProviderInput): void {
+  const authorization = input.realExecutionAuthorization;
+  const simplified = authorization?.system === "SIMPLIFIED_BACKUP_V2" &&
+    authorization.operatorCommandBound === true &&
+    authorization.representation === "postgres_plain_sql_v1";
+  if (input.transport.executionClass !== "synthetic" && !simplified) {
     throw classified(
       "REAL_BACKUP_V2_EXECUTION_BLOCKED_UNTIL_PHASE_4B6",
       "Real Backup V2 provider operations are blocked until Phase 4B.6",
@@ -314,8 +332,8 @@ export function createBackblazeB2ArtifactStorageProvider(
     },
 
     async write({ objectKey: rawObjectKey, source, expectedSizeBytes, signal }) {
-      assertPhase4B5SyntheticTransport(transport);
-      const objectKey = assertCanonicalBackupV2ObjectKey(rawObjectKey);
+      assertAuthorizedTransport(input);
+      const objectKey = assertSupportedBackupV2ObjectKey(rawObjectKey);
       if (expectedSizeBytes < BigInt(0) || expectedSizeBytes > BigInt(Number.MAX_SAFE_INTEGER)) {
         throw classified("BACKUP_V2_B2_CONTENT_LENGTH_INVALID", "B2 content length is outside the supported exact range", "configuration");
       }
@@ -330,7 +348,6 @@ export function createBackblazeB2ArtifactStorageProvider(
             contentLength: expectedSizeBytes,
             contentType: "application/octet-stream",
             metadata: { "backup-v2-config-fingerprint": config.configFingerprint },
-            ifNoneMatch: "*",
             signal,
           });
         } else {
@@ -356,8 +373,8 @@ export function createBackblazeB2ArtifactStorageProvider(
     },
 
     async stat({ objectKey: rawObjectKey, signal }) {
-      assertPhase4B5SyntheticTransport(transport);
-      const objectKey = assertCanonicalBackupV2ObjectKey(rawObjectKey);
+      assertAuthorizedTransport(input);
+      const objectKey = assertSupportedBackupV2ObjectKey(rawObjectKey);
       try {
         return statFromHead(
           config,
@@ -370,8 +387,8 @@ export function createBackblazeB2ArtifactStorageProvider(
     },
 
     async openRead({ objectKey: rawObjectKey, signal }) {
-      assertPhase4B5SyntheticTransport(transport);
-      const objectKey = assertCanonicalBackupV2ObjectKey(rawObjectKey);
+      assertAuthorizedTransport(input);
+      const objectKey = assertSupportedBackupV2ObjectKey(rawObjectKey);
       try {
         return await transport.getObject({ bucket: config.bucket, key: objectKey, signal });
       } catch (error) {
