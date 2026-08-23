@@ -2,12 +2,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const candidateDirectories = ["tmp", "backups", "exports", "downloads"];
 const sensitiveNamePattern = /(production|prod[-_. ]|backup|dump|export|customer|cliente|supplier|proveedor|user|usuario|payment|pago|accounting|contabilidad|auth|credential|secret|private)/i;
 const sensitiveExtensions = new Set([".env", ".zip", ".bak", ".backup", ".dump", ".sql", ".json", ".csv", ".xlsx", ".xls", ".log", ".pem", ".key"]);
 const codeExtensions = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".tsx", ".jsx"]);
+const legacyCandidateBaseline = 92;
 
 function toRelative(filePath) {
   return path.relative(projectRoot, filePath).replaceAll("\\", "/");
@@ -62,6 +64,8 @@ for (const entry of readdirSync(projectRoot, { withFileTypes: true })) {
 const uniqueFiles = [...new Set(candidateFiles)].sort((left, right) => left.localeCompare(right));
 const oneDriveWarning = projectRoot.toLowerCase().includes(`${path.sep}onedrive${path.sep}`) ? "yes" : "no";
 let unsafeCount = 0;
+const riskCounts = { critical: 0, high: 0, medium: 0, review: 0 };
+const extensionCounts = {};
 
 console.log("Sensitive local artifact inventory (contents are never read):");
 if (uniqueFiles.length === 0) console.log("- No candidates found.");
@@ -69,22 +73,35 @@ if (uniqueFiles.length === 0) console.log("- No candidates found.");
 for (const filePath of uniqueFiles) {
   const relative = toRelative(filePath);
   const tracked = trackedFiles.has(relative);
+  const risk = riskCategory(filePath);
+  const category = path.basename(filePath).startsWith(".env") ? ".env" : path.extname(filePath).toLowerCase() || "(none)";
+  riskCounts[risk] += 1;
+  extensionCounts[category] = (extensionCounts[category] ?? 0) + 1;
   const ignoredResult = spawnSync("git", ["check-ignore", "--no-index", "-q", "--", relative], {
     cwd: projectRoot,
     encoding: "utf8",
   });
   const ignored = ignoredResult.status === 0;
-  if (tracked || !ignored) unsafeCount += 1;
-
-  console.log(
-    `- ${relative} | ${statSync(filePath).size} bytes | risk=${riskCategory(filePath)} | tracked=${tracked ? "yes" : "no"} | ignored=${ignored ? "yes" : "no"} | OneDrive=${oneDriveWarning}`,
-  );
+  if (tracked || !ignored) {
+    unsafeCount += 1;
+    const pathFingerprint = createHash("sha256").update(relative).digest("hex").slice(0, 12);
+    console.error(
+      `- candidate=${pathFingerprint} | ${statSync(filePath).size} bytes | category=${category} | risk=${risk} | tracked=${tracked ? "yes" : "no"} | ignored=${ignored ? "yes" : "no"}`,
+    );
+  }
 }
+
+const newCandidateCount = Math.max(0, uniqueFiles.length - legacyCandidateBaseline);
+unsafeCount += newCandidateCount;
 
 console.log("Inventory summary:", {
   candidates: uniqueFiles.length,
   unsafe: unsafeCount,
   oneDriveProject: oneDriveWarning === "yes",
+  legacyBaseline: legacyCandidateBaseline,
+  newCandidates: newCandidateCount,
+  riskCounts,
+  extensionCounts,
   destructiveActions: 0,
 });
 
