@@ -13,6 +13,7 @@ try {
     cleanup: result.cleanup,
     retentionMode: result.retentionMode,
     fullRestoreExecuted: result.fullRestoreExecuted,
+    automaticRetryCount: result.automaticRetryCount,
   })}\n`);
 } catch (error) {
   const code = error instanceof BackupV2FailClosedError ? error.code : "BACKUP_V2_OPERATIONAL_UNEXPECTED_FAILURE";

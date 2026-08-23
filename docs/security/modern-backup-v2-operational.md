@@ -31,7 +31,9 @@ Retention is generation-level: 7 daily, 4 weekly, and 3 monthly selections reuse
 
 ## Failure handling and transition
 
-The local status tracks consecutive failures. One failure is a warning, two are elevated, and three are critical. Because no reusable remote mail provider is present in the trusted operator runtime, failures also use the Windows Application event log. Backup correctness does not depend on alert delivery.
+The local status tracks consecutive failures. One failure is a warning, two are elevated, and three are critical. Because no reusable remote mail provider is present in the trusted operator runtime, failures also use the existing Windows PowerShell event log. Backup correctness does not depend on alert delivery.
+
+Generation-level automatic retry is limited to one attempt and only applies to a proven source-drift failure before any remote object exists. Any failure at or after B2 upload is never retried blindly; canonical remote state must be resolved first.
 
 Observe Backup V2 in parallel with Backup V1 for at least three successful scheduled generations and seven calendar days, whichever is later. Disabling Backup V1 always requires explicit future approval.
 

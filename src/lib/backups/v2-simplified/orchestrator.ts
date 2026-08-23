@@ -143,7 +143,7 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
     catch { throw new BackupV2FailClosedError("BACKUP_V2_SIMPLIFIED_STAGE_HOOK_FAILED", "Synthetic stage hook failed safely"); }
   };
 
-  const cleanup = async (success: boolean): Promise<"PASS" | "FAIL"> => {
+  const cleanup = async (): Promise<"PASS" | "FAIL"> => {
     let passed = true;
     if (provision) {
       try { await provision.cleanup(); } catch { passed = false; diagnostics.push("DISPOSABLE_RESTORE_CLEANUP_FAILED"); }
@@ -155,12 +155,10 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
     }
     try { await rm(restoreRoot, { recursive: true, force: true }); }
     catch { passed = false; diagnostics.push("PLAINTEXT_RESTORE_CLEANUP_FAILED"); }
-    if (success) {
-      try {
-        await rm(stagingRoot, { recursive: true, force: true });
-        await rm(downloadRoot, { recursive: true, force: true });
-      } catch { passed = false; diagnostics.push("ENCRYPTED_STAGING_CLEANUP_FAILED"); }
-    }
+    try {
+      await rm(stagingRoot, { recursive: true, force: true });
+      await rm(downloadRoot, { recursive: true, force: true });
+    } catch { passed = false; diagnostics.push("ENCRYPTED_STAGING_CLEANUP_FAILED"); }
     return passed ? "PASS" : "FAIL";
   };
 
@@ -303,7 +301,7 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
       await enter("RECOVERY_VERIFICATION");
     }
     await enter("TEMP_CLEANUP");
-    const cleanupResult = await cleanup(true);
+    const cleanupResult = await cleanup();
     if (cleanupResult !== "PASS") {
       throw new BackupV2FailClosedError("BACKUP_V2_SIMPLIFIED_CLEANUP_FAILED", "Sensitive temporary cleanup did not complete");
     }
@@ -341,7 +339,7 @@ export async function runSimplifiedBackup(input: RunSimplifiedBackupInput): Prom
   } catch (error) {
     const failedComponent = stageComponent(currentStage);
     if (failedComponent) componentResults[failedComponent] = "FAIL";
-    const cleanupResult = await cleanup(false);
+    const cleanupResult = await cleanup();
     const code = safeCode(error);
     const postgres = sanitizedPostgresFailureEvidence(error);
     if (postgres) diagnostics.push(

@@ -19,6 +19,7 @@ import {
   sanitizeOperationalText,
 } from "../src/lib/backups/v2-operational/policy.ts";
 import { BackupV2FailClosedError } from "../src/lib/backups/v2/types.ts";
+import { isSafePreUploadSourceDriftRetry } from "../src/lib/backups/v2-operational/run.ts";
 
 function objectSet(runId, size = 100n) {
   const objects = [];
@@ -83,6 +84,18 @@ try {
     softBudgetBytes: B2_SOFT_BUDGET_BYTES,
   }), "BACKUP_V2_OPERATIONAL_BUDGET_BLOCKED");
 
+  const sourceDrift = {
+    backupVerified: false,
+    cleanup: "PASS",
+    code: "BACKUP_V2_SOURCE_OBJECT_CHANGED",
+    failedStage: "EXTERNAL_ASSETS_EXPORT",
+    remoteObjectsVerified: 0,
+  };
+  assert.equal(isSafePreUploadSourceDriftRetry(sourceDrift, 0), true);
+  assert.equal(isSafePreUploadSourceDriftRetry(sourceDrift, 1), false);
+  assert.equal(isSafePreUploadSourceDriftRetry({ ...sourceDrift, remoteObjectsVerified: 1 }, 0), false);
+  assert.equal(isSafePreUploadSourceDriftRetry({ ...sourceDrift, failedStage: "B2_UPLOAD" }, 0), false);
+
   const injected = "token=super-secret-value\r\nFAKE=PASS postgresql://user:password@host/db";
   const sanitized = sanitizeOperationalText(injected);
   assert.doesNotMatch(sanitized, /super-secret|password@|\r|\n/);
@@ -143,6 +156,7 @@ try {
     singleInstance: "PASS",
     staleLockRecovery: "PASS",
     statusAtomicity: "PASS",
+    sourceDriftRetryBounded: "PASS",
   })}\n`);
 } finally {
   await rm(root, { recursive: true, force: true });

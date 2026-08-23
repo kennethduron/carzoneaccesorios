@@ -13,7 +13,12 @@ import { BackupV2FailClosedError } from "../v2/types.ts";
 import { loadSimplifiedRealConfig } from "../v2-simplified/config.ts";
 import { simplifiedArtifactBinding } from "../v2-simplified/core.ts";
 import { runSimplifiedBackup, SimplifiedBackupRunError } from "../v2-simplified/orchestrator.ts";
-import type { SimplifiedBackupSources, SimplifiedSourceMeasurements } from "../v2-simplified/types.ts";
+import type {
+  SimplifiedBackupSources,
+  SimplifiedFinalReport,
+  SimplifiedRunResult,
+  SimplifiedSourceMeasurements,
+} from "../v2-simplified/types.ts";
 import {
   acquireOperationalLock,
   appendOperationalLog,
@@ -47,6 +52,16 @@ function safeCode(error: unknown): string {
 function sourceBytes(measurements: SimplifiedSourceMeasurements): bigint {
   return measurements.databaseBytes + measurements.authBytes + measurements.storageMetadataBytes +
     measurements.storageObjectBytes + measurements.externalAssetBytes;
+}
+
+export function isSafePreUploadSourceDriftRetry(
+  report: Pick<SimplifiedFinalReport, "backupVerified" | "cleanup" | "code" | "failedStage" | "remoteObjectsVerified">,
+  automaticRetryCount: number,
+): boolean {
+  return automaticRetryCount === 0 && report.code === "BACKUP_V2_SOURCE_OBJECT_CHANGED" &&
+    report.cleanup === "PASS" && report.backupVerified === false && report.remoteObjectsVerified === 0 &&
+    ["DATABASE_EXPORT", "AUTH_EXPORT", "STORAGE_METADATA_EXPORT", "STORAGE_OBJECTS_EXPORT", "EXTERNAL_ASSETS_EXPORT"]
+      .includes(report.failedStage ?? "");
 }
 
 function requiredOperationalRoot(environment: NodeJS.ProcessEnv): string {
@@ -125,6 +140,7 @@ export interface ScheduledOperationalResult {
   readonly cleanup: "PASS";
   readonly fullRestoreExecuted: false;
   readonly staleLockRecovered: boolean;
+  readonly automaticRetryCount: 0 | 1;
 }
 
 export async function runScheduledOperationalBackup(environment: NodeJS.ProcessEnv): Promise<ScheduledOperationalResult> {
@@ -161,30 +177,48 @@ export async function runScheduledOperationalBackup(environment: NodeJS.ProcessE
       requestedMode: "DRY_RUN",
     });
     const postgresRunner = createPostgresToolRunner({ mode: "CONTAINER" });
-    sources = await createProductionBackupSources({
-      databaseUrl: config.databaseUrl,
-      supabaseUrl: config.supabaseUrl,
-      supabaseServiceRoleKey: config.supabaseServiceRoleKey,
-      cloudinaryCloudName: config.cloudinaryCloudName,
-      cloudinaryApiKey: config.cloudinaryApiKey,
-      cloudinaryApiSecret: config.cloudinaryApiSecret,
-      postgresRunner,
-    });
-    const measurements = await sources.measureCanonicalSource();
-    const budget = assertOperationalBudget({
-      currentUsageBytes: beforeUsage,
-      estimatedSourceBytes: sourceBytes(measurements),
-      softBudgetBytes: config.b2.softBudgetBytes,
-    });
-    const run = await runSimplifiedBackup({
-      stateParent: config.stateParent,
-      sources,
-      recoveryKey: config.recoveryKey,
-      storageProvider,
-      executionMode: "OPERATIONAL_GENERATION",
-      remoteSoftBudgetBytes: budget.projectedBytes - beforeUsage,
-    });
-    sources = null;
+    let run: SimplifiedRunResult;
+    let automaticRetryCount: 0 | 1 = 0;
+    for (;;) {
+      sources = await createProductionBackupSources({
+        databaseUrl: config.databaseUrl,
+        supabaseUrl: config.supabaseUrl,
+        supabaseServiceRoleKey: config.supabaseServiceRoleKey,
+        cloudinaryCloudName: config.cloudinaryCloudName,
+        cloudinaryApiKey: config.cloudinaryApiKey,
+        cloudinaryApiSecret: config.cloudinaryApiSecret,
+        postgresRunner,
+      });
+      const measurements = await sources.measureCanonicalSource();
+      const budget = assertOperationalBudget({
+        currentUsageBytes: beforeUsage,
+        estimatedSourceBytes: sourceBytes(measurements),
+        softBudgetBytes: config.b2.softBudgetBytes,
+      });
+      try {
+        run = await runSimplifiedBackup({
+          stateParent: config.stateParent,
+          sources,
+          recoveryKey: config.recoveryKey,
+          storageProvider,
+          executionMode: "OPERATIONAL_GENERATION",
+          remoteSoftBudgetBytes: budget.projectedBytes - beforeUsage,
+        });
+        sources = null;
+        break;
+      } catch (error) {
+        sources = null;
+        const failed = error instanceof SimplifiedBackupRunError ? error.result.report : null;
+        if (!failed || !isSafePreUploadSourceDriftRetry(failed, automaticRetryCount)) throw error;
+        const remote = await listBucketObjects(transport, config.b2.bucket);
+        const failedPrefix = `car-zone/v2-simplified/${failed.runId}/`;
+        if (remote.some((object) => object.key.startsWith(failedPrefix))) {
+          fail("BACKUP_V2_OPERATIONAL_RETRY_REMOTE_STATE_AMBIGUOUS", "Source-drift retry found unexpected remote state");
+        }
+        automaticRetryCount = 1;
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
+    }
     if (!run.report.backupVerified || run.report.cleanup !== "PASS" ||
         Object.values(run.report.componentResults).some((value) => value !== "PASS")) {
       fail("BACKUP_V2_OPERATIONAL_GENERATION_INCOMPLETE", "Operational generation did not satisfy every required gate");
@@ -256,6 +290,7 @@ export async function runScheduledOperationalBackup(environment: NodeJS.ProcessE
       cleanup: run.report.cleanup,
       retention: retention.mode,
       b2_usage_bytes: afterUsage.toString(),
+      automatic_retry_count: automaticRetryCount,
     });
     return Object.freeze({
       result: "PASS",
@@ -270,6 +305,7 @@ export async function runScheduledOperationalBackup(environment: NodeJS.ProcessE
       cleanup: "PASS",
       fullRestoreExecuted: false,
       staleLockRecovered: lock.staleRecovered,
+      automaticRetryCount,
     });
   } catch (error) {
     const underlying = error instanceof SimplifiedBackupRunError ? error.result.report : null;
