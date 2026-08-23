@@ -32,8 +32,10 @@ $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Intera
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal `
   -Description 'Car Zone Backup V2: encrypted five-component B2 generation; DPAPI current-user runtime.' -Force | Out-Null
 $task = Get-ScheduledTask -TaskName $taskName
+$taskPrincipalSid = (New-Object Security.Principal.NTAccount($task.Principal.UserId)).Translate([Security.Principal.SecurityIdentifier]).Value
 if ($task.Actions[0].WorkingDirectory -cne $stable -or $task.Settings.MultipleInstances -cne 'IgnoreNew' -or
-    -not $task.Settings.StartWhenAvailable -or $task.Principal.RunLevel -cne 'Limited') {
+    -not $task.Settings.StartWhenAvailable -or $task.Principal.RunLevel -cne 'Limited' -or
+    $taskPrincipalSid -cne $identity.User.Value) {
   throw 'BACKUP_V2_TASK_POST_REGISTRATION_VERIFY_FAILED'
 }
 [pscustomobject]@{
@@ -44,6 +46,6 @@ if ($task.Actions[0].WorkingDirectory -cne $stable -or $task.Settings.MultipleIn
   StartWhenAvailable = [bool]$task.Settings.StartWhenAvailable
   MultipleInstances = [string]$task.Settings.MultipleInstances
   RunLevel = [string]$task.Principal.RunLevel
-  UserSidMatches = ($task.Principal.UserId -in @($identity.Name, $identity.User.Value))
+  UserSidMatches = ($taskPrincipalSid -ceq $identity.User.Value)
   SecretValuesInDefinition = 0
 } | ConvertTo-Json -Compress
