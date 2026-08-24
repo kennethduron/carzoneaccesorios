@@ -36,6 +36,26 @@
   gap: 0.75rem;
 }
 
+.commercialLayout {
+  display: grid;
+  gap: 1rem;
+}
+
+.commercialLayout > * {
+  min-width: 0;
+}
+
+@container (min-width: 1080px) {
+  .commercialLayout {
+    grid-template-columns: minmax(746px, 1fr) minmax(300px, 0.7fr);
+  }
+
+  .commercialSummary {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
 .primaryActionGroup {
   order: -1;
 }

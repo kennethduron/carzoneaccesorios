@@ -245,7 +245,7 @@ export function OrderCommercialTerms({
         </span>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.7fr)]">
+      <div className={`${styles.commercialLayout} mt-4`} data-testid="order-commercial-layout">
         <div className="min-w-0 space-y-4">
           <div className="rounded-md border border-black/10 bg-white p-3">
             <div className="flex items-center gap-2 font-semibold"><CalendarDays size={17} /> Fecha de la factura</div>
@@ -266,7 +266,7 @@ export function OrderCommercialTerms({
             </p>
           </div>
 
-          <div className="rounded-md border border-black/10 bg-white p-3">
+          <div className="rounded-md border border-black/10 bg-white p-3" data-testid="order-commercial-pricing">
             <div className="flex items-center gap-2 font-semibold"><PackageSearch size={17} /> Precio final por producto</div>
             <div className={`${styles.commercialCards} mt-3 gap-3`}>
               {order.order_items.map((item) => {
@@ -285,6 +285,7 @@ export function OrderCommercialTerms({
                     <label className="mt-3 block text-xs font-medium uppercase text-black/55">
                       Precio final
                       <Input
+                        data-testid={`order-commercial-price-input-${item.id}-card`}
                         type="number"
                         min="0.01"
                         step="0.01"
@@ -301,7 +302,7 @@ export function OrderCommercialTerms({
                 );
               })}
             </div>
-            <div className={`${styles.commercialTable} mt-3 min-w-0 max-w-full`}>
+            <div className={`${styles.commercialTable} mt-3 min-w-0 max-w-full`} data-testid="order-commercial-pricing-table">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-black/10 text-xs uppercase text-black/50">
                   <tr><th className="py-2">Producto</th><th>Unidad(es)</th><th>Original</th><th>Costo</th><th>Precio final</th><th>Margen</th></tr>
@@ -320,6 +321,7 @@ export function OrderCommercialTerms({
                         <td>{cost ? formatCurrency(cost) : "No disponible"}</td>
                         <td className="w-36 pr-3">
                           <Input
+                            data-testid={`order-commercial-price-input-${item.id}-table`}
                             type="number"
                             min="0.01"
                             step="0.01"
@@ -344,7 +346,7 @@ export function OrderCommercialTerms({
             </label> : null}
           </div>
 
-          <div className="rounded-md border border-black/10 bg-white p-3">
+          <div className="rounded-md border border-black/10 bg-white p-3" data-testid="order-commercial-delivery">
             <div className="flex items-center gap-2 font-semibold"><Truck size={17} /> Entrega</div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Value label="Cargo sugerido" value={formatCurrency(financials.suggested_delivery_charge)} />
@@ -373,7 +375,7 @@ export function OrderCommercialTerms({
           </div>
         </div>
 
-        <aside className="h-fit min-w-0 rounded-md border border-black/10 bg-white p-4 xl:sticky xl:top-4">
+        <aside className={`${styles.commercialSummary} h-fit min-w-0 rounded-md border border-black/10 bg-white p-4`} data-testid="order-commercial-summary">
           <div className="flex items-center gap-2 font-semibold"><Calculator size={17} /> Resumen confirmado</div>
           <dl className="mt-3 space-y-2 text-sm">
             <Summary label="Mercadería" value={financials.merchandise_final} />
