@@ -53,7 +53,7 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
         <Link
           href={buildHref(page - 1)}
           aria-disabled={page <= 1}
-          className={`rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
+          className={`inline-flex min-h-11 items-center justify-center rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
             page <= 1 ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >
@@ -65,7 +65,7 @@ export function PaginationControls({ basePath, page, pageSize, total, label, par
         <Link
           href={buildHref(page + 1)}
           aria-disabled={page >= totalPages}
-          className={`rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
+          className={`inline-flex min-h-11 items-center justify-center rounded-md border border-black/10 px-3 py-2 text-center font-medium sm:px-4 ${
             page >= totalPages ? "pointer-events-none bg-[#f4f4f5] text-black/35" : "bg-white text-[#080808] hover:bg-[#f4f4f5]"
           }`}
         >

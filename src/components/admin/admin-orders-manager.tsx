@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, PackageCheck, Printer, Search, XCircle } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Copy, Download, ExternalLink, FilePenLine, FileText, Printer, Search, ShieldAlert, ShoppingBag, Truck, UserRound, XCircle } from "lucide-react";
 import { cancelInvoiceAction, getInvoiceDetailAction } from "@/app/admin/facturas/actions";
 import {
   correctOrderFiscalCustomerDataAction,
@@ -40,9 +40,11 @@ import {
 } from "@/utils/order-workflow";
 import { paymentMethodLabel } from "@/utils/payment-labels";
 import { formatCurrency } from "@/utils/pricing";
+import styles from "@/components/admin/admin-orders-responsive.module.css";
 
 type AdminOrdersManagerProps = {
   orders: AdminOrderRow[];
+  initialOrderId?: string | null;
   total: number;
   page: number;
   pageSize: number;
@@ -205,6 +207,7 @@ function buildOrderWhatsappMessage(order: AdminOrderRow) {
 
 export function AdminOrdersManager({
   orders,
+  initialOrderId = null,
   total,
   page,
   pageSize,
@@ -227,7 +230,11 @@ export function AdminOrdersManager({
 }: AdminOrdersManagerProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id ?? "");
+  const [selectedOrderId, setSelectedOrderId] = useState(
+    orders.some((order) => order.id === initialOrderId) ? initialOrderId ?? "" : orders[0]?.id ?? "",
+  );
+  const [compactDetailOpen, setCompactDetailOpen] = useState(Boolean(initialOrderId));
+  const [detailHasUnsavedChanges, setDetailHasUnsavedChanges] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<AdminOrderRow | null>(null);
   const [paymentToReject, setPaymentToReject] = useState<AdminOrderRow | null>(null);
   const [invoiceToCancel, setInvoiceToCancel] = useState<AdminOrderRow | null>(null);
@@ -237,8 +244,41 @@ export function AdminOrdersManager({
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const invoiceRequestKeys = useRef(new Map<string, string>());
+  const detailHeadingRef = useRef<HTMLDivElement | null>(null);
+  const compactHistoryPushedRef = useRef(false);
+  const unsavedChangesRef = useRef(false);
   const toast = useToast();
   const debouncedQuery = useDebouncedValue(query, 400);
+
+  useEffect(() => {
+    unsavedChangesRef.current = detailHasUnsavedChanges;
+  }, [detailHasUnsavedChanges]);
+
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!unsavedChangesRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function handlePopState() {
+      if (unsavedChangesRef.current && !window.confirm("Hay cambios comerciales sin guardar. Si vuelves a la lista, se perderán.")) {
+        window.history.pushState({ carZoneOrdersDetail: true }, "", window.location.href);
+        compactHistoryPushedRef.current = true;
+        return;
+      }
+      compactHistoryPushedRef.current = false;
+      setDetailHasUnsavedChanges(false);
+      setCompactDetailOpen(false);
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   function showAdminMessage(nextMessage: string, ok: boolean) {
     setMessage(nextMessage);
@@ -251,7 +291,7 @@ export function AdminOrdersManager({
 
   const filteredOrders = useMemo(() => {
     const normalizedQuery = debouncedQuery.trim().toLowerCase();
-    return orders.filter((order) => {
+    const matches = orders.filter((order) => {
       if (!normalizedQuery) return true;
       return `${order.order_number} ${order.tracking_code ?? ""} ${order.customer_name} ${order.email ?? ""} ${order.phone} ${
         order.bank_reference_number ?? ""
@@ -259,12 +299,59 @@ export function AdminOrdersManager({
         .toLowerCase()
         .includes(normalizedQuery);
     });
-  }, [debouncedQuery, orders]);
+
+    const editedOrder = detailHasUnsavedChanges ? orders.find((order) => order.id === selectedOrderId) : null;
+    return editedOrder && !matches.some((order) => order.id === editedOrder.id) ? [editedOrder, ...matches] : matches;
+  }, [debouncedQuery, detailHasUnsavedChanges, orders, selectedOrderId]);
 
   const selectedOrder = useMemo(
     () => filteredOrders.find((order) => order.id === selectedOrderId) ?? filteredOrders[0] ?? orders[0] ?? null,
     [filteredOrders, orders, selectedOrderId],
   );
+
+  async function confirmDiscardUnsavedChanges() {
+    if (!detailHasUnsavedChanges) return true;
+    return toast.confirm({
+      title: "Cambios sin guardar",
+      message: "Hay ajustes comerciales sin guardar. Si continúas, se perderán.",
+      confirmLabel: "Descartar cambios",
+      cancelLabel: "Seguir editando",
+      tone: "danger",
+    });
+  }
+
+  async function selectOrder(order: AdminOrderRow) {
+    if (order.id !== selectedOrder?.id && !(await confirmDiscardUnsavedChanges())) return;
+
+    setSelectedOrderId(order.id);
+    unsavedChangesRef.current = false;
+    setDetailHasUnsavedChanges(false);
+    setCompactDetailOpen(true);
+
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("orderId", order.id);
+      window.history.pushState({ carZoneOrdersDetail: true }, "", url);
+      compactHistoryPushedRef.current = true;
+      window.requestAnimationFrame(() => detailHeadingRef.current?.focus());
+    }
+  }
+
+  async function returnToOrders() {
+    if (!(await confirmDiscardUnsavedChanges())) return;
+    unsavedChangesRef.current = false;
+    setDetailHasUnsavedChanges(false);
+
+    if (compactHistoryPushedRef.current) {
+      window.history.back();
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("orderId");
+    window.history.replaceState(null, "", url);
+    setCompactDetailOpen(false);
+  }
   const hasPriceReviewAttention = useMemo(
     () => orderPriceReviewEnabled
       ? orders.some((order) => order.price_review.status === "action_required")
@@ -477,7 +564,7 @@ export function AdminOrdersManager({
   }
 
   return (
-    <div className="space-y-5" data-price-review-attention={hasPriceReviewAttention ? "present" : undefined}>
+    <div className="min-w-0 space-y-4" data-price-review-attention={hasPriceReviewAttention ? "present" : undefined}>
       {activeTask ? <ActiveFilterBanner label={activeTask.label} clearHref="/admin/pedidos" /> : null}
       <PaginationControls
         basePath="/admin/pedidos"
@@ -487,42 +574,46 @@ export function AdminOrdersManager({
         label="pedidos"
         params={activeTask ? { task: activeTask.id } : undefined}
       />
-      <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+      <section className="rounded-xl border border-black/10 bg-white p-3 shadow-sm">
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <label className="flex items-center gap-2 rounded-md border border-black/10 px-3 py-2 transition-colors focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15">
-            <Search size={18} className="text-black/45" />
+          <label className="flex min-h-11 items-center gap-2 rounded-lg border border-black/10 px-3 transition-colors focus-within:border-[#e4252c] focus-within:ring-2 focus-within:ring-[#e4252c]/15">
+            <span className="sr-only">Buscar pedidos</span>
+            <Search size={18} aria-hidden="true" className="shrink-0 text-black/45" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Buscar por pedido, cliente, teléfono, referencia o factura"
-              className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+              aria-label="Buscar por pedido, cliente, teléfono, referencia o factura"
+              className="min-h-11 min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
             />
           </label>
           <button
             type="button"
             onClick={() => setQuery("")}
-            className="rounded-md border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:border-[#e4252c]/30 hover:bg-[#fff1f2]"
+            className="min-h-11 rounded-lg border border-black/10 bg-white px-4 py-2 text-sm font-semibold transition-all hover:border-[#e4252c]/30 hover:bg-[#fff1f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]"
           >
             Limpiar filtros
           </button>
         </div>
       </section>
 
-      <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-        <div className="min-w-0 overflow-hidden rounded-lg border border-black/10 bg-white">
+      <section className="grid min-w-0 gap-4 lg:grid-cols-[minmax(280px,310px)_minmax(0,1fr)] xl:grid-cols-[minmax(320px,360px)_minmax(0,1fr)]">
+        <aside aria-label="Navegador de pedidos" className={`${compactDetailOpen ? "hidden lg:block" : "block"} min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm`}>
           <div className="border-b border-black/10 p-4">
             <h2 className="font-semibold">Pedidos</h2>
             <p className="mt-1 text-sm text-black/55">{filteredOrders.length.toLocaleString("es-HN")} pedidos en esta página</p>
           </div>
-          <div className="divide-y divide-black/10 lg:max-h-[calc(100vh-280px)] lg:overflow-y-auto lg:overscroll-contain">
+          <div className={`${styles.desktopScroller} divide-y divide-black/10`}>
             {filteredOrders.length === 0 ? <p className="p-4 text-sm text-black/55">No se encontraron resultados.</p> : null}
             {filteredOrders.map((order) => (
               <button
                 key={order.id}
                 type="button"
-                onClick={() => setSelectedOrderId(order.id)}
-                className={`block w-full p-4 text-left transition-colors ${
-                  selectedOrder?.id === order.id ? "bg-[#fff1f2]" : "bg-white hover:bg-[#f4f4f5]"
+                onClick={() => void selectOrder(order)}
+                aria-pressed={selectedOrder?.id === order.id}
+                aria-current={selectedOrder?.id === order.id ? "true" : undefined}
+                className={`relative block min-h-11 w-full p-4 text-left transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#e4252c] ${
+                  selectedOrder?.id === order.id ? "bg-[#fff1f2] before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-[#e4252c]" : "bg-white hover:bg-[#f4f4f5]"
                 }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
@@ -544,12 +635,19 @@ export function AdminOrdersManager({
               </button>
             ))}
           </div>
-        </div>
+        </aside>
 
         {selectedOrder ? (
-          <OrderDetail
-            key={selectedOrder.id}
-            order={selectedOrder}
+          <div
+            ref={detailHeadingRef}
+            tabIndex={-1}
+            className={`${compactDetailOpen ? "block" : "hidden lg:block"} ${styles.detailContainer} ${styles.desktopScroller} min-w-0 scroll-mt-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]/40`}
+            aria-label={`Detalle del pedido ${selectedOrder.order_number}`}
+          >
+            <OrderDetail
+              key={selectedOrder.id}
+              order={selectedOrder}
+              onBackToOrders={() => void returnToOrders()}
             canConfirmPayments={canConfirmPayments}
             canRejectPayments={canRejectPayments}
             canExtendReservations={canExtendReservations}
@@ -577,8 +675,10 @@ export function AdminOrdersManager({
             onAddInternalNote={(note) => addInternalNote(selectedOrder, note)}
             onUpdateOrderStatus={(status) => updateOrderStatus(selectedOrder, status)}
             onUpdateCashOnDeliveryFee={(fee) => updateCashOnDeliveryFee(selectedOrder, fee)}
-            onReprintInvoice={() => reprintInvoice(selectedOrder)}
-          />
+              onReprintInvoice={() => reprintInvoice(selectedOrder)}
+              onCommercialTermsDirtyChange={setDetailHasUnsavedChanges}
+            />
+          </div>
         ) : null}
       </section>
 
@@ -699,14 +799,120 @@ function OrderItemCard({
           <span className="shrink-0 font-medium">{item.quantity}</span>
         </div>
         {canViewFinancialData ? (
-          <div className="flex items-center justify-between gap-3">
-            <span>Total</span>
-            <span className="shrink-0 font-semibold">{formatCurrency(item.line_total)}</span>
-          </div>
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <span>Precio unitario</span>
+              <span className="shrink-0 font-medium">{formatCurrency(item.unit_price)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-black/10 pt-2">
+              <span>Total</span>
+              <span className="shrink-0 font-semibold">{formatCurrency(item.line_total)}</span>
+            </div>
+          </>
         ) : null}
       </div>
     </article>
   );
+}
+
+function OrderProductsSection({ order, canViewFinancialData }: { order: AdminOrderRow; canViewFinancialData: boolean }) {
+  const productsTotal = order.order_items.reduce((total, item) => total + item.line_total, 0);
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-black/10 bg-white" aria-labelledby={`order-products-title-${order.id}`}>
+      <div className="flex items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
+        <h3 id={`order-products-title-${order.id}`} className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
+          <ShoppingBag size={16} aria-hidden="true" /> Productos
+        </h3>
+        <span className="text-xs font-semibold text-black/50">{order.order_items.length}</span>
+      </div>
+      <div className={`${styles.productCards} gap-3 p-3`}>
+        {order.order_items.map((item) => (
+          <OrderItemCard key={`${order.id}-${item.id}-card`} item={item} canViewFinancialData={canViewFinancialData} />
+        ))}
+      </div>
+      <div className={`${styles.productTable} min-w-0`}>
+        <table className="w-full table-fixed text-left text-sm">
+          <thead className="bg-[#fafafa] text-xs text-black/50">
+            <tr>
+              <th className="w-[42%] px-3 py-2 font-medium">Producto</th>
+              <th className="w-[18%] px-3 py-2 font-medium">SKU</th>
+              <th className="w-[12%] px-3 py-2 text-center font-medium">Cant.</th>
+              {canViewFinancialData ? <th className="w-[14%] px-3 py-2 text-right font-medium">Unitario</th> : null}
+              {canViewFinancialData ? <th className="w-[14%] px-3 py-2 text-right font-medium">Total</th> : null}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-black/10">
+            {order.order_items.map((item) => (
+              <tr key={`${order.id}-${item.id}`}>
+                <td className="break-words px-3 py-2.5 font-medium [overflow-wrap:anywhere]">{item.product_name}</td>
+                <td className="break-words px-3 py-2.5 text-black/55 [overflow-wrap:anywhere]">{item.sku || "-"}</td>
+                <td className="px-3 py-2.5 text-center tabular-nums">{item.quantity}</td>
+                {canViewFinancialData ? <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(item.unit_price)}</td> : null}
+                {canViewFinancialData ? <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{formatCurrency(item.line_total)}</td> : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canViewFinancialData ? (
+        <div className="flex items-center justify-between gap-4 border-t border-black/10 px-4 py-3 text-sm">
+          <span>Total de productos</span>
+          <span className="font-semibold tabular-nums">{formatCurrency(productsTotal)}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+const deliveryModeLabels: Record<string, string> = {
+  car_zone: "Entrega de Car Zone",
+  external_company: "Empresa externa",
+  store_pickup: "Retiro en tienda",
+  customer_arranged: "Coordinada por el cliente",
+  other: "Otra modalidad",
+};
+
+function CustomerDeliverySummary({ order, canViewFinancialData }: { order: AdminOrderRow; canViewFinancialData: boolean }) {
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4" aria-labelledby={`order-customer-title-${order.id}`}>
+        <h3 id={`order-customer-title-${order.id}`} className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
+          <UserRound size={16} aria-hidden="true" /> Cliente
+        </h3>
+        <dl className={`${styles.detailList} mt-3 grid min-w-0 grid-cols-[minmax(92px,0.35fr)_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm`}>
+          <DetailRow label="Nombre" value={order.customer_name} />
+          <DetailRow label="Teléfono" value={order.phone || "No disponible"} />
+          <DetailRow label="Origen" value={order.source === "pos" ? "Punto de venta" : order.source === "web" ? "Sitio web" : "Manual"} />
+          <DetailRow label="Seguimiento" value={order.tracking_code ?? "Sin código"} />
+        </dl>
+      </section>
+      <section className="min-w-0 rounded-lg border border-black/10 bg-white p-4" aria-labelledby={`order-delivery-title-${order.id}`}>
+        <h3 id={`order-delivery-title-${order.id}`} className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide">
+          <Truck size={16} aria-hidden="true" /> Entrega
+        </h3>
+        <dl className={`${styles.detailList} mt-3 grid min-w-0 grid-cols-[minmax(110px,0.4fr)_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm`}>
+          <DetailRow label="Modalidad" value={order.delivery_mode ? deliveryModeLabels[order.delivery_mode] ?? order.delivery_mode : "Sin especificar"} />
+          {canViewFinancialData ? <DetailRow label="Cargo aplicado" value={formatCurrency(order.shipping_fee)} /> : null}
+          <DetailRow label="Empresa externa" value={order.external_delivery_provider ?? "No aplica"} />
+          <DetailRow label="Reserva" value={reservationStatusLabels[order.order_reservation_status] ?? order.order_reservation_status} />
+        </dl>
+      </section>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt className="text-black/50">{label}</dt>
+      <dd className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">{value}</dd>
+    </>
+  );
+}
+
+function DetailValue({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><dt className="text-xs text-black/45">{label}</dt><dd className="mt-0.5 break-words font-medium [overflow-wrap:anywhere]">{value}</dd></div>;
 }
 
 function orderHasActiveInvoice(order: AdminOrderRow) {
@@ -746,6 +952,7 @@ function AuthorizedPriceAdjustmentNotice({ order }: { order: AdminOrderRow }) {
 
 function OrderDetail({
   order,
+  onBackToOrders,
   canConfirmPayments,
   canRejectPayments,
   canExtendReservations,
@@ -774,8 +981,10 @@ function OrderDetail({
   onUpdateOrderStatus,
   onUpdateCashOnDeliveryFee,
   onReprintInvoice,
+  onCommercialTermsDirtyChange,
 }: {
   order: AdminOrderRow;
+  onBackToOrders: () => void;
   canConfirmPayments: boolean;
   canRejectPayments: boolean;
   canExtendReservations: boolean;
@@ -804,6 +1013,7 @@ function OrderDetail({
   onUpdateOrderStatus: (status: AdminOrderRow["status"]) => void;
   onUpdateCashOnDeliveryFee: (fee: number) => void;
   onReprintInvoice: () => void;
+  onCommercialTermsDirtyChange: (dirty: boolean) => void;
 }) {
   const normalizedStatus = canonicalOrderStatus(order.status);
   const isBankTransfer = order.payment_method === "bank_transfer";
@@ -862,24 +1072,36 @@ function OrderDetail({
     { status: "en_ruta", label: "Marcar en ruta" },
     { status: "entregado", label: "Marcar entregado" },
   ] satisfies Array<{ status: AdminOrderRow["status"]; label: string }>;
-  const nextStatusActions = nextStatusActionOptions.filter((action) => allowedStatuses.some((option) => option.value === action.status));
+  const nextStatusActions = nextStatusActionOptions.filter(
+    (action) => action.status !== normalizedStatus && allowedStatuses.some((option) => option.value === action.status),
+  );
   const cashOnDeliveryFeeInput =
     cashOnDeliveryFeeDraft.orderId === order.id ? cashOnDeliveryFeeDraft.value : String(order.cash_on_delivery_fee ?? 0);
 
+  useLayoutEffect(() => {
+    onCommercialTermsDirtyChange(commercialTermsDirty);
+    return () => onCommercialTermsDirtyChange(false);
+  }, [commercialTermsDirty, onCommercialTermsDirtyChange]);
+
   return (
-    <article className="min-w-0 overflow-hidden rounded-lg border border-black/10 bg-white">
-      <div className="flex flex-col justify-between gap-3 border-b border-black/10 p-4 sm:flex-row sm:items-start">
+    <article className="min-w-0 overflow-hidden rounded-xl border border-black/10 bg-white shadow-sm">
+      <div className="border-b border-black/10 px-4 py-3 lg:hidden">
+        <button type="button" onClick={onBackToOrders} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-black/10 bg-white px-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]">
+          <ArrowLeft size={17} aria-hidden="true" />
+          Volver a pedidos
+        </button>
+      </div>
+      <div className="flex flex-col justify-between gap-4 border-b border-black/10 p-4 sm:flex-row sm:items-start">
         <div className="min-w-0">
           <p className="text-sm text-black/50">{formatHnDateTime(order.created_at)}</p>
-          <h2 className="mt-1 flex min-w-0 items-center gap-2 break-words text-xl font-semibold [overflow-wrap:anywhere]">
-            <PackageCheck size={22} className="shrink-0" />
+          <h2 className="mt-1 min-w-0 break-words text-xl font-semibold leading-tight [overflow-wrap:anywhere] sm:text-2xl">
             {order.order_number}
           </h2>
           <p className="mt-1 break-words text-sm text-black/60 [overflow-wrap:anywhere]">
             {order.customer_name} / {order.phone}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 sm:justify-end">
+        <div className="flex flex-wrap gap-2 sm:max-w-[45%] sm:justify-end">
           <Badge tone={normalizedStatus === "cancelado" ? "danger" : "default"}>{orderStatusLabels[normalizedStatus] ?? order.status}</Badge>
           <Badge tone={paymentIsApproved ? "success" : paymentIsRejected ? "danger" : "warning"}>{paymentDisplayLabel(order)}</Badge>
           {canViewFinancialData ? <Badge tone="neutral">{formatCurrency(order.total)}</Badge> : null}
@@ -909,18 +1131,6 @@ function OrderDetail({
             onExtendReservation={onExtendReservation}
             onAddInternalNote={onAddInternalNote}
           />
-        ) : null}
-
-        {canViewFinancialData ? (
-          <>
-            <AuthorizedPriceAdjustmentNotice order={order} />
-            <OrderCommercialTerms
-              order={order}
-              canEdit={canAdjustSaleTerms}
-              confirmationModalEnabled={orderPriceConfirmationModalEnabled}
-              onDirtyChange={setCommercialTermsDirty}
-            />
-          </>
         ) : null}
 
         {isCredit && order.receivable_id ? (
@@ -969,7 +1179,10 @@ function OrderDetail({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+        <div className={styles.actionGrid}>
+        <section className="rounded-lg border border-black/10 bg-white p-3">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#b91c25]">Comunicación</p>
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
           <ContactActions phone={order.phone} customerName={order.customer_name} whatsappMessage={buildOrderWhatsappMessage(order)} />
           {order.tracking_code ? (
             <button
@@ -981,16 +1194,19 @@ function OrderDetail({
               Copiar número de seguimiento
             </button>
           ) : null}
-        </div>
+          </div>
+        </section>
 
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+        <section className={`${styles.primaryActionGroup} rounded-lg border border-black/10 bg-white p-3`}>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#b91c25]">Acción principal y documentos</p>
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
           {canManageOrders && canAcceptOrder ? (
             <Button onClick={() => onUpdateOrderStatus("confirmado")} disabled={isPending} variant="primary" className="w-full sm:w-auto">
               <CheckCircle2 size={17} />
               Aceptar pedido
             </Button>
           ) : null}
-          {canManageLogistics ? nextStatusActions.map((action) => (
+          {canManageLogistics ? nextStatusActions.slice(0, 1).map((action) => (
             <Button key={action.status} onClick={() => onUpdateOrderStatus(action.status)} disabled={isPending} variant="ghost" className="w-full sm:w-auto">
               <CheckCircle2 size={17} />
               {action.label}
@@ -1017,12 +1233,6 @@ function OrderDetail({
               {isPending ? "Procesando..." : "Marcar crédito como pagado"}
             </Button>
           ) : null}
-          {canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
-            <Button onClick={onRejectPayment} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
-              <XCircle size={17} />
-              Rechazar pago
-            </Button>
-          ) : null}
           {canGenerateInvoices && !order.invoice_number ? (
             <Button onClick={onGenerateInvoice} disabled={isPending || !invoiceCanBeIssued || commercialTermsDirty} variant="dark" className="min-h-11 w-full sm:w-auto">
               <FileText size={17} />
@@ -1035,27 +1245,18 @@ function OrderDetail({
               {invoiceIsCancelled ? "Ver factura anulada" : "Ver factura"}
             </Button>
           ) : null}
-          {canCancelInvoices && hasActiveInvoice ? (
-            <Button onClick={onCancelInvoice} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
-              <Ban size={17} />
-              Anular factura
-            </Button>
-          ) : null}
           {canCorrectInvoices && canViewFinancialData ? (
             <Button onClick={onCorrectFiscalData} disabled={isPending || invoiceIsCancelled} variant="ghost" className="w-full sm:w-auto">
               <FilePenLine size={17} />
               Editar datos fiscales
             </Button>
           ) : null}
-          {canCancelOrders && canCancelOrder ? (
-            <Button onClick={onCancelOrder} disabled={isPending} variant="secondary" className="w-full sm:w-auto">
-              <XCircle size={17} />
-              Cancelar pedido
-            </Button>
-          ) : null}
-        </div>
+          </div>
+        </section>
 
-        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+        <section className="rounded-lg border border-black/10 bg-white p-3">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#b91c25]">Otros / admin</p>
+          <div className="grid gap-3">
           <label className="rounded-md border border-black/10 bg-[#f4f4f5] p-3">
             <span className="text-xs font-medium uppercase text-black/50">Avance manual seguro</span>
             <select
@@ -1071,19 +1272,26 @@ function OrderDetail({
               ))}
             </select>
           </label>
-
-          <div className="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
-            <CompactInfo label="Cliente" value={order.customer_name} />
-            <CompactInfo label="Teléfono" value={order.phone} />
-            <CompactInfo label="Origen" value={order.source === 'pos' ? 'Punto de venta' : order.source === 'web' ? 'Sitio web' : 'Manual'} />
-            {order.tracking_code ? <CompactInfo label="Código" value={order.tracking_code} /> : null}
-            {canViewFinancialData ? <CompactInfo label="RTN" value={order.fiscal_customer_rtn ?? "Sin RTN"} /> : null}
           </div>
+        </section>
+
         </div>
 
+        <OrderProductsSection order={order} canViewFinancialData={canViewFinancialData} />
+        <CustomerDeliverySummary order={order} canViewFinancialData={canViewFinancialData} />
+
         {canViewFinancialData ? (
-          <details className="rounded-md border border-black/10 bg-white p-3" open={isBankTransfer || Boolean(order.invoice_number)}>
+          <details className="rounded-lg border border-black/10 bg-white p-3" open={canAdjustSaleTerms && !hasActiveInvoice}>
             <summary className="cursor-pointer text-sm font-semibold">Detalles operativos y fiscales</summary>
+            <div className="mt-3 space-y-3">
+              <AuthorizedPriceAdjustmentNotice order={order} />
+              <OrderCommercialTerms
+                order={order}
+                canEdit={canAdjustSaleTerms}
+                confirmationModalEnabled={orderPriceConfirmationModalEnabled}
+                onDirtyChange={setCommercialTermsDirty}
+              />
+            </div>
             <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
               <CompactInfo label="Precio usado" value={order.price_mode === "wholesale" ? "Mayorista" : "Detalle"} />
               <CompactInfo label="Método de pago" value={paymentLabels[order.payment_method] ?? paymentMethodLabel(order.payment_method, { detailedCard: true })} />
@@ -1221,36 +1429,33 @@ function OrderDetail({
         ) : null}
         {message ? <p className="rounded-md bg-[#f4f4f5] p-3 text-sm text-black/60">{message}</p> : null}
 
-        <div className="overflow-hidden rounded-lg border border-black/10">
-          <div className="bg-[#e7e5e4] px-4 py-3 text-sm font-semibold">Productos</div>
-          <div className="grid gap-3 p-3 md:hidden">
-            {order.order_items.map((item) => (
-              <OrderItemCard key={`${order.id}-${item.id}-card`} item={item} canViewFinancialData={canViewFinancialData} />
-            ))}
-          </div>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[620px] text-left text-sm">
-              <thead className="text-xs uppercase text-black/50">
-                <tr>
-                  <th className="px-3 py-2">Producto</th>
-                  <th className="px-3 py-2">SKU</th>
-                  <th className="px-3 py-2">Cant.</th>
-                  {canViewFinancialData ? <th className="px-3 py-2 text-right">Total</th> : null}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {order.order_items.map((item) => (
-                  <tr key={`${order.id}-${item.id}`}>
-                    <td className="px-3 py-2 break-words [overflow-wrap:anywhere]">{item.product_name}</td>
-                    <td className="px-3 py-2 break-words text-black/55 [overflow-wrap:anywhere]">{item.sku}</td>
-                    <td className="px-3 py-2">{item.quantity}</td>
-                    {canViewFinancialData ? <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.line_total)}</td> : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        {(canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado") ||
+        (canCancelInvoices && hasActiveInvoice) || (canCancelOrders && canCancelOrder) ? (
+          <section className="rounded-lg border border-[#e4252c]/20 bg-[#fffafa] p-4" aria-labelledby={`order-control-title-${order.id}`}>
+            <h3 id={`order-control-title-${order.id}`} className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-[#b91c25]">
+              <ShieldAlert size={17} aria-hidden="true" />
+              Acciones de control
+            </h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {canRejectPayments && (isBankTransfer || isCard) && !paymentIsApproved && !paymentIsRejected && normalizedStatus !== "cancelado" ? (
+                <Button onClick={onRejectPayment} disabled={isPending} variant="secondary" className="min-h-11 w-full">
+                  <XCircle size={17} /> Rechazar pago
+                </Button>
+              ) : null}
+              {canCancelInvoices && hasActiveInvoice ? (
+                <Button onClick={onCancelInvoice} disabled={isPending} variant="secondary" className="min-h-11 w-full">
+                  <Ban size={17} /> Anular factura
+                </Button>
+              ) : null}
+              {canCancelOrders && canCancelOrder ? (
+                <Button onClick={onCancelOrder} disabled={isPending} variant="secondary" className="min-h-11 w-full">
+                  <XCircle size={17} /> Cancelar pedido
+                </Button>
+              ) : null}
+            </div>
+            <p className="mt-3 text-xs text-black/50">Estas acciones requieren confirmación y quedan registradas en auditoría.</p>
+          </section>
+        ) : null}
 
       </div>
     </article>
@@ -1365,8 +1570,8 @@ function ExtendReservationModal({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
-        <h2 className="text-xl font-semibold">Extender reserva</h2>
+      <section role="dialog" aria-modal="true" aria-labelledby="extend-reservation-title" className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
+        <h2 id="extend-reservation-title" className="text-xl font-semibold">Extender reserva</h2>
         <p className="mt-1 text-sm text-black/60">{order.order_number}</p>
         <label className="mt-4 block">
           <span className="mb-1 block text-xs font-medium uppercase text-black/50">Tiempo adicional</span>
@@ -1416,14 +1621,14 @@ function InvoicePreviewModal({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-hidden bg-black/45 p-0 print:static print:bg-white print:p-0 sm:p-4">
-      <section className="mx-auto flex h-[100dvh] w-full max-w-full flex-col overflow-hidden rounded-none bg-white text-[#080808] shadow-xl print:my-0 print:max-w-none print:rounded-none print:shadow-none sm:my-6 sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-6xl sm:rounded-lg">
+      <section role="dialog" aria-modal="true" aria-labelledby="invoice-preview-title" className="mx-auto flex h-[100dvh] w-full max-w-full flex-col overflow-hidden rounded-none bg-white text-[#080808] shadow-xl print:my-0 print:max-w-none print:rounded-none print:shadow-none sm:my-6 sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-6xl sm:rounded-lg">
         <div className="flex shrink-0 flex-col gap-3 border-b border-black/10 p-4 print:hidden sm:flex-row sm:items-start sm:justify-between sm:p-5">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-sm font-semibold text-[#b91c25]">
               <FileText size={18} />
               Factura emitida
             </p>
-            <h2 className="mt-1 break-words text-xl font-semibold [overflow-wrap:anywhere] sm:text-2xl">{invoice.invoice_number}</h2>
+            <h2 id="invoice-preview-title" className="mt-1 break-words text-xl font-semibold [overflow-wrap:anywhere] sm:text-2xl">{invoice.invoice_number}</h2>
             <p className="mt-1 text-sm text-black/55">Pedido #{invoice.order_number}</p>
           </div>
           <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:flex-wrap">
@@ -1527,14 +1732,14 @@ function CorrectOrderFiscalDataModal({
 
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
+      <section role="dialog" aria-modal="true" aria-labelledby="correct-fiscal-title" className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-8 sm:p-5">
         <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-4">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold text-[#b91c25]">
               <FilePenLine size={18} />
               Corregir datos fiscales
             </p>
-            <h2 className="mt-1 text-2xl font-semibold">{order.order_number}</h2>
+            <h2 id="correct-fiscal-title" className="mt-1 text-2xl font-semibold">{order.order_number}</h2>
             <p className="mt-1 text-sm text-black/55">
               {order.invoice_number ? `Factura ${order.invoice_number}` : "Pedido sin factura emitida"}
             </p>
@@ -1589,12 +1794,31 @@ function CorrectOrderFiscalDataModal({
 
 function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistoryEntry[] }) {
   return (
-    <section className="rounded-md border border-black/10 bg-white p-3">
+    <section className={`${styles.historyContainer} rounded-md border border-black/10 bg-white p-3`}>
       <h3 className="text-sm font-semibold">Historial de correcciones fiscales</h3>
       {history.length === 0 ? (
         <p className="mt-2 text-sm text-black/55">Sin correcciones fiscales registradas.</p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
+        <>
+        <div className={`${styles.historyCards} mt-3 gap-3`}>
+          {history.flatMap((entry) => {
+            const fields = entry.fields_modified.length > 0 ? entry.fields_modified : (Object.keys(entry.new_values) as FiscalCorrectionValueKey[]);
+            return fields.map((field) => (
+              <article key={`${entry.id}-${field}-card`} className="rounded-lg border border-black/10 bg-[#fafafa] p-3 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-semibold">{fiscalCorrectionFieldLabels[field] ?? field}</p>
+                  <time className="text-xs text-black/50">{formatHnDateTime(entry.created_at)}</time>
+                </div>
+                <p className="mt-1 text-xs text-black/50">{entry.user_label ?? "Usuario"}{entry.actor_role ? ` · ${entry.actor_role}` : ""}</p>
+                <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <DetailValue label="Valor anterior" value={entry.old_values[field] || "-"} />
+                  <DetailValue label="Valor nuevo" value={entry.new_values[field] || "-"} />
+                </dl>
+              </article>
+            ));
+          })}
+        </div>
+        <div className={`${styles.historyTable} mt-3 overflow-x-auto`}>
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
@@ -1627,6 +1851,7 @@ function FiscalCorrectionHistory({ history }: { history: FiscalCorrectionHistory
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
   );
@@ -1736,7 +1961,7 @@ function ConfirmReasonModal({
 }) {
   return (
     <div className="cz-layer-modal fixed inset-0 overflow-y-auto bg-black/45 p-3 sm:p-4">
-      <section className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
+      <section role="dialog" aria-modal="true" aria-label={title} className="mx-auto my-4 max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-4 text-[#080808] sm:my-10 sm:p-5">
         <div className="border-b border-black/10 pb-4">
           <p className="flex items-center gap-2 text-sm font-semibold text-[#9b341b]">
             {icon}

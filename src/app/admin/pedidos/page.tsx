@@ -1,6 +1,4 @@
-import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
@@ -120,18 +118,10 @@ export default async function AdminOrdersPage({
   const visibleOrders = canViewFinancialData ? ordersPage.orders : ordersPage.orders.map(stripFinancialOrderData);
 
   return (
-    <AdminShell title="Pedidos">
-      <div className="mb-5">
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm"
-        >
-          <ArrowLeft size={16} />
-          Panel administrativo
-        </Link>
-      </div>
+    <AdminShell title="Pedidos" variant="wide" backHref="/admin" backLabel="Panel administrativo">
       <AdminOrdersManager
         orders={visibleOrders}
+        initialOrderId={focusOrderId}
         total={ordersPage.total}
         page={ordersPage.page}
         pageSize={ordersPage.pageSize}

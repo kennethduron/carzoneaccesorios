@@ -1,0 +1,98 @@
+.detailContainer,
+.commercialContainer,
+.historyContainer {
+  container-type: inline-size;
+}
+
+.detailContainer :is(button, a, input, select, summary) {
+  min-height: 2.75rem;
+}
+
+.detailContainer summary {
+  display: flex;
+  align-items: center;
+}
+
+.productCards,
+.commercialCards,
+.historyCards {
+  display: none;
+}
+
+.actionGrid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.primaryActionGroup {
+  order: -1;
+}
+
+@container (min-width: 820px) {
+  .actionGrid {
+    grid-template-columns: minmax(230px, 1.2fr) minmax(210px, 1fr) minmax(190px, 0.85fr);
+  }
+}
+
+@container (max-width: 719px) {
+  .productTable {
+    display: none;
+  }
+
+  .productCards {
+    display: grid;
+  }
+}
+
+@container (max-width: 759px) {
+  .commercialTable {
+    display: none;
+  }
+
+  .commercialCards {
+    display: grid;
+  }
+}
+
+@container (max-width: 679px) {
+  .historyTable {
+    display: none;
+  }
+
+  .historyCards {
+    display: grid;
+  }
+}
+
+@container (max-width: 340px) {
+  .detailList {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.25rem;
+  }
+
+  .detailList dt:not(:first-child) {
+    margin-top: 0.5rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  .compactOnlyHidden {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .desktopScroller {
+    max-height: calc(100dvh - 238px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionSafe {
+    scroll-behavior: auto;
+    transition: none;
+  }
+}

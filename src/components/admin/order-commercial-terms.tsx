@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useLayoutEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Calculator, CalendarDays, PackageSearch, Truck } from "lucide-react";
 import {
@@ -21,6 +21,7 @@ import type {
 import { formatSqlDateHn, todayInHonduras } from "@/utils/honduras-date";
 import { isPaymentConfirmed } from "@/utils/order-workflow";
 import { formatCurrency } from "@/utils/pricing";
+import styles from "@/components/admin/admin-orders-responsive.module.css";
 
 const deliveryOptions: Array<{ value: DeliveryMode | ""; label: string }> = [
   { value: "", label: "Sin especificar" },
@@ -129,7 +130,7 @@ export function OrderCommercialTerms({
   }), [deliveryMode, deliveryReason, externalProvider, invoiceDate, priceReason, prices, shippingFee]);
   const dirty = draftSignature(currentDraft) !== savedSignature;
 
-  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
+  useLayoutEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const clientValidation = useMemo(() => {
     for (const item of order.order_items) {
@@ -227,7 +228,7 @@ export function OrderCommercialTerms({
   }
 
   return (
-    <section className="min-w-0 rounded-lg border border-[#b91c25]/20 bg-[#fffafa] p-4" aria-labelledby={`commercial-terms-title-${order.id}`}>
+    <section className={`${styles.commercialContainer} min-w-0 rounded-lg border border-[#b91c25]/20 bg-[#fffafa] p-4`} aria-labelledby={`commercial-terms-title-${order.id}`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 id={`commercial-terms-title-${order.id}`} className="text-base font-semibold">
@@ -267,7 +268,7 @@ export function OrderCommercialTerms({
 
           <div className="rounded-md border border-black/10 bg-white p-3">
             <div className="flex items-center gap-2 font-semibold"><PackageSearch size={17} /> Precio final por producto</div>
-            <div className="mt-3 space-y-3 md:hidden">
+            <div className={`${styles.commercialCards} mt-3 gap-3`}>
               {order.order_items.map((item) => {
                 const cost = item.unit_cost_snapshot ? Number(item.unit_cost_snapshot) : null;
                 const finalPrice = Number(prices[item.id]);
@@ -300,7 +301,7 @@ export function OrderCommercialTerms({
                 );
               })}
             </div>
-            <div className="mt-3 hidden min-w-0 max-w-full overflow-x-auto md:block">
+            <div className={`${styles.commercialTable} mt-3 min-w-0 max-w-full`}>
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-black/10 text-xs uppercase text-black/50">
                   <tr><th className="py-2">Producto</th><th>Unidad(es)</th><th>Original</th><th>Costo</th><th>Precio final</th><th>Margen</th></tr>
