@@ -18,7 +18,9 @@ assert.match(responsiveCss, /@container \(min-width: 1080px\)[\s\S]*\.commercial
 const nextBin = join(repoRoot, "node_modules", "next", "dist", "bin", "next");
 const appPort = 3427;
 const debugPort = 9427;
-const baseUrl = `http://127.0.0.1:${appPort}/admin-orders-commercial-overlap-certification-local`;
+const certificationRouteName = `admin-orders-commercial-overlap-certification-${process.pid}`;
+const certificationRouteDir = join(repoRoot, "src", "app", certificationRouteName);
+const baseUrl = `http://127.0.0.1:${appPort}/${certificationRouteName}`;
 const outputDir = join(repoRoot, ".visual-check", "admin-orders-commercial-overlap");
 
 async function firstExecutable(paths) {
@@ -117,9 +119,21 @@ const chromePath = await firstExecutable([
 ]);
 
 await mkdir(outputDir, { recursive: true });
+await rm(join(repoRoot, ".next", "dev"), { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
+await mkdir(certificationRouteDir, { recursive: true });
+await writeFile(join(certificationRouteDir, "page.tsx"), `
+import { OrderCommercialTermsCertification } from "../../../scripts/fixtures/order-commercial-terms-certification";
+
+export const dynamic = "force-dynamic";
+export const metadata = { robots: { index: false, follow: false } };
+
+export default function AdminOrdersCommercialOverlapCertificationPage() {
+  return <OrderCommercialTermsCertification />;
+}
+`.trimStart());
 const chromeProfile = await mkdtemp(join(tmpdir(), "carzone-orders-commercial-overlap-"));
 let serverOutput = "";
-const server = spawn(process.execPath, [nextBin, "dev", "--hostname", "127.0.0.1", "--port", String(appPort)], {
+const server = spawn(process.execPath, [nextBin, "dev", "--webpack", "--hostname", "127.0.0.1", "--port", String(appPort)], {
   cwd: repoRoot,
   env: { ...process.env },
   stdio: ["ignore", "pipe", "pipe"],
@@ -352,4 +366,6 @@ try {
   await stopChild(chrome);
   await stopChild(server);
   await rm(chromeProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await rm(certificationRouteDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await rm(join(repoRoot, ".next", "dev"), { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }
