@@ -35,6 +35,7 @@
     "test:cart-quantity": "node scripts/test-cart-quantity-input.mjs",
     "test:account-parent-hierarchy": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-account-parent-hierarchy.mjs",
     "test:accounting-report-aggregates": "node scripts/test-accounting-report-aggregates-structure.mjs",
+    "test:accounting-journal-printing": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-accounting-journal-printing.mjs",
     "test:admin-reports-historical-payments": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-reports-historical-payments.mjs",
     "test:admin-reports-pagination": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-reports-pagination.mjs",
     "test:admin-reports-pdf": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-admin-reports-pdf.mjs",

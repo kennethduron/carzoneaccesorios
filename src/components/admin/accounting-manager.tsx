@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight, X } from "lucide-react";
+import { BookOpen, CheckCircle2, Eye, FileText, Landmark, Pencil, Plus, Printer, RefreshCw, RotateCcw, Save, Trash2, ToggleLeft, ToggleRight, X } from "lucide-react";
 import {
   postJournalEntryAction,
   recalculateJournalDraftFromSourceAction,
@@ -18,7 +18,7 @@ import { PaginationControls } from "@/components/admin/pagination-controls";
 import { Button, Input } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { formatCivilDate } from "@/lib/civil-date";
-import { buildJournalEntryViewerHref } from "@/lib/accounting-navigation";
+import { buildJournalEntryPrintHref, buildJournalEntryViewerHref, journalEntryStatusLabel, journalSourceLabel } from "@/lib/accounting-navigation";
 import type {
   AccountingAccount,
   AccountingAccountInput,
@@ -68,29 +68,6 @@ const normalBalanceLabels: Record<AccountingNormalBalance, string> = {
   debit: "Débito",
   credit: "Crédito",
 };
-
-const journalSourceLabels: Record<string, string> = {
-  manual: "Partida manual",
-  financial_event: "Evento financiero",
-  order: "Venta",
-  payment: "Pago recibido",
-  invoice: "Factura",
-  commercial_credit: "Credito comercial",
-  accounts_receivable: "Cuenta por cobrar",
-  receivable_payment: "Abono recibido",
-  inventory_movement: "Inventario",
-  purchase: "Compra",
-  supplier_invoice: "Factura de proveedor",
-  accounts_payable: "Cuenta por pagar",
-  supplier_payment: "Pago a proveedor",
-  purchase_return: "Devolucion a proveedor",
-  supplier_credit: "Credito de proveedor",
-};
-
-function journalSourceLabel(sourceType: string | null) {
-  if (!sourceType) return "Partida manual";
-  return journalSourceLabels[sourceType] ?? "Origen contable";
-}
 
 const emptyAccount: AccountingAccountInput = {
   code: "",
@@ -1213,6 +1190,15 @@ function EntryActions({
 }) {
   return (
     <div className={`flex flex-wrap gap-2 ${compact ? "justify-end" : "mt-3"}`}>
+      <Link
+        className={`inline-flex items-center justify-center gap-2 rounded-lg border border-black/10 bg-white font-semibold text-black transition-colors hover:border-[#e4252c]/35 hover:bg-[#fff1f2] hover:text-[#b91c25] ${compact ? "px-3 py-1.5 text-sm" : "px-4 py-2"}`}
+        href={buildJournalEntryPrintHref(entry.id)}
+        target="_blank"
+        rel="noreferrer"
+      >
+        <Printer size={15} />
+        {compact ? "Imprimir" : "Imprimir partida"}
+      </Link>
       {canEdit && entry.status === "borrador" ? (
         <Link
           className={`inline-flex items-center justify-center gap-2 rounded-lg border border-black/10 bg-white font-semibold text-black transition-colors hover:border-[#e4252c]/35 hover:bg-[#fff1f2] hover:text-[#b91c25] ${compact ? "px-3 py-1.5 text-sm" : "px-4 py-2"}`}
@@ -1259,12 +1245,7 @@ function EntryStatus({ status }: { status: JournalEntry["status"] }) {
     anulada: "bg-[#f4f4f5] text-black/55",
   }[status];
 
-  const label = {
-    borrador: "Borrador",
-    publicada: "Publicada",
-    reversada: "Reversada",
-    anulada: "Anulada",
-  }[status];
+  const label = journalEntryStatusLabel(status);
 
   return <span className={`rounded-full px-2 py-1 text-xs font-semibold ${classes}`}>{label}</span>;
 }
