@@ -1,6 +1,7 @@
 .detailContainer,
 .commercialContainer,
-.historyContainer {
+.historyContainer,
+.priceDialogContainer {
   container-type: inline-size;
 }
 
@@ -15,8 +16,19 @@
 
 .productCards,
 .commercialCards,
-.historyCards {
+.historyCards,
+.priceDialogCards {
   display: none;
+}
+
+@container (max-width: 1079px) {
+  .priceDialogTable {
+    display: none;
+  }
+
+  .priceDialogCards {
+    display: grid;
+  }
 }
 
 .actionGrid {

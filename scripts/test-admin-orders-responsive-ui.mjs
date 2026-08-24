@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [page, manager, commercialTerms, responsiveCss, contactActions] = await Promise.all([
+const [page, manager, commercialTerms, priceDialog, responsiveCss, contactActions] = await Promise.all([
   readFile(new URL("../src/app/admin/pedidos/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/admin-orders-manager.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/order-commercial-terms.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/components/admin/order-price-confirmation-dialog.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/admin/admin-orders-responsive.module.css", import.meta.url), "utf8"),
   readFile(new URL("../src/components/contact-actions.tsx", import.meta.url), "utf8"),
 ]);
@@ -37,6 +38,9 @@ assert.ok((manager.match(/role="dialog" aria-modal="true"/g) ?? []).length >= 4,
 assert.match(commercialTerms, /styles\.commercialContainer/);
 assert.match(commercialTerms, /styles\.commercialCards/);
 assert.match(commercialTerms, /styles\.commercialTable/);
+assert.match(priceDialog, /styles\.priceDialogContainer/);
+assert.match(priceDialog, /styles\.priceDialogCards/);
+assert.match(priceDialog, /styles\.priceDialogTable/);
 
 for (const width of [719, 759, 679, 1023, 1024]) {
   assert.ok(responsiveCss.includes(`${width}px`), `falta umbral responsive ${width}px`);

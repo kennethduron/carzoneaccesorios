@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { OrderPriceAdjustmentPreview, SaleFinancialSnapshot } from "@/types/orders";
 import { formatCurrency } from "@/utils/pricing";
+import styles from "@/components/admin/admin-orders-responsive.module.css";
 
 export function OrderPriceConfirmationDialog({
   preview,
@@ -54,7 +55,7 @@ export function OrderPriceConfirmationDialog({
         aria-labelledby="order-price-confirmation-title"
         aria-describedby="order-price-confirmation-description"
         onKeyDown={keyDown}
-        className="max-h-[calc(100dvh-1rem)] w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]"
+        className={`${styles.priceDialogContainer} max-h-[calc(100dvh-1rem)] w-full max-w-6xl overflow-y-auto rounded-xl bg-white shadow-2xl sm:max-h-[calc(100dvh-2rem)]`}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-black/10 bg-white px-4 py-4 sm:px-6">
           <div>
@@ -78,10 +79,10 @@ export function OrderPriceConfirmationDialog({
         <div className="space-y-5 p-4 sm:p-6">
           <section aria-labelledby="changed-lines-title">
             <h3 id="changed-lines-title" className="font-semibold">Productos modificados</h3>
-            <div className="mt-3 space-y-3 md:hidden">
+            <div className={`${styles.priceDialogCards} mt-3 gap-3`}>
               {preview.lines.map((line) => <LineCard key={line.orderItemId} line={line} />)}
             </div>
-            <div className="mt-3 hidden overflow-x-auto rounded-lg border border-black/10 md:block">
+            <div className={`${styles.priceDialogTable} mt-3 overflow-x-auto rounded-lg border border-black/10`}>
               <table className="w-full min-w-[1040px] text-left text-sm">
                 <thead className="bg-[#f4f4f5] text-xs uppercase text-black/55">
                   <tr>
