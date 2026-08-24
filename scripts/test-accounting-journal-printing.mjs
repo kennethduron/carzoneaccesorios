@@ -103,7 +103,14 @@ assert.match(printButton, /window\.print\(\)/);
 assert.doesNotMatch(printButton, /jspdf|pdfkit|puppeteer|playwright/i);
 
 assert.match(printCss, /@page\s*\{/);
-assert.match(printCss, /size:\s*A4 portrait/);
+assert.match(printCss, /size:\s*auto/);
+assert.doesNotMatch(printCss, /size:\s*(?:A4|letter)/i);
+assert.match(printCss, /\.memoColumn\s*\{\s*width:\s*26%/);
+assert.match(printCss, /\.amountColumn\s*\{\s*width:\s*18\.5%/);
+const letterPrintableWidth = (8.5 - 24 / 25.4) * 96;
+const a4PrintableWidth = ((210 - 24) / 25.4) * 96;
+assert.ok(letterPrintableWidth * 0.185 > 134, "Letter amount columns must retain at least 134 CSS pixels.");
+assert.ok(a4PrintableWidth * 0.185 > 130, "A4 amount columns must retain at least 130 CSS pixels.");
 assert.match(printCss, /@media print/);
 assert.match(printCss, /display:\s*table-header-group/);
 assert.match(printCss, /\.tableFrame tfoot\s*\{[\s\S]*?display:\s*table-row-group/);
@@ -123,4 +130,4 @@ assert.doesNotMatch(
   "The print surface must not import or invoke mutation paths.",
 );
 
-console.log("Accounting journal entry printing tests passed (auth, fidelity, XSS, pagination, zero-mutation). ");
+console.log("Accounting journal entry printing tests passed (auth, fidelity, XSS, A4/Letter, pagination, zero-mutation). ");

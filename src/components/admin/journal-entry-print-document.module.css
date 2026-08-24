@@ -259,11 +259,11 @@
 }
 
 .memoColumn {
-  width: 31%;
+  width: 26%;
 }
 
 .amountColumn {
-  width: 16%;
+  width: 18.5%;
 }
 
 .documentFooter {
@@ -329,7 +329,7 @@
 }
 
 @page {
-  size: A4 portrait;
+  size: auto;
   margin: 12mm;
 }
 
