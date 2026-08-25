@@ -131,7 +131,8 @@ assert.match(submitBlock, /: await runProductCreateWithConfirmation/);
 assert.match(submitBlock, /createProductViaHttpApi\(normalizedProduct, requestId\)/, "create transport must remain unchanged");
 assert.doesNotMatch(submitBlock, /saveProductAction/);
 assert.doesNotMatch(manager, /\bsaveProductAction\b/, "browser edit path must have no Server Action dependency");
-assert.match(actions, /import sharp from "sharp"/, "the failing native dependency remains isolated to image actions");
+assert.doesNotMatch(actions, /import sharp from "sharp"/, "product actions must not statically load the native image processor");
+assert.doesNotMatch(manager, /\buploadProductImageAction\b/, "browser image uploads must not use Server Action dispatch");
 
 assert.match(updateRoute, /export async function PUT/);
 assert.match(updateRoute, /verifySameOriginRequest\(request\)/);

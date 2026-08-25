@@ -29,7 +29,6 @@ import {
   importProductsAction,
   preflightProductImportFileAction,
   setProductActiveAction,
-  uploadProductImageAction,
 } from "@/app/admin/productos/actions";
 import type { ProductImportResult, ProductImportSummary } from "@/app/admin/productos/actions";
 import { Button, Input } from "@/components/ui";
@@ -41,6 +40,15 @@ import {
   type ProductCreateConfirmationResponse,
 } from "@/lib/product-create-hardening";
 import { createProductViaHttpApi } from "@/lib/product-create-http";
+import {
+  productImageAngles,
+  type ProductImageAngle,
+} from "@/lib/product-image-upload-contract";
+import {
+  createProductImageUploadRequestId,
+  ProductImageUploadTransportError,
+  uploadProductImageViaHttp,
+} from "@/lib/product-image-upload-http";
 import { updateProductViaHttpApi } from "@/lib/product-update-http";
 import type { AdminProductCatalogSummary } from "@/services/supabase/admin-products.service";
 import { formatCurrency } from "@/utils/pricing";
@@ -116,6 +124,9 @@ type ImageUploadState = {
   fileName?: string;
   previewUrl?: string;
   file?: File;
+  requestId?: string;
+  productSlug?: string;
+  angle?: ProductImageAngle;
 };
 
 type ProductImportMode = "create_and_update" | "create_only" | "update_only";
@@ -129,6 +140,7 @@ type ProductImportPreviewRow = {
   matchedImagePath: string | null;
   imageMatchMethod: string | null;
   imageFile?: File;
+  imageUploadRequestId?: string;
   exists: boolean;
   duplicateSku: boolean;
   action: "create" | "update" | "skip" | "error";
@@ -174,7 +186,7 @@ type EditableProductInput = Omit<ProductFormInput, EditableProductNumericField> 
 
 const productDraftStorageKey = "car-zone-product-editor-draft";
 const maxProductImages = 5;
-const imageAngleOptions = ["principal", "frontal", "lateral", "trasera", "detalle", "otro"];
+const imageAngleOptions = [...productImageAngles];
 const integerInputPattern = /^\d*$/;
 const decimalInputPattern = /^$|^\d+(?:\.\d{0,2})?$/;
 
@@ -818,7 +830,11 @@ export function ProductManager({
     showMessage("Imagen removida del formulario. Guarda el producto para confirmar el cambio.", "neutral");
   }
 
-  async function uploadImage(index: number, file: File | null) {
+  async function uploadImage(
+    index: number,
+    file: File | null,
+    retryIdentity?: { requestId: string; productSlug: string; angle: ProductImageAngle },
+  ) {
     if (!file || !editing) {
       return;
     }
@@ -891,6 +907,13 @@ export function ProductManager({
       uploadFile = file;
     }
 
+    const uploadIdentity = retryIdentity ?? {
+      requestId: createProductImageUploadRequestId(),
+      productSlug: editing.slug || editing.sku || editing.name || "producto",
+      angle: productImageAngles.includes(editing.images[index]?.angle as ProductImageAngle)
+        ? editing.images[index].angle as ProductImageAngle
+        : "principal",
+    };
     const previewUrl = URL.createObjectURL(uploadFile);
     setImageUploads((current) => {
       const previousPreview = current[index]?.previewUrl;
@@ -906,31 +929,44 @@ export function ProductManager({
           fileName: uploadFile.name,
           previewUrl,
           file: uploadFile,
+          ...uploadIdentity,
         },
       };
     });
     showMessage("Subiendo imagen. El formulario permanecerá abierto aunque falle.", "neutral");
 
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set("file", uploadFile);
-      formData.set("productSlug", editing.slug || editing.sku || editing.name || "producto");
-      formData.set("angle", editing.images[index]?.angle || "principal");
+      try {
+        const result = await uploadProductImageViaHttp({
+          file: uploadFile,
+          productSlug: uploadIdentity.productSlug,
+          angle: uploadIdentity.angle,
+          slotIndex: index,
+          requestId: uploadIdentity.requestId,
+        });
+        if (!result.ok) {
+          showMessage(result.message, "error");
+          setImageUploads((current) => ({
+            ...current,
+            [index]: {
+              ...current[index],
+              status: "error",
+              message: result.message,
+            },
+          }));
+          return;
+        }
 
-      const result = await uploadProductImageAction(formData);
-      showMessage(result.message, result.ok ? "success" : "error");
-
-      if (result.ok && result.publicUrl) {
         const previousImage = editing.images[index];
         const previousUnsavedPublicId = !previousImage?.id ? previousImage?.public_id || previousImage?.storage_path : null;
-        if (previousUnsavedPublicId && previousUnsavedPublicId !== (result.publicId ?? result.storagePath)) {
-          await deleteUploadedProductImageAction(previousUnsavedPublicId);
+        if (previousUnsavedPublicId && previousUnsavedPublicId !== result.image.publicId) {
+          await deleteUploadedProductImageAction(previousUnsavedPublicId).catch(() => undefined);
         }
 
         updateImage(index, {
-          public_url: result.publicUrl,
-          storage_path: result.storagePath,
-          public_id: result.publicId ?? result.storagePath,
+          public_url: result.image.publicUrl,
+          storage_path: result.image.storagePath,
+          public_id: result.image.publicId,
         });
         setImageUploads((current) => ({
           ...current,
@@ -940,24 +976,34 @@ export function ProductManager({
             message: "Imagen subida. Revisa la vista previa y guarda el producto.",
           },
         }));
-        return;
+        showMessage("Imagen optimizada y subida correctamente.", "success");
+      } catch (error) {
+        const message = error instanceof ProductImageUploadTransportError
+          ? error.message
+          : "No se pudo subir la imagen. Conservamos el archivo para que puedas reintentar.";
+        setImageUploads((current) => ({
+          ...current,
+          [index]: {
+            ...current[index],
+            status: "error",
+            message,
+          },
+        }));
+        showMessage(message, "error");
       }
-
-      setImageUploads((current) => ({
-        ...current,
-        [index]: {
-          ...current[index],
-          status: "error",
-          message: result.message,
-        },
-      }));
     });
   }
 
   function retryImageUpload(index: number) {
-    const file = imageUploads[index]?.file;
-    if (file) {
-      uploadImage(index, file);
+    const upload = imageUploads[index];
+    if (upload?.file) {
+      uploadImage(
+        index,
+        upload.file,
+        upload.requestId && upload.productSlug && upload.angle
+          ? { requestId: upload.requestId, productSlug: upload.productSlug, angle: upload.angle }
+          : undefined,
+      );
     }
   }
 
@@ -1559,6 +1605,7 @@ export function ProductManager({
           matchedImagePath: matchedImage?.image.path ?? null,
           imageMatchMethod: matchedImage?.method ?? null,
           imageFile: matchedImage?.image.file,
+          imageUploadRequestId: matchedImage?.image.file ? createProductImageUploadRequestId() : undefined,
           exists: false,
           duplicateSku: false,
           action: "create",
@@ -1649,25 +1696,26 @@ export function ProductManager({
           for (const row of batch) {
             let product: ProductFormInput = { ...row.product, images: [] };
             if (row.imageFile) {
-              const formData = new FormData();
-              formData.set("file", row.imageFile);
-              formData.set("productSlug", row.product.slug || row.product.sku || row.product.name);
-              formData.set("angle", "principal");
-              const upload = await uploadProductImageAction(formData);
-              if (!upload.ok || !upload.publicUrl) {
+              const upload = await uploadProductImageViaHttp({
+                file: row.imageFile,
+                productSlug: row.product.slug || row.product.sku || row.product.name,
+                angle: "principal",
+                slotIndex: 0,
+                requestId: row.imageUploadRequestId ?? createProductImageUploadRequestId(),
+              });
+              if (!upload.ok) {
                 imageErrors += 1;
                 throw new Error("Fila " + row.rowNumber + " (" + row.product.sku + "): " + upload.message);
               }
               uploaded += 1;
-              const uploadedAssetId = upload.publicId ?? upload.storagePath;
-              if (uploadedAssetId) uploadedAssetIds.push(uploadedAssetId);
+              uploadedAssetIds.push(upload.image.publicId);
               product = {
                 ...product,
                 images: [{
                   ...emptyImage,
-                  public_url: upload.publicUrl,
-                  storage_path: upload.storagePath,
-                  public_id: upload.publicId ?? upload.storagePath,
+                  public_url: upload.image.publicUrl,
+                  storage_path: upload.image.storagePath,
+                  public_id: upload.image.publicId,
                   alt_text: row.product.name,
                 }],
               };
@@ -3188,7 +3236,9 @@ function ProductEditor({
               const uploadState = imageUploads[index];
               const previewUrl = uploadState?.previewUrl || image.public_url;
               const isUploading = uploadState?.status === "uploading";
-              const angleOptions = imageAngleOptions.includes(image.angle) ? imageAngleOptions : [...imageAngleOptions, image.angle];
+              const angleOptions = imageAngleOptions.includes(image.angle as ProductImageAngle)
+                ? imageAngleOptions
+                : [...imageAngleOptions, image.angle];
               const imageTitle = index === 0 ? "Imagen principal" : `Imagen adicional ${index}`;
               const uploadLabel = index === 0 ? "Subir imagen principal" : "Subir imagen adicional";
 
@@ -3246,10 +3296,19 @@ function ProductEditor({
                     </button>
                   </div>
                   <label
+                    role="button"
+                    tabIndex={0}
+                    aria-label={image.public_url ? `Cambiar ${imageTitle.toLowerCase()}` : uploadLabel}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => {
                       event.preventDefault();
                       onUploadImage(index, event.dataTransfer.files?.[0] ?? null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.currentTarget.querySelector("input")?.click();
+                      }
                     }}
                     className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f4f4f5] px-3 py-4 text-center text-sm font-medium"
                   >
@@ -3261,11 +3320,14 @@ function ProductEditor({
                       type="file"
                       accept={productImageAccept}
                       className="hidden"
+                      disabled={isUploading}
                       onChange={(event) => onUploadImage(index, event.target.files?.[0] ?? null)}
                     />
                   </label>
                   {uploadState?.message ? (
                     <div
+                      role={uploadState.status === "error" ? "alert" : "status"}
+                      aria-live="polite"
                       className={`rounded-md px-3 py-2 text-xs ${
                         uploadState.status === "error"
                           ? "bg-[#fff0ea] text-[#9b341b]"

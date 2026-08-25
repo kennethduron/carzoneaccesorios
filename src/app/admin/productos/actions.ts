@@ -1,11 +1,8 @@
 "use server";
 
 import { createHash } from "node:crypto";
-import sharp from "sharp";
 import { writeAuditLog } from "@/lib/audit";
 import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
-import { configureCloudinary } from "@/lib/cloudinary";
-import { writeErrorLog } from "@/lib/error-logging";
 import { revalidateProductAvailability } from "@/lib/product-availability-cache";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
@@ -17,17 +14,6 @@ import {
   type ProductSaveResult,
 } from "@/services/product-save.service";
 import type { ProductFormInput } from "@/types/products";
-import {
-  formatMegapixels,
-  isAllowedProductImageMimeType,
-  productImageGenericLimitMessage,
-  productImageInvalidFormatMessage,
-  productImageMaxBytes,
-  productImageMaxDisplayDimension,
-  productImageMaxPixels,
-  productImageTooLargeMessage,
-  productImageTooManyPixelsMessage,
-} from "@/utils/product-image-rules";
 import {
   MAX_PRODUCT_IMPORT_ROWS,
   MAX_PRODUCT_XLSX_BYTES,
@@ -83,12 +69,6 @@ export type ProductImportPreflightResult = ProductMutationResult & {
   totalRows?: number;
 };
 
-type ProductImageUploadResult = ProductMutationResult & {
-  publicUrl?: string;
-  storagePath?: string;
-  publicId?: string;
-};
-
 type ProductHistoryCounts = {
   orderItems: number;
   invoiceItems: number;
@@ -113,16 +93,6 @@ type StagedProductImportRow = {
   normalized_data: { sku?: unknown } | null;
   apply_status: string;
 };
-
-function slugify(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-}
 
 function cleanText(value: string | null | undefined) {
   const trimmed = String(value ?? "").trim();
@@ -156,133 +126,6 @@ function revalidateProductCatalog(slug?: string | null) {
     adminPaths: ["/admin/productos", "/admin/inventario", "/admin/reportes"],
     productSlugs: [slug],
   });
-}
-
-export async function uploadProductImageAction(formData: FormData): Promise<ProductImageUploadResult> {
-  const profile = await requireProductCapability("manageImages");
-
-  try {
-    const cloudinary = configureCloudinary();
-
-    const file = formData.get("file");
-    const productSlug = String(formData.get("productSlug") ?? "producto").trim() || "producto";
-    const angle = String(formData.get("angle") ?? "principal").trim() || "principal";
-
-    if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, message: "Selecciona una imagen válida antes de subirla." };
-    }
-
-    if (!isAllowedProductImageMimeType(file.type)) {
-      return { ok: false, message: productImageInvalidFormatMessage };
-    }
-
-    if (file.size > productImageMaxBytes) {
-      return { ok: false, message: productImageTooLargeMessage };
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    let optimizedBuffer: Buffer;
-    let width = 0;
-    let height = 0;
-
-    try {
-      const metadata = await sharp(buffer, { animated: false, limitInputPixels: productImageMaxPixels + 1 })
-        .rotate()
-        .metadata();
-      width = metadata.width ?? 0;
-      height = metadata.height ?? 0;
-
-      if (!width || !height) {
-        return { ok: false, message: productImageInvalidFormatMessage };
-      }
-
-      if (width * height > productImageMaxPixels) {
-        return { ok: false, message: productImageTooManyPixelsMessage };
-      }
-
-      optimizedBuffer = await sharp(buffer, { animated: false })
-        .rotate()
-        .resize({
-          width: productImageMaxDisplayDimension,
-          height: productImageMaxDisplayDimension,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 82, effort: 5 })
-        .toBuffer();
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message.toLowerCase().includes("pixel")
-          ? productImageTooManyPixelsMessage
-          : productImageInvalidFormatMessage;
-      return { ok: false, message };
-    }
-
-    const folder = `car-zone/productos/${slugify(productSlug) || "producto"}`;
-    const publicId = `${angle}-${Date.now()}`;
-
-    const result = await new Promise<{ secure_url: string; public_id: string }>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder,
-          public_id: publicId,
-          resource_type: "image",
-          format: "webp",
-          overwrite: true,
-          invalidate: true,
-          context: {
-            source: "product_admin",
-            original_bytes: String(file.size),
-            original_megapixels: String(formatMegapixels(width, height)),
-            optimized_bytes: String(optimizedBuffer.length),
-          },
-        },
-        (error, uploadResult) => {
-          if (error || !uploadResult?.secure_url || !uploadResult.public_id) {
-            reject(error ?? new Error("Cloudinary no devolvio una URL valida."));
-            return;
-          }
-
-          resolve({
-            secure_url: uploadResult.secure_url,
-            public_id: uploadResult.public_id,
-          });
-        },
-      );
-
-      stream.end(optimizedBuffer);
-    });
-
-    return {
-      ok: true,
-      message: "Imagen optimizada y subida correctamente.",
-      publicUrl: result.secure_url,
-      storagePath: result.public_id,
-      publicId: result.public_id,
-    };
-  } catch (error) {
-    const result = {
-      ok: false,
-      message:
-        error instanceof Error
-          ? `No se pudo subir la imagen: ${error.message}`
-          : productImageGenericLimitMessage,
-    };
-
-    await writeErrorLog({
-      route: "/admin/productos",
-      action: "products.image_upload_failed",
-      errorMessage: result.message,
-      errorStack: error instanceof Error ? error.stack : null,
-      metadata: {
-        user_id: profile.id,
-        product_slug: String(formData.get("productSlug") ?? ""),
-        file_name: formData.get("file") instanceof File ? (formData.get("file") as File).name : null,
-      },
-    });
-
-    return result;
-  }
 }
 
 export async function deleteUploadedProductImageAction(publicId: string): Promise<ProductMutationResult> {
