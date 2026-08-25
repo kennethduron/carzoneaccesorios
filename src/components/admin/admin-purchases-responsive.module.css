@@ -1,0 +1,52 @@
+.detailContainer {
+  container-type: inline-size;
+}
+
+.desktopListScroller {
+  max-height: calc(100dvh - 21rem);
+  min-height: 26rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.desktopListScroller thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.lineTable {
+  display: none;
+}
+
+.lineCards {
+  display: grid;
+}
+
+@media (min-width: 1280px) {
+  @container (min-width: 720px) {
+    .lineTable {
+      display: block;
+    }
+
+    .lineCards {
+      display: none;
+    }
+  }
+}
+
+@media (max-width: 1279px) {
+  .desktopListScroller {
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motionSafe {
+    scroll-behavior: auto;
+    transition: none;
+  }
+}

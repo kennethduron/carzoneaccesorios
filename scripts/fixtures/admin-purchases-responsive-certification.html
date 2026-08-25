@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Compras responsive · fixture sintética</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { color: #080808; font-family: Arial, sans-serif; background: #f4f4f5; }
+    body { margin: 0; min-width: 0; }
+    button, input, select, a { min-height: 44px; font: inherit; }
+    button, a { cursor: pointer; }
+    .shell { width: min(1760px, 100%); margin: auto; padding: 24px; }
+    .eyebrow { color: #e4252c; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { margin-top: 4px; font-size: 30px; }
+    .notice, .panel, .metric, .detail, .card, .fact, .payable, .line-card { border: 1px solid #0000001a; border-radius: 12px; background: white; }
+    .notice { margin-top: 18px; border-color: #86efac; background: #f0fdf4; padding: 14px 16px; color: #166534; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .metric { min-width: 0; padding: 16px; }
+    .metric small, .muted { color: #0009; }
+    .metric strong { display: block; margin-top: 5px; font-size: 24px; overflow-wrap: anywhere; }
+    .master { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(420px, 1fr); gap: 16px; align-items: start; margin-top: 16px; }
+    .panel, .detail { min-width: 0; padding: 18px; box-shadow: 0 2px 8px #0000000d; }
+    .panel-head, .detail-head, .split { display: flex; min-width: 0; gap: 12px; align-items: flex-start; justify-content: space-between; }
+    .primary, .secondary, .danger { border: 1px solid #e4252c; border-radius: 7px; padding: 8px 14px; font-weight: 700; }
+    .primary { background: #e4252c; color: white; }
+    .secondary { background: white; color: #b91c25; }
+    .danger { background: white; border-color: #f87171; color: #b91c1c; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .filters button { border: 1px solid #0002; border-radius: 7px; background: white; padding: 8px 12px; }
+    .filters button[aria-pressed="true"] { border-color: #e4252c; background: #fff1f2; color: #b91c25; }
+    .fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 12px; margin-top: 14px; }
+    label { display: grid; min-width: 0; gap: 5px; font-size: 14px; font-weight: 700; }
+    input, select { width: 100%; min-width: 0; border: 1px solid #0002; border-radius: 7px; background: white; padding: 8px 11px; }
+    .list-frame { overflow: hidden; margin-top: 14px; border: 1px solid #0002; border-radius: 9px; }
+    .list-title { padding: 12px; border-bottom: 1px solid #0002; background: #fafafa; }
+    .desktop-list { min-height: 416px; max-height: calc(100dvh - 336px); overflow-y: auto; scrollbar-gutter: stable; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+    th { position: sticky; top: 0; z-index: 1; background: #e7e5e4; color: #0009; font-size: 11px; text-align: left; text-transform: uppercase; }
+    th, td { padding: 10px; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid #00000012; }
+    .selected { background: #fff1f2; box-shadow: inset 3px 0 #e4252c; }
+    .cards { display: none; gap: 12px; padding: 12px; background: #f8fafc; }
+    .card { min-width: 0; padding: 15px; }
+    .card .secondary { width: 100%; margin-top: 12px; }
+    .status { display: inline-flex; padding: 4px 9px; border: 1px solid #a7f3d0; border-radius: 99px; background: #ecfdf5; color: #047857; font-size: 12px; font-weight: 700; }
+    .detail { container-type: inline-size; }
+    .total { flex: 0 0 auto; text-align: right; }
+    .facts, .payable-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 16px; }
+    .fact { min-width: 0; padding: 12px; background: #f4f4f5; }
+    .fact strong { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+    .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    .payable { margin-top: 14px; padding: 14px; border-color: #a7f3d0; background: #ecfdf5; }
+    .line-section { margin-top: 18px; }
+    .line-table { display: none; margin-top: 10px; overflow: hidden; border: 1px solid #0002; border-radius: 8px; }
+    .line-cards { display: grid; gap: 10px; margin-top: 10px; }
+    .line-card { min-width: 0; padding: 13px; }
+    .line-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+    .line-card dd, .line-card dt { margin: 0; overflow-wrap: anywhere; }
+    .line-card dt { color: #0008; font-size: 12px; }
+    .line-card dd { font-weight: 700; }
+    .back { display: none; width: 100%; margin-bottom: 12px; }
+    @media (min-width: 1280px) {
+      @container (min-width: 720px) {
+        .line-table { display: block; }
+        .line-cards { display: none; }
+      }
+    }
+    @media (max-width: 1279px) {
+      .shell { padding: 20px; }
+      .master { display: block; }
+      .detail { display: none; }
+      body[data-state="detail"] .notice, body[data-state="detail"] .metrics { display: none; }
+      body[data-state="detail"] .panel { display: none; }
+      body[data-state="detail"] .detail { display: block; }
+      .back { display: inline-flex; align-items: center; justify-content: center; }
+      .desktop-list { display: none; min-height: 0; max-height: none; overflow: visible; }
+      .cards { display: grid; }
+    }
+    @media (max-width: 767px) {
+      .shell { padding: 16px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .fields { grid-template-columns: minmax(0, 1fr); }
+      .actions { grid-template-columns: minmax(0, 1fr); }
+      .panel-head, .detail-head { flex-direction: column; }
+      .panel-head .primary { width: 100%; }
+      .total { text-align: left; }
+    }
+    @media (max-width: 390px) {
+      .shell { padding: 12px; }
+      .facts, .payable-facts { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body data-state="list">
+  <main class="shell" data-testid="fixture-root">
+    <p class="eyebrow">Panel administrativo · fixture local sintética</p>
+    <h1>Compras</h1>
+    <div class="notice"><strong>Automatización Compra → CxP activa.</strong> Toda compra nueva debe confirmar su condición de pago.</div>
+    <section class="metrics" aria-label="Resumen de compras">
+      <div class="metric"><small>Borradores</small><strong>1</strong></div>
+      <div class="metric"><small>Confirmadas</small><strong>48</strong></div>
+      <div class="metric"><small>Canceladas</small><strong>0</strong></div>
+      <div class="metric"><small>Total operativo</small><strong>L 261,941.66</strong></div>
+    </section>
+    <div class="master" data-testid="master-layout">
+      <section class="panel" data-testid="purchase-browser">
+        <div class="panel-head"><div><h2>Compras</h2><p class="muted">Consulta, gestión y detalle operativo de compras.</p></div><button class="primary">＋ Nueva compra</button></div>
+        <div class="filters" aria-label="Filtrar compras por estado">
+          <button aria-pressed="true">Activas</button><button aria-pressed="false">Borrador</button><button aria-pressed="false">Confirmada</button><button aria-pressed="false">Cancelada</button><button aria-pressed="false">Todas</button>
+        </div>
+        <div class="fields"><label>Buscar compra<input placeholder="Buscar por proveedor, número o estado"></label><label>Proveedor<select><option>Todos los proveedores</option><option>Proveedor de nombre extraordinariamente largo para validar ajuste</option></select></label></div>
+        <div class="list-frame"><div class="list-title"><h3>Lista de compras</h3><span class="muted">49 de 49 compras</span></div><div class="desktop-list" data-testid="desktop-list"><table><thead><tr><th>Compra</th><th>Proveedor</th><th>Fecha</th><th>Estado</th><th>Total</th><th>Acción</th></tr></thead><tbody id="desktop-rows"></tbody></table></div><div class="cards" id="mobile-cards" data-testid="mobile-cards"></div></div>
+      </section>
+      <section class="detail" data-testid="purchase-detail">
+        <button class="secondary back" id="back">← Volver a compras</button>
+        <div class="detail-head"><div><p class="eyebrow">Detalle de compra</p><h2 id="detail-heading" tabindex="-1">000-001-01-00006945</h2><p class="muted">PROVEEDOR DE REPUESTOS Y ACCESORIOS CON NOMBRE EXTENSO</p></div><div class="total"><small class="muted">TOTAL</small><h2>L 20,981.00</h2></div></div>
+        <div class="facts"><div class="fact"><small>Proveedor</small><strong>PROVEEDOR DE REPUESTOS Y ACCESORIOS CON NOMBRE EXTENSO</strong></div><div class="fact"><small>Fecha</small><strong>24 ago 2026</strong></div><div class="fact"><small>Estado</small><strong>Confirmada</strong></div><div class="fact"><small>Moneda</small><strong>HNL</strong></div></div>
+        <div class="actions"><button class="secondary">Ver cuenta por pagar</button><button class="secondary">Registrar devolución</button><button class="secondary" disabled>Editar</button><button class="danger">Cancelar compra</button></div>
+        <section class="payable"><div class="split"><div><p class="eyebrow" style="color:#047857">Cuenta por pagar asociada</p><strong>Estado: Pagada</strong></div><button class="secondary">Ver cuenta por pagar</button></div><div class="payable-facts"><div class="fact"><small>Original</small><strong>L 20,981.00</strong></div><div class="fact"><small>Pagado</small><strong>L 20,981.00</strong></div><div class="fact"><small>Saldo</small><strong>L 0.00</strong></div><div class="fact"><small>Vencimiento</small><strong>24 ago 2026</strong></div></div></section>
+        <section class="line-section"><h3>Productos / líneas de compra</h3><div class="line-table" data-testid="line-table"><table><thead><tr><th>Descripción</th><th>Producto</th><th>Cant.</th><th>Costo</th><th>Impuesto</th><th>Desc.</th><th>Total</th></tr></thead><tbody><tr><td>Cromo de compuerta trasera Mazda BT50 2026+ con descripción deliberadamente extensa</td><td>EXT-204-LONG</td><td>12</td><td>L 400.00</td><td>L 0.00</td><td>L 0.00</td><td><strong>L 4,800.00</strong></td></tr><tr><td>Tapadera cromada de tanque de combustible Mazda BT50 26+ unidad</td><td>EXT-205</td><td>1</td><td>L 250.00</td><td>L 0.00</td><td>L 0.00</td><td><strong>L 250.00</strong></td></tr></tbody></table></div><div class="line-cards" data-testid="line-cards"></div></section>
+      </section>
+    </div>
+  </main>
+  <script>
+    const purchases = Array.from({ length: 49 }, (_, index) => ({
+      number: index === 0 ? '#10' : `000-001-01-${String(6945 + index).padStart(8, '0')}`,
+      supplier: index % 2 ? 'ROYAL INTERNATIONAL TRADING CO S DE RL' : 'PROVEEDOR DE REPUESTOS Y ACCESORIOS CON NOMBRE EXTENSO',
+      total: index === 0 ? 'L 650.00' : `L ${(1604.25 + index * 725.3).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+    }));
+    const rows = document.querySelector('#desktop-rows');
+    const cards = document.querySelector('#mobile-cards');
+    const openDetail = (trigger) => {
+      if (innerWidth >= 1280) return;
+      window.fixtureScroll = scrollY;
+      window.fixtureTrigger = trigger;
+      document.body.dataset.state = 'detail';
+      scrollTo(0, 0);
+      requestAnimationFrame(() => document.querySelector('#detail-heading').focus());
+    };
+    purchases.forEach((purchase, index) => {
+      const row = document.createElement('tr');
+      if (index === 0) row.className = 'selected';
+      row.innerHTML = `<td><strong>${purchase.number}</strong></td><td>${purchase.supplier}</td><td>24 ago 2026</td><td><span class="status">Confirmada</span></td><td><strong>${purchase.total}</strong></td><td><button class="secondary view">Ver detalle</button></td>`;
+      rows.append(row);
+      const card = document.createElement('article');
+      card.className = `card${index === 0 ? ' selected' : ''}`;
+      card.innerHTML = `<div class="split"><div><strong>${purchase.number}</strong><p>${purchase.supplier}</p></div><strong>${purchase.total}</strong></div><p class="muted" style="margin-top:10px">24 ago 2026 · <span class="status">Confirmada</span> · 2 líneas</p><button class="secondary view">Ver detalle</button>`;
+      cards.append(card);
+    });
+    document.querySelectorAll('.view').forEach((button) => button.addEventListener('click', () => openDetail(button)));
+    document.querySelector('#back').addEventListener('click', () => {
+      document.body.dataset.state = 'list';
+      requestAnimationFrame(() => { window.fixtureTrigger?.focus({ preventScroll: true }); scrollTo(0, window.fixtureScroll || 0); });
+    });
+    const lineCards = document.querySelector('[data-testid="line-cards"]');
+    ['Cromo de compuerta trasera Mazda BT50 2026+ con descripción deliberadamente extensa', 'Tapadera cromada de tanque de combustible Mazda BT50 26+ unidad'].forEach((description, index) => {
+      const card = document.createElement('article');
+      card.className = 'line-card';
+      card.innerHTML = `<strong>${description}</strong><dl><div><dt>Producto</dt><dd>EXT-${204 + index}</dd></div><div><dt>Cantidad</dt><dd>${index ? 1 : 12}</dd></div><div><dt>Costo</dt><dd>L ${index ? '250.00' : '400.00'}</dd></div><div><dt>Impuesto</dt><dd>L 0.00</dd></div><div><dt>Descuento</dt><dd>L 0.00</dd></div><div><dt>Total</dt><dd>L ${index ? '250.00' : '4,800.00'}</dd></div></dl>`;
+      lineCards.append(card);
+    });
+  </script>
+</body>
+</html>
