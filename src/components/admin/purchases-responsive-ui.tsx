@@ -517,7 +517,7 @@ export function PurchaseCreateEditWorkspace({ mode, draft, suppliers, pending, d
                 <div className="mt-3 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <div className="min-w-0 md:col-span-2"><PurchaseProductCombobox value={line.product_id ?? ""} selectedOption={line.selectedProduct ?? null} onChange={(product) => onChooseProduct(line, product)} disabled={pending} /></div>
                   <Field label="Descripción"><Input value={line.description} onChange={(event) => onUpdateLine(line.key, { description: event.target.value })} disabled={pending} /></Field>
-                  <LineNumberField label="Cantidad" min="0.01" step={line.product_id ? "1" : "0.01"} value={line.quantity} onChange={(value) => onUpdateLine(line.key, { quantity: value })} disabled={pending} />
+                  <LineNumberField label="Cantidad" min={line.product_id ? "1" : "0.01"} step={line.product_id ? "1" : "0.01"} value={line.quantity} onChange={(value) => onUpdateLine(line.key, { quantity: value })} disabled={pending} />
                   <LineNumberField label="Costo unitario" min="0" value={line.unit_cost} onChange={(value) => onUpdateLine(line.key, { unit_cost: value })} disabled={pending} />
                   <LineNumberField label="Impuesto" min="0" value={line.tax_amount} onChange={(value) => onUpdateLine(line.key, { tax_amount: value })} disabled={pending} />
                   <LineNumberField label="Descuento" min="0" value={line.discount_amount} onChange={(value) => onUpdateLine(line.key, { discount_amount: value })} disabled={pending} />
