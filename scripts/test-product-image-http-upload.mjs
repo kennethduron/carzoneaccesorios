@@ -9,6 +9,7 @@ import {
   uploadProductImageViaHttp,
 } from "../src/lib/product-image-upload-http.ts";
 import { createProductImageUploadRouteHandler } from "../src/lib/product-image-upload-route-handler.ts";
+import { createProductImageSharpImportDiagnostic } from "../src/lib/product-image-sharp-diagnostic.ts";
 import {
   productImageRemoteIdentity,
   uploadProductImageToCloudinary,
@@ -267,13 +268,46 @@ assert.equal(pixelResult.code, "IMAGE_TOO_MANY_PIXELS");
 assert.equal(pixelRemote.calls.length, 0);
 
 let cloudinaryAccesses = 0;
+const fakeApiKey = "sk_test_FAKE_DIAGNOSTIC_KEY_123456789";
+const fakeAuthorization = "Bearer fake.authorization.token";
+const adversarialError = Object.assign(new Error(
+  `apiKey=${fakeApiKey}\r\nauthorization=${fakeAuthorization} C:\\Users\\fixture\\secret\\sharp.node `
+  + "/var/task/node_modules/sharp/lib/index.js /vercel/path0/node_modules/@img/sharp-linux-x64/lib/sharp.node /opt/runtime/secret.node "
+  + "x".repeat(900),
+), { code: "ERR_DLOPEN_FAILED" });
+adversarialError.stack = `${adversarialError.name}: ${adversarialError.message}\n`
+  + "    at load (C:\\Users\\fixture\\secret\\loader.js:10:2)\n"
+  + "    at importSharp (/var/task/node_modules/sharp/lib/index.js:12:4)\n"
+  + "    at bootstrap (/vercel/path0/app/server.js:20:6)\n"
+  + "    at fifth (/var/task/fifth.js:1:1)";
+const standaloneDiagnostic = createProductImageSharpImportDiagnostic(adversarialError);
+assert.deepEqual(Object.keys(standaloneDiagnostic), [
+  "errorName",
+  "errorCode",
+  "errorMessageSanitized",
+  "stackOrigin",
+  "nodeVersion",
+  "platform",
+  "arch",
+]);
+assert.equal(standaloneDiagnostic.errorCode, "ERR_DLOPEN_FAILED");
+assert.ok(standaloneDiagnostic.errorMessageSanitized.length <= 500);
+assert.ok(standaloneDiagnostic.stackOrigin.length <= 1000);
+assert.ok(standaloneDiagnostic.stackOrigin.split("\n").length <= 4);
+assert.match(standaloneDiagnostic.errorMessageSanitized, /<runtime>\/node_modules\/sharp/);
+assert.match(standaloneDiagnostic.errorMessageSanitized, /<build>\/node_modules\/@img\/sharp-linux-x64/);
+assert.doesNotMatch(standaloneDiagnostic.errorMessageSanitized, /\/opt\/runtime/);
+assert.doesNotMatch(JSON.stringify(standaloneDiagnostic), /C:\\\\Users\\\\fixture/i);
+assert.doesNotMatch(JSON.stringify(standaloneDiagnostic), new RegExp(fakeApiKey));
+assert.doesNotMatch(JSON.stringify(standaloneDiagnostic), new RegExp(fakeAuthorization.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
 const sharpUnavailable = await uploadProductImageToCloudinary({
   file: validJpeg,
   productSlug: "producto",
   angle: "principal",
   requestId,
 }, {
-  loadSharp: async () => { throw new Error("synthetic native load failure"); },
+  loadSharp: async () => { throw adversarialError; },
   getCloudinary: () => { cloudinaryAccesses += 1; return cloudinaryDouble().client; },
 });
 assert.deepEqual(sharpUnavailable, {
@@ -282,14 +316,20 @@ assert.deepEqual(sharpUnavailable, {
   message: "El procesador de imágenes no está disponible. Conservamos el archivo para que puedas reintentar.",
   status: 503,
   stage: "image_processing",
+  sharpImportDiagnostic: standaloneDiagnostic,
 });
 assert.equal(cloudinaryAccesses, 0, "sharp load failure must perform zero Cloudinary writes");
+assert.deepEqual(sharpUnavailable.sharpImportDiagnostic, standaloneDiagnostic);
 
 const sharpRouteResponse = await createProductImageUploadRouteHandler(routeDependencies({
   uploadImage: async () => sharpUnavailable,
 }))(uploadRequest({ file: validJpeg }));
 assert.equal(sharpRouteResponse.status, 503);
-assert.equal((await sharpRouteResponse.json()).code, "IMAGE_PROCESSOR_UNAVAILABLE");
+const sharpRouteBody = await sharpRouteResponse.json();
+assert.equal(sharpRouteBody.code, "IMAGE_PROCESSOR_UNAVAILABLE");
+assert.equal("sharpImportDiagnostic" in sharpRouteBody, false);
+assert.equal("diagnostic" in sharpRouteBody, false);
+assert.doesNotMatch(JSON.stringify(sharpRouteBody), /ERR_DLOPEN_FAILED|FAKE_DIAGNOSTIC|runtime-path/);
 
 const failedRemote = cloudinaryDouble("failure");
 const cloudinaryFailure = await uploadProductImageToCloudinary({

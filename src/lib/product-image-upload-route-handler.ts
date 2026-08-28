@@ -5,6 +5,7 @@ import {
   type ProductImageUploadApiResponse,
   type ProductImageUploadServiceResult,
 } from "@/lib/product-image-upload-contract";
+import type { ProductImageSharpImportDiagnostic } from "@/lib/product-image-sharp-diagnostic";
 import { verifySameOriginRequest } from "@/lib/http/same-origin-request";
 import {
   isAllowedProductImageMimeType,
@@ -32,6 +33,7 @@ type UploadFailureLog = {
   userId: string;
   fileSize: number;
   mimeType: string;
+  sharpImportDiagnostic?: ProductImageSharpImportDiagnostic;
 };
 
 export type ProductImageUploadRouteDependencies = {
@@ -271,6 +273,7 @@ export function createProductImageUploadRouteHandler(dependencies: ProductImageU
         userId: profile.id,
         fileSize: file.size,
         mimeType: file.type,
+        sharpImportDiagnostic: result.sharpImportDiagnostic,
       }).catch(() => undefined);
       return failure(result.code, result.message, correlationId, result.status, headerRequestId);
     }

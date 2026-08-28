@@ -59,6 +59,7 @@ export type ProductImageUploadServiceResult =
       message: string;
       status: number;
       stage: "image_processing" | "cloudinary" | "upload";
+      sharpImportDiagnostic?: import("@/lib/product-image-sharp-diagnostic").ProductImageSharpImportDiagnostic;
     };
 
 function isNonEmptyString(value: unknown): value is string {

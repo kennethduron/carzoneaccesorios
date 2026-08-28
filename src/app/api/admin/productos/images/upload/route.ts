@@ -23,6 +23,7 @@ const dependencies: ProductImageUploadRouteDependencies = {
       category: "system",
       action: "products.image_http_upload_failed",
       errorMessage: failure.code,
+      errorStack: failure.sharpImportDiagnostic?.stackOrigin,
       errorCode: failure.code,
       httpStatus: failure.status,
       customerMessage: "La imagen no pudo cargarse; el archivo permanece disponible para reintentar.",
@@ -33,6 +34,9 @@ const dependencies: ProductImageUploadRouteDependencies = {
         stage: failure.stage,
         file_size: failure.fileSize,
         mime_type: failure.mimeType,
+        ...(failure.sharpImportDiagnostic
+          ? { sharp_import_diagnostic: failure.sharpImportDiagnostic }
+          : {}),
       },
     });
   },

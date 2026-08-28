@@ -8,6 +8,10 @@ import {
   type ProductImageUploadServiceResult,
 } from "@/lib/product-image-upload-contract";
 import {
+  createProductImageSharpImportDiagnostic,
+  productImageSharpImportFailureEvent,
+} from "@/lib/product-image-sharp-diagnostic";
+import {
   formatMegapixels,
   isAllowedProductImageMimeType,
   productImageInvalidFormatMessage,
@@ -174,13 +178,19 @@ export async function uploadProductImageToCloudinary(
   let sharp: SharpFactory;
   try {
     sharp = await (dependencies.loadSharp ?? loadSharpDynamically)();
-  } catch {
+  } catch (error) {
+    const sharpImportDiagnostic = createProductImageSharpImportDiagnostic(error);
+    console.error(JSON.stringify({
+      event: productImageSharpImportFailureEvent,
+      diagnostic: sharpImportDiagnostic,
+    }));
     return {
       ok: false,
       code: "IMAGE_PROCESSOR_UNAVAILABLE",
       message: "El procesador de imágenes no está disponible. Conservamos el archivo para que puedas reintentar.",
       status: 503,
       stage: "image_processing",
+      sharpImportDiagnostic,
     };
   }
 
