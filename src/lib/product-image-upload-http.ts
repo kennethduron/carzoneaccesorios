@@ -5,6 +5,7 @@ import {
   type ProductImageAngle,
   type ProductImageUploadApiResponse,
 } from "@/lib/product-image-upload-contract";
+import { productImageMaxCount } from "@/utils/product-image-rules";
 
 export type ProductImageUploadTransportErrorCode =
   | "INVALID_UPLOAD_REQUEST"
@@ -56,7 +57,7 @@ export async function uploadProductImageViaHttp(
     || !productImageUploadRequestIdPattern.test(input.requestId)
     || !Number.isInteger(input.slotIndex)
     || input.slotIndex < 0
-    || input.slotIndex > 4
+    || input.slotIndex >= productImageMaxCount
   ) {
     throw new ProductImageUploadTransportError("INVALID_UPLOAD_REQUEST", input.requestId);
   }

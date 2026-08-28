@@ -1,6 +1,9 @@
-export const productImageMaxBytes = 3 * 1024 * 1024;
+export const productImageMaxBytes = 3_000_000;
 export const productImageMaxMegapixels = 3;
 export const productImageMaxPixels = productImageMaxMegapixels * 1_000_000;
+export const productImageMaxCount = 4;
+export const productImageLimitErrorCode = "PRODUCT_IMAGE_LIMIT_EXCEEDED";
+export const productImageLimitMessage = "Solo puedes guardar hasta 4 imágenes por producto.";
 export const productImageMaxDisplayDimension = 1600;
 
 export const allowedProductImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);

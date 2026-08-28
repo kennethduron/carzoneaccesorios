@@ -14,7 +14,7 @@ import {
   productImageRemoteIdentity,
   uploadProductImageToCloudinary,
 } from "../src/services/product-image-upload.service.ts";
-import { productImageMaxBytes } from "../src/utils/product-image-rules.ts";
+import { productImageMaxBytes, productImageMaxCount } from "../src/utils/product-image-rules.ts";
 
 const requestId = "11111111-1111-4111-8111-111111111111";
 const secondRequestId = "22222222-2222-4222-8222-222222222222";
@@ -123,6 +123,13 @@ for (const [mimeType, buffer] of Object.entries(sourceBuffers)) {
 }
 
 const validJpeg = new File([sourceBuffers["image/jpeg"]], "valid.jpg", { type: "image/jpeg" });
+const exactByteBoundaryResponse = await createProductImageUploadRouteHandler(routeDependencies())(
+  uploadRequest({
+    file: new File([new Uint8Array(productImageMaxBytes)], "exact-boundary.jpg", { type: "image/jpeg" }),
+  }),
+);
+assert.equal(exactByteBoundaryResponse.status, 200, "exactly 3,000,000 bytes must pass the HTTP size gate");
+
 const routeCases = [
   {
     name: "invalid origin",
@@ -214,7 +221,7 @@ const routeCases = [
   {
     name: "invalid slot",
     dependencies: routeDependencies(),
-    request: uploadRequest({ file: validJpeg, slotIndex: "5" }),
+    request: uploadRequest({ file: validJpeg, slotIndex: String(productImageMaxCount) }),
     status: 400,
     code: "INVALID_UPLOAD_INPUT",
   },
@@ -266,6 +273,19 @@ const pixelResult = await uploadProductImageToCloudinary({
 assert.equal(pixelResult.ok, false);
 assert.equal(pixelResult.code, "IMAGE_TOO_MANY_PIXELS");
 assert.equal(pixelRemote.calls.length, 0);
+
+const pixelBoundaryBuffer = await sharp({
+  create: { width: 2000, height: 1500, channels: 3, background: "#ffffff" },
+}).jpeg().toBuffer();
+const pixelBoundaryRemote = cloudinaryDouble();
+const pixelBoundaryResult = await uploadProductImageToCloudinary({
+  file: new File([pixelBoundaryBuffer], "pixels-boundary.jpg", { type: "image/jpeg" }),
+  productSlug: "producto",
+  angle: "principal",
+  requestId,
+}, { getCloudinary: () => pixelBoundaryRemote.client });
+assert.equal(pixelBoundaryResult.ok, true, "exactly 3,000,000 pixels must pass");
+assert.equal(pixelBoundaryRemote.calls.length, 1);
 
 let cloudinaryAccesses = 0;
 const fakeApiKey = "sk_test_FAKE_DIAGNOSTIC_KEY_123456789";
@@ -469,7 +489,17 @@ assert.match(uploadBlock, /requestId: uploadIdentity\.requestId/);
 assert.match(uploadBlock, /updateImage\(index, \{[\s\S]*?result\.image\.publicUrl/);
 assert.doesNotMatch(uploadBlock.match(/if \(!result\.ok\)[\s\S]*?return;/)?.[0] ?? "", /updateImage/);
 assert.doesNotMatch(uploadBlock, /setEditing\(null\)/, "upload failure must not close the editor");
-assert.match(manager, /const maxProductImages = 5/);
+assert.equal(productImageMaxBytes, 3_000_000, "the UI and server must enforce decimal 3 MB");
+assert.equal(productImageMaxCount, 4);
+assert.match(manager, /product\.images\.length >= productImageMaxCount/);
+assert.match(manager, /upload\.status === "local_preview" \|\| upload\.status === "uploading"/);
+assert.match(manager, /hasFailedImageUpload/);
+assert.match(manager, /disabled=\{pending \|\| Boolean\(imageSaveBlockReason\)\}/);
+assert.match(manager, /Descartar cambio de imagen/);
+assert.match(manager, /flex shrink-0 flex-wrap justify-end gap-2/, "retry/discard actions must wrap on narrow screens");
+assert.match(manager, /delete next\[index\]/, "discard must remove the failed local preview state");
+assert.match(manager, /uploadState\?\.previewUrl \|\| image\.public_url/, "discard must reveal persisted replacement metadata again");
+assert.match(manager, /requestId: uploadIdentity\.requestId/, "retry identity must be stable");
 assert.match(manager, /role=\{uploadState\.status === "error" \? "alert" : "status"\}/);
 assert.match(manager, /aria-live="polite"/);
 assert.match(manager, /max-w-6xl[\s\S]*?sm:my-6/);

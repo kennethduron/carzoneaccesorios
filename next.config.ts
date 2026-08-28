@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  outputFileTracingIncludes: {
+    "/api/admin/productos/images/upload": [
+      "./node_modules/@img/sharp-libvips-linux-x64/**/*",
+    ],
+  },
   async headers() {
     const contentSecurityPolicy = [
       "default-src 'self'",

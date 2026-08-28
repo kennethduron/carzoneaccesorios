@@ -11,6 +11,7 @@ import {
   isAllowedProductImageMimeType,
   productImageInvalidFormatMessage,
   productImageMaxBytes,
+  productImageMaxCount,
   productImageTooLargeMessage,
 } from "@/utils/product-image-rules";
 
@@ -198,7 +199,7 @@ export function createProductImageUploadRouteHandler(dependencies: ProductImageU
       || !productImageAngles.includes(angle as ProductImageAngle)
       || !Number.isInteger(slotIndex)
       || slotIndex < 0
-      || slotIndex > 4
+      || slotIndex >= productImageMaxCount
     ) {
       return failure(
         "INVALID_UPLOAD_INPUT",

@@ -37,6 +37,8 @@ function statusFor(result: ProductSaveResult) {
     case "VALIDATION_FAILED": return 400;
     case "CATEGORY_INVALID": return 422;
     case "DUPLICATE_PRODUCT": return 409;
+    case "PRODUCT_CATALOG_LIMIT_REACHED": return 409;
+    case "PRODUCT_IMAGE_LIMIT_EXCEEDED": return 422;
     case "PRODUCT_WRITE_UNCONFIRMED": return 503;
     default: return 500;
   }

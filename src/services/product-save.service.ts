@@ -12,6 +12,12 @@ import { canonicalProductCreateIdentity, runProductPostSaveTasks } from "@/lib/p
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { productTaxCategorySchema } from "@/lib/validation/product-tax";
 import type { ProductFormInput, ProductImageInput, ProductStatus, ProductTaxCategory } from "@/types/products";
+import { productCatalogLimitErrorCode, productCatalogLimitMessage } from "@/utils/product-catalog-limits";
+import {
+  productImageLimitErrorCode,
+  productImageLimitMessage,
+} from "@/utils/product-image-rules";
+import { imagePayload } from "@/utils/product-image-payload";
 import { parseRequiredStockInteger } from "@/utils/product-import-stock";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
 
@@ -36,6 +42,8 @@ export type ProductSaveResult =
         | "VALIDATION_FAILED"
         | "CATEGORY_INVALID"
         | "DUPLICATE_PRODUCT"
+        | "PRODUCT_CATALOG_LIMIT_REACHED"
+        | "PRODUCT_IMAGE_LIMIT_EXCEEDED"
         | "PRODUCT_WRITE_FAILED"
         | "PRODUCT_WRITE_UNCONFIRMED";
       message: string;
@@ -103,6 +111,12 @@ function stockIntegerForAdjustment(value: unknown) {
 }
 
 export function friendlyProductError(message: string) {
+  if (message.includes(productCatalogLimitErrorCode)) {
+    return productCatalogLimitMessage;
+  }
+  if (message.includes(productImageLimitErrorCode)) {
+    return productImageLimitMessage;
+  }
   if (message.includes("products_internal_code_key")) {
     return "El código proveedor/OEM ya está usado por otro producto. Usa otro código o déjalo vacío.";
   }
@@ -187,22 +201,7 @@ function productCatalogPayload(payload: ProductDbPayload): Omit<ProductDbPayload
   return catalogPayload;
 }
 
-export function imagePayload(images: ProductImageInput[]) {
-  const validImages = images.filter((image) => cleanText(image.public_url)).slice(0, 5);
-  const selectedPrimaryIndex = validImages.findIndex((image) => image.is_primary);
-  const primaryIndex = selectedPrimaryIndex >= 0 ? selectedPrimaryIndex : 0;
-
-  return validImages.map((image, index) => ({
-    storage_bucket: "product-images",
-    storage_path: cleanText(image.storage_path) ?? cleanText(image.public_id) ?? `products/import-${index}-${Date.now()}`,
-    public_id: cleanText(image.public_id) ?? cleanText(image.storage_path),
-    public_url: image.public_url.trim(),
-    angle: cleanText(image.angle) ?? "principal",
-    alt_text: cleanText(image.alt_text),
-    sort_order: positiveInteger(image.sort_order, index),
-    is_primary: index === primaryIndex,
-  }));
-}
+export { imagePayload };
 
 export async function removeCloudinaryImages(publicIds: string[], context: Record<string, unknown>) {
   const uniquePublicIds = Array.from(new Set(publicIds.map((value) => value.trim()).filter(Boolean)));
@@ -316,11 +315,20 @@ export async function saveProductCanonical(
   }).catch(() => undefined);
 
   let payload: ProductDbPayload;
+  let safeImagePayload: ReturnType<typeof imagePayload> | null = null;
   try {
     payload = productPayload(input);
+    safeImagePayload = capabilities.manageImages ? imagePayload(safeImages) : null;
   } catch (error) {
     await compensateCandidateAssets("product_validation_failed");
-    return { ok: false, code: "VALIDATION_FAILED", message: friendlyProductError(error instanceof Error ? error.message : "Revisa los datos del producto."), correlationId, stage: "validation" };
+    const message = error instanceof Error ? error.message : "Revisa los datos del producto.";
+    return {
+      ok: false,
+      code: message.includes(productImageLimitErrorCode) ? "PRODUCT_IMAGE_LIMIT_EXCEEDED" : "VALIDATION_FAILED",
+      message: friendlyProductError(message),
+      correlationId,
+      stage: "validation",
+    };
   }
 
   let supabase: Awaited<ReturnType<typeof getSupabaseServerClient>>;
@@ -374,7 +382,7 @@ export async function saveProductCanonical(
     const response = await supabase.rpc("save_product_catalog_v3_locked", {
       target_product_id: input.id ?? null,
       product_data: catalogPayload,
-      images_data: capabilities.manageImages ? imagePayload(safeImages) : null,
+      images_data: safeImagePayload,
       target_stock: authorizedTargetStock,
     });
     data = response.data;
@@ -385,6 +393,8 @@ export async function saveProductCanonical(
 
   if (rpcError) {
     const duplicate = rpcError.code === "23505" || rpcError.message.toLowerCase().includes("duplicate key");
+    const catalogLimitReached = rpcError.message.includes(productCatalogLimitErrorCode);
+    const imageLimitExceeded = rpcError.message.includes(productImageLimitErrorCode);
     const unconfirmed = !rpcError.code || rpcError.code.startsWith("PGRST0");
     if (!unconfirmed) await compensateCandidateAssets("product_save_compensation");
     await writeErrorLog({
@@ -396,10 +406,20 @@ export async function saveProductCanonical(
     }).catch(() => undefined);
     return {
       ok: false,
-      code: unconfirmed ? "PRODUCT_WRITE_UNCONFIRMED" : duplicate ? "DUPLICATE_PRODUCT" : "PRODUCT_WRITE_FAILED",
+      code: unconfirmed
+        ? "PRODUCT_WRITE_UNCONFIRMED"
+        : catalogLimitReached
+          ? "PRODUCT_CATALOG_LIMIT_REACHED"
+          : imageLimitExceeded
+            ? "PRODUCT_IMAGE_LIMIT_EXCEEDED"
+            : duplicate
+              ? "DUPLICATE_PRODUCT"
+              : "PRODUCT_WRITE_FAILED",
       message: unconfirmed
         ? `No se pudo confirmar el resultado. Revisa la lista antes de reintentar. Referencia: ${correlationId}.`
-        : duplicate
+        : catalogLimitReached || imageLimitExceeded
+          ? friendlyProductError(rpcError.message)
+          : duplicate
           ? friendlyProductError(rpcError.message)
           : `No se pudo guardar el producto. Revisa los datos e intenta nuevamente. Referencia: ${correlationId}.`,
       correlationId,

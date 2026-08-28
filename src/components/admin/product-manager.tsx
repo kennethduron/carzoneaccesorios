@@ -87,6 +87,7 @@ import {
   productImageHelpText,
   productImageInvalidFormatMessage,
   productImageMaxBytes,
+  productImageMaxCount,
   productImageMaxDisplayDimension,
   productImageMaxPixels,
   productImageTooLargeMessage,
@@ -119,7 +120,7 @@ type MessageState = {
 };
 
 type ImageUploadState = {
-  status: "idle" | "ready" | "uploading" | "success" | "error";
+  status: "existing" | "local_preview" | "uploading" | "uploaded" | "error";
   message: string;
   fileName?: string;
   previewUrl?: string;
@@ -185,7 +186,6 @@ type EditableProductInput = Omit<ProductFormInput, EditableProductNumericField> 
 };
 
 const productDraftStorageKey = "car-zone-product-editor-draft";
-const maxProductImages = 5;
 const imageAngleOptions = [...productImageAngles];
 const integerInputPattern = /^\d*$/;
 const decimalInputPattern = /^$|^\d+(?:\.\d{0,2})?$/;
@@ -610,6 +610,15 @@ export function ProductManager({
   const inventoryValue = summary.inventoryCost;
   const hasNextPage = page * pageSize < total;
   const hasCatalogFilters = Boolean(filters.query || (filters.status && filters.status !== "all") || (filters.categoryId && filters.categoryId !== "all"));
+  const hasPendingImageUpload = Object.values(imageUploads).some(
+    (upload) => upload.status === "local_preview" || upload.status === "uploading",
+  );
+  const hasFailedImageUpload = Object.values(imageUploads).some((upload) => upload.status === "error");
+  const imageSaveBlockReason = hasPendingImageUpload
+    ? "Espera a que terminen las cargas de imágenes antes de guardar."
+    : hasFailedImageUpload
+      ? "Reintenta o descarta cada cambio de imagen con error antes de guardar."
+      : null;
 
   useEffect(() => {
     persistProductDraft(editing);
@@ -839,14 +848,37 @@ export function ProductManager({
       return;
     }
 
+    const uploadIdentity = retryIdentity ?? {
+      requestId: createProductImageUploadRequestId(),
+      productSlug: editing.slug || editing.sku || editing.name || "producto",
+      angle: productImageAngles.includes(editing.images[index]?.angle as ProductImageAngle)
+        ? editing.images[index].angle as ProductImageAngle
+        : "principal",
+    };
+    const localPreviewUrl = URL.createObjectURL(file);
+    setImageUploads((current) => {
+      const previousPreview = current[index]?.previewUrl;
+      if (previousPreview) URL.revokeObjectURL(previousPreview);
+      return {
+        ...current,
+        [index]: {
+          status: "local_preview",
+          message: "Preparando imagen para subir...",
+          fileName: file.name,
+          previewUrl: localPreviewUrl,
+          file,
+          ...uploadIdentity,
+        },
+      };
+    });
+
     if (!isAllowedProductImageMimeType(file.type)) {
       setImageUploads((current) => ({
         ...current,
         [index]: {
+          ...current[index],
           status: "error",
           message: productImageInvalidFormatMessage,
-          fileName: file.name,
-          file,
         },
       }));
       showMessage(productImageInvalidFormatMessage, "error");
@@ -857,10 +889,9 @@ export function ProductManager({
       setImageUploads((current) => ({
         ...current,
         [index]: {
+          ...current[index],
           status: "error",
           message: productImageTooLargeMessage,
-          fileName: file.name,
-          file,
         },
       }));
       showMessage(productImageTooLargeMessage, "error");
@@ -876,10 +907,9 @@ export function ProductManager({
       setImageUploads((current) => ({
         ...current,
         [index]: {
+          ...current[index],
           status: "error",
           message: productImageInvalidFormatMessage,
-          fileName: file.name,
-          file,
         },
       }));
       showMessage(productImageInvalidFormatMessage, "error");
@@ -891,10 +921,9 @@ export function ProductManager({
       setImageUploads((current) => ({
         ...current,
         [index]: {
+          ...current[index],
           status: "error",
           message: `${productImageTooManyPixelsMessage} Esta imagen tiene ${megapixels} MP.`,
-          fileName: file.name,
-          file,
         },
       }));
       showMessage(productImageTooManyPixelsMessage, "error");
@@ -907,13 +936,6 @@ export function ProductManager({
       uploadFile = file;
     }
 
-    const uploadIdentity = retryIdentity ?? {
-      requestId: createProductImageUploadRequestId(),
-      productSlug: editing.slug || editing.sku || editing.name || "producto",
-      angle: productImageAngles.includes(editing.images[index]?.angle as ProductImageAngle)
-        ? editing.images[index].angle as ProductImageAngle
-        : "principal",
-    };
     const previewUrl = URL.createObjectURL(uploadFile);
     setImageUploads((current) => {
       const previousPreview = current[index]?.previewUrl;
@@ -972,7 +994,7 @@ export function ProductManager({
           ...current,
           [index]: {
             ...current[index],
-            status: "success",
+            status: "uploaded",
             message: "Imagen subida. Revisa la vista previa y guarda el producto.",
           },
         }));
@@ -1005,6 +1027,23 @@ export function ProductManager({
           : undefined,
       );
     }
+  }
+
+  function discardImageUpload(index: number) {
+    const restoresExistingImage = Boolean(editing?.images[index]?.public_url);
+    setImageUploads((current) => {
+      const discarded = current[index];
+      if (discarded?.previewUrl) URL.revokeObjectURL(discarded.previewUrl);
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    showMessage(
+      restoresExistingImage
+        ? "Cambio de imagen descartado. Se restauró la imagen guardada anteriormente."
+        : "Cambio de imagen descartado. El espacio quedó limpio.",
+      "neutral",
+    );
   }
 
   function validateProductBeforeSave(product: ProductFormInput) {
@@ -1064,8 +1103,8 @@ export function ProductManager({
       return;
     }
 
-    if (editing.images.length >= maxProductImages) {
-      showMessage(`Puedes subir hasta ${maxProductImages} imágenes por producto.`, "error");
+    if (editing.images.length >= productImageMaxCount) {
+      showMessage(`Puedes subir hasta ${productImageMaxCount} imágenes por producto.`, "error");
       return;
     }
 
@@ -1074,6 +1113,11 @@ export function ProductManager({
 
   function submitProduct() {
     if (!editing || isPending) {
+      return;
+    }
+
+    if (imageSaveBlockReason) {
+      showMessage(imageSaveBlockReason, "error");
       return;
     }
 
@@ -1459,8 +1503,8 @@ export function ProductManager({
           criticalErrors.push("El contenido descomprimido del ZIP supera el límite de 500 MiB.");
           break;
         }
-        if (blob.size > 5 * 1024 * 1024) {
-          criticalErrors.push(`Se rechazó ${originalPath}: supera 5 MB.`);
+        if (blob.size > productImageMaxBytes) {
+          criticalErrors.push(`Se rechazó ${originalPath}: supera 3 MB.`);
           continue;
         }
         const extension = originalPath.split(".").pop()?.toLowerCase() ?? "";
@@ -2260,6 +2304,7 @@ export function ProductManager({
           vehicleModels={vehicleModels}
           product={editing}
           pending={isPending}
+          imageSaveBlockReason={imageSaveBlockReason}
           imageUploads={imageUploads}
           canAdjustStock={capabilities.adjustStock}
           canManageImages={capabilities.manageImages}
@@ -2269,6 +2314,7 @@ export function ProductManager({
           onImage={updateImage}
           onUploadImage={uploadImage}
           onRetryImage={retryImageUpload}
+          onDiscardImage={discardImageUpload}
           onAddImage={addProductImageSlot}
           onRemoveImage={removeProductImage}
           onPrimaryImage={setPrimaryImage}
@@ -2591,6 +2637,7 @@ function ProductEditor({
   vehicleModels,
   product,
   pending,
+  imageSaveBlockReason,
   imageUploads,
   canAdjustStock,
   canManageImages,
@@ -2600,6 +2647,7 @@ function ProductEditor({
   onImage,
   onUploadImage,
   onRetryImage,
+  onDiscardImage,
   onAddImage,
   onRemoveImage,
   onPrimaryImage,
@@ -2609,6 +2657,7 @@ function ProductEditor({
   vehicleModels: string[];
   product: EditableProductInput;
   pending: boolean;
+  imageSaveBlockReason: string | null;
   imageUploads: Record<number, ImageUploadState>;
   canAdjustStock: boolean;
   canManageImages: boolean;
@@ -2618,6 +2667,7 @@ function ProductEditor({
   onImage: (index: number, patch: Partial<ProductImageInput>) => void;
   onUploadImage: (index: number, file: File | null) => void;
   onRetryImage: (index: number) => void;
+  onDiscardImage: (index: number) => void;
   onAddImage: () => void;
   onRemoveImage: (index: number) => void;
   onPrimaryImage: (index: number) => void;
@@ -3224,18 +3274,19 @@ function ProductEditor({
                 <h3 className="font-semibold">Imagen principal</h3>
                 <p className="text-xs text-black/50">{productImageHelpText}</p>
               </div>
-              <Button onClick={onAddImage} disabled={product.images.length >= maxProductImages} variant="ghost" className="min-h-11 px-3">
+              <Button onClick={onAddImage} disabled={product.images.length >= productImageMaxCount} variant="ghost" className="min-h-11 px-3">
                 <Plus size={16} />
                 Agregar otra imagen
               </Button>
             </div>
             <p className="hidden text-xs text-black/50">
-              Sube de 3 a 5 imágenes JPG, PNG o WEBP. La tienda servirá versiones optimizadas desde Cloudinary.
+              Puedes subir hasta 4 imágenes JPG, PNG o WEBP. La tienda servirá versiones optimizadas desde Cloudinary.
             </p>
             {product.images.map((image, index) => {
               const uploadState = imageUploads[index];
               const previewUrl = uploadState?.previewUrl || image.public_url;
-              const isUploading = uploadState?.status === "uploading";
+              const isUploadPending = uploadState?.status === "local_preview" || uploadState?.status === "uploading";
+              const hasLocalChange = isUploadPending || uploadState?.status === "error";
               const angleOptions = imageAngleOptions.includes(image.angle as ProductImageAngle)
                 ? imageAngleOptions
                 : [...imageAngleOptions, image.angle];
@@ -3280,7 +3331,7 @@ function ProductEditor({
                     <button
                       type="button"
                       onClick={() => onPrimaryImage(index)}
-                      disabled={!image.public_url || image.is_primary}
+                      disabled={!image.public_url || image.is_primary || hasLocalChange}
                       className="inline-flex items-center justify-center gap-1 rounded-md border border-black/10 bg-white px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       <Star size={13} />
@@ -3312,15 +3363,15 @@ function ProductEditor({
                     }}
                     className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f4f4f5] px-3 py-4 text-center text-sm font-medium"
                   >
-                    {isUploading ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
-                    <span>{isUploading ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
+                    {isUploadPending ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
+                    <span>{isUploadPending ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
                     <span className="text-xs font-normal text-black/50">También puedes arrastrar la imagen aquí.</span>
                     <span className="text-xs font-normal text-black/50">{productImageHelpText}</span>
                     <input
                       type="file"
                       accept={productImageAccept}
                       className="hidden"
-                      disabled={isUploading}
+                      disabled={isUploadPending}
                       onChange={(event) => onUploadImage(index, event.target.files?.[0] ?? null)}
                     />
                   </label>
@@ -3331,7 +3382,7 @@ function ProductEditor({
                       className={`rounded-md px-3 py-2 text-xs ${
                         uploadState.status === "error"
                           ? "bg-[#fff0ea] text-[#9b341b]"
-                          : uploadState.status === "success"
+                          : uploadState.status === "uploaded"
                             ? "bg-[#fff1f2] text-[#b91c25]"
                             : "bg-white text-black/60"
                       }`}
@@ -3343,14 +3394,23 @@ function ProductEditor({
                           {uploadState.message}
                         </span>
                         {uploadState.status === "error" && uploadState.file ? (
-                          <button
-                            type="button"
-                            onClick={() => onRetryImage(index)}
-                            className="inline-flex shrink-0 items-center gap-1 font-semibold"
-                          >
-                            <RefreshCw size={13} />
-                            Reintentar
-                          </button>
+                          <span className="flex shrink-0 flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => onRetryImage(index)}
+                              className="inline-flex min-h-8 items-center gap-1 rounded border border-current px-2 font-semibold"
+                            >
+                              <RefreshCw size={13} />
+                              Reintentar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDiscardImage(index)}
+                              className="inline-flex min-h-8 items-center rounded border border-current px-2 font-semibold"
+                            >
+                              Descartar cambio de imagen
+                            </button>
+                          </span>
                         ) : null}
                       </div>
                     </div>
@@ -3378,6 +3438,7 @@ function ProductEditor({
                       <input
                         type="checkbox"
                         checked={image.is_primary}
+                        disabled={hasLocalChange}
                         onChange={(event) => onImage(index, { is_primary: event.target.checked })}
                         className="size-4"
                       />
@@ -3398,10 +3459,21 @@ function ProductEditor({
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 px-5 py-4">
+          {imageSaveBlockReason ? (
+            <p id="product-image-save-block-reason" role="status" className="w-full text-sm font-medium text-[#9b341b]">
+              {imageSaveBlockReason}
+            </p>
+          ) : null}
           <Button onClick={onClose} variant="ghost" className="min-h-11">
             Cancelar
           </Button>
-          <Button onClick={onSubmit} disabled={pending} variant="dark" className="min-h-11">
+          <Button
+            onClick={onSubmit}
+            disabled={pending || Boolean(imageSaveBlockReason)}
+            aria-describedby={imageSaveBlockReason ? "product-image-save-block-reason" : undefined}
+            variant="dark"
+            className="min-h-11"
+          >
             <Save size={17} />
             {pending ? "Guardando producto..." : "Guardar producto"}
           </Button>
