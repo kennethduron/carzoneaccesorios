@@ -5,6 +5,7 @@ import {
   PosDraftServiceError,
   recoverPosSaleConfirmation,
 } from "@/services/supabase/pos-draft.service";
+import { verifySameOriginRequest } from "@/lib/http/same-origin-request";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,9 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ draftId: string }> },
 ) {
+  if (!verifySameOriginRequest(request).ok) {
+    return Response.json({ code: "INVALID_ORIGIN", message: "Solicitud de origen no permitido." }, { status: 403 });
+  }
   const auth = await authorizePosCustomerRequest("pos:confirm_sale");
   if (auth.response) return auth.response;
   const parsed = confirmPosSaleSchema.safeParse(await request.json().catch(() => null));

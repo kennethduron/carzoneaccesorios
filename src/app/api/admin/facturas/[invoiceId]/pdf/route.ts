@@ -15,12 +15,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return Response.json({ message: "No autenticado." }, { status: 401 });
   }
 
-  if (!hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email)) {
+  if (!hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email)
+    && !hasEffectivePermission(profile.role, profile.permissions, "pos:sales:read_own", profile.email)) {
     return Response.json({ message: "Sin permiso para consultar facturas administrativas." }, { status: 403 });
   }
 
   const { invoiceId } = await params;
-  const invoice = await getAdminInvoiceDetail(invoiceId);
+  const invoice = await getAdminInvoiceDetail(invoiceId, {
+    includeFiscalCorrectionHistory: hasEffectivePermission(profile.role, profile.permissions, "invoices:read", profile.email),
+  });
 
   if (!invoice) {
     return Response.json({ message: "Factura no encontrada." }, { status: 404 });

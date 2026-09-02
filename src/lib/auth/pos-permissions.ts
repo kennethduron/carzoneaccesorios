@@ -15,12 +15,18 @@ export type PosPermission =
   | "pos:drafts:abandon"
   | "pos:products:search"
   | "pos:price_override"
+  | "pos:price_request"
+  | "pos:price_approvals:read"
+  | "pos:price_approvals:decide"
+  | "pos:sales:read_own"
+  | "pos:seller_attribution:correct"
+  | "pos:customers:write_basic"
   | "pos:confirm_sale"
   | "pos:reprint_documents"
   | "customers:read_commercial"
   | "customers:read_credit";
 
-export const posAuthorizedRoles = ["technical_owner", "business_owner", "admin"] as const satisfies readonly AppRole[];
+export const posAuthorizedRoles = ["technical_owner", "business_owner", "admin", "vendedor"] as const satisfies readonly AppRole[];
 
 type PosPermissionProfile = {
   role: AppRole;

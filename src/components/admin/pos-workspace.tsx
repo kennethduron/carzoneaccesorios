@@ -19,6 +19,7 @@ import { applyPosInventorySnapshotsToItems } from "@/lib/pos/inventory-mode";
 import { validatePosQuantity } from "@/lib/pos/cart-quantity";
 import type { PosConfirmationResult, PosCreditOverdueOverrideCapability, PosCustomerContext, PosInventoryConflict, PosInventorySnapshot } from "@/types/point-of-sale";
 import type { PosActiveDraftSummary, PosChargeCapabilities, PosDraftApiError, PosDraftItem, PosProductSearchResult, PosSaleDraft } from "@/types/pos-drafts";
+import type { PosPriceRequest } from "@/types/sales-commercial";
 
 const storedDraftKey = "car-zone-pos-stage4-draft-id";
 const emptyDelivery: PosDeliveryState = { mode: 'store_immediate', address: '', notes: '', internalNotes: '', shippingFee: '0.00', codFee: '0.00', additionalCharge: '0.00', additionalChargeDescription: '', otherCharge: '0.00', otherChargeDescription: '' };
@@ -56,9 +57,10 @@ type WorkspaceDialog =
   | { kind: "abandon" }
   | { kind: "change-customer"; customer: PosCustomerContext | null };
 
-export function PosWorkspace({ operatorName, creditOverrideCapability }: {
+export function PosWorkspace({ operatorName, creditOverrideCapability, sellerMode = false }: {
   operatorName: string;
   creditOverrideCapability: PosCreditOverdueOverrideCapability;
+  sellerMode?: boolean;
 }) {
   const [customer, setCustomer] = useState<PosCustomerContext | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
   const [refreshingInventory, setRefreshingInventory] = useState(false);
   const [inventoryAnnouncement, setInventoryAnnouncement] = useState("");
   const [reservationProduct, setReservationProduct] = useState<{ productName: string; snapshot: PosInventorySnapshot } | null>(null);
+  const [priceRequests, setPriceRequests] = useState<Record<string, PosPriceRequest>>({});
   const dirtyRef = useRef(false);
   const savingRef = useRef(false);
   const pendingSaveKeyRef = useRef<string | null>(null);
@@ -103,6 +106,12 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
     changeRevisionRef.current = 0;
     selectedCustomerIdRef.current = next.customerId;
     setDraft(next); setItems(next.items); setDelivery(draftDelivery(next));
+    setPriceRequests((current) => Object.fromEntries(Object.entries(current).filter(([, request]) => {
+      const line = next.items.find((item) => item.productId === request.productId);
+      return request.draftId === next.draftId && line?.quantity === request.quantity
+        && line.baseUnitPrice === request.baseUnitPrice
+        && line.productSalesVersion === request.productSalesVersion;
+    })));
     setCustomer((current) => next.customerId === current?.customerId && next.customerCommercialVersion === current.commercialVersion ? current : null);
     setConfirmedResult(null);
     setSelectedCustomerId(next.customerId); setStatus("saved"); setMessage(recoveredMessage);
@@ -140,6 +149,16 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
       setMessage(error instanceof Error ? error.message : "No se pudo recuperar el borrador.");
     }
   }, [applyDraft]);
+
+  useEffect(() => {
+    if (!sellerMode) return;
+    const requestId = new URLSearchParams(window.location.search).get("priceRequest");
+    if (!requestId) return;
+    void fetch(`/api/admin/pos/price-requests/${requestId}`, { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then((response) => jsonResponse<PosPriceRequest>(response))
+      .then((request) => setPriceRequests((current) => ({ ...current, [request.productId]: request })))
+      .catch(() => undefined);
+  }, [sellerMode]);
 
   const requestOpenDraft = useCallback((draftId: string, recoveredMessage = "Borrador recuperado.") => {
     if (dirtyRef.current) {
@@ -398,6 +417,7 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
       setIsDirty(false);
       setDraft(null);
       setItems([]);
+      setPriceRequests({});
       const nextAddress = nextCustomer ? resolvePosCustomerDeliveryAddress(nextCustomer) : "";
       setDelivery({ ...emptyDelivery, address: nextAddress });
       setStatus("idle");
@@ -435,6 +455,7 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
     selectedCustomerIdRef.current = null;
     setSelectedCustomerId(null);
     setItems([]);
+    setPriceRequests({});
     setDelivery(emptyDelivery);
     setStatus("idle");
     setMessage("Lista para una nueva venta.");
@@ -443,7 +464,13 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
     window.sessionStorage.removeItem(storedDraftKey);
   }
 
-  const provisional = useMemo(() => items.reduce((totals, item) => {
+  const effectiveItems = useMemo(() => items.map((item) => {
+    const request = priceRequests[item.productId];
+    const approved = request?.status === "approved" && request.quantity === item.quantity
+      && request.baseUnitPrice === item.baseUnitPrice && Boolean(request.expiresAt);
+    return approved ? { ...item, finalUnitPrice: request.requestedUnitPrice } : item;
+  }), [items, priceRequests]);
+  const provisional = useMemo(() => effectiveItems.reduce((totals, item) => {
     const gross = Math.round(item.quantity * item.finalUnitPrice * 100) / 100;
     totals.merchandise += gross;
     if (item.taxCategory === "exempt") totals.exempt += gross;
@@ -452,12 +479,18 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
       totals.taxable += gross; totals.taxableBase += base; totals.tax += gross - base;
     }
     return totals;
-  }, { merchandise: 0, taxable: 0, taxableBase: 0, tax: 0, exempt: 0 }), [items]);
+  }, { merchandise: 0, taxable: 0, taxableBase: 0, tax: 0, exempt: 0 }), [effectiveItems]);
   const compatibleCustomer = Boolean(customer && draft?.customerId === customer.customerId && draft.customerCommercialVersion === customer.commercialVersion);
   const cartUnits = items.reduce((sum, item) => sum + item.quantity, 0);
   const provisionalCharges = Math.round(([delivery.shippingFee, delivery.codFee, delivery.additionalCharge, delivery.otherCharge]
     .reduce((sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0)) * 100) / 100;
   const provisionalTotal = Math.round((provisional.merchandise + provisionalCharges) * 100) / 100;
+  const effectiveDraft = draft ? { ...draft, items: effectiveItems, merchandiseGross: provisional.merchandise,
+    taxableGross: provisional.taxable, taxableBase: provisional.taxableBase, taxAmount: provisional.tax,
+    exemptGross: provisional.exempt, grandTotal: provisionalTotal } : null;
+  const currentApprovalIds = Object.values(priceRequests).filter((request) => request.status === "approved"
+    && Boolean(request.expiresAt)).map((request) => request.requestId);
+  const hasPendingPriceRequest = Object.values(priceRequests).some((request) => request.status === "pending");
 
   return <div className="min-w-0 space-y-3 pb-[calc(6rem+env(safe-area-inset-bottom))] min-[800px]:pb-0">
     <section data-testid="pos-sale-toolbar" className="rounded-xl border border-black/10 bg-white p-3 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[#e4252c]"><PlusCircle size={20} /></span><div className="min-w-0"><h2 className="font-semibold text-[#e4252c]">Nueva venta</h2><p className="truncate text-sm text-black/55">Agregue productos, revise los totales y seleccione el método de pago.</p></div></div><div className="flex min-w-0 flex-wrap items-center justify-end gap-2"><PosDraftStatus state={status} message={message} />{status === "conflict" && draft ? <button type="button" onClick={() => requestOpenDraft(draft.draftId, "Se cargó la información más reciente. Revísela antes de continuar.")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-300 bg-white px-3 text-sm font-semibold text-red-800"><RefreshCw size={17} /> Recargar</button> : null}{draft?.status === "active" ? <button type="button" onClick={() => setWorkspaceDialog({ kind: "abandon" })} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-sm font-semibold text-red-700"><Archive size={17} /> Abandonar</button> : null}</div></div></section>
@@ -465,24 +498,25 @@ export function PosWorkspace({ operatorName, creditOverrideCapability }: {
     <PosActiveDrafts drafts={activeDrafts} currentDraftId={draft?.draftId} loading={loadingDrafts} onOpen={(draftId) => requestOpenDraft(draftId)} />
 
     {!draft ? <div className="grid min-w-0 items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.34fr)]">
-      <PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} />
+      <PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} restrictedCommercial={sellerMode} onCustomerContextChange={acceptCustomer} />
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-sm xl:sticky xl:top-4"><div className="flex items-start gap-3"><ShoppingCart className="mt-0.5 shrink-0 text-[#e4252c]" size={22} /><div><h2 className="font-semibold">{customer ? "Cliente listo" : "Prepare una nueva venta"}</h2><p className="mt-1 text-sm leading-5 text-black/55">{customer ? "Inicie el borrador con las condiciones comerciales seleccionadas." : "Seleccione un cliente para habilitar productos y precios."}</p></div></div><button type="button" disabled={!customer || creating} onClick={() => void createDraft()} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white disabled:opacity-50">{creating ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} /> : <PlusCircle size={18} />} Preparar venta</button></section>
     </div>
-      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /><PosConfirmationPanel key={draft.draftId} draft={draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} /></div>
+      : confirmedResult && customer ? <div className="grid items-start gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(0,1.2fr)]"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} restrictedCommercial={sellerMode} /><PosConfirmationPanel key={draft.draftId} draft={effectiveDraft ?? draft} customer={customer} disabled initialResult={confirmedResult} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} priceOverrideRequestIds={currentApprovalIds} sellerMode={sellerMode} /></div>
       : <>
         <div data-testid="pos-workspace-grid" className={POS_WORKSPACE_GRID_CLASS}>
           <div className={POS_OPERATIONAL_COLUMN_CLASS}>
-          <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} /></div>
+          <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} restrictedCommercial={sellerMode} /></div>
           <div className={POS_PRODUCT_COLUMN_CLASS}>
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
-            <PosCart items={items} refreshingInventory={refreshingInventory} onChange={markItems} onClear={() => markItems([])} onRefreshInventory={() => void refreshInventory(false)} onViewReservations={openProductReservations} />
+            <PosCart items={effectiveItems} refreshingInventory={refreshingInventory} onChange={(next) => { setPriceRequests({}); markItems(next.map((item) => ({ ...item, finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null }))); }} onClear={() => { setPriceRequests({}); markItems([]); }} onRefreshInventory={() => void refreshInventory(false)} onViewReservations={openProductReservations} canOverridePrice={!sellerMode} canRequestPrice={sellerMode && status === "saved" && !isDirty} draftId={draft.draftId} draftVersion={draft.version} priceRequests={priceRequests} onPriceRequestUpdate={(request) => setPriceRequests((current) => ({ ...current, [request.productId]: request }))} />
             <span className="sr-only" aria-live="polite">{inventoryAnnouncement}</span>
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
           </div>
           <div id="pos-sale-summary" ref={cartPanelRef} className={POS_SUMMARY_COLUMN_CLASS}>
             <PosDraftSummary draft={draft} pending={isDirty} merchandiseGross={provisional.merchandise} taxableGross={provisional.taxable} taxableBase={provisional.taxableBase} taxAmount={provisional.tax} exemptGross={provisional.exempt} shippingFee={Number(delivery.shippingFee) || 0} codFee={Number(delivery.codFee) || 0} additionalCharge={Number(delivery.additionalCharge) || 0} additionalChargeDescription={delivery.additionalChargeDescription} otherCharge={Number(delivery.otherCharge) || 0} otherChargeDescription={delivery.otherChargeDescription} total={provisionalTotal} disabled={!isDirty || !validChargeInputs(delivery) || status === "saving" || status === "conflict" || !customer} onSave={() => void saveDraft()} />
-            {customer ? <PosConfirmationPanel key={draft.draftId} draft={draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} /> : null}
+            {hasPendingPriceRequest ? <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Hay una solicitud de precio pendiente.</strong><p>No se puede confirmar la venta hasta recibir una respuesta.</p></div> : null}
+            {customer ? <PosConfirmationPanel key={draft.draftId} draft={effectiveDraft ?? draft} customer={customer} disabled={isDirty || status !== "saved" || items.length === 0 || !compatibleCustomer || hasPendingPriceRequest} onConfirmed={acceptConfirmation} onInventoryConflict={() => refreshInventory(true)} onViewReservations={openProductReservations} onNewSale={startNewSale} operatorName={operatorName} creditOverrideCapability={creditOverrideCapability} priceOverrideRequestIds={currentApprovalIds} sellerMode={sellerMode} /> : null}
           </div>
         </div>
         <PosMobileTotalBar unitCount={cartUnits} total={provisionalTotal} hidden={keyboardOpen} onReview={() => cartPanelRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })} />

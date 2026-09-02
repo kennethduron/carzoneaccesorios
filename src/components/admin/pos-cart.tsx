@@ -5,9 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { BadgeDollarSign, ListOrdered, LoaderCircle, Minus, Package, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { PosConfirmationDialog } from "@/components/admin/pos-confirmation-dialog";
 import { PriceOverrideDialog } from "@/components/admin/price-override-dialog";
+import { PosPriceRequestDialog } from "@/components/admin/pos-price-request-dialog";
 import { isPosDraftItemStockInsufficient } from "@/lib/pos/inventory-mode";
 import { getPosMaximumQuantity, validatePosQuantity } from "@/lib/pos/cart-quantity";
 import type { PosDraftItem } from "@/types/pos-drafts";
+import type { PosPriceRequest } from "@/types/sales-commercial";
 import { formatCurrency } from "@/utils/pricing";
 import styles from "./pos-cart.module.css";
 
@@ -20,6 +22,12 @@ type Props = {
   onClear: () => void;
   onRefreshInventory: () => void;
   onViewReservations: (item: PosDraftItem) => void;
+  canOverridePrice?: boolean;
+  canRequestPrice?: boolean;
+  draftId?: string;
+  draftVersion?: number;
+  priceRequests?: Record<string, PosPriceRequest>;
+  onPriceRequestUpdate?: (request: PosPriceRequest) => void;
 };
 
 function priceLabel(item: PosDraftItem) {
@@ -75,7 +83,7 @@ function QuantityInput({ item, onCommit, onError }: {
   );
 }
 
-export function PosCart({ items, refreshingInventory, onChange, onClear, onRefreshInventory, onViewReservations }: Props) {
+export function PosCart({ items, refreshingInventory, onChange, onClear, onRefreshInventory, onViewReservations, canOverridePrice = true, canRequestPrice = false, draftId, draftVersion, priceRequests = {}, onPriceRequestUpdate }: Props) {
   const [editing, setEditing] = useState<PosDraftItem | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
   const [lastRemoved, setLastRemoved] = useState<{ item: PosDraftItem; index: number } | null>(null);
@@ -154,12 +162,12 @@ export function PosCart({ items, refreshingInventory, onChange, onClear, onRefre
             <QuantityInput key={item.quantity} item={item} onCommit={(quantity) => setQuantity(item, quantity)} onError={setCartMessage} />
             <button type="button" disabled={item.quantity >= maximum} aria-label={`Aumentar cantidad de ${item.productName}`} onClick={() => setQuantity(item, item.quantity + 1)} className="inline-flex size-11 items-center justify-center rounded-r-lg border border-black/15 disabled:opacity-40"><Plus size={16} /></button>
           </div>
-          <div className={`${styles.price} flex min-w-0 items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5`}><div className="min-w-0"><p className="text-[11px] font-semibold text-black/55">{priceLabel(item)}</p><p className="whitespace-nowrap text-sm font-semibold">{formatCurrency(item.finalUnitPrice)} c/u</p><p className="whitespace-nowrap text-xs text-black/55">Subtotal: <strong>{formatCurrency(item.quantity * item.finalUnitPrice)}</strong></p></div><button type="button" onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(item); }} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-black/15 px-2 text-xs font-semibold"><BadgeDollarSign size={15} /> Ajustar</button></div>
+          <div className={`${styles.price} flex min-w-0 items-center justify-between gap-2 rounded-lg bg-slate-50 px-2 py-1.5`}><div className="min-w-0"><p className="text-[11px] font-semibold text-black/55">{priceRequests[item.productId]?.status === "approved" ? "Precio autorizado" : priceLabel(item)}</p><p className="whitespace-nowrap text-sm font-semibold">{formatCurrency(priceRequests[item.productId]?.status === "approved" ? priceRequests[item.productId].requestedUnitPrice : item.finalUnitPrice)} c/u</p><p className="whitespace-nowrap text-xs text-black/55">Subtotal: <strong>{formatCurrency(item.quantity * (priceRequests[item.productId]?.status === "approved" ? priceRequests[item.productId].requestedUnitPrice : item.finalUnitPrice))}</strong></p></div>{canOverridePrice || canRequestPrice ? <button type="button" disabled={canRequestPrice && !item.itemId} onClick={(event) => { returnFocus.current = event.currentTarget; setEditing(item); }} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg border border-black/15 px-2 text-xs font-semibold disabled:opacity-45"><BadgeDollarSign size={15} /> {canRequestPrice ? "Solicitar" : "Ajustar"}</button> : null}</div>
           <button type="button" aria-label={`Eliminar ${item.productName}`} title="Quitar producto" onClick={() => setPendingRemoval({ kind: "line", item, index })} className={`${styles.remove} inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]`}><Trash2 size={18} /></button>
-        {item.priceOverridden ? <div className={`${styles.override} flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950`}><span className="min-w-0 truncate">Motivo: {item.priceOverrideReason}</span><button type="button" onClick={() => update(item.productId, { finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null })} className="inline-flex min-h-11 shrink-0 items-center gap-1 font-semibold"><RotateCcw size={14} /> Restaurar</button></div> : null}
+        {priceRequests[item.productId] ? <div className={`${styles.override} rounded-lg px-3 py-2 text-xs ${priceRequests[item.productId].status === "approved" ? "bg-emerald-50 text-emerald-900" : priceRequests[item.productId].status === "pending" ? "bg-amber-50 text-amber-950" : "bg-red-50 text-red-900"}`}><strong>{priceRequests[item.productId].status === "approved" ? "Precio especial aprobado" : priceRequests[item.productId].status === "pending" ? "Autorización pendiente" : `Solicitud ${priceRequests[item.productId].status}`}</strong>{priceRequests[item.productId].expiresAt && priceRequests[item.productId].status === "approved" ? ` · vence ${new Date(priceRequests[item.productId].expiresAt!).toLocaleTimeString("es-HN", { hour: "2-digit", minute: "2-digit" })}` : null}</div> : item.priceOverridden ? <div className={`${styles.override} flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950`}><span className="min-w-0 truncate">Motivo: {item.priceOverrideReason}</span><button type="button" onClick={() => update(item.productId, { finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null })} className="inline-flex min-h-11 shrink-0 items-center gap-1 font-semibold"><RotateCcw size={14} /> Restaurar</button></div> : null}
       </article>;
     })}</div>}
-    {editing ? <PriceOverrideDialog item={editing} returnFocus={returnFocus} onCancel={() => setEditing(null)} onApply={(price, reason) => { update(editing.productId, { finalUnitPrice: price, priceOverridden: price !== editing.baseUnitPrice, priceOverrideReason: price === editing.baseUnitPrice ? null : reason }); setEditing(null); }} /> : null}
+    {editing && canRequestPrice && draftId && draftVersion !== undefined ? <PosPriceRequestDialog item={editing} draftId={draftId} draftVersion={draftVersion} current={priceRequests[editing.productId]} onUpdate={(request) => onPriceRequestUpdate?.(request)} onClose={() => setEditing(null)} /> : editing && canOverridePrice ? <PriceOverrideDialog item={editing} returnFocus={returnFocus} onCancel={() => setEditing(null)} onApply={(price, reason) => { update(editing.productId, { finalUnitPrice: price, priceOverridden: price !== editing.baseUnitPrice, priceOverrideReason: price === editing.baseUnitPrice ? null : reason }); setEditing(null); }} /> : null}
     {pendingRemoval ? <PosConfirmationDialog
       title={pendingRemoval.kind === "clear" ? "Vaciar carrito" : "Eliminar producto"}
       description={pendingRemoval.kind === "clear" ? "Se quitarán todos los productos de esta venta en preparación." : "¿Desea quitar este producto del carrito?"}

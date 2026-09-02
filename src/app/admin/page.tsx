@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -81,7 +82,7 @@ const moduleGroups = [
     description: "Seguimiento de cobros, facturas y reportes.",
     defaultOpen: true,
     modules: [
-      { title: "Punto de Venta", href: "/admin/pos", description: "SelecciÃ³n de clientes y reglas comerciales. Productos, carrito y cobro siguen pendientes.", permissions: ["pos:access"] },
+      { title: "Punto de Venta", href: "/admin/pos", description: "Selección de clientes y reglas comerciales. Productos, carrito y cobro siguen pendientes.", permissions: ["pos:access"] },
       { title: "Pedidos por cobrar", href: "/admin/pedidos?task=pending_payments", description: "Pagos pendientes de confirmar.", permissions: ["payments:confirm", "payments:manage"] },
       { title: "Facturas pendientes", href: "/admin/facturas?task=pending_invoices", description: "Facturas listas para revisar o emitir.", permissions: ["invoices:read", "invoices:manage"] },
       { title: "Reportes", href: "/admin/reportes", description: "Reportes contables, filtros, Excel, CSV y PDF.", permissions: ["reports:read"] },
@@ -298,6 +299,7 @@ async function getPortalRegistrationNotifications(role: AppRole) {
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
+  if (profile.role === "vendedor") redirect("/admin/pos");
   const isAccountant = profile.role === "contadora" && !isTechnicalOwner(profile.role, profile.email);
   const isWarehouse = profile.role === "bodega" && !isTechnicalOwner(profile.role, profile.email);
   const canViewNotificationSummary = ["technical_owner", "business_owner", "admin"].includes(profile.role);

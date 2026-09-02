@@ -471,6 +471,7 @@ export type PosConfirmationInput = {
   expectedDraftVersion: number;
   invoiceDate: string;
   payment: PosConfirmationPaymentInput;
+  priceOverrideRequestIds?: string[];
 };
 
 export type PosConfirmationResult = {

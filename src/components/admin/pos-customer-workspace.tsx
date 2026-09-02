@@ -123,7 +123,7 @@ function statusTone(status: PosCustomerContext["wholesaleStatus"]) {
   return "bg-slate-100 text-slate-700 ring-slate-200";
 }
 
-export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = true, compact = false, onCustomerContextChange }: { selectedCustomerId?: string | null; showFutureStages?: boolean; compact?: boolean; onCustomerContextChange?: (context: PosCustomerContext | null) => void }) {
+export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = true, compact = false, restrictedCommercial = false, onCustomerContextChange }: { selectedCustomerId?: string | null; showFutureStages?: boolean; compact?: boolean; restrictedCommercial?: boolean; onCustomerContextChange?: (context: PosCustomerContext | null) => void }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PosCustomerSearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -413,9 +413,9 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       taxId: form.taxId || null,
       address: form.address || null,
       city: form.city || null,
-      commercialNotes: form.commercialNotes || null,
-      customerType: form.customerType,
-      creditMode: form.creditEnabled
+      commercialNotes: restrictedCommercial ? null : form.commercialNotes || null,
+      customerType: restrictedCommercial ? "retail" : form.customerType,
+      creditMode: restrictedCommercial ? "none" : form.creditEnabled
         ? form.creditStatus
         : panelMode === "edit" && context?.credit.accountExists ? "disabled" : "none",
       creditLimit: Number(form.creditLimit || 0),
@@ -423,6 +423,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
       creditNotes: form.creditNotes || null,
       changeReason: "Configurado desde Punto de Venta.",
       duplicateOverrideReason: form.duplicateOverrideReason.trim() || null,
+      restrictedCommercial,
       ...(panelMode === "edit" && context
         ? { expectedCommercialVersion: context.commercialVersion }
         : {}),
@@ -535,6 +536,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           {contextLoading ? <div className={`flex items-center justify-center gap-2 text-sm text-black/55 ${compact ? "min-h-28" : "min-h-72"}`}><LoaderCircle className="animate-spin text-[#e4252c]" size={20} /> Cargando contexto…</div> : null}
           {!contextLoading && panelMode !== "closed" ? (
             <CustomerFormPanel
+              restrictedCommercial={restrictedCommercial}
               mode={panelMode}
               form={form}
               dirty={dirty}
@@ -552,6 +554,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
           ) : null}
           {!contextLoading && panelMode === "closed" && visibleContext ? (
             <CustomerContextPanel
+              restrictedCommercial={restrictedCommercial}
               context={visibleContext}
               message={formMessage}
               onEdit={openEdit}
@@ -590,6 +593,7 @@ export function PosCustomerWorkspace({ selectedCustomerId, showFutureStages = tr
 }
 
 function CustomerFormPanel({
+  restrictedCommercial,
   mode,
   form,
   dirty,
@@ -604,6 +608,7 @@ function CustomerFormPanel({
   onCancel,
   onSelectSuggestion,
 }: {
+  restrictedCommercial: boolean;
   mode: "create" | "edit";
   form: CustomerForm;
   dirty: boolean;
@@ -640,7 +645,7 @@ function CustomerFormPanel({
         <FormField label="RTN"><input maxLength={40} value={form.taxId} onChange={field("taxId")} className="pos-input" /></FormField>
         <FormField label="Ciudad"><input maxLength={120} value={form.city} onChange={field("city")} className="pos-input" /></FormField>
         <FormField label="Dirección" wide><textarea maxLength={500} rows={3} value={form.address} onChange={field("address")} className="pos-input resize-y py-3" /></FormField>
-        <FormField label="Notas comerciales no sensibles" wide><textarea maxLength={1000} rows={3} value={form.commercialNotes} onChange={field("commercialNotes")} className="pos-input resize-y py-3" /></FormField>
+        {!restrictedCommercial ? <FormField label="Notas comerciales no sensibles" wide><textarea maxLength={1000} rows={3} value={form.commercialNotes} onChange={field("commercialNotes")} className="pos-input resize-y py-3" /></FormField> : null}
         </div>
       </fieldset>
       {mode === 'create' && (duplicateState !== 'idle' || duplicateSuggestions.length > 0) ? (
@@ -676,15 +681,15 @@ function CustomerFormPanel({
         </section>
       ) : null}
 
-      <fieldset className="mt-5 rounded-xl border border-black/10 p-4">
+      {!restrictedCommercial ? <fieldset className="mt-5 rounded-xl border border-black/10 p-4">
         <legend className="px-1 text-sm font-semibold">Tipo de cliente</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {(["retail", "wholesale"] as const).map((customerType) => <label key={customerType} className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm font-semibold ${form.customerType === customerType ? "border-[#e4252c] bg-red-50" : "border-black/10"}`}><input type="radio" name="customerType" value={customerType} checked={form.customerType === customerType} onChange={() => onChange({ ...form, customerType })} className="size-4 accent-[#e4252c]" />{customerType === "retail" ? "Minorista" : "Mayorista"}</label>)}
         </div>
         <p className="mt-2 text-xs leading-5 text-black/50">{form.customerType === "wholesale" ? "Quedará aprobado y activo por el rol autorizado, con historial comercial." : "Usará precio detalle salvo un precio manual autorizado."}</p>
-      </fieldset>
+      </fieldset> : null}
 
-      <fieldset className="mt-4 rounded-xl border border-black/10 p-4">
+      {!restrictedCommercial ? <fieldset className="mt-4 rounded-xl border border-black/10 p-4">
         <legend className="px-1 text-sm font-semibold">Crédito comercial</legend>
         <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={form.creditEnabled} onChange={(event) => onChange({ ...form, creditEnabled: event.target.checked })} className="size-5 accent-[#e4252c]" /> Habilitar crédito comercial</label>
         {form.creditEnabled ? <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -693,7 +698,7 @@ function CustomerFormPanel({
           {mode === "edit" ? <FormField label="Estado"><select value={form.creditStatus} onChange={(event) => onChange({ ...form, creditStatus: event.target.value as "active" | "suspended" })} className="pos-input"><option value="active">Activo</option><option value="suspended">Suspendido</option></select></FormField> : null}
           <FormField label="Notas o condiciones" wide><textarea maxLength={1000} rows={2} value={form.creditNotes} onChange={field("creditNotes")} className="pos-input resize-y py-3" /></FormField>
         </div> : <p className="mt-1 text-xs text-black/50">{mode === "create" ? "No se creará una cuenta de crédito." : "Al guardar, el crédito existente quedará deshabilitado; el historial y las CxC no cambian."}</p>}
-      </fieldset>
+      </fieldset> : <p className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800">Puede editar únicamente identidad y contacto. Mayorista, crédito, portal y notas comerciales requieren autorización administrativa.</p>}
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" onClick={onCancel} className="min-h-11 rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold">Cancelar</button>
@@ -704,11 +709,13 @@ function CustomerFormPanel({
 }
 
 export function CustomerContextPanel({
+  restrictedCommercial = false,
   context,
   message,
   onEdit,
   onClear,
 }: {
+  restrictedCommercial?: boolean;
   context: PosCustomerContext;
   message: string;
   onEdit: () => void;
@@ -751,7 +758,7 @@ export function CustomerContextPanel({
         {context.credit.overdueBalance > 0 ? <p className="mt-2 rounded-lg bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-800">Saldo vencido: {formatCurrency(context.credit.overdueBalance)}</p> : null}
       </section> : null}
 
-      <details data-testid="pos-commercial-details" className="group mt-3 rounded-xl border border-black/10">
+      {!restrictedCommercial ? <details data-testid="pos-commercial-details" className="group mt-3 rounded-xl border border-black/10">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e4252c]">Ver detalles comerciales <ChevronDown size={17} className="transition group-open:rotate-180 motion-reduce:transition-none" /></summary>
         <div className="border-t border-black/10 p-3">
           <p className="rounded-lg bg-[#fafafa] px-3 py-2 text-sm leading-5 text-black/65">{context.pricingReason}</p>
@@ -765,7 +772,7 @@ export function CustomerContextPanel({
           </div>
           {context.credit.notes || context.credit.reason ? <p className="mt-3 text-xs leading-5 text-black/55">{context.credit.notes || context.credit.reason}</p> : null}
         </div>
-      </details>
+      </details> : null}
 
       {message ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm" role="status">{message}</p> : null}
     </div>

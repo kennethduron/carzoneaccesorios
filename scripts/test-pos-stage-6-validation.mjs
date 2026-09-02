@@ -62,9 +62,15 @@ for (const role of ["technical_owner", "business_owner", "admin"]) {
   assert.equal(permissions.includes("pos:reprint_documents"), true, `${role} reprint permission`);
   assert.equal(hasPosPermission({ role, permissions }, "pos:confirm_sale"), true);
 }
-for (const role of ["contadora", "vendedor", "bodega", "soporte", "cliente"]) {
+for (const role of ["contadora", "bodega", "soporte", "cliente"]) {
   const permissions = effectivePermissions(role);
   assert.equal(hasPosPermission({ role, permissions }, "pos:confirm_sale"), false);
+}
+{
+  const permissions = effectivePermissions("vendedor");
+  assert.equal(hasPosPermission({ role: "vendedor", permissions }, "pos:confirm_sale"), true);
+  assert.equal(hasPosPermission({ role: "vendedor", permissions }, "pos:price_override"), false);
+  assert.equal(hasPosPermission({ role: "vendedor", permissions }, "pos:price_approvals:decide"), false);
 }
 assert.equal(confirmPosSaleSchema.safeParse({
   requestKey: crypto.randomUUID(), expectedDraftVersion: 2, invoiceDate: "2026-08-02",

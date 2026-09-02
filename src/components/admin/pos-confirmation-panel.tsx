@@ -26,6 +26,8 @@ type Props = {
   operatorName: string;
   initialResult?: PosConfirmationResult | null;
   creditOverrideCapability?: PosCreditOverdueOverrideCapability;
+  priceOverrideRequestIds?: string[];
+  sellerMode?: boolean;
 };
 
 type ConfirmationError = { code: string; message: string };
@@ -75,7 +77,7 @@ export function printPosReceipt(
   popup.document.close();
 }
 
-export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onInventoryConflict, onViewReservations, onNewSale, operatorName, initialResult = null, creditOverrideCapability = { featureEnabled: false, overrideAllowed: false } }: Props) {
+export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, onInventoryConflict, onViewReservations, onNewSale, operatorName, initialResult = null, creditOverrideCapability = { featureEnabled: false, overrideAllowed: false }, priceOverrideRequestIds = [], sellerMode = false }: Props) {
   const [method, setMethod] = useState<PosPaymentMethod>("cash");
   const [invoiceDate, setInvoiceDate] = useState(hondurasDate);
   const [amountTendered, setAmountTendered] = useState(String(draft.grandTotal));
@@ -140,6 +142,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
           expectedDraftVersion: draft.version,
           invoiceDate,
           payment,
+          priceOverrideRequestIds,
         }),
       });
       const payload = await response.json() as PosConfirmationResult & { code?: string; message?: string };
@@ -190,10 +193,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <a className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 text-sm font-semibold text-white" href={`/api/admin/facturas/${result.invoiceId}/pdf?download=1`}><ReceiptText size={18} /> Descargar factura PDF</a>
         <a target="_blank" rel="noreferrer" href={`/api/admin/facturas/${result.invoiceId}/pdf`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold"><Printer size={18} /> Imprimir factura</a>
-        <a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pedido</a>
-        <a href={`/admin/facturas?invoiceId=${encodeURIComponent(result.invoiceId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver factura</a>
-        {result.receivableId ? <a href={`/admin/cuentas-por-cobrar?receivableId=${encodeURIComponent(result.receivableId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver cuenta por cobrar</a> : null}
-        {result.paymentId ? <a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}&paymentId=${encodeURIComponent(result.paymentId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pago</a> : null}
+        {sellerMode ? <a href="/admin/mis-ventas" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Abrir mis ventas</a> : <><a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pedido</a><a href={`/admin/facturas?invoiceId=${encodeURIComponent(result.invoiceId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver factura</a>{result.receivableId ? <a href={`/admin/cuentas-por-cobrar?receivableId=${encodeURIComponent(result.receivableId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver cuenta por cobrar</a> : null}{result.paymentId ? <a href={`/admin/pedidos?orderId=${encodeURIComponent(result.orderId)}&paymentId=${encodeURIComponent(result.paymentId)}`} className="inline-flex min-h-11 items-center justify-center rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold">Ver pago</a> : null}</>}
         <button type="button" onClick={onNewSale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-black/15 bg-white px-4 text-sm font-semibold"><PlusCircle size={18} /> Nueva venta</button>
       </div>
     </section>;

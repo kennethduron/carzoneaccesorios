@@ -67,6 +67,10 @@ export const notificationCatalog = [
   { type: "system.critical_error", module: "sistema", label: "Error crítico", defaultSeverity: "critical", defaultRoles: ["technical_owner"], emailDefault: true, technicalOnly: true },
   { type: "customer.order_status_update", module: "pedidos", label: "Actualizaciones de pedido al cliente", defaultSeverity: "info", defaultRoles: [], emailDefault: true },
   { type: "customer.order_cancelled", module: "pedidos", label: "Cancelación de pedido al cliente", defaultSeverity: "warning", defaultRoles: [], emailDefault: true },
+  { type: "pos.price_request.created", module: "pedidos", label: "Precio especial solicitado", defaultSeverity: "warning", defaultRoles: ["technical_owner", "business_owner", "admin"], emailDefault: true },
+  { type: "pos.price_request.approved", module: "pedidos", label: "Precio especial aprobado", defaultSeverity: "info", defaultRoles: [], emailDefault: true },
+  { type: "pos.price_request.rejected", module: "pedidos", label: "Precio especial rechazado", defaultSeverity: "warning", defaultRoles: [], emailDefault: true },
+  { type: "pos.price_request.revoked", module: "pedidos", label: "Precio especial revocado", defaultSeverity: "warning", defaultRoles: [], emailDefault: true },
 ] satisfies NotificationCatalogItem[];
 
 export function getCatalogItem(type: string) {

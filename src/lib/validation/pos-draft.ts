@@ -77,6 +77,7 @@ export const confirmPosSaleSchema = z.object({
   expectedDraftVersion: z.number().int().positive(),
   invoiceDate: invoiceDateSchema,
   payment: confirmationPaymentSchema,
+  priceOverrideRequestIds: z.array(z.string().uuid()).max(200).default([]),
 }).strict();
 
 export const posProductSearchSchema = z.object({

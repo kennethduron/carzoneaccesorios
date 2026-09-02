@@ -401,7 +401,7 @@ export async function abandonPosDraft(requestKey: string, draftId: string, expec
 
 export async function confirmPosSale(input: PosConfirmationInput) {
   const supabase = await getSupabaseServerClient();
-  const paymentPayload = input.payment.method === "cash"
+  const basePaymentPayload = input.payment.method === "cash"
     ? { method: input.payment.method, amount_tendered: input.payment.amountTendered }
     : input.payment.method === "commercial_credit"
       ? {
@@ -411,6 +411,10 @@ export async function confirmPosSale(input: PosConfirmationInput) {
             : {}),
         }
       : input.payment;
+  const paymentPayload = {
+    ...basePaymentPayload,
+    price_override_request_ids: input.priceOverrideRequestIds ?? [],
+  };
   const { data, error } = await supabase.rpc("confirm_pos_sale_with_charge_descriptions_v1", {
     p_draft_id: input.draftId,
     p_request_key: input.requestKey,

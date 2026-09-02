@@ -291,7 +291,7 @@ export async function getAdminInvoices(): Promise<AdminInvoiceRow[]> {
 
 export async function getAdminInvoiceDetail(
   invoiceId: string,
-  options: { includeAccountingTraceability?: boolean } = {},
+  options: { includeAccountingTraceability?: boolean; includeFiscalCorrectionHistory?: boolean } = {},
 ): Promise<AdminInvoiceDetail | null> {
   const supabase = await getSupabaseServerClient();
   const { data: invoice, error } = await supabase
@@ -383,7 +383,7 @@ export async function getAdminInvoiceDetail(
   }
 
   const detail = normalizeDetail(invoice, paymentByOrder);
-  detail.fiscal_correction_history = await getFiscalCorrectionHistory({
+  detail.fiscal_correction_history = options.includeFiscalCorrectionHistory === false ? [] : await getFiscalCorrectionHistory({
     orderId: invoice.order_id,
     invoiceId,
   });

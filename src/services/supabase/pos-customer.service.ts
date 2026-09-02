@@ -320,3 +320,18 @@ export async function updatePosCustomer(input: PosCustomerUpdateInput): Promise<
   if (error || !data) throwRpcError(error, "No se pudo actualizar el cliente.");
   return data as unknown as PosCustomerWriteResult;
 }
+
+export async function savePosBasicCustomer(input: PosCustomerWriteInput | PosCustomerUpdateInput): Promise<PosCustomerWriteResult> {
+  const supabase = await getSupabaseServerClient();
+  const updating = "customerId" in input;
+  const { data, error } = await supabase.rpc("save_pos_basic_customer_v1", {
+    p_request_key: input.requestKey,
+    p_customer_id: updating ? input.customerId : null,
+    p_expected_commercial_version: updating ? input.expectedCommercialVersion : null,
+    p_contact_name: input.contactName, p_phone: input.phone, p_email: input.email,
+    p_business_name: input.businessName, p_tax_id: input.taxId,
+    p_address: input.address, p_city: input.city,
+  });
+  if (error || !data) throwRpcError(error, updating ? "No se pudo actualizar el cliente." : "No se pudo crear el cliente.");
+  return data as unknown as PosCustomerWriteResult;
+}
