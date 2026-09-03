@@ -66,6 +66,14 @@ export type MyPosSale = {
   balanceDue: number;
   receivableStatus: string | null;
   sellerName: string;
+  commission: null | {
+    entryId: string;
+    status: "ACCRUED" | "PARTIALLY_EARNED" | "EARNED" | "VOIDED" | "REVERSED";
+    potential: number;
+    earned: number;
+    remaining: number;
+    reversed: number;
+  };
 };
 
 export type MyPosSalesPage = {

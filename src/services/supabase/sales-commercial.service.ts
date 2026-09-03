@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { getMyCommissionMap } from "@/services/supabase/commissions.service";
 import type {
   MyPosSaleDetail, MyPosSalesPage, PosPriceRequest, PosPriceRequestPage,
 } from "@/types/sales-commercial";
@@ -91,14 +92,18 @@ export async function listMyPosSales(input: { from: string; to: string; status?:
     p_limit: input.limit, p_offset: input.offset,
   });
   if (error || !data) throwRpc(error, "No se pudieron cargar tus ventas.");
-  return data as unknown as MyPosSalesPage;
+  const page = data as unknown as MyPosSalesPage;
+  const commissions = await getMyCommissionMap(page.results.map((sale) => sale.orderId));
+  return { ...page, results: page.results.map((sale) => ({ ...sale, commission: commissions[sale.orderId] ?? null })) };
 }
 
 export async function getMyPosSaleDetail(orderId: string) {
   const supabase = await getSupabaseServerClient();
   const { data, error } = await supabase.rpc("get_my_pos_sale_detail_v1", { p_order_id: orderId });
   if (error || !data) throwRpc(error, "No se pudo cargar el detalle de la venta.");
-  return data as unknown as MyPosSaleDetail;
+  const sale = data as unknown as MyPosSaleDetail;
+  const commissions = await getMyCommissionMap([sale.orderId]);
+  return { ...sale, commission: commissions[sale.orderId] ?? null };
 }
 
 export async function correctPosOrderSeller(input: { orderId: string; sellerUserId: string; reason: string }) {

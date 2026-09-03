@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -27,6 +26,7 @@ import {
   type AdminDashboardSearchModule,
 } from "@/components/admin/admin-dashboard-frame";
 import { AdminNotificationStatusCard } from "@/components/admin/admin-notification-status-card";
+import { SellerWorkspaceDashboard } from "@/components/admin/seller-workspace-dashboard";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { FiscalAlertsPanel, getVisibleAdminFiscalAlerts } from "@/components/admin/fiscal-alerts-panel";
 import { LogoutButton } from "@/components/auth";
@@ -37,6 +37,7 @@ import { getAdminBusinessSettings } from "@/services/supabase/admin-business-set
 import { getAdminDashboardOverview, getWarehouseDashboardOverview } from "@/services/supabase/admin-dashboard.service";
 import { getFiscalSettings } from "@/services/supabase/admin-fiscal.service";
 import { getAdminInvoices } from "@/services/supabase/admin-invoices.service";
+import { getMySellerWorkspace } from "@/services/supabase/commissions.service";
 import type { AppRole, Permission } from "@/types/auth";
 import type { DashboardCardKey } from "@/types/settings";
 import { getFiscalAlerts, invoiceNumberValue } from "@/utils/fiscal";
@@ -73,6 +74,17 @@ const moduleGroups = [
       { title: "Reservas por revisar", href: "/admin/pedidos?task=expired_reservations", description: "Reservas vencidas que necesitan decisión humana.", permissions: ["reservations:review"] },
       { title: "Inventario", href: "/admin/inventario", description: "Existencias, reservas, disponibilidad, mínimos y movimientos.", permissions: ["inventory:read", "inventory:manage"] },
       { title: "Productos", href: "/admin/productos", description: "Crear, editar, desactivar, importar y exportar productos.", permissions: ["products:read", "products:manage"] },
+    ],
+  },
+  {
+    id: "comercial",
+    title: "Gestion comercial",
+    navLabel: "Comercial",
+    description: "Vendedores, reglas e historial de comisiones.",
+    defaultOpen: true,
+    modules: [
+      { title: "Vendedores", href: "/admin/vendedores", description: "Rendimiento y reglas por vendedor.", permissions: ["commissions:read_all"] },
+      { title: "Comisiones", href: "/admin/comisiones", description: "Cobros, reversiones y ajustes auditados.", permissions: ["commissions:read_all"] },
     ],
   },
   {
@@ -299,7 +311,37 @@ async function getPortalRegistrationNotifications(role: AppRole) {
 
 export default async function AdminPage() {
   const profile = await requirePermission("admin:access");
-  if (profile.role === "vendedor") redirect("/admin/pos");
+  if (profile.role === "vendedor") {
+    const workspace = await getMySellerWorkspace();
+    const sellerNavigation: AdminDashboardNavSection[] = [{
+      title: "VENTAS",
+      items: [
+        { label: "Inicio", href: "/admin", icon: "home", visible: true },
+        { label: "Punto de Venta", href: "/admin/pos", icon: "sales", visible: true },
+        { label: "Mis ventas", href: "/admin/mis-ventas", icon: "reports", visible: true },
+        { label: "Clientes", href: "/admin/clientes", icon: "crm", visible: true },
+        { label: "Productos", href: "/admin/productos", icon: "inventory", visible: true },
+        { label: "Mi comision", href: "/admin/mi-comision", icon: "finance", visible: true },
+      ],
+    }];
+    return <AdminShell title="Panel de ventas" variant="dashboard">
+      <AdminDashboardFrame
+        navSections={sellerNavigation}
+        searchModules={[
+          { title: "Nueva venta", href: "/admin/pos", description: "Registrar una venta.", groupTitle: "Ventas" },
+          { title: "Mis ventas", href: "/admin/mis-ventas", description: "Consultar ventas propias.", groupTitle: "Ventas" },
+          { title: "Clientes", href: "/admin/clientes", description: "Busqueda comercial segura.", groupTitle: "Ventas" },
+          { title: "Productos", href: "/admin/productos", description: "Precios y disponibilidad.", groupTitle: "Ventas" },
+          { title: "Mi comision", href: "/admin/mi-comision", description: "Regla e historial propio.", groupTitle: "Ventas" },
+        ]}
+        notifications={[]}
+        profileLabel={profile.full_name ?? profile.email ?? "Vendedor"}
+        roleText="Vendedor"
+        avatarLetter={(profile.full_name ?? profile.email ?? "V").slice(0,1).toUpperCase()}
+        logoutSlot={<LogoutButton />}
+      ><SellerWorkspaceDashboard data={workspace}/></AdminDashboardFrame>
+    </AdminShell>;
+  }
   const isAccountant = profile.role === "contadora" && !isTechnicalOwner(profile.role, profile.email);
   const isWarehouse = profile.role === "bodega" && !isTechnicalOwner(profile.role, profile.email);
   const canViewNotificationSummary = ["technical_owner", "business_owner", "admin"].includes(profile.role);

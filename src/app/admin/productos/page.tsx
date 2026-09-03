@@ -2,6 +2,8 @@ import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { CommercialNav } from "@/components/admin/commercial-nav";
+import { SellerProducts } from "@/components/admin/seller-products";
 import { getProductCapabilities, requireProductCapability } from "@/lib/auth/product-access";
 import { getAdminProductCatalogPage } from "@/services/supabase/admin-products.service";
 
@@ -18,6 +20,7 @@ export default async function AdminProductsPage({
   searchParams: Promise<{ q?: string; status?: string; category?: string; page?: string }>;
 }) {
   const profile = await requireProductCapability("read");
+  if (profile.role === "vendedor") return <AdminShell title="Productos" variant="wide" eyebrow="Panel de ventas" backHref="/admin"><CommercialNav sellerMode/><SellerProducts/></AdminShell>;
   const capabilities = getProductCapabilities(profile);
   const params = await searchParams;
   const { products, categories, vehicleBrands, vehicleModels, total, page, pageSize, summary } = await getAdminProductCatalogPage(

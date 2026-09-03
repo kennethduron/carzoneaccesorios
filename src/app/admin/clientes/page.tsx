@@ -1,9 +1,12 @@
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
+import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AdminShell } from "@/components/admin/admin-shell";
+import { CommercialNav } from "@/components/admin/commercial-nav";
+import { SellerCustomers } from "@/components/admin/seller-customers";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
-import { requirePermission } from "@/lib/auth/session";
+import { requireSession } from "@/lib/auth/session";
 import {
   getAdminCrm,
   type AdminCrmCustomerFilter,
@@ -45,7 +48,9 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: Promise<{ page?: string; q?: string; filter?: string; customerId?: string }>;
 }) {
-  const profile = await requirePermission("crm:manage");
+  const profile = await requireSession();
+  if (profile.role === "vendedor") return <AdminShell title="Clientes" variant="wide" eyebrow="Panel de ventas" backHref="/admin"><CommercialNav sellerMode/><SellerCustomers/></AdminShell>;
+  if (!hasEffectivePermission(profile.role, profile.permissions, "crm:manage", profile.email)) redirect("/sin-permiso");
   const canManageCredit =
     ["technical_owner", "business_owner", "admin"].includes(profile.role) &&
     hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
