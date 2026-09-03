@@ -63,8 +63,32 @@ assert.match(sellerWorkspace, /Mi rendimiento comercial/);
 assert.match(sellerWorkspace, /Mi comision/);
 assert.match(sellerWorkspace, /Borradores abiertos/);
 assert.match(sellerWorkspace, /Solicitudes de precio/);
+assert.match(sellerWorkspace, /lg:grid-cols-4 2xl:grid-cols-7/, "Seller metrics must keep four columns at 1440px and use seven only at 2XL.");
+assert.doesNotMatch(sellerWorkspace, /lg:grid-cols-4 xl:grid-cols-7/, "The truncated 1440px seven-column metric layout must not return.");
 assert.match(myCommissions, /Solo tus comisiones/);
 assert.match(myCommissions, /Regla vigente/);
+for (const contract of [
+  /role="dialog"/,
+  /aria-modal="true"/,
+  /document\.activeElement as HTMLElement\|null/,
+  /event\.key==="Escape"/,
+  /event\.key!=="Tab"/,
+  /event\.shiftKey/,
+  /previous\?\.focus\(\)/,
+]) assert.match(myCommissions, contract, `My commission detail accessibility contract is missing: ${contract}`);
+for (const contract of [
+  /flex h-full w-full flex-col/,
+  /sm:w-\[70vw\]/,
+  /lg:w-\[40vw\]/,
+  /lg:max-w-2xl/,
+  /flex-1 space-y-4 overflow-y-auto/,
+  /document\.activeElement as HTMLElement\|null/,
+  /event\.key==="Escape"/,
+  /event\.shiftKey/,
+  /previous\?\.focus\(\)/,
+]) assert.match(sellersManager, contract, `Commission rule drawer responsive/accessibility contract is missing: ${contract}`);
+assert.match(commissionsManager, /hidden overflow-x-auto md:block/, "Elevated commission table must use a bounded inner scroller.");
+assert.match(commissionsManager, /divide-y md:hidden/, "Elevated commission records must become cards below the tablet breakpoint.");
 assert.match(mySales, /CommissionStrip/);
 assert.match(mySales, /por ganar/);
 assert.ok([sellerProducts, sellerCustomers, sellersManager, commissionsManager, sellerWorkspace, myCommissions].every((source) => !source.includes("min-w-[1920px]")), "Responsive views must not impose desktop-width canvases.");

@@ -19,11 +19,11 @@ select ok(to_regclass('public.pos_sale_drafts_invoice_id_idx') is not null, 'dra
 select ok(to_regclass('public.pos_sale_drafts_payment_id_idx') is not null, 'draft payment link has unique index');
 select ok(to_regclass('public.pos_sale_drafts_receivable_id_idx') is not null, 'draft receivable link has unique index');
 select is(
-  (select count(*)::integer from public.roles where name in ('technical_owner','business_owner','admin') and permissions ? 'pos:confirm_sale'),
-  (select count(*)::integer from public.roles where name in ('technical_owner','business_owner','admin')),
+  (select count(*)::integer from public.roles where name in ('technical_owner','business_owner','admin','vendedor') and permissions ? 'pos:confirm_sale'),
+  (select count(*)::integer from public.roles where name in ('technical_owner','business_owner','admin','vendedor')),
   'every existing authorized role retains confirmation'
 );
-select is((select count(*)::integer from public.roles where name in ('contadora','vendedor','bodega','soporte','cliente') and permissions ? 'pos:confirm_sale'), 0, 'non-POS roles cannot confirm');
+select is((select count(*)::integer from public.roles where name in ('contadora','bodega','soporte','cliente') and permissions ? 'pos:confirm_sale'), 0, 'roles outside the restricted POS contract cannot confirm');
 select is((select count(*)::integer from information_schema.columns where table_schema='public' and table_name in ('payments','pos_sale_drafts') and lower(column_name) in ('card_number','cvv','pin','magnetic_stripe')), 0, 'no sensitive card columns exist');
 select is((select count(*)::integer from public.accounting_periods), 0, 'Stage 6 does not create accounting periods');
 select is((select value->>'mode' from public.accounting_automation_settings where key='automation_mode'), 'disabled', 'accounting automation remains disabled');
