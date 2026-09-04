@@ -94,6 +94,7 @@
     "test:pos-inventory-visibility": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-pos-inventory-visibility.mjs",
     "test:pos-professional-ui": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-pos-professional-ui.mjs",
     "test:pos-layout": "node scripts/test-pos-layout-contract.mjs && node scripts/test-pos-layout-browser.mjs",
+    "test:sales-commercial-phase4": "node scripts/test-sales-commercial-phase4-structure.mjs && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-sales-commercial-phase4-files.mjs",
     "test:portal-customer-sync": "node scripts/test-portal-customer-profile-sync.mjs",
     "test:portal-customer-sync:local": "node scripts/test-portal-customer-profile-sync-local.mjs",
     "test:product-import-images": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-product-import-image-matching.mjs",

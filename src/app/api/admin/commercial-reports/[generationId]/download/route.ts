@@ -1,0 +1,6 @@
+import { authorizeCommissionRequest } from "@/lib/auth/commission-request";
+import { commercialApiError } from "@/lib/commercial-api";
+import { parseUuid } from "@/lib/validation/commercial-reporting";
+import { getReportSnapshot } from "@/services/supabase/commercial-reporting.service";
+import { buildCommercialPdf, buildCommercialWorkbook } from "@/utils/commercial-report-files";
+export async function GET(_:Request,{params}:{params:Promise<{generationId:string}>}){const auth=await authorizeCommissionRequest("commercial:reports:generate",true);if(auth.response)return auth.response;try{const {generationId}=await params;const generated=await getReportSnapshot(parseUuid(generationId));const input={reportType:generated.reportType,reportName:generated.reportName,filters:generated.filters,rows:generated.snapshot.rows,dashboard:generated.snapshot.dashboard,generatedAt:generated.snapshot.generatedAt};const file=generated.format==="PDF"?await buildCommercialPdf(input):await buildCommercialWorkbook(input);return new Response(file.bytes,{headers:{"Content-Type":file.contentType,"Content-Disposition":`attachment; filename="${file.filename}"`,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"}})}catch(error){return commercialApiError(error)}}

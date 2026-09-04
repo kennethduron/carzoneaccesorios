@@ -1,0 +1,41 @@
+\set ON_ERROR_STOP on
+begin;
+create extension if not exists pgtap with schema extensions;
+set local search_path=public,extensions;
+select plan(32);
+
+select ok(to_regclass('public.sales_commission_policies') is not null,'policy templates exist');
+select ok(to_regclass('public.sales_commission_policy_events') is not null,'policy event ledger exists');
+select ok(to_regclass('public.sales_commission_assignment_operations') is not null,'bulk operations exist');
+select ok(to_regclass('public.sales_commission_assignment_items') is not null,'bulk operation items exist');
+select ok(to_regclass('public.commercial_report_configurations') is not null,'saved report configurations exist');
+select ok(to_regclass('public.commercial_report_generations') is not null,'report generations exist');
+select ok(to_regclass('public.commercial_report_generation_events') is not null,'report event ledger exists');
+select ok((select bool_and(relrowsecurity) from pg_class where oid=any(array['public.sales_commission_policies'::regclass,'public.sales_commission_policy_events'::regclass,'public.sales_commission_assignment_operations'::regclass,'public.sales_commission_assignment_items'::regclass,'public.commercial_report_configurations'::regclass,'public.commercial_report_generations'::regclass,'public.commercial_report_generation_events'::regclass])),'all Phase 4 tables use RLS');
+select ok(not has_table_privilege('authenticated','public.sales_commission_policies','insert'),'authenticated cannot directly insert policies');
+select ok(not has_table_privilege('authenticated','public.sales_commission_assignment_operations','insert'),'authenticated cannot directly insert assignments');
+select ok(not has_table_privilege('authenticated','public.commercial_report_generations','insert'),'authenticated cannot directly insert generation metadata');
+select ok(not has_table_privilege('authenticated','public.commercial_report_generations','update'),'authenticated cannot directly rewrite generation metadata');
+select ok(not has_table_privilege('authenticated','public.commercial_report_generation_events','delete'),'authenticated cannot delete report audit events');
+select ok(not has_function_privilege('anon','public.create_commission_policy_v1(uuid,text,text,numeric,text)','execute'),'anonymous policy creation denied');
+select ok(not has_function_privilege('anon','public.apply_commission_policy_assignment_v1(uuid,uuid,uuid[],date,text,text)','execute'),'anonymous bulk assignment denied');
+select ok(not has_function_privilege('anon','public.get_commercial_dashboard_v1(jsonb,integer,integer)','execute'),'anonymous commercial report denied');
+select ok(not has_function_privilege('anon','public.create_commercial_report_generation_v1(uuid,text,text,text,jsonb,jsonb,jsonb,text)','execute'),'anonymous report generation denied');
+select ok(has_function_privilege('authenticated','public.preview_commission_policy_assignment_v1(uuid,uuid[],date)','execute'),'authenticated role can invoke protected preview RPC');
+select ok(to_regclass('public.sales_commission_rules_policy_idx') is not null,'policy lookup index exists');
+select ok(to_regclass('public.commercial_report_generations_actor_idx') is not null,'report actor history index exists');
+select ok(to_regclass('public.commercial_report_generations_status_idx') is not null,'report status index exists');
+select col_is_null('public','sales_commission_rules','policy_id','legacy Phase 3 rules remain valid without a policy');
+select col_is_null('public','sales_commission_rules','assignment_operation_id','single-seller Phase 3 rules remain valid without a bulk operation');
+select is((select count(*)::integer from public.sales_commission_policies),0,'migration creates no fake policies');
+select is((select count(*)::integer from public.sales_commission_assignment_operations),0,'migration creates no fake assignments');
+select is((select count(*)::integer from public.commercial_report_generations),0,'migration creates no fake reports');
+select is((select count(*)::integer from public.sales_commission_rules where policy_id is not null),0,'migration performs no historical rule linkage');
+select ok((select permissions ?& array['commissions:policies:manage','commercial:reports:read','commercial:reports:generate'] from public.roles where name='admin'),'admin receives all Phase 4 capabilities');
+select ok((select permissions ?& array['commissions:policies:manage','commercial:reports:read','commercial:reports:generate'] from public.roles where name='business_owner'),'business owner receives all Phase 4 capabilities');
+select ok((select permissions ?& array['commissions:policies:manage','commercial:reports:read','commercial:reports:generate'] from public.roles where name='technical_owner'),'technical owner receives all Phase 4 capabilities');
+select ok(not (select permissions ?| array['commissions:policies:manage','commercial:reports:read','commercial:reports:generate'] from public.roles where name='vendedor'),'seller receives no elevated Phase 4 capability');
+select ok(not coalesce((select permissions ?| array['commissions:policies:manage','commercial:reports:read','commercial:reports:generate'] from public.roles where name='contadora'),false),'accountant receives no commercial management capability');
+
+select * from finish();
+rollback;

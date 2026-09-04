@@ -1,0 +1,4 @@
+import { authorizeCommissionRequest } from "@/lib/auth/commission-request";
+import { commercialApiError } from "@/lib/commercial-api";
+import { listReportHistory, listSavedReportConfigurations } from "@/services/supabase/commercial-reporting.service";
+export async function GET(request:Request){const auth=await authorizeCommissionRequest("commercial:reports:read",true);if(auth.response)return auth.response;try{const url=new URL(request.url);const [history,configurations]=await Promise.all([listReportHistory(Math.min(50,Math.max(1,Number(url.searchParams.get("limit")??10))),Math.max(0,Number(url.searchParams.get("offset")??0))),listSavedReportConfigurations()]);return Response.json({...history,configurations},{headers:{"Cache-Control":"private, no-store"}})}catch(error){return commercialApiError(error)}}

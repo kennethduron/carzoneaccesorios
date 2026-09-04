@@ -1,0 +1,7 @@
+import { authorizeCommissionRequest } from "@/lib/auth/commission-request";
+import { commercialApiError } from "@/lib/commercial-api";
+import { createCommissionPolicy, listCommissionPolicies } from "@/services/supabase/commercial-reporting.service";
+import { parseUuid } from "@/lib/validation/commercial-reporting";
+
+export async function GET(request:Request){const auth=await authorizeCommissionRequest("commissions:policies:manage",true);if(auth.response)return auth.response;const url=new URL(request.url);try{return Response.json(await listCommissionPolicies({query:url.searchParams.get("q")??"",status:url.searchParams.get("status")??"all",type:url.searchParams.get("type")??"all"}),{headers:{"Cache-Control":"no-store"}})}catch(error){return commercialApiError(error)}}
+export async function POST(request:Request){const auth=await authorizeCommissionRequest("commissions:policies:manage",true);if(auth.response)return auth.response;try{const body=await request.json() as Record<string,unknown>;const type=body.type;if(type!=="PERCENTAGE"&&type!=="FIXED_AMOUNT")return Response.json({code:"POLICY_TYPE_INVALID",message:"Tipo de política no válido."},{status:400});const result=await createCommissionPolicy({requestKey:parseUuid(body.requestKey,"REQUEST_KEY_INVALID"),name:String(body.name??""),type,value:Number(body.value),description:String(body.description??"")});return Response.json(result,{status:201})}catch(error){return commercialApiError(error)}}

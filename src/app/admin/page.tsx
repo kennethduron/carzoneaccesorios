@@ -85,6 +85,9 @@ const moduleGroups = [
     modules: [
       { title: "Vendedores", href: "/admin/vendedores", description: "Rendimiento y reglas por vendedor.", permissions: ["commissions:read_all"] },
       { title: "Comisiones", href: "/admin/comisiones", description: "Cobros, reversiones y ajustes auditados.", permissions: ["commissions:read_all"] },
+      { title: "Políticas de comisión", href: "/admin/politicas-comision", description: "Plantillas reutilizables y asignación masiva versionada.", permissions: ["commissions:policies:manage"] },
+      { title: "Reportes comerciales", href: "/admin/reportes-comerciales", description: "Indicadores globales, filtros y análisis por vendedor.", permissions: ["commercial:reports:read"] },
+      { title: "Centro de reportes", href: "/admin/centro-reportes", description: "Generación auditada de PDF y Excel comerciales.", permissions: ["commercial:reports:generate"] },
     ],
   },
   {
@@ -661,6 +664,7 @@ export default async function AdminPage() {
       items: [
         { label: "Operación", href: "#operacion", icon: "operation", visible: groupVisible("operacion") },
         { label: "Ventas", href: "#ventas", icon: "sales", visible: groupVisible("ventas") },
+        { label: "Comercial", href: "#comercial", icon: "reports", visible: groupVisible("comercial") },
         { label: "Clientes", href: "#clientes", icon: "crm", visible: groupVisible("clientes") },
         { label: "Inventario", href: "#inventario", icon: "inventory", visible: groupVisible("inventario") },
         { label: "Finanzas", href: "#finanzas", icon: "finance", visible: groupVisible("finanzas") },
@@ -679,7 +683,7 @@ export default async function AdminPage() {
       items: [
         { label: "Configuración", href: moduleHref("Configuración empresarial") ?? "#configuracion", icon: "settings", visible: Boolean(moduleHref("Configuración empresarial")) },
         { label: "Seguridad", href: moduleHref("Seguridad") ?? "#configuracion", icon: "security", visible: Boolean(moduleHref("Seguridad")) },
-        { label: "Reportes", href: moduleHref("Reportes") ?? moduleHref("Reportes fiscales") ?? "#ventas", icon: "reports", visible: Boolean(moduleHref("Reportes") ?? moduleHref("Reportes fiscales")) },
+        { label: "Reportes", href: moduleHref("Reportes comerciales") ?? moduleHref("Reportes") ?? moduleHref("Reportes fiscales") ?? "#ventas", icon: "reports", visible: Boolean(moduleHref("Reportes comerciales") ?? moduleHref("Reportes") ?? moduleHref("Reportes fiscales")) },
       ],
     },
   ];

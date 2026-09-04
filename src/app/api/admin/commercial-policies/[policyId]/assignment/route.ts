@@ -1,0 +1,6 @@
+import { authorizeCommissionRequest } from "@/lib/auth/commission-request";
+import { commercialApiError } from "@/lib/commercial-api";
+import { applyPolicyAssignment, previewPolicyAssignment } from "@/services/supabase/commercial-reporting.service";
+import { parseReason, parseUuid } from "@/lib/validation/commercial-reporting";
+
+export async function POST(request:Request,{params}:{params:Promise<{policyId:string}>}){const auth=await authorizeCommissionRequest("commissions:policies:manage",true);if(auth.response)return auth.response;try{const {policyId}=await params;const body=await request.json() as Record<string,unknown>;const sellers=Array.isArray(body.sellerIds)?body.sellerIds.map(value=>parseUuid(value,"SELLER_ID_INVALID")):[];const effectiveDate=String(body.effectiveDate??"");if(body.action==="preview")return Response.json(await previewPolicyAssignment(parseUuid(policyId),sellers,effectiveDate));if(body.action==="apply")return Response.json(await applyPolicyAssignment({requestKey:parseUuid(body.requestKey,"REQUEST_KEY_INVALID"),policyId:parseUuid(policyId),sellerIds:sellers,effectiveDate,reason:parseReason(body.reason,"motivo de asignación"),previewToken:String(body.previewToken??"")}));return Response.json({code:"ACTION_INVALID",message:"Acción no válida."},{status:400})}catch(error){return commercialApiError(error)}}
