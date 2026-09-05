@@ -508,7 +508,12 @@ export function PosWorkspace({ operatorName, creditOverrideCapability, sellerMod
           <div className="min-w-0"><PosCustomerWorkspace compact selectedCustomerId={selectedCustomerId} showFutureStages={false} onCustomerContextChange={acceptCustomer} restrictedCommercial={sellerMode} /></div>
           <div className={POS_PRODUCT_COLUMN_CLASS}>
             <PosProductSearch disabled={!compatibleCustomer || status === "conflict"} customerId={draft.customerId} customerCommercialVersion={draft.customerCommercialVersion} onAdd={addProduct} />
-            <PosCart items={effectiveItems} refreshingInventory={refreshingInventory} onChange={(next) => { setPriceRequests({}); markItems(next.map((item) => ({ ...item, finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null }))); }} onClear={() => { setPriceRequests({}); markItems([]); }} onRefreshInventory={() => void refreshInventory(false)} onViewReservations={openProductReservations} canOverridePrice={!sellerMode} canRequestPrice={sellerMode && status === "saved" && !isDirty} draftId={draft.draftId} draftVersion={draft.version} priceRequests={priceRequests} onPriceRequestUpdate={(request) => setPriceRequests((current) => ({ ...current, [request.productId]: request }))} />
+            <PosCart items={effectiveItems} refreshingInventory={refreshingInventory} onChange={(next) => {
+              setPriceRequests({});
+              // Seller approvals are quantity-bound. Direct authorized overrides
+              // belong to the sale line and must survive cart edits and saving.
+              markItems(sellerMode ? next.map((item) => ({ ...item, finalUnitPrice: item.baseUnitPrice, priceOverridden: false, priceOverrideReason: null })) : next);
+            }} onClear={() => { setPriceRequests({}); markItems([]); }} onRefreshInventory={() => void refreshInventory(false)} onViewReservations={openProductReservations} canOverridePrice={!sellerMode} canRequestPrice={sellerMode && status === "saved" && !isDirty} draftId={draft.draftId} draftVersion={draft.version} priceRequests={priceRequests} onPriceRequestUpdate={(request) => setPriceRequests((current) => ({ ...current, [request.productId]: request }))} />
             <span className="sr-only" aria-live="polite">{inventoryAnnouncement}</span>
             <PosDeliveryFields value={delivery} capabilities={capabilities} onChange={markDelivery} />
           </div>
