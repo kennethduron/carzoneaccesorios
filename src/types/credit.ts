@@ -1,3 +1,5 @@
+import type { InvoiceStatus } from "@/types/invoices";
+
 export type CommercialCreditStatus = "active" | "suspended";
 export type AccountsReceivableStatus = "open" | "partial" | "paid" | "overdue" | "cancelled";
 export type CommercialCreditPaymentReceivedMethod = "bank_transfer" | "card" | "cash";
@@ -80,6 +82,7 @@ export type AdminAccountsReceivableRow = AccountsReceivableRow & {
   customer_phone: string | null;
   order_number: string | null;
   invoice_number: string | null;
+  invoice_status: InvoiceStatus | null;
 };
 
 export type ReceivablesSummary = {

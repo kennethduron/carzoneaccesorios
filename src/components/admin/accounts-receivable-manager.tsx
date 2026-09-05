@@ -11,6 +11,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import type { AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod, ReceivablesSummary } from "@/types/credit";
 import { formatCurrency } from "@/utils/pricing";
+import { formatReceivableInvoice } from "@/utils/receivable-invoice";
 
 const statusLabels: Record<string, string> = {
   open: "Abierto",
@@ -430,7 +431,7 @@ export function AccountsReceivableManager({
                   <MiniInfo label="Saldo pendiente" value={formatCurrency(row.balance_due)} strong />
                   <MiniInfo label="Vencimiento" value={formatDate(row.due_date)} />
                   <MiniInfo label="Días" value={row.status === "paid" ? "-" : days < 0 ? `${Math.abs(days)} vencido` : `${days} restantes`} />
-                  <MiniInfo label="Factura" value={row.invoice_number ?? "Sin factura"} />
+                  <MiniInfo label="Factura" value={formatReceivableInvoice(row.invoice_number, row.invoice_status)} />
                 </div>
 
                 <div className="mt-3 rounded-md bg-[#f4f4f5] p-3">
@@ -455,11 +456,12 @@ export function AccountsReceivableManager({
         </div>
 
         <div ref={scrollContainerRef} className="mt-4 hidden lg:block lg:max-h-[calc(100vh-280px)] lg:overflow-auto lg:overscroll-contain">
-          <table className="w-full min-w-[1180px] text-left text-sm">
+          <table className="w-full min-w-[1320px] text-left text-sm">
             <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
               <tr>
                 <th className="px-3 py-2">Cliente</th>
                 <th className="px-3 py-2">Pedido</th>
+                <th className="px-3 py-2">Factura</th>
                 <th className="px-3 py-2">Total original</th>
                 <th className="px-3 py-2">Abonado</th>
                 <th className="px-3 py-2">Saldo</th>
@@ -482,6 +484,9 @@ export function AccountsReceivableManager({
                       <p className="text-xs text-black/50">{row.customer_phone ?? row.customer_email ?? "No registrado"}</p>
                     </td>
                     <td className="px-3 py-3 align-top">{row.order_number ?? "Sin pedido"}</td>
+                    <td className="min-w-40 px-3 py-3 align-top [overflow-wrap:anywhere]">
+                      {formatReceivableInvoice(row.invoice_number, row.invoice_status)}
+                    </td>
                     <td className="px-3 py-3 align-top">{formatCurrency(row.original_amount)}</td>
                     <td className="px-3 py-3 align-top">{formatCurrency(row.total_paid)}</td>
                     <td className="px-3 py-3 align-top font-semibold">{formatCurrency(row.balance_due)}</td>
@@ -508,7 +513,7 @@ export function AccountsReceivableManager({
               })}
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-6 text-center text-black/55" colSpan={10}>
+                  <td className="px-3 py-6 text-center text-black/55" colSpan={11}>
                     No hay cuentas por cobrar para este filtro.
                   </td>
                 </tr>

@@ -8,6 +8,7 @@ import type {
   CustomerCreditAccount,
   ReceivablesSummary,
 } from "@/types/credit";
+import type { InvoiceStatus } from "@/types/invoices";
 
 export type CustomerCreditNotification = {
   id: string;
@@ -72,6 +73,7 @@ type AdminReceivableQueryRow = ReceivableQueryRow & {
   } | null;
   invoices: {
     invoice_number: string | null;
+    status: InvoiceStatus;
   } | null;
 };
 
@@ -342,7 +344,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       accounts_receivable_payments(id, receivable_id, customer_id, order_id, amount, balance_before, balance_after, payment_method, reference, received_at, note, receipt_url, receipt_public_id, recorded_by, voided_at, voided_by, void_reason, created_at, recorded_by_user:users!accounts_receivable_payments_recorded_by_fkey(full_name, email)),
       customers(contact_name, business_name, email, phone),
       orders(order_number),
-      invoices(invoice_number)
+      invoices(invoice_number, status)
     `,
     )
     .order("created_at", { ascending: false })
@@ -363,6 +365,7 @@ export async function getAdminAccountsReceivable(): Promise<{
       customer_phone: row.customers?.phone ?? null,
       order_number: row.orders?.order_number ?? null,
       invoice_number: row.invoices?.invoice_number ?? row.historical_invoice_number ?? null,
+      invoice_status: row.invoices?.status ?? null,
     };
   });
   const paymentIds = baseRows.flatMap((row) => row.payments.map((payment) => payment.id));
