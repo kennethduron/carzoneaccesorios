@@ -63,7 +63,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1279px)");
-    const update = () => setIsMobile(media.matches);
+    const update = () => { setIsMobile(media.matches); if (media.matches) setSelectedId(null); };
     update(); media.addEventListener("change", update); return () => media.removeEventListener("change", update);
   }, []);
   useEffect(() => {
@@ -73,13 +73,21 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
     params.set("page", "1");
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [data.query, debouncedQuery, pathname, router, searchParams]);
-  const selected = useMemo(() => data.rows.find((row) => row.id === selectedId) ?? data.rows[0] ?? null, [data.rows, selectedId]);
+  const selected = useMemo(() => {
+    if (selectedId === null) return null;
+    return data.rows.find((row) => row.id === selectedId) ?? data.rows[0] ?? null;
+  }, [data.rows, selectedId]);
   const setParams = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => value ? params.set(key, value) : params.delete(key));
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
   const openDetail = (row: AdminAccountsReceivableRow) => { setSelectedId(row.id); if (isMobile) setDetailMobile(true); };
+  const closeDesktopDetail = () => {
+    if (selected) document.getElementById(`cxc-detail-${selected.id}`)?.focus();
+    setSelectedId(null);
+  };
+  const closeMobileDetail = () => { setDetailMobile(false); setSelectedId(null); };
   const canCollect = (row: AdminAccountsReceivableRow) => canMarkPaid && row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0;
   const openAction = (mode: Exclude<ActionMode, null>) => {
     if (!selected) return;
@@ -113,7 +121,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
     {data.truncated ? <p role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">El universo supera 5,000 cuentas. Acota la búsqueda antes de exportar.</p> : null}
     <section aria-labelledby="accounts-title">
       <div className="mb-2"><h2 id="accounts-title" className="text-2xl font-bold">Cuentas</h2><p className="text-sm text-black/50">Gestiona saldos, vencimientos y abonos.</p></div>
-      <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className={`grid min-w-0 gap-3 ${selected ? "xl:grid-cols-[minmax(0,1fr)_clamp(320px,26vw,360px)]" : "grid-cols-1"}`}>
         <div className="min-w-0 rounded-xl border border-black/10 bg-white shadow-sm">
           <div className="space-y-2 border-b border-black/10 p-3">
             <label className="relative block"><span className="sr-only">Buscar cuentas por cobrar</span><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" size={18}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente, pedido, factura o referencia" className="min-h-11 w-full rounded-lg border border-black/10 pl-10 pr-3 text-sm focus:border-[#e30613] focus:outline-none"/></label>
@@ -125,28 +133,28 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
             <p className="text-xs text-black/50">{data.total.toLocaleString("es-HN")} cuentas encontradas</p>
           </div>
           <div role="table" aria-label="Cuentas por cobrar" className="min-w-0">
-            <div role="row" className="hidden grid-cols-[1.05fr_.9fr_1fr_.75fr_.8fr_.75fr_.85fr_.65fr] gap-2 border-b border-black/10 bg-black/[.025] px-3 py-2 text-xs font-semibold lg:grid"><span role="columnheader">Cliente</span><span role="columnheader">Factura</span><span role="columnheader">Pedido</span><span role="columnheader">Saldo</span><span role="columnheader">Vencimiento</span><span role="columnheader">Estado</span><span role="columnheader">Último abono</span><span role="columnheader">Acción</span></div>
+            <div role="row" className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,.95fr)_minmax(0,1.1fr)_minmax(112px,1fr)_minmax(0,.9fr)_minmax(0,.8fr)_minmax(0,.8fr)_minmax(94px,.9fr)] gap-2 border-b border-black/10 bg-black/[.025] px-3 py-2 text-xs font-semibold lg:grid"><span role="columnheader" className="min-w-0 truncate">Cliente</span><span role="columnheader" className="min-w-0 truncate">Factura</span><span role="columnheader" className="min-w-0 truncate">Pedido</span><span role="columnheader" className="min-w-0 truncate">Saldo</span><span role="columnheader" className="min-w-0 truncate">Vencimiento</span><span role="columnheader" className="min-w-0 truncate">Estado</span><span role="columnheader" className="min-w-0 truncate">Último abono</span><span role="columnheader" className="min-w-0 truncate">Acción</span></div>
             {data.rows.length ? data.rows.map((row) => {
               const latest = row.payments.filter((payment) => !payment.voided_at).sort((a,b) => b.received_at.localeCompare(a.received_at))[0];
               const active = selected?.id === row.id;
-              return <article role="row" key={row.id} className={`relative grid min-h-[170px] grid-cols-2 gap-x-3 gap-y-1 border-b border-black/5 p-3 last:border-0 lg:min-h-0 lg:grid-cols-[1.05fr_.9fr_1fr_.75fr_.8fr_.75fr_.85fr_.65fr] lg:items-center lg:gap-2 ${active ? "bg-red-50/80 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-[#e30613]" : ""}`}>
-                <div role="cell" className="col-span-2 min-w-0 lg:col-span-1"><div className="flex items-center justify-between gap-2 lg:block"><strong className="truncate">{row.customer_name}</strong><span className={`rounded-full px-2 py-1 text-xs lg:hidden ${statusClass(row.status)}`}>{statusLabels[row.status]}</span></div></div>
-                <div role="cell" className="min-w-0 truncate text-sm"><span className="text-xs text-black/45 lg:hidden">Factura </span>{formatReceivableInvoice(row.invoice_number, row.invoice_status)}</div>
-                <div role="cell" className="min-w-0 text-sm"><span className="text-xs text-black/45 lg:hidden">Pedido </span><span className="break-all">{row.order_number ?? "Cuenta histórica"}</span></div>
-                <div role="cell"><span className="text-xs text-black/45 lg:hidden">Saldo </span><strong className="tabular-nums">{formatCurrency(row.balance_due)}</strong></div>
-                <div role="cell" className="text-sm"><span className="text-xs text-black/45 lg:hidden">Vence </span>{formatDate(row.due_date)}<p className="text-xs text-black/45">{remaining(row.due_date)} días</p></div>
-                <div role="cell" className="hidden lg:block"><span className={`rounded-full px-2 py-1 text-xs ${statusClass(row.status)}`}>{statusLabels[row.status]}</span></div>
-                <div role="cell" className="text-xs text-black/55"><span className="lg:hidden">Último: </span>{latest ? <><strong className="tabular-nums text-black/75">{formatCurrency(latest.amount)}</strong><span className="block truncate">{methodLabels[latest.payment_method]}</span></> : "Sin abonos"}</div>
-                <div role="cell" className="flex items-end justify-end gap-2 lg:block"><button type="button" onClick={() => openDetail(row)} aria-label={`Ver detalle de ${row.customer_name}`} className="inline-flex min-h-11 items-center gap-1 font-medium text-[#d5000b] underline underline-offset-2">Ver detalle <ChevronRight size={17}/></button></div>
+              return <article role="row" key={row.id} className={`relative grid min-h-[170px] grid-cols-2 gap-x-3 gap-y-1 border-b border-black/5 p-3 last:border-0 lg:min-h-0 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.95fr)_minmax(0,1.1fr)_minmax(112px,1fr)_minmax(0,.9fr)_minmax(0,.8fr)_minmax(0,.8fr)_minmax(94px,.9fr)] lg:items-center lg:gap-2 ${active ? "bg-red-50/80 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-[#e30613]" : ""}`}>
+                <div role="cell" className="col-span-2 min-w-0 overflow-hidden lg:col-span-1"><div className="flex min-w-0 items-center justify-between gap-2 lg:block"><strong className="block min-w-0 truncate" title={row.customer_name}>{row.customer_name}</strong><span className={`shrink-0 rounded-full px-2 py-1 text-xs lg:hidden ${statusClass(row.status)}`}>{statusLabels[row.status]}</span></div></div>
+                <div role="cell" className="min-w-0 overflow-hidden break-all text-sm leading-5" title={formatReceivableInvoice(row.invoice_number, row.invoice_status)}><span className="text-xs text-black/45 lg:hidden">Factura </span>{formatReceivableInvoice(row.invoice_number, row.invoice_status)}</div>
+                <div role="cell" className="min-w-0 overflow-hidden text-sm"><span className="text-xs text-black/45 lg:hidden">Pedido </span><span className="block min-w-0 truncate" title={row.order_number ?? "Cuenta histórica"}>{row.order_number ?? "Cuenta histórica"}</span></div>
+                <div role="cell" className="min-w-0 overflow-hidden whitespace-nowrap"><span className="text-xs text-black/45 lg:hidden">Saldo </span><strong className="tabular-nums">{formatCurrency(row.balance_due)}</strong></div>
+                <div role="cell" className="min-w-0 overflow-hidden text-sm"><span className="text-xs text-black/45 lg:hidden">Vence </span>{formatDate(row.due_date)}<p className="text-xs text-black/45">{remaining(row.due_date)} días</p></div>
+                <div role="cell" className="hidden min-w-0 overflow-hidden lg:block"><span className={`inline-block max-w-full truncate rounded-full px-2 py-1 align-middle text-xs ${statusClass(row.status)}`} title={statusLabels[row.status]}>{statusLabels[row.status]}</span></div>
+                <div role="cell" className="min-w-0 overflow-hidden text-xs text-black/55"><span className="lg:hidden">Último: </span>{latest ? <><strong className="tabular-nums text-black/75">{formatCurrency(latest.amount)}</strong><span className="block truncate" title={methodLabels[latest.payment_method]}>{methodLabels[latest.payment_method]}</span></> : "Sin abonos"}</div>
+                <div role="cell" className="flex min-w-0 items-end justify-end overflow-hidden lg:block"><button id={`cxc-detail-${row.id}`} type="button" onClick={() => openDetail(row)} aria-label={`Ver detalle de ${row.customer_name}`} className="inline-flex min-h-11 max-w-full min-w-0 items-center gap-1 font-medium text-[#d5000b] underline underline-offset-2"><span className="truncate">Ver detalle</span><ChevronRight className="shrink-0" size={17}/></button></div>
               </article>;
             }) : <p className="p-8 text-center text-sm text-black/50">No hay cuentas que coincidan con los filtros.</p>}
           </div>
           <Pagination page={data.page} totalPages={data.totalPages} pageSize={data.pageSize} onPage={(page) => setParams({ page: String(page) })} onSize={(size) => setParams({ pageSize: String(size), page: "1" })}/>
         </div>
-        {!isMobile && selected ? <ReceivableDetail row={selected} canCollect={canCollect(selected)} onClose={() => setSelectedId(null)} onPayment={() => openAction("payment")} onMarkPaid={() => openAction("mark-paid")}/> : null}
+        {!isMobile && selected ? <ReceivableDetail row={selected} canCollect={canCollect(selected)} onClose={closeDesktopDetail} onPayment={() => openAction("payment")} onMarkPaid={() => openAction("mark-paid")}/> : null}
       </div>
     </section>
-    {isMobile && detailMobile && selected ? <AccessibleSheet title="Detalle de cuenta" description={selected.customer_name} onClose={() => setDetailMobile(false)} footer={<DetailActions rowId={selected.id} canCollect={canCollect(selected)} onPayment={() => openAction("payment")} onMarkPaid={() => openAction("mark-paid")}/>}><ReceivableDetailContent row={selected}/></AccessibleSheet> : null}
+    {isMobile && detailMobile && selected ? <AccessibleSheet title="Detalle de cuenta" description={selected.customer_name} onClose={closeMobileDetail} returnFocusId={`cxc-detail-${selected.id}`} footer={<DetailActions rowId={selected.id} canCollect={canCollect(selected)} onPayment={() => openAction("payment")} onMarkPaid={() => openAction("mark-paid")}/>}><ReceivableDetailContent row={selected}/></AccessibleSheet> : null}
     {actionMode && draft && selected ? <AccessibleSheet title={actionMode === "payment" ? "Registrar abono" : "Marcar como pagado"} description={`${selected.customer_name} · Saldo ${formatCurrency(selected.balance_due)}`} onClose={closeAction} returnFocusId={`cxc-${actionMode}-${selected.id}`} footer={<div className="flex gap-2"><Button variant="ghost" onClick={closeAction} disabled={isPending} className="min-h-11 flex-1">Cancelar</Button><Button onClick={submitAction} disabled={isPending} className="min-h-11 flex-1">{isPending ? "Procesando…" : actionMode === "payment" ? "Registrar abono" : "Confirmar pago total"}</Button></div>}><PaymentFields mode={actionMode} draft={draft} setDraft={setDraft}/></AccessibleSheet> : null}
   </div>;
 }
@@ -159,7 +167,7 @@ function Pagination({ page, totalPages, pageSize, onPage, onSize }: { page:numbe
   return <div aria-label="Paginación de cuentas" className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 p-3"><label className="text-sm"><span className="sr-only">Filas por página</span><select value={pageSize} onChange={(e)=>onSize(Number(e.target.value))} className="min-h-11 rounded-lg border border-black/10 px-2"><option value={10}>10 por página</option><option value={20}>20 por página</option><option value={50}>50 por página</option></select></label><div className="flex items-center gap-1"><button className="min-h-11 rounded-lg border px-3 disabled:opacity-40" disabled={page<=1} onClick={()=>onPage(page-1)}>Anterior</button><span className="px-2 text-sm">{page} de {totalPages}</span><button className="min-h-11 rounded-lg border px-3 disabled:opacity-40" disabled={page>=totalPages} onClick={()=>onPage(page+1)}>Siguiente</button></div></div>;
 }
 function ReceivableDetail({ row, canCollect, onClose, onPayment, onMarkPaid }: { row:AdminAccountsReceivableRow; canCollect:boolean; onClose:()=>void; onPayment:()=>void; onMarkPaid:()=>void }) {
-  return <aside aria-label={`Detalle de ${row.customer_name}`} className="h-fit rounded-xl border border-black/10 bg-white p-4 shadow-sm"><div className="mb-3 flex items-start justify-between"><div><p className="text-sm font-semibold">Detalle de cuenta</p><h3 className="text-lg font-bold">{row.customer_name}</h3></div><button onClick={onClose} className="grid size-11 place-items-center rounded-lg" aria-label="Cerrar detalle"><X size={18}/></button></div><ReceivableDetailContent row={row}/><div className="mt-4"><DetailActions rowId={row.id} canCollect={canCollect} onPayment={onPayment} onMarkPaid={onMarkPaid}/></div></aside>;
+  return <aside aria-label={`Detalle de ${row.customer_name}`} className="h-fit min-w-0 rounded-xl border border-black/10 bg-white p-4 shadow-sm"><div className="mb-3 flex min-w-0 items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">Detalle de cuenta</p><h3 className="break-words text-lg font-bold">{row.customer_name}</h3></div><button onClick={onClose} className="grid size-11 shrink-0 place-items-center rounded-lg" aria-label="Cerrar detalle de cuenta"><X size={18}/></button></div><ReceivableDetailContent row={row}/><div className="mt-4"><DetailActions rowId={row.id} canCollect={canCollect} onPayment={onPayment} onMarkPaid={onMarkPaid}/></div></aside>;
 }
 function ReceivableDetailContent({ row }: { row:AdminAccountsReceivableRow }) {
   const payments = [...row.payments].sort((a,b)=>b.received_at.localeCompare(a.received_at));
