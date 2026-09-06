@@ -79,6 +79,7 @@ assert.equal((importSource.match(/role=\"table\"/g)??[]).length,1,"one responsiv
 assert.match(managerSource,/min-h-11/); assert.match(importSource,/AccessibleSheet/);
 assert.match(managerSource,/Último abono/); assert.match(managerSource,/balance_before/);
 assert.match(sheetSource,/useEffectEvent/); assert.ok(!sheetSource.includes("},[onClose])"),"typing must not reset drawer focus");
+assert.match(sheetSource,/requestAnimationFrame\(\(\)=>target\?\.focus\(\)\)/,"focus restoration waits for the triggering control to be stable");
 assert.match(importServiceSource,/Monto Original debe ser mayor que cero/);
 
 console.log("CxC redesign contract tests passed.");
