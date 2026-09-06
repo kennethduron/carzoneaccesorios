@@ -32,7 +32,7 @@ export function AccountsReceivableSummary({ summary, compact = false }: { summar
         ))}
       </div>
       {compact ? <Link href="/admin/cuentas-por-cobrar?section=summary" className="flex min-h-11 items-center justify-end rounded-xl border border-black/10 bg-white px-4 text-sm font-medium text-[#d5000b] underline md:hidden">Ver resumen completo</Link> : null}
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className={`${compact ? "hidden md:grid" : "grid"} gap-3 lg:grid-cols-2`}>
         <article className="rounded-xl border border-black/10 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-black/10 px-4 py-3 font-semibold"><CalendarDays size={18} className="text-[#e30613]"/> Próximos vencimientos</div>
           <div className="divide-y divide-black/5 px-4">

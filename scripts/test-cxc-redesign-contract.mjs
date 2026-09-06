@@ -78,6 +78,7 @@ assert.equal((managerSource.match(/role=\"table\"/g)??[]).length,1,"one responsi
 assert.equal((importSource.match(/role=\"table\"/g)??[]).length,1,"one responsive import collection");
 assert.match(managerSource,/min-h-11/); assert.match(importSource,/AccessibleSheet/);
 assert.match(managerSource,/Último abono/); assert.match(managerSource,/balance_before/);
+assert.match(managerSource,/min-h-\[170px\] grid-cols-2/);
 assert.match(sheetSource,/useEffectEvent/); assert.ok(!sheetSource.includes("},[onClose])"),"typing must not reset drawer focus");
 assert.match(sheetSource,/document\.getElementById\(returnFocusId\)/,"financial sheets restore their explicit trigger");
 assert.match(managerSource,/returnFocusId={`cxc-\$\{actionMode\}-\$\{selected\.id\}`}/);
