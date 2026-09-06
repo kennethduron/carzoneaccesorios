@@ -16,10 +16,17 @@ import type {
   HistoricalReceivablePaymentMethod,
   HistoricalReceivableImportStatus,
   HistoricalReceivablePreviewSummary,
+  HistoricalReceivableRowFilter,
 } from "@/types/accounts-receivable-import";
 import type { AssignmentSelectorOption, ImportBatch, ImportPreviewRow, ImportTemplateDefinition } from "@/types/import-foundation";
 import { importCellText } from "@/utils/import-excel";
 import { buildImportPreviewRow, normalizeImportLabel, sharedImportMaxRows, validateDuplicateImportRows, validateImportRowLimit } from "@/utils/import-validation";
+import {
+  alignHistoricalPreview,
+  importRowMatchesFilter,
+  importRowMatchesSearch,
+  withEffectiveHistoricalValidation,
+} from "@/utils/historical-receivable-validation";
 
 const headerRowNumber = 4;
 const currencyTolerance = 0.01;
@@ -64,23 +71,23 @@ type CustomerMatch = {
 };
 
 export const accountsReceivableImportTemplate: ImportTemplateDefinition = {
-  title: "Car Zone Accesorios - Plantilla oficial de cuentas por cobrar historicas",
-  description: `Fecha de generacion: ${new Intl.DateTimeFormat("es-HN", { dateStyle: "long" }).format(new Date())}`,
+  title: "Car Zone Accesorios - Plantilla oficial de cuentas por cobrar históricas",
+  description: `Fecha de generación: ${new Intl.DateTimeFormat("es-HN", { dateStyle: "long" }).format(new Date())}`,
   sheetName: "Cuentas por cobrar",
   columns: [
-    { key: "customer_code", label: "Codigo Cliente", example: "CLI-0001", width: 18 },
+    { key: "customer_code", label: "Código Cliente", example: "CLI-0001", width: 18 },
     { key: "customer_name", label: "Nombre Cliente", required: true, example: "Repuestos El Centro", width: 32 },
     { key: "customer_email", label: "Correo Cliente", example: "cliente@ejemplo.com", width: 30 },
-    { key: "customer_phone", label: "Telefono", example: "9999-9999", width: 18 },
+    { key: "customer_phone", label: "Teléfono", example: "9999-9999", width: 18 },
     { key: "customer_tax_id", label: "RTN", example: "08019999999999", width: 20 },
-    { key: "invoice_number", label: "Numero Factura", required: true, example: "FAC-2024-001", width: 22 },
-    { key: "issue_date", label: "Fecha Emision", required: true, example: "2024-12-15", width: 18 },
+    { key: "invoice_number", label: "Número Factura", required: true, example: "FAC-2024-001", width: 22 },
+    { key: "issue_date", label: "Fecha Emisión", required: true, example: "2024-12-15", width: 18 },
     { key: "due_date", label: "Fecha Vencimiento", required: true, example: "2025-01-15", width: 20 },
     { key: "original_amount", label: "Monto Original", required: true, example: 12500, width: 18 },
     { key: "paid_amount", label: "Monto Pagado", required: true, example: 2500, width: 18 },
     { key: "balance_due", label: "Saldo Pendiente", required: true, example: 10000, width: 18 },
     { key: "status", label: "Estado", required: true, dropdownOptions: statusOptions, example: "Parcial", width: 16 },
-    { key: "payment_method", label: "Metodo Pago", dropdownOptions: paymentMethodOptions, example: "Transferencia", width: 18 },
+    { key: "payment_method", label: "Método Pago", dropdownOptions: paymentMethodOptions, example: "Transferencia", width: 18 },
     { key: "reference", label: "Referencia", example: "TRX-7788", width: 24 },
     { key: "notes", label: "Observaciones", example: "Saldo historico migrado", width: 42 },
   ],
@@ -104,13 +111,13 @@ export const accountsReceivableImportTemplate: ImportTemplateDefinition = {
     },
   ],
   instructions: [
-    "Completa una fila por factura historica. No agregues UUID internos ni modifiques los nombres de columnas.",
-    "Nombre Cliente, Numero Factura, Fecha Emision, Fecha Vencimiento, Monto Original, Monto Pagado, Saldo Pendiente y Estado son obligatorios.",
+    "Completa una fila por factura histórica. No agregues UUID internos ni modifiques los nombres de columnas.",
+    "Nombre Cliente, Número Factura, Fecha Emisión, Fecha Vencimiento, Monto Original, Monto Pagado, Saldo Pendiente y Estado son obligatorios.",
     "Las fechas deben usar formato AAAA-MM-DD.",
-    "Monto Original, Monto Pagado y Saldo Pendiente no pueden ser negativos.",
+    "Monto Original debe ser mayor que cero; Monto Pagado y Saldo Pendiente no pueden ser negativos.",
     "Monto Original debe ser mayor o igual que Monto Pagado, y Saldo Pendiente debe coincidir con Monto Original menos Monto Pagado.",
-    "El nombre del cliente solo genera sugerencias; nunca asigna automaticamente.",
-    "Las filas sin cliente seguro quedan en Pendiente de asignacion y pueden resolverse despues sin vencimiento.",
+    "El nombre del cliente solo genera sugerencias; nunca asigna automáticamente.",
+    "Las filas sin cliente seguro quedan en Pendiente de asignación y pueden resolverse después sin vencimiento.",
   ],
 };
 
@@ -194,8 +201,8 @@ function validateNormalizedRow(rowNumber: number, raw: Record<keyof HistoricalRe
 
   const required: Array<[keyof HistoricalReceivableNormalizedRow, string]> = [
     ["customer_name", "Nombre Cliente"],
-    ["invoice_number", "Numero Factura"],
-    ["issue_date", "Fecha Emision"],
+    ["invoice_number", "Número Factura"],
+    ["issue_date", "Fecha Emisión"],
     ["due_date", "Fecha Vencimiento"],
     ["original_amount", "Monto Original"],
     ["paid_amount", "Monto Pagado"],
@@ -207,14 +214,14 @@ function validateNormalizedRow(rowNumber: number, raw: Record<keyof HistoricalRe
     if (!cleanText(raw[key])) messages.push(`Fila ${rowNumber}: "${label}" es obligatorio.`);
   }
 
-  if (!issueDate) messages.push(`Fila ${rowNumber}: "Fecha Emision" debe tener formato AAAA-MM-DD.`);
+  if (!issueDate) messages.push(`Fila ${rowNumber}: "Fecha Emisión" debe tener formato AAAA-MM-DD.`);
   if (!dueDate) messages.push(`Fila ${rowNumber}: "Fecha Vencimiento" debe tener formato AAAA-MM-DD.`);
   if (issueDate && dueDate && dueDate < issueDate) messages.push(`Fila ${rowNumber}: la fecha de vencimiento no puede ser menor que la fecha de emision.`);
 
   if (!Number.isFinite(originalAmount)) messages.push(`Fila ${rowNumber}: "Monto Original" debe ser numerico.`);
   if (!Number.isFinite(paidAmount)) messages.push(`Fila ${rowNumber}: "Monto Pagado" debe ser numerico.`);
   if (!Number.isFinite(balanceDue)) messages.push(`Fila ${rowNumber}: "Saldo Pendiente" debe ser numerico.`);
-  if (Number.isFinite(originalAmount) && originalAmount < 0) messages.push(`Fila ${rowNumber}: "Monto Original" no puede ser negativo.`);
+  if (Number.isFinite(originalAmount) && originalAmount <= 0) messages.push(`Fila ${rowNumber}: "Monto Original" debe ser mayor que L 0.00.`);
   if (Number.isFinite(paidAmount) && paidAmount < 0) messages.push(`Fila ${rowNumber}: "Monto Pagado" no puede ser negativo.`);
   if (Number.isFinite(balanceDue) && balanceDue < 0) messages.push(`Fila ${rowNumber}: "Saldo Pendiente" no puede ser negativo.`);
   if (Number.isFinite(originalAmount) && Number.isFinite(paidAmount) && originalAmount < paidAmount) messages.push(`Fila ${rowNumber}: "Monto Original" debe ser mayor o igual que "Monto Pagado".`);
@@ -223,8 +230,8 @@ function validateNormalizedRow(rowNumber: number, raw: Record<keyof HistoricalRe
   }
 
   if (!status) messages.push(`Fila ${rowNumber}: "Estado" debe ser Pendiente, Parcial, Pagada, Vencida o Cancelada.`);
-  if (paymentLabel && !paymentMethod) messages.push(`Fila ${rowNumber}: "Metodo Pago" debe ser Efectivo, Transferencia, Tarjeta, Cheque u Otro.`);
-  if (Number.isFinite(paidAmount) && paidAmount > 0 && !paymentMethod) messages.push(`Fila ${rowNumber}: selecciona "Metodo Pago" cuando exista Monto Pagado.`);
+  if (paymentLabel && !paymentMethod) messages.push(`Fila ${rowNumber}: "Método Pago" debe ser Efectivo, Transferencia, Tarjeta, Cheque u Otro.`);
+  if (Number.isFinite(paidAmount) && paidAmount > 0 && !paymentMethod) messages.push(`Fila ${rowNumber}: selecciona "Método Pago" cuando exista Monto Pagado.`);
 
   if (status === "pending" && Number.isFinite(paidAmount) && paidAmount > 0) messages.push(`Fila ${rowNumber}: Estado Pendiente no puede tener Monto Pagado.`);
   if (status === "pending" && Number.isFinite(balanceDue) && Number.isFinite(originalAmount) && Math.abs(balanceDue - originalAmount) > currencyTolerance) messages.push(`Fila ${rowNumber}: Estado Pendiente debe conservar el saldo completo.`);
@@ -376,7 +383,7 @@ export async function parseHistoricalAccountsReceivableWorkbook(file: File): Pro
   const duplicateMessages = validateDuplicateImportRows(
     rawRows.map((row) => ({ rowNumber: row.rowNumber, data: { invoice_number: row.normalized.invoice_number } })),
     ["invoice_number"],
-    "Numero Factura",
+    "Número Factura",
   );
   const duplicateByRow = new Map<number, string[]>();
   for (const duplicate of duplicateMessages) {
@@ -431,6 +438,11 @@ export async function createHistoricalAccountsReceivableImportBatch(file: File, 
 
 export async function getHistoricalAccountsReceivableImportData(input: {
   batchId?: string | null;
+  rowId?: string | null;
+  rowPage?: number;
+  rowPageSize?: number;
+  rowQuery?: string;
+  rowFilter?: HistoricalReceivableRowFilter;
   canImport: boolean;
   canApply: boolean;
   canAssign: boolean;
@@ -448,21 +460,46 @@ export async function getHistoricalAccountsReceivableImportData(input: {
   if (error) throw new Error(error.message);
   const batches = (data ?? []).map((batch) => ({ ...batch, metadata: batch.metadata ?? {} }));
   const selectedBatch = batches.find((batch) => batch.id === input.batchId) ?? batches[0] ?? null;
-  const rows = selectedBatch ? await getImportBatchRows(selectedBatch.id) : [];
+  const allRows = (selectedBatch ? await getImportBatchRows(selectedBatch.id) : []).map(withEffectiveHistoricalValidation);
+  const rowQuery = input.rowQuery?.trim().slice(0, 120) ?? "";
+  const rowFilter = input.rowFilter ?? "all";
+  const rowPageSize = Math.min(100, Math.max(10, Math.floor(input.rowPageSize ?? 20)));
+  const filteredRows = allRows.filter((row) => importRowMatchesFilter(row, rowFilter) && importRowMatchesSearch(row, rowQuery));
+  const rowTotalPages = Math.max(1, Math.ceil(filteredRows.length / rowPageSize));
+  const rowPage = Math.min(Math.max(1, Math.floor(input.rowPage ?? 1)), rowTotalPages);
+  const rows = filteredRows.slice((rowPage - 1) * rowPageSize, rowPage * rowPageSize);
+  const selectedRow = allRows.find((row) => row.id === input.rowId) ?? rows[0] ?? null;
+  const rowsForAssignmentOptions = selectedRow && !rows.some((row) => row.id === selectedRow.id) ? [...rows, selectedRow] : rows;
   const customerIds = [
     ...new Set(
-      rows.flatMap((row) => [row.assigned_customer_id, row.suggested_customer_id]).filter((id): id is string => Boolean(id)),
+      rowsForAssignmentOptions.flatMap((row) => [row.assigned_customer_id, row.suggested_customer_id]).filter((id): id is string => Boolean(id)),
     ),
   ];
   const [assignmentOptions, preview] = await Promise.all([
     getCustomerAssignmentOptions(customerIds),
-    selectedBatch ? previewHistoricalReceivableImportBatch(selectedBatch.id) : Promise.resolve(null),
+    selectedBatch ? previewHistoricalReceivableImportBatch(selectedBatch.id).then((value) => alignHistoricalPreview(value, allRows)) : Promise.resolve(null),
   ]);
 
   return {
     batches,
     selectedBatch,
     rows,
+    selectedRow,
+    rowTotal: filteredRows.length,
+    rowPage,
+    rowPageSize,
+    rowTotalPages,
+    rowQuery,
+    rowFilter,
+    rowCounts: {
+      all: allRows.length,
+      valid: allRows.filter((row) => importRowMatchesFilter(row, "valid")).length,
+      review: allRows.filter((row) => importRowMatchesFilter(row, "review")).length,
+      errors: allRows.filter((row) => importRowMatchesFilter(row, "errors")).length,
+      applied: allRows.filter((row) => importRowMatchesFilter(row, "applied")).length,
+      cancelled: allRows.filter((row) => importRowMatchesFilter(row, "cancelled")).length,
+      rolled_back: allRows.filter((row) => importRowMatchesFilter(row, "rolled_back")).length,
+    },
     assignmentOptions,
     preview,
     canImport: input.canImport,
@@ -484,6 +521,33 @@ export async function getCustomerAssignmentOptions(customerIds: string[]): Promi
 
   if (error) throw new Error(error.message);
   return (data ?? []).map(selectorOption);
+}
+
+export async function getHistoricalReceivableAttentionCount() {
+  const supabase = await getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("import_batches")
+    .select("pending_rows, failed_rows")
+    .eq("module", "accounts_receivable")
+    .in("status", ["uploaded", "validating", "validated", "pending_assignment", "ready", "failed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ pending_rows: number; failed_rows: number }>();
+  if (error) throw new Error(error.message);
+  return Math.max(Number(data?.pending_rows ?? 0), Number(data?.failed_rows ?? 0));
+}
+
+export async function getHistoricalReceivableImportExportRows(batchId: string) {
+  const supabase = await getSupabaseServerClient();
+  const { data: batch, error } = await supabase
+    .from("import_batches")
+    .select("id")
+    .eq("id", batchId)
+    .eq("module", "accounts_receivable")
+    .maybeSingle<{ id: string }>();
+  if (error) throw new Error(error.message);
+  if (!batch) throw new Error("Lote de importación no encontrado.");
+  return (await getImportBatchRows(batch.id)).map(withEffectiveHistoricalValidation);
 }
 
 export async function assignHistoricalReceivableImportRow(rowId: string, customerId: string) {

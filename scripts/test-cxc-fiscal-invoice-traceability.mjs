@@ -16,17 +16,15 @@ const [component, service, creditTypes, page, receivableSchema, posConfirmation]
   read("supabase/migrations/202608020002_pos_stage_5_atomic_sale_confirmation.sql"),
 ]);
 
-const table = component.slice(component.indexOf("<table"), component.indexOf("</table>") + 8);
-const headers = [...table.matchAll(/<th[^>]*>([^<]+)<\/th>/g)].map((match) => match[1].trim());
-
-assert.deepEqual(headers.slice(0, 3), ["Cliente", "Pedido", "Factura"]);
+const table = component.slice(component.indexOf('role="table"'), component.indexOf("function Pagination"));
+assert.match(table, /role="columnheader">Cliente/);
+assert.match(table, /role="columnheader">Factura/);
+assert.match(table, /role="columnheader">Pedido/);
 assert.match(table, /formatReceivableInvoice\(row\.invoice_number, row\.invoice_status\)/);
-assert.match(table, /colSpan=\{11\}/);
-assert.match(component, /<MiniInfo label="Factura" value=\{formatReceivableInvoice\(row\.invoice_number, row\.invoice_status\)\} \/>/);
-assert.match(component, /overflow-auto/);
-assert.match(component, /placeholder="Buscar por cliente, correo, teléfono, pedido, factura,/);
+assert.match(component, /<Info label="Factura" value=\{formatReceivableInvoice\(row\.invoice_number,row\.invoice_status\)\}/);
+assert.doesNotMatch(component, /min-w-\[1320px\]/);
+assert.match(component, /placeholder="Buscar cliente, pedido, factura o referencia"/);
 assert.match(component, /row\.invoice_number/);
-assert.match(component, /"Pedido",\s*"Factura",/s);
 
 assert.match(service, /\.from\("accounts_receivable"\)[\s\S]*?invoices\(invoice_number, status\)/);
 assert.match(service, /invoice_number: row\.invoices\?\.invoice_number \?\? row\.historical_invoice_number \?\? null/);

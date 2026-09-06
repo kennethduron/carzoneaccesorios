@@ -1,770 +1,88 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
-import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, History, RotateCcw, Search, Upload, UserRoundPlus, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Search, XCircle } from "lucide-react";
 import {
-  applyHistoricalReceivableBatchAction,
-  assignHistoricalReceivableRowAction,
-  cancelHistoricalReceivableBatchAction,
-  cancelHistoricalReceivableRowAction,
-  importHistoricalAccountsReceivableAction,
-  rollbackHistoricalReceivableBatchAction,
+  applyHistoricalReceivableBatchAction, assignHistoricalReceivableRowAction, cancelHistoricalReceivableBatchAction,
+  cancelHistoricalReceivableRowAction, importHistoricalAccountsReceivableAction, rollbackHistoricalReceivableBatchAction,
   updateHistoricalReceivableIdentityAction,
 } from "@/app/admin/cuentas-por-cobrar/actions";
 import { searchImportAssignmentOptionsAction } from "@/app/admin/importaciones/actions";
+import { AccessibleSheet } from "@/components/admin/accessible-sheet";
 import { Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
-import type { HistoricalReceivableImportActionState, HistoricalReceivableImportData } from "@/types/accounts-receivable-import";
-import type { AssignmentSelectorOption, ImportBatch, ImportRow } from "@/types/import-foundation";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import type { HistoricalReceivableImportActionState, HistoricalReceivableImportData, HistoricalReceivableRowFilter } from "@/types/accounts-receivable-import";
+import type { AssignmentSelectorOption, ImportRow } from "@/types/import-foundation";
 import { importBatchStatusLabels } from "@/utils/import-labels";
+import { invalidOriginalAmountMessage } from "@/utils/historical-receivable-validation";
 import { formatCurrency } from "@/utils/pricing";
 
-const initialImportState: HistoricalReceivableImportActionState = { ok: false, message: "", errors: [] };
+const initialState: HistoricalReceivableImportActionState = { ok: false, message: "", errors: [] };
+const filters: Array<[HistoricalReceivableRowFilter, string]> = [["all","Todos"],["valid","Válidas"],["review","Revisión"],["errors","Errores"],["applied","Aplicadas"],["cancelled","Canceladas"],["rolled_back","Revertidas"]];
+type Confirm = { type:"apply"|"cancel-batch"|"cancel-row"|"assign"; row?:ImportRow; option?:AssignmentSelectorOption } | null;
 
-type ConfirmationDraft = {
-  row: ImportRow;
-  option: AssignmentSelectorOption;
-};
+function SubmitButton() { const {pending}=useFormStatus(); return <Button type="submit" disabled={pending} className="min-h-11"><Search size={17}/>{pending?"Analizando…":"Analizar archivo"}</Button>; }
+function formatDate(value:string|null) { if(!value)return "—"; return new Intl.DateTimeFormat("es-HN",{dateStyle:"medium",timeZone:"America/Tegucigalpa"}).format(new Date(value)); }
+function rowLabel(row:ImportRow) { if(row.apply_status==="applied")return "Aplicada"; if(row.apply_status==="skipped")return "Cancelada"; if(row.apply_status==="rolled_back")return "Revertida"; if(row.validation_status==="invalid"||row.apply_status==="failed")return "Revisión requerida"; if(row.assignment_status!=="confirmed")return "Revisión requerida"; return "Lista"; }
+function badgeClass(row:ImportRow) { if(row.apply_status==="applied")return "bg-emerald-50 text-emerald-700"; if(row.validation_status==="invalid"||row.apply_status==="failed")return "bg-red-50 text-[#c7000b]"; if(row.assignment_status!=="confirmed")return "bg-amber-50 text-amber-700"; return "bg-blue-50 text-blue-700"; }
 
-type IdentityDraft = {
-  row: ImportRow;
-  email: string;
-  phone: string;
-  taxId: string;
-};
+export function AccountsReceivableImportManager({data}:{data:HistoricalReceivableImportData}) {
+  const router=useRouter(), pathname=usePathname(), searchParams=useSearchParams(), toast=useToast();
+  const [state,formAction]=useActionState(importHistoricalAccountsReceivableAction,initialState);
+  const [pending,startTransition]=useTransition();
+  const [fileName,setFileName]=useState("");
+  const [query,setQuery]=useState(data.rowQuery); const debounced=useDebouncedValue(query,300);
+  const [selectedId,setSelectedId]=useState(data.selectedRow?.id??null);
+  const [detailOpen,setDetailOpen]=useState(false);
+  const [confirm,setConfirm]=useState<Confirm>(null);
+  const [customerQuery,setCustomerQuery]=useState(""); const [searchedCustomerOptions,setCustomerOptions]=useState<AssignmentSelectorOption[]>([]);
+  const [identity,setIdentity]=useState<{email:string;phone:string;taxId:string}|null>(null);
+  const [rollbackReason,setRollbackReason]=useState("");
+  const selected=data.rows.find(row=>row.id===selectedId)??data.selectedRow;
+  const previewById=useMemo(()=>new Map((data.preview?.rows??[]).map(row=>[row.row_id,row])),[data.preview]);
+  const customerOptions=useMemo(()=>{
+    const relevantIds=new Set([selected?.assigned_customer_id,selected?.suggested_customer_id].filter(Boolean));
+    const combined=[...data.assignmentOptions.filter(option=>relevantIds.has(option.id)),...searchedCustomerOptions];
+    return [...new Map(combined.map(option=>[option.id,option])).values()];
+  },[data.assignmentOptions,searchedCustomerOptions,selected?.assigned_customer_id,selected?.suggested_customer_id]);
 
-const statusBadgeClass: Record<string, string> = {
-  good: "border-[#2f6f3e]/20 bg-[#edf7ed] text-[#2f6f3e]",
-  warn: "border-[#b45309]/20 bg-[#fff7ed] text-[#92400e]",
-  bad: "border-[#e4252c]/20 bg-[#fff1f2] text-[#7f1d1d]",
-  neutral: "border-black/10 bg-[#f4f4f5] text-black/65",
-};
+  useEffect(()=>{ if(!state.message)return; if(state.ok)toast.success(state.message);else toast.error(state.message); const params=new URLSearchParams(searchParams.toString()); params.set("section","import"); if(state.batchId)params.set("importBatch",state.batchId); router.replace(`${pathname}?${params}`); router.refresh(); },[pathname,router,searchParams,state,toast]);
+  useEffect(()=>{ if(debounced===data.rowQuery)return; const params=new URLSearchParams(searchParams.toString()); if(debounced)params.set("importQuery",debounced);else params.delete("importQuery"); params.set("importPage","1"); router.replace(`${pathname}?${params}`,{scroll:false}); },[data.rowQuery,debounced,pathname,router,searchParams]);
+  const navigate=(updates:Record<string,string|null>)=>{const params=new URLSearchParams(searchParams.toString());Object.entries(updates).forEach(([k,v])=>v?params.set(k,v):params.delete(k));router.push(`${pathname}?${params}`,{scroll:false});};
+  const run=(action:()=>Promise<{ok:boolean;message:string}>,close=true)=>startTransition(async()=>{const result=await action().catch(()=>({ok:false,message:"No se pudo completar la acción."}));if(result.ok)toast.success(result.message);else toast.error(result.message);if(close){setConfirm(null);setDetailOpen(false)}router.refresh();});
+  const doConfirm=()=>{if(!confirm||!data.selectedBatch)return;if(confirm.type==="apply")run(()=>applyHistoricalReceivableBatchAction(data.selectedBatch!.id));else if(confirm.type==="cancel-batch")run(()=>cancelHistoricalReceivableBatchAction(data.selectedBatch!.id));else if(confirm.type==="cancel-row"&&confirm.row)run(()=>cancelHistoricalReceivableRowAction(confirm.row!.id));else if(confirm.type==="assign"&&confirm.row&&confirm.option)run(()=>assignHistoricalReceivableRowAction(confirm.row!.id,confirm.option!.id));};
+  const searchCustomers=()=>{if(!selected||customerQuery.trim().length<2){toast.error("Ingresa al menos 2 caracteres.");return}startTransition(async()=>setCustomerOptions(await searchImportAssignmentOptionsAction("customer",customerQuery.trim())));};
+  const saveIdentity=()=>{if(!selected||!identity)return;run(()=>updateHistoricalReceivableIdentityAction(selected.id,identity),false);setIdentity(null);};
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" variant="dark" disabled={pending} className="w-full sm:w-auto">
-      <Upload size={16} />
-      {pending ? "Importando" : "Importar Excel"}
-    </Button>
-  );
-}
-
-export function AccountsReceivableImportManager({ data }: { data: HistoricalReceivableImportData }) {
-  const router = useRouter();
-  const toast = useToast();
-  const [state, formAction] = useActionState(importHistoricalAccountsReceivableAction, initialImportState);
-  const [isPending, startTransition] = useTransition();
-  const [searchByRow, setSearchByRow] = useState<Record<string, string>>({});
-  const [optionsByRow, setOptionsByRow] = useState<Record<string, AssignmentSelectorOption[]>>({});
-  const [rollbackReason, setRollbackReason] = useState("");
-  const [confirmationDraft, setConfirmationDraft] = useState<ConfirmationDraft | null>(null);
-  const [identityDraft, setIdentityDraft] = useState<IdentityDraft | null>(null);
-  const [applyConfirmationOpen, setApplyConfirmationOpen] = useState(false);
-
-  const selectedId = data.selectedBatch?.id ?? "";
-  const allOptions = useMemo(() => {
-    const map = new Map<string, AssignmentSelectorOption>();
-    for (const option of data.assignmentOptions) map.set(option.id, option);
-    for (const options of Object.values(optionsByRow)) {
-      for (const option of options) map.set(option.id, option);
-    }
-    return map;
-  }, [data.assignmentOptions, optionsByRow]);
-  const previewByRow = useMemo(
-    () => new Map((data.preview?.rows ?? []).map((row) => [row.row_id, row])),
-    [data.preview],
-  );
-
-  useEffect(() => {
-    if (!state.message) return;
-    if (state.ok) toast.success(state.message);
-    else toast.error(state.message);
-    if (state.batchId) router.replace(`/admin/cuentas-por-cobrar?importBatch=${state.batchId}`);
-    router.refresh();
-  }, [router, state, toast]);
-
-  function runAction(action: () => Promise<{ ok: boolean; message: string }>) {
-    startTransition(async () => {
-      const result = await action().catch((error) => ({
-        ok: false,
-        message: error instanceof Error ? error.message : "No se pudo completar la acción.",
-      }));
-      if (result.ok) toast.success(result.message);
-      else toast.error(result.message);
-      router.refresh();
-    });
-  }
-
-  function openConfirmation(row: ImportRow, option: AssignmentSelectorOption) {
-    setConfirmationDraft({ row, option });
-  }
-
-  function confirmCustomer() {
-    if (!confirmationDraft) return;
-    const { row, option } = confirmationDraft;
-    setConfirmationDraft(null);
-    runAction(() => assignHistoricalReceivableRowAction(row.id, option.id));
-  }
-
-  function openIdentity(row: ImportRow) {
-    setIdentityDraft({
-      row,
-      email: String(row.normalized_data.customer_email ?? ""),
-      phone: String(row.normalized_data.customer_phone ?? ""),
-      taxId: String(row.normalized_data.customer_tax_id ?? ""),
-    });
-  }
-
-  function saveIdentity() {
-    if (!identityDraft) return;
-    const draft = identityDraft;
-    setIdentityDraft(null);
-    runAction(() => updateHistoricalReceivableIdentityAction(draft.row.id, {
-      email: draft.email,
-      phone: draft.phone,
-      taxId: draft.taxId,
-    }));
-  }
-
-  function confirmAndApply() {
-    if (!data.selectedBatch) return;
-    const batchId = data.selectedBatch.id;
-    setApplyConfirmationOpen(false);
-    runAction(() => applyHistoricalReceivableBatchAction(batchId));
-  }
-
-  function searchCustomers(row: ImportRow) {
-    const query = (searchByRow[row.id] || String(row.normalized_data.customer_name ?? "")).trim();
-    if (query.length < 2) {
-      toast.error("Ingresa al menos 2 caracteres para buscar.");
-      return;
-    }
-
-    startTransition(async () => {
-      const options = await searchImportAssignmentOptionsAction("customer", query);
-      setOptionsByRow((current) => ({ ...current, [row.id]: options }));
-    });
-  }
-
-  function exportRows() {
-    const headers = ["Fila", "Cliente importado", "Factura", "Estado fila", "Monto original", "Monto pagado", "Saldo", "Mensajes"];
-    const lines = data.rows.map((row) => {
-      const normalized = row.normalized_data;
-      return [
-        row.row_number,
-        normalized.customer_name ?? "",
-        normalized.invoice_number ?? "",
-        rowStatusLabel(row),
-        normalized.original_amount ?? "",
-        normalized.paid_amount ?? "",
-        normalized.balance_due ?? "",
-        row.validation_messages.join(" | "),
-      ].map(csvCell).join(",");
-    });
-    const blob = new Blob([[headers.map(csvCell).join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `resultado-importacion-cxc-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <section className="rounded-lg border border-black/10 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet size={19} />
-            <h2 className="text-base font-semibold">Importación histórica CxC</h2>
-          </div>
+  return <section className="space-y-3" aria-labelledby="import-title">
+    <form action={formAction} className="rounded-xl border border-black/10 bg-white p-3 shadow-sm">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between"><div><h2 id="import-title" className="text-lg font-bold">Importar cuentas por cobrar</h2><p className="text-sm text-black/50">Carga y valida registros históricos antes de incorporarlos al sistema.</p></div><div className="flex flex-wrap items-end gap-2"><a href="/api/admin/cuentas-por-cobrar/plantilla-historica/excel" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium"><Download size={17}/> Plantilla Excel</a>{data.selectedBatch?<a href={`/api/admin/cuentas-por-cobrar/importaciones/${data.selectedBatch.id}/resultados`} className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium"><Download size={17}/> Exportar resultados</a>:null}<label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm font-medium"><FileSpreadsheet size={17}/><span>Seleccionar archivo</span><input type="file" name="file" accept=".xlsx" required className="sr-only" onChange={e=>setFileName(e.target.files?.[0]?.name??"")}/></label><span className="max-w-48 truncate text-sm text-black/55">{fileName||"Ningún archivo seleccionado"}</span><SubmitButton/></div></div>
+    </form>
+    {state.errors.length?<div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{state.errors.join(" ")}</div>:null}
+    {data.selectedBatch?<>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-white p-3"><div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-red-50 text-[#e30613]"><FileSpreadsheet size={20}/></span><div><p className="text-xs text-black/45">Lote seleccionado</p><h3 className="font-bold">Importación #{data.batches.length-data.batches.findIndex(b=>b.id===data.selectedBatch?.id)}</h3><p className="text-xs text-black/50">{formatDate(data.selectedBatch.created_at)} · {data.selectedBatch.total_rows} filas</p></div></div><div className="flex flex-wrap gap-2"><span className="rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">{importBatchStatusLabels[data.selectedBatch.status]??data.selectedBatch.status}</span>{data.canImport&&!["applied","cancelled","rolled_back"].includes(data.selectedBatch.status)?<Button variant="ghost" onClick={()=>setConfirm({type:"cancel-batch"})}>Cancelar lote</Button>:null}<Button onClick={()=>setConfirm({type:"apply"})} disabled={!data.canApply||(data.preview?.processable??0)===0||pending}><CheckCircle2 size={17}/> Confirmar e importar cuentas por cobrar</Button></div></div>
+      <Summary data={data}/>
+      <div className="grid min-w-0 gap-3 xl:grid-cols-[230px_minmax(0,1fr)_360px]">
+        <aside className="h-fit max-h-[520px] overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-sm" aria-label="Historial de lotes" tabIndex={0}><h3 className="px-2 py-2 font-semibold">Historial de lotes</h3>{data.batches.map((batch,index)=><Link key={batch.id} href={`/admin/cuentas-por-cobrar?section=import&importBatch=${batch.id}`} className={`mb-2 block rounded-lg border p-3 text-sm ${batch.id===data.selectedBatch?.id?"border-red-200 bg-red-50":"border-black/10"}`}><strong>Importación #{data.batches.length-index}</strong><p className="mt-1 text-xs text-black/50">{formatDate(batch.created_at)} · {batch.total_rows} filas</p><span className="mt-2 inline-block rounded-full bg-black/5 px-2 py-1 text-xs">{importBatchStatusLabels[batch.status]??batch.status}</span></Link>)}</aside>
+        <div className="min-w-0 rounded-xl border border-black/10 bg-white shadow-sm"><div className="space-y-2 border-b p-3"><h3 className="text-xl font-bold">Revisión de filas</h3><label className="relative block"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" size={18}/><span className="sr-only">Buscar fila importada</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar cliente o factura" className="min-h-11 w-full rounded-lg border pl-10 pr-3 text-sm"/></label><div className="flex flex-wrap gap-2">{filters.map(([value,label])=><button key={value} type="button" onClick={()=>navigate({importStatus:value,importPage:"1"})} aria-pressed={data.rowFilter===value} className={`min-h-11 rounded-lg border px-3 text-sm ${data.rowFilter===value?"border-[#e30613] bg-red-50 text-[#e30613]":"border-black/10"}`}>{label} ({data.rowCounts[value]})</button>)}</div><p className="text-xs text-black/50">{data.rowTotal} filas encontradas</p></div>
+          <div role="table" aria-label="Filas de importación histórica"><div role="row" className="hidden grid-cols-[50px_1.2fr_.9fr_.75fr_.75fr_.8fr] gap-2 border-b bg-black/[.025] px-3 py-2 text-xs font-semibold md:grid"><span role="columnheader">Fila</span><span role="columnheader">Cliente</span><span role="columnheader">Factura</span><span role="columnheader">Importe</span><span role="columnheader">Estado</span><span role="columnheader">Acción</span></div>{data.rows.length?data.rows.map(row=><article role="row" key={row.id} className={`relative grid min-h-[120px] gap-2 border-b p-3 md:min-h-0 md:grid-cols-[50px_1.2fr_.9fr_.75fr_.75fr_.8fr] md:items-center ${selected?.id===row.id?"bg-red-50/80 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-[#e30613]":""}`}><span role="cell" className="text-xs text-black/50">Fila {row.row_number}</span><strong role="cell" className="break-words">{String(row.normalized_data.customer_name??"Sin cliente")}</strong><span role="cell" className="break-all text-sm">{String(row.normalized_data.invoice_number??"—")}</span><strong role="cell" className="tabular-nums">{formatCurrency(Number(row.normalized_data.original_amount??0))}</strong><span role="cell"><span className={`rounded-full px-2 py-1 text-xs ${badgeClass(row)}`}>{rowLabel(row)}</span></span><button role="cell" onClick={()=>{setSelectedId(row.id);setDetailOpen(true)}} aria-label={`Ver detalle de fila ${row.row_number}, ${String(row.normalized_data.customer_name??"")}`} className="min-h-11 text-left text-sm font-medium text-[#d5000b] underline">{row.validation_status==="invalid"?"Resolver":"Ver detalle"}</button></article>):<p className="p-8 text-center text-sm text-black/50">No hay filas que coincidan con los filtros.</p>}</div>
+          <div className="flex items-center justify-between gap-2 border-t p-3"><span className="text-sm">Página {data.rowPage} de {data.rowTotalPages}</span><div className="flex gap-2"><button disabled={data.rowPage<=1} onClick={()=>navigate({importPage:String(data.rowPage-1)})} className="min-h-11 rounded-lg border px-3 disabled:opacity-40">Anterior</button><button disabled={data.rowPage>=data.rowTotalPages} onClick={()=>navigate({importPage:String(data.rowPage+1)})} className="min-h-11 rounded-lg border px-3 disabled:opacity-40">Siguiente</button></div></div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {data.canImport ? (
-            <a href="/api/admin/cuentas-por-cobrar/plantilla-historica/excel" download className="inline-flex items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm font-semibold hover:bg-[#fff1f2]">
-              <Download size={16} />
-              Plantilla Excel
-            </a>
-          ) : null}
-          {data.rows.length > 0 ? (
-            <Button type="button" onClick={exportRows} variant="ghost">
-              <Download size={16} />
-              Exportar resultados
-            </Button>
-          ) : null}
-        </div>
+        <div className="hidden xl:block">{selected?<RowDetail row={selected} outcome={previewById.get(selected.id)} canAssign={data.canAssign} canImport={data.canImport} pending={pending} customerQuery={customerQuery} setCustomerQuery={setCustomerQuery} customerOptions={customerOptions} onSearch={searchCustomers} onAssign={option=>{setDetailOpen(false);setConfirm({type:"assign",row:selected,option})}} onIdentity={()=>{setDetailOpen(false);setIdentity({email:String(selected.normalized_data.customer_email??""),phone:String(selected.normalized_data.customer_phone??""),taxId:String(selected.normalized_data.customer_tax_id??"")})}} onCancel={()=>{setDetailOpen(false);setConfirm({type:"cancel-row",row:selected})}}/>:null}</div>
       </div>
-
-      {data.canImport ? (
-        <form action={formAction} className="mt-4 rounded-md border border-black/10 bg-[#fafafa] p-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase text-black/50">Archivo Excel</span>
-            <input
-              name="file"
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="block w-full min-w-0 rounded-md border border-black/10 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-[#080808] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white focus:border-[#e4252c] focus:outline-none focus:ring-2 focus:ring-[#e4252c]/15"
-              required
-            />
-          </label>
-          <div className="mt-3 flex justify-end">
-            <SubmitButton />
-          </div>
-        </form>
-      ) : null}
-
-      {state.message ? (
-        <div className={`mt-3 rounded-md border p-3 text-sm ${state.ok ? statusBadgeClass.good : statusBadgeClass.bad}`}>
-          <div className="flex items-start gap-2">
-            {state.ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-            <div className="min-w-0">
-              <p className="font-semibold">{state.message}</p>
-              {state.errors.length > 0 ? <p className="mt-1 break-words">{state.errors.slice(0, 3).join(" | ")}</p> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mt-4 grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="min-w-0 rounded-md border border-black/10 bg-[#fafafa] p-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <History size={16} />
-            Historial
-          </div>
-          <div className="max-h-96 space-y-2 overflow-auto pr-1">
-            {data.batches.map((batch, index) => (
-              <a
-                key={batch.id}
-                href={`/admin/cuentas-por-cobrar?importBatch=${batch.id}`}
-                className={`block rounded-md border p-3 text-sm ${batch.id === selectedId ? "border-[#e4252c]/30 bg-[#fff1f2]" : "border-black/10 bg-white hover:bg-[#f4f4f5]"}`}
-              >
-                <span className="font-semibold">Importación #{data.batches.length - index}</span>
-                <span className="mt-1 block text-xs text-black/55">{formatDateTime(batch.created_at)}</span>
-                <span className="mt-2 flex flex-wrap gap-1">
-                  <Badge tone={batch.status === "applied" ? "good" : batch.status === "failed" ? "bad" : "neutral"}>{importBatchStatusLabels[batch.status]}</Badge>
-                  <Badge tone="neutral">{batch.total_rows.toLocaleString("es-HN")} filas</Badge>
-                </span>
-              </a>
-            ))}
-            {data.batches.length === 0 ? <p className="rounded-md border border-black/10 bg-white p-3 text-sm text-black/55">Sin importaciones registradas.</p> : null}
-          </div>
-        </aside>
-
-        <div className="min-w-0 space-y-4">
-          {data.selectedBatch ? (
-            <>
-              <BatchSummary batch={data.selectedBatch} rows={data.rows} />
-              <DirectImportPreview preview={data.preview} batch={data.selectedBatch} rows={data.rows} />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setApplyConfirmationOpen(true)}
-                  disabled={isPending || !data.canApply || data.selectedBatch.status === "cancelled" || (data.preview?.processable ?? 0) === 0}
-                  variant="primary"
-                  title={confirmDisabledReason(data)}
-                >
-                  <Upload size={16} />
-                  {isPending ? "Importando cuentas por cobrar..." : "Confirmar e importar cuentas por cobrar"}
-                </Button>
-                {data.canImport && !["applied", "rolled_back", "cancelled"].includes(data.selectedBatch.status) ? (
-                  <Button type="button" onClick={() => runAction(() => cancelHistoricalReceivableBatchAction(data.selectedBatch!.id))} disabled={isPending} variant="ghost">
-                    <XCircle size={16} />
-                    Cancelar lote
-                  </Button>
-                ) : null}
-                {data.canRollback && data.selectedBatch.status === "applied" ? (
-                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-                    <input
-                      value={rollbackReason}
-                      onChange={(event) => setRollbackReason(event.target.value)}
-                      placeholder="Motivo de reversión"
-                      className="min-w-0 rounded-md border border-black/10 px-3 py-2 text-sm"
-                    />
-                    <Button type="button" onClick={() => runAction(() => rollbackHistoricalReceivableBatchAction(data.selectedBatch!.id, rollbackReason))} disabled={isPending} variant="ghost">
-                      <RotateCcw size={16} />
-                      Revertir
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-
-              <RowsTable
-                rows={data.rows}
-                allOptions={allOptions}
-                optionsByRow={optionsByRow}
-                searchByRow={searchByRow}
-                canAssign={data.canAssign}
-                canImport={data.canImport}
-                isPending={isPending}
-                onSearchChange={(rowId, value) => setSearchByRow((current) => ({ ...current, [rowId]: value }))}
-                onSearch={searchCustomers}
-                onAssign={openConfirmation}
-                onEditIdentity={openIdentity}
-                previewByRow={previewByRow}
-                onCancel={(rowId) => runAction(() => cancelHistoricalReceivableRowAction(rowId))}
-              />
-              {confirmationDraft ? (
-                <CustomerConfirmationDialog draft={confirmationDraft} isPending={isPending} onCancel={() => setConfirmationDraft(null)} onConfirm={confirmCustomer} />
-              ) : null}
-              {identityDraft ? (
-                <IdentityDialog draft={identityDraft} isPending={isPending} onChange={setIdentityDraft} onCancel={() => setIdentityDraft(null)} onConfirm={saveIdentity} />
-              ) : null}
-              {applyConfirmationOpen && data.preview ? (
-                <ApplyConfirmationDialog preview={data.preview} rows={data.rows} isPending={isPending} onCancel={() => setApplyConfirmationOpen(false)} onConfirm={confirmAndApply} />
-              ) : null}
-            </>
-          ) : (
-            <p className="rounded-md border border-black/10 bg-[#f4f4f5] p-4 text-sm text-black/55">No hay lote seleccionado.</p>
-          )}
-        </div>
-      </div>
-    </section>
-  );
+      {data.canRollback&&data.selectedBatch.status==="applied"?<div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><label className="text-sm font-medium">Motivo de reversión<input value={rollbackReason} onChange={e=>setRollbackReason(e.target.value)} className="ml-2 min-h-11 rounded-lg border px-3"/></label><Button variant="ghost" className="ml-2" disabled={rollbackReason.trim().length<8||pending} onClick={()=>run(()=>rollbackHistoricalReceivableBatchAction(data.selectedBatch!.id,rollbackReason))}>Revertir lote autorizado</Button></div>:null}
+    </>:<p className="rounded-xl border bg-white p-6 text-sm text-black/50">No hay lotes de importación histórica.</p>}
+    {detailOpen&&selected?<AccessibleSheet title={`Fila ${selected.row_number}`} description={String(selected.normalized_data.customer_name??"")} onClose={()=>setDetailOpen(false)}><RowDetail row={selected} outcome={previewById.get(selected.id)} canAssign={data.canAssign} canImport={data.canImport} pending={pending} customerQuery={customerQuery} setCustomerQuery={setCustomerQuery} customerOptions={customerOptions} onSearch={searchCustomers} onAssign={option=>{setDetailOpen(false);setConfirm({type:"assign",row:selected,option})}} onIdentity={()=>{setDetailOpen(false);setIdentity({email:String(selected.normalized_data.customer_email??""),phone:String(selected.normalized_data.customer_phone??""),taxId:String(selected.normalized_data.customer_tax_id??"")})}} onCancel={()=>{setDetailOpen(false);setConfirm({type:"cancel-row",row:selected})}}/></AccessibleSheet>:null}
+    {confirm?<AccessibleSheet title={confirm.type==="apply"?"Confirmar importación":confirm.type==="cancel-batch"?"Cancelar lote":confirm.type==="cancel-row"?"Cancelar fila":"Confirmar cliente"} description="Revisa esta acción antes de continuar." onClose={()=>setConfirm(null)} footer={<div className="flex gap-2"><Button variant="ghost" className="flex-1" onClick={()=>setConfirm(null)}>Volver</Button><Button className="flex-1" disabled={pending} onClick={doConfirm}>{pending?"Importando cuentas por cobrar...":"Confirmar"}</Button></div>}><div className="space-y-2 text-sm">{confirm.type==="apply"?<><p>Se procesarán {data.preview?.processable??0} filas.</p><p>{data.preview?.review_required??0} filas requieren revisión y no serán procesadas.</p><p>{data.preview?.duplicates??0} filas duplicadas serán omitidas.</p><p>{data.preview?.rejected??0} filas con error serán omitidas.</p><p>{data.rowCounts.cancelled} filas canceladas no serán procesadas.</p><p className="font-medium">Los clientes operativos no necesitan una cuenta web. La vinculación con una cuenta del portal será manual y opcional.</p></>:<p>{confirm.type==="cancel-batch"?"El lote quedará cancelado en staging. No se crearán cuentas por cobrar.":confirm.type==="cancel-row"?`La fila ${confirm.row?.row_number} quedará cancelada en staging.`:`Se vinculará la fila ${confirm.row?.row_number} con ${confirm.option?.name}.`}</p>}</div></AccessibleSheet>:null}
+    {identity&&selected?<AccessibleSheet title="Revisar datos del cliente" description={`Fila ${selected.row_number}`} onClose={()=>setIdentity(null)} footer={<div className="flex gap-2"><Button variant="ghost" className="flex-1" onClick={()=>setIdentity(null)}>Cancelar</Button><Button className="flex-1" onClick={saveIdentity}>Guardar resolución</Button></div>}><div className="space-y-3"><Field label="Correo" value={identity.email} onChange={value=>setIdentity({...identity,email:value})}/><Field label="Teléfono" value={identity.phone} onChange={value=>setIdentity({...identity,phone:value})}/><Field label="RTN" value={identity.taxId} onChange={value=>setIdentity({...identity,taxId:value})}/></div></AccessibleSheet>:null}
+  </section>;
 }
 
-function confirmDisabledReason(data: HistoricalReceivableImportData) {
-  if (!data.canApply) return "No tienes permiso para confirmar importaciones.";
-  if (data.selectedBatch?.status === "cancelled") return "Este lote fue cancelado. Corrige el archivo y vuelve a importarlo.";
-  if ((data.preview?.processable ?? 0) === 0) return "No hay cuentas por cobrar procesables en este lote.";
-  return "Revisa el resumen antes de confirmar.";
-}
-
-function DirectImportPreview({ preview, batch, rows }: { preview: HistoricalReceivableImportData["preview"]; batch: ImportBatch; rows: ImportRow[] }) {
-  if (batch.status === "cancelled") {
-    return <p className="rounded-md border border-[#b45309]/20 bg-[#fff7ed] p-3 text-sm text-[#92400e]">Este lote fue cancelado. Corrige el archivo y vuelve a importarlo.</p>;
-  }
-  if (!preview) return null;
-  const validRows = rows.filter((row) => row.validation_status === "valid" || row.validation_status === "warning").length;
-  const cancelledRows = rows.filter((row) => row.apply_status === "skipped" || row.normalized_data.status === "cancelled").length;
-  return (
-    <div className="border-y border-black/10 py-4">
-      <h3 className="text-sm font-semibold">Próximo paso</h3>
-      <ol className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
-        <li>1. Revisar resumen</li><li>2. Confirmar e importar</li><li>3. Registrar abonos en el detalle</li>
-      </ol>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryBadge label="Válidas" value={validRows} tone="good" />
-        <SummaryBadge label="Crearán cliente" value={preview.create_customers} tone="good" />
-        <SummaryBadge label="Reutilizarán cliente" value={preview.reuse_customers} tone="neutral" />
-        <SummaryBadge label="CxC por crear" value={preview.create_receivables} tone="good" />
-        <SummaryBadge label="Revisión requerida" value={preview.review_required} tone={preview.review_required ? "warn" : "neutral"} />
-        <SummaryBadge label="Duplicadas" value={preview.duplicates} tone="neutral" />
-        <SummaryBadge label="Con error" value={preview.rejected} tone={preview.rejected ? "bad" : "neutral"} />
-        <SummaryBadge label="Canceladas" value={cancelledRows} tone={cancelledRows ? "warn" : "neutral"} />
-      </div>
-    </div>
-  );
-}
-
-function ApplyConfirmationDialog({ preview, rows, isPending, onCancel, onConfirm }: { preview: NonNullable<HistoricalReceivableImportData["preview"]>; rows: ImportRow[]; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
-  const cancelledRows = rows.filter((row) => row.apply_status === "skipped" || row.normalized_data.status === "cancelled").length;
-  return (
-    <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="apply-import-title">
-      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-        <h3 id="apply-import-title" className="text-base font-semibold">Confirmar importación operativa</h3>
-        <div className="mt-3 space-y-1 text-sm text-black/70">
-          <p>Se crearán {preview.create_customers} clientes operativos sin cuenta web.</p>
-          <p>Se reutilizarán {preview.reuse_customers} clientes existentes.</p>
-          <p>Se crearán {preview.create_receivables} cuentas por cobrar.</p>
-          <p>{preview.review_required} filas requieren revisión y no serán procesadas.</p>
-          <p>{preview.duplicates} filas duplicadas serán omitidas.</p>
-          <p>{preview.rejected} filas con error serán omitidas.</p>
-          <p>{cancelledRows} filas canceladas no serán procesadas.</p>
-          <p className="pt-2 font-medium text-black/80">Los clientes operativos no necesitan una cuenta web. La vinculación con una cuenta del portal será manual y opcional.</p>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>{isPending ? "Importando cuentas por cobrar..." : "Confirmar e importar"}</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-function IdentityDialog({ draft, isPending, onChange, onCancel, onConfirm }: { draft: IdentityDraft; isPending: boolean; onChange: (draft: IdentityDraft) => void; onCancel: () => void; onConfirm: () => void }) {
-  return (
-    <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center bg-black/45 p-3" role="dialog" aria-modal="true" aria-labelledby="identity-title">
-      <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-        <h3 id="identity-title" className="text-base font-semibold">Revisar datos del cliente</h3>
-        <p className="mt-2 text-sm text-black/60">RTN, correo y teléfono son opcionales. El nombre por sí solo nunca reutiliza ni vincula automáticamente un cliente existente.</p>
-        <div className="mt-4 grid gap-3">
-          <label className="text-sm">Correo<input type="email" value={draft.email} onChange={(event) => onChange({ ...draft, email: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
-          <label className="text-sm">Teléfono<input value={draft.phone} onChange={(event) => onChange({ ...draft, phone: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
-          <label className="text-sm">RTN<input value={draft.taxId} onChange={(event) => onChange({ ...draft, taxId: event.target.value })} className="mt-1 w-full rounded-md border border-black/10 px-3 py-2" /></label>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>Guardar identidad</Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-function CustomerConfirmationDialog({ draft, isPending, onCancel, onConfirm }: { draft: ConfirmationDraft; isPending: boolean; onCancel: () => void; onConfirm: () => void }) {
-  const normalized = draft.row.normalized_data;
-  return (
-    <div className="cz-layer-modal fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-black/45 p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="customer-confirmation-title">
-      <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-xl">
-        <h3 id="customer-confirmation-title" className="text-base font-semibold">Confirmar cliente</h3>
-        <p className="mt-2 text-sm text-black/65">Revise cuidadosamente la información antes de vincular esta cuenta por cobrar.</p>
-        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-          <Info label="Cliente" value={draft.option.name} />
-          <Info label="Correo" value={draft.option.email ?? "Sin correo"} />
-          <Info label="Teléfono" value={draft.option.phone ?? "Sin teléfono"} />
-          <Info label="RTN" value={draft.option.taxId ?? "Sin RTN"} />
-          <Info label="Factura" value={String(normalized.invoice_number ?? "")} />
-          <Info label="Monto original" value={formatCurrency(Number(normalized.original_amount ?? 0))} />
-          <Info label="Monto pagado" value={formatCurrency(Number(normalized.paid_amount ?? 0))} />
-          <Info label="Saldo pendiente" value={formatCurrency(Number(normalized.balance_due ?? 0))} />
-        </div>
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>Cancelar</Button>
-          <Button type="button" variant="primary" onClick={onConfirm} disabled={isPending}>
-            <CheckCircle2 size={16} />
-            Confirmar cliente
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-md border border-black/10 bg-[#fafafa] p-2">
-      <p className="text-xs font-semibold uppercase text-black/45">{label}</p>
-      <p className="mt-1 break-words font-semibold">{value}</p>
-    </div>
-  );
-}
-function BatchSummary({ batch, rows }: { batch: ImportBatch; rows: ImportRow[] }) {
-  const errors = rows.filter((row) => row.validation_status === "invalid").length;
-  const pending = rows.filter((row) => ["pending", "unassigned"].includes(row.assignment_status)).length;
-  const pendingConfirmation = rows.filter((row) => row.assignment_status === "suggested").length;
-  const ready = readyRows(rows);
-  const rollbackAvailable = batch.status === "applied" && rows.some((row) => row.apply_status === "applied");
-
-  return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      <SummaryBadge label="Total de filas" value={batch.total_rows} tone="neutral" />
-      <SummaryBadge label="Validadas" value={batch.validated_rows} tone="good" />
-      <SummaryBadge label="Pendientes de asignación" value={pending} tone={pending > 0 ? "warn" : "neutral"} />
-      <SummaryBadge label="Pendientes de confirmación" value={pendingConfirmation} tone={pendingConfirmation > 0 ? "warn" : "neutral"} />
-      <SummaryBadge label="Filas con errores" value={errors || batch.failed_rows} tone={errors > 0 || batch.failed_rows > 0 ? "bad" : "neutral"} />
-      <SummaryBadge label="Listas para aplicar" value={ready} tone={ready > 0 ? "good" : "neutral"} />
-      <SummaryBadge label="Aplicadas" value={batch.applied_rows} tone={batch.applied_rows > 0 ? "good" : "neutral"} />
-      <SummaryBadge label="Canceladas" value={rows.filter((row) => row.apply_status === "skipped").length} tone="neutral" />
-      <SummaryBadge label="Reversión disponible" value={rollbackAvailable ? "Si" : "No"} tone={rollbackAvailable ? "warn" : "neutral"} />
-    </div>
-  );
-}
-
-function RowsTable({
-  rows,
-  allOptions,
-  optionsByRow,
-  searchByRow,
-  canAssign,
-  canImport,
-  isPending,
-  onSearchChange,
-  onSearch,
-  onAssign,
-  onEditIdentity,
-  previewByRow,
-  onCancel,
-}: {
-  rows: ImportRow[];
-  allOptions: Map<string, AssignmentSelectorOption>;
-  optionsByRow: Record<string, AssignmentSelectorOption[]>;
-  searchByRow: Record<string, string>;
-  canAssign: boolean;
-  canImport: boolean;
-  isPending: boolean;
-  onSearchChange: (rowId: string, value: string) => void;
-  onSearch: (row: ImportRow) => void;
-  onAssign: (row: ImportRow, option: AssignmentSelectorOption) => void;
-  onEditIdentity: (row: ImportRow) => void;
-  previewByRow: Map<string, { outcome: string; reason: string }>;
-  onCancel: (rowId: string) => void;
-}) {
-  return (
-    <>
-      <div className="grid gap-3 md:hidden">
-        {rows.map((row) => {
-          const normalized = row.normalized_data;
-          const assigned = row.assigned_customer_id ? allOptions.get(row.assigned_customer_id) : null;
-          const suggested = row.suggested_customer_id ? allOptions.get(row.suggested_customer_id) : null;
-          const rowOptions = optionsByRow[row.id] ?? [];
-          const canResolve = canAssign && row.apply_status !== "applied" && row.apply_status !== "rolled_back";
-          const preview = previewByRow.get(row.id);
-          return (
-            <article key={row.id} className="rounded-md border border-black/10 bg-white p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-black/45">Fila {row.row_number}</p>
-                  <p className="break-words font-semibold">{String(normalized.customer_name ?? "Sin cliente")}</p>
-                  <p className="break-words text-xs text-black/50">{String(normalized.invoice_number ?? "Sin factura")}</p>
-                </div>
-                <Badge tone={preview ? previewOutcomeTone(preview.outcome) : rowStatusTone(row)}>{preview ? previewOutcomeLabel(preview.outcome) : rowStatusLabel(row)}</Badge>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <Info label="Monto original" value={formatCurrency(Number(normalized.original_amount ?? 0))} />
-                <Info label="Abonado" value={formatCurrency(Number(normalized.paid_amount ?? 0))} />
-                <Info label="Saldo" value={formatCurrency(Number(normalized.balance_due ?? 0))} />
-              </div>
-              <div className="mt-3">
-                {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : preview?.outcome === "create_customer" ? <span className="text-xs font-semibold text-[#2f6f3e]">Creará cliente operativo</span> : <span className="text-xs text-black/45">Sin selección manual</span>}
-              </div>
-              {preview ? <p className="mt-2 text-xs text-black/55">{preview.reason}</p> : null}
-              {canResolve ? (
-                <div className="mt-3 grid gap-2 border-t border-black/10 pt-3">
-                  <div className="flex gap-2">
-                    <input
-                      value={searchByRow[row.id] ?? ""}
-                      onChange={(event) => onSearchChange(row.id, event.target.value)}
-                      placeholder="Nombre, correo, teléfono, RTN"
-                      className="min-w-0 flex-1 rounded-md border border-black/10 px-2 py-2 text-xs"
-                    />
-                    <button type="button" onClick={() => onSearch(row)} disabled={isPending} className="rounded-md border border-black/10 p-2 hover:bg-[#fff1f2]" aria-label="Buscar cliente">
-                      <Search size={15} />
-                    </button>
-                  </div>
-                  {rowOptions.length > 0 ? (
-                    <select
-                      defaultValue=""
-                      onChange={(event) => {
-                        const option = rowOptions.find((item) => item.id === event.target.value);
-                        if (option) onAssign(row, option);
-                        event.currentTarget.value = "";
-                      }}
-                      disabled={isPending}
-                      className="w-full rounded-md border border-black/10 bg-white px-2 py-2 text-xs"
-                    >
-                      <option value="">Seleccionar cliente</option>
-                      {rowOptions.map((option) => (
-                        <option key={option.id} value={option.id}>{customerOptionText(option)}</option>
-                      ))}
-                    </select>
-                  ) : null}
-                  <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
-                    <UserRoundPlus size={16} />
-                    Revisar datos
-                  </Button>
-                  {suggested && !assigned ? (
-                    <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
-                      <CheckCircle2 size={16} />
-                      Confirmar asignación
-                    </Button>
-                  ) : null}
-                  {canImport && row.apply_status !== "skipped" ? (
-                    <Button type="button" onClick={() => onCancel(row.id)} disabled={isPending} variant="ghost">
-                      <XCircle size={16} />
-                      Cancelar fila
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-        {rows.length === 0 ? <p className="rounded-md border border-black/10 bg-white p-5 text-center text-sm text-black/55">Este lote no tiene filas.</p> : null}
-      </div>
-      <div className="hidden max-w-full overflow-x-auto rounded-md border border-black/10 md:block">
-      <table className="w-full min-w-[1180px] text-left text-sm">
-        <thead className="bg-[#e7e5e4] text-xs uppercase text-black/55">
-          <tr>
-            <th className="px-3 py-2">Fila</th>
-            <th className="px-3 py-2">Cliente importado</th>
-            <th className="px-3 py-2">Factura</th>
-            <th className="px-3 py-2">Montos</th>
-            <th className="px-3 py-2">Estado</th>
-            <th className="px-3 py-2">Cliente asignado</th>
-            <th className="px-3 py-2">Mensajes</th>
-            <th className="sticky right-0 z-10 border-l border-black/10 bg-[#e7e5e4] px-3 py-2">Acción</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-black/10 bg-white">
-          {rows.map((row) => {
-            const normalized = row.normalized_data;
-            const assigned = row.assigned_customer_id ? allOptions.get(row.assigned_customer_id) : null;
-            const suggested = row.suggested_customer_id ? allOptions.get(row.suggested_customer_id) : null;
-            const rowOptions = optionsByRow[row.id] ?? [];
-            const canResolve = canAssign && row.apply_status !== "applied" && row.apply_status !== "rolled_back";
-            const preview = previewByRow.get(row.id);
-            return (
-              <tr key={row.id}>
-                <td className="px-3 py-3 align-top font-semibold">{row.row_number}</td>
-                <td className="px-3 py-3 align-top">
-                  <p className="font-semibold">{String(normalized.customer_name ?? "Sin cliente")}</p>
-                  <p className="text-xs text-black/50">{[normalized.customer_email, normalized.customer_phone, normalized.customer_tax_id ? `RTN ${normalized.customer_tax_id}` : null].filter(Boolean).join(" | ")}</p>
-                </td>
-                <td className="px-3 py-3 align-top">
-                  <p className="font-semibold">{String(normalized.invoice_number ?? "")}</p>
-                  <p className="text-xs text-black/50">{String(normalized.issue_date ?? "")} / {String(normalized.due_date ?? "")}</p>
-                </td>
-                <td className="px-3 py-3 align-top">
-                  <p>Monto original {formatCurrency(Number(normalized.original_amount ?? 0))}</p>
-                  <p>Abonado {formatCurrency(Number(normalized.paid_amount ?? 0))}</p>
-                  <p className="font-semibold">Saldo {formatCurrency(Number(normalized.balance_due ?? 0))}</p>
-                </td>
-                <td className="px-3 py-3 align-top">
-                  <Badge tone={preview ? previewOutcomeTone(preview.outcome) : rowStatusTone(row)}>{preview ? previewOutcomeLabel(preview.outcome) : rowStatusLabel(row)}</Badge>
-                </td>
-                <td className="px-3 py-3 align-top">
-                  {assigned ? <CustomerMini option={assigned} /> : suggested ? <CustomerMini option={suggested} prefix="Sugerido" /> : preview?.outcome === "create_customer" ? <span className="text-xs font-semibold text-[#2f6f3e]">Creará cliente operativo</span> : <span className="text-xs text-black/45">Sin selección manual</span>}
-                </td>
-                <td className="px-3 py-3 align-top">
-                  {row.validation_messages.length > 0 ? (
-                    <ul className="max-h-28 min-w-72 overflow-auto text-xs text-[#7f1d1d]">
-                      {row.validation_messages.map((message, index) => <li key={`${message}-${index}`}>{message}</li>)}
-                    </ul>
-                  ) : (
-                    <span className="text-xs text-black/45">Sin errores</span>
-                  )}
-                </td>
-                <td className="sticky right-0 border-l border-black/10 bg-white px-3 py-3 align-top">
-                  {canResolve ? (
-                    <div className="grid min-w-64 gap-2">
-                      <div className="flex gap-2">
-                        <input
-                          value={searchByRow[row.id] ?? ""}
-                          onChange={(event) => onSearchChange(row.id, event.target.value)}
-                          placeholder="Nombre, correo, teléfono, RTN"
-                          className="min-w-0 flex-1 rounded-md border border-black/10 px-2 py-1.5 text-xs"
-                        />
-                        <button type="button" onClick={() => onSearch(row)} disabled={isPending} className="rounded-md border border-black/10 p-2 hover:bg-[#fff1f2]" aria-label="Buscar cliente">
-                          <Search size={15} />
-                        </button>
-                      </div>
-                      {rowOptions.length > 0 ? (
-                        <select
-                          defaultValue=""
-                          onChange={(event) => {
-                            const option = rowOptions.find((item) => item.id === event.target.value);
-                            if (option) onAssign(row, option);
-                            event.currentTarget.value = "";
-                          }}
-                          disabled={isPending}
-                          className="rounded-md border border-black/10 bg-white px-2 py-2 text-xs"
-                        >
-                          <option value="">Seleccionar cliente</option>
-                          {rowOptions.map((option) => (
-                            <option key={option.id} value={option.id}>{customerOptionText(option)}</option>
-                          ))}
-                        </select>
-                      ) : null}
-                      {preview ? <p className="text-xs text-black/55">{preview.reason}</p> : null}
-                      <Button type="button" onClick={() => onEditIdentity(row)} disabled={isPending} variant="ghost">
-                        <UserRoundPlus size={16} />
-                        Revisar datos
-                      </Button>
-                      {suggested && !assigned ? (
-                        <Button type="button" onClick={() => onAssign(row, suggested)} disabled={isPending} variant="ghost">
-                          <CheckCircle2 size={16} />
-                          Confirmar asignación
-                        </Button>
-                      ) : null}
-                      {canImport && row.apply_status !== "skipped" ? (
-                        <Button type="button" onClick={() => onCancel(row.id)} disabled={isPending} variant="ghost">
-                          <XCircle size={16} />
-                          Cancelar fila
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <span className="text-xs text-black/45">Sin acción</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={8} className="px-3 py-6 text-center text-black/55">Este lote no tiene filas.</td>
-            </tr>
-          ) : null}
-        </tbody>
-      </table>
-      </div>
-    </>
-  );
-}
-
-function SummaryBadge({ label, value, tone }: { label: string; value: number | string; tone: keyof typeof statusBadgeClass }) {
-  return (
-    <div className={`rounded-md border px-3 py-2 ${statusBadgeClass[tone]}`}>
-      <p className="text-xs font-semibold uppercase">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{typeof value === "number" ? value.toLocaleString("es-HN") : value}</p>
-    </div>
-  );
-}
-
-function Badge({ children, tone }: { children: React.ReactNode; tone: keyof typeof statusBadgeClass }) {
-  return <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${statusBadgeClass[tone]}`}>{children}</span>;
-}
-
-function CustomerMini({ option, prefix }: { option: AssignmentSelectorOption; prefix?: string }) {
-  return (
-    <div className="text-xs">
-      {prefix ? <p className="font-semibold text-[#92400e]">{prefix}</p> : null}
-      <p className="font-semibold">{option.name}</p>
-      <p className="text-black/50">{[option.email, option.phone, option.taxId ? `RTN ${option.taxId}` : null].filter(Boolean).join(" | ")}</p>
-    </div>
-  );
-}
-
-function previewOutcomeLabel(outcome: string) {
-  if (outcome === "create_customer") return "Creará cliente";
-  if (outcome === "reuse_customer") return "Reutilizará cliente";
-  if (outcome === "review_required" || outcome === "ambiguous") return "Revisión requerida";
-  if (outcome === "duplicate") return "Duplicada";
-  if (outcome === "rejected") return "Error";
-  if (outcome === "cancelled") return "Cancelada";
-  if (outcome === "applied") return "Aplicada";
-  return "Validada";
-}
-
-function previewOutcomeTone(outcome: string): keyof typeof statusBadgeClass {
-  if (["create_customer", "reuse_customer", "applied"].includes(outcome)) return "good";
-  if (["review_required", "ambiguous"].includes(outcome)) return "warn";
-  if (outcome === "rejected") return "bad";
-  return "neutral";
-}
-function rowStatusLabel(row: ImportRow) {
-  if (row.apply_status === "applied") return "Aplicada";
-  if (row.apply_status === "rolled_back") return "Revertida";
-  if (row.apply_status === "skipped") return "Cancelada";
-  if (row.validation_status === "invalid") return "Error";
-  if (row.assignment_status === "suggested") return "Pendiente de confirmación";
-  if (["pending", "unassigned"].includes(row.assignment_status)) return "Pendiente de asignación";
-  if (row.validation_status === "valid" && row.assignment_status === "confirmed") return "Lista para aplicar";
-  return "Validada";
-}
-
-function rowStatusTone(row: ImportRow): keyof typeof statusBadgeClass {
-  const label = rowStatusLabel(row);
-  if (label === "Aplicada" || label === "Lista para aplicar" || label === "Validada") return "good";
-  if (label === "Error") return "bad";
-  if (label === "Pendiente de confirmación" || label === "Pendiente de asignación") return "warn";
-  return "neutral";
-}
-
-function readyRows(rows: ImportRow[]) {
-  return rows.filter((row) => row.validation_status !== "invalid" && row.assignment_status === "confirmed" && ["pending", "ready"].includes(row.apply_status)).length;
-}
-
-function customerOptionText(option: AssignmentSelectorOption) {
-  return [option.name, option.email, option.phone, option.taxId ? `RTN ${option.taxId}` : null].filter(Boolean).join(" | ");
-}
-
-function csvCell(value: unknown) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return "Sin fecha";
-  return new Intl.DateTimeFormat("es-HN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
+function Summary({data}:{data:HistoricalReceivableImportData}) { const batch=data.selectedBatch!; const metrics:[[string,number,string],...Array<[string,number,string]>]=[["Total de filas",batch.total_rows,"neutral"],["Válidas",data.rowCounts.valid,"good"],["Revisión requerida",data.rowCounts.review,"warn"],["Con error",data.rowCounts.errors,"bad"],["Aplicadas",data.rowCounts.applied,"good"],["Canceladas",data.rowCounts.cancelled,"neutral"],["Revertidas",data.rowCounts.rolled_back,"neutral"]];return <div><div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">{metrics.map(([label,value,tone])=><article key={label} className={`rounded-xl border p-3 ${tone==="bad"?"border-red-200 bg-red-50":tone==="warn"?"border-amber-200 bg-amber-50":tone==="good"?"border-emerald-200 bg-emerald-50":"border-black/10 bg-white"}`}><p className="text-xs text-black/50">{label}</p><p className="text-xl font-bold tabular-nums">{value}</p></article>)}</div>{data.preview?<p className="mt-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-xs text-black/60">Crearán cliente: {data.preview.create_customers} · Reutilizarán cliente: {data.preview.reuse_customers} · CxC por crear: {data.preview.create_receivables} · Duplicadas: {data.preview.duplicates}</p>:null}</div>; }
+function RowDetail({row,outcome,canAssign,canImport,pending,customerQuery,setCustomerQuery,customerOptions,onSearch,onAssign,onIdentity,onCancel}:{row:ImportRow;outcome?:{outcome:string;reason:string};canAssign:boolean;canImport:boolean;pending:boolean;customerQuery:string;setCustomerQuery:(v:string)=>void;customerOptions:AssignmentSelectorOption[];onSearch:()=>void;onAssign:(o:AssignmentSelectorOption)=>void;onIdentity:()=>void;onCancel:()=>void}) { const n=row.normalized_data; const invalid=row.validation_status==="invalid"; return <aside className="h-fit rounded-xl border border-black/10 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-2"><div><p className="text-xs text-black/45">Revisar fila</p><h3 className="font-bold">Fila {row.row_number}</h3><p className="font-semibold">{String(n.customer_name??"Sin cliente")}</p></div><span className={`rounded-full px-2 py-1 text-xs ${badgeClass(row)}`}>{rowLabel(row)}</span></div><h4 className="mt-4 font-semibold">Datos importados</h4><dl className="mt-2 grid grid-cols-2 gap-2"><Cell label="Factura / referencia" value={String(n.invoice_number??"—")}/><Cell label="Fecha" value={String(n.issue_date??"—")}/><Cell label="Vencimiento" value={String(n.due_date??"—")}/><Cell label="Monto original" value={formatCurrency(Number(n.original_amount??0))}/><Cell label="Abonado" value={formatCurrency(Number(n.paid_amount??0))}/><Cell label="Saldo" value={formatCurrency(Number(n.balance_due??0))}/></dl>{invalid?<div role="alert" className="mt-4 flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertTriangle className="shrink-0" size={18}/><span>{row.validation_messages.join(" ")||invalidOriginalAmountMessage}</span></div>:outcome?.reason?<p className="mt-3 rounded-lg bg-black/[.03] p-3 text-sm">{outcome.reason}</p>:null}{canAssign?<div className="mt-4"><h4 className="font-semibold">Cliente</h4><div className="mt-2 flex gap-2"><input value={customerQuery} onChange={e=>setCustomerQuery(e.target.value)} placeholder="Buscar cliente existente" className="min-h-11 min-w-0 flex-1 rounded-lg border px-3"/><Button variant="ghost" onClick={onSearch} disabled={pending}><Search size={17}/> Buscar</Button></div>{customerOptions.length?<div className="mt-2 max-h-36 space-y-2 overflow-y-auto" tabIndex={0}>{customerOptions.map(option=><button key={option.id} onClick={()=>onAssign(option)} className="min-h-11 w-full rounded-lg border p-2 text-left text-sm"><strong>{option.name}</strong><span className="block text-xs text-black/50">{option.email??option.phone??"Sin contacto"}</span></button>)}</div>:null}<Button variant="ghost" className="mt-2 w-full" onClick={onIdentity}>Revisar datos del cliente</Button></div>:null}<div className="mt-3 grid gap-2">{row.assignment_status==="confirmed"&&!invalid?<p className="rounded-lg bg-emerald-50 p-3 text-sm font-medium text-emerald-700">Cliente confirmado. La fila está lista para aplicar.</p>:null}{canImport&&row.apply_status!=="skipped"&&row.apply_status!=="applied"?<Button variant="ghost" onClick={onCancel} disabled={pending}><XCircle size={17}/> Cancelar fila</Button>:null}</div></aside>; }
+function Cell({label,value}:{label:string;value:string}){return <div className="min-w-0"><dt className="text-xs text-black/45">{label}</dt><dd className="break-words text-sm font-medium tabular-nums">{value}</dd></div>}
+function Field({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <label className="block text-sm font-medium">{label}<input value={value} onChange={e=>onChange(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border px-3"/></label>}

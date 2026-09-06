@@ -106,3 +106,21 @@ export type ReceivablesSummary = {
     balanceDue: number;
   }>;
 };
+
+export type AdminReceivableFilter = "pending" | "partial" | "overdue" | "paid" | "all";
+export type AdminReceivableSort = "created" | "due" | "balance";
+export type AdminReceivableSortDirection = "asc" | "desc";
+
+export type AdminAccountsReceivablePage = {
+  rows: AdminAccountsReceivableRow[];
+  summary: ReceivablesSummary;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  truncated: boolean;
+  filter: AdminReceivableFilter;
+  query: string;
+  sort: AdminReceivableSort;
+  direction: AdminReceivableSortDirection;
+};

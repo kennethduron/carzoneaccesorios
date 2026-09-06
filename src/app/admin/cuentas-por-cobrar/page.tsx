@@ -1,66 +1,61 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AccountsReceivableImportManager } from "@/components/admin/accounts-receivable-import-manager";
 import { AccountsReceivableManager } from "@/components/admin/accounts-receivable-manager";
+import { AccountsReceivableSummary } from "@/components/admin/accounts-receivable-summary";
+import { AccountsReceivableTabs, type ReceivableSection } from "@/components/admin/accounts-receivable-tabs";
 import { AdminShell } from "@/components/admin/admin-shell";
 import { hasEffectivePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/session";
-import { getHistoricalAccountsReceivableImportData } from "@/services/supabase/accounts-receivable-import.service";
+import { getHistoricalAccountsReceivableImportData, getHistoricalReceivableAttentionCount } from "@/services/supabase/accounts-receivable-import.service";
 import { getAdminAccountsReceivable } from "@/services/supabase/credit.service";
+import type { HistoricalReceivableRowFilter } from "@/types/accounts-receivable-import";
+import type { AdminReceivableFilter, AdminReceivableSort, AdminReceivableSortDirection } from "@/types/credit";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountsReceivablePage({ searchParams }: { searchParams?: Promise<{ importBatch?: string }> }) {
+type Params = Record<string, string | string[] | undefined>;
+const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value;
+const number = (value: string | undefined, fallback: number) => { const parsed = Number(value); return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback; };
+
+export default async function AccountsReceivablePage({ searchParams }: { searchParams?: Promise<Params> }) {
   const profile = await requirePermission("admin:access");
-  const canRead =
-    hasEffectivePermission(profile.role, profile.permissions, "receivables:read", profile.email) ||
-    hasEffectivePermission(profile.role, profile.permissions, "credit:manage", profile.email);
+  const canRead = hasEffectivePermission(profile.role, profile.permissions, "receivables:read", profile.email)
+    || hasEffectivePermission(profile.role, profile.permissions, "credit:manage", profile.email);
+  if (!canRead) redirect("/sin-permiso");
+  const params = (await searchParams) ?? {};
+  const requestedSection = one(params.section);
+  const section: ReceivableSection = requestedSection === "summary" || requestedSection === "import" ? requestedSection : "accounts";
   const canExport = hasEffectivePermission(profile.role, profile.permissions, "receivables:export", profile.email);
   const canImport = hasEffectivePermission(profile.role, profile.permissions, "receivables:import", profile.email);
   const canApply = hasEffectivePermission(profile.role, profile.permissions, "receivables:apply", profile.email);
   const canAssign = hasEffectivePermission(profile.role, profile.permissions, "receivables:assign", profile.email);
-  const canRollback =
-    ["technical_owner", "business_owner"].includes(profile.role) &&
-    hasEffectivePermission(profile.role, profile.permissions, "receivables:rollback", profile.email);
+  const canRollback = ["technical_owner", "business_owner"].includes(profile.role)
+    && hasEffectivePermission(profile.role, profile.permissions, "receivables:rollback", profile.email);
   const canMarkPaid = hasEffectivePermission(profile.role, profile.permissions, "credit:mark_paid", profile.email);
+  const attentionCount = await getHistoricalReceivableAttentionCount();
 
-  if (!canRead) {
-    redirect("/sin-permiso");
-  }
+  const accountsData = section !== "import" ? await getAdminAccountsReceivable({
+    filter: (one(params.status) ?? "pending") as AdminReceivableFilter,
+    query: one(params.q) ?? "",
+    sort: (one(params.sort) ?? "created") as AdminReceivableSort,
+    direction: (one(params.direction) ?? "desc") as AdminReceivableSortDirection,
+    page: number(one(params.page), 1),
+    pageSize: number(one(params.pageSize), 20),
+  }) : null;
+  const importData = section === "import" ? await getHistoricalAccountsReceivableImportData({
+    batchId: one(params.importBatch) ?? null,
+    rowId: one(params.importRow) ?? null,
+    rowPage: number(one(params.importPage), 1),
+    rowPageSize: 20,
+    rowQuery: one(params.importQuery) ?? "",
+    rowFilter: (one(params.importStatus) ?? "all") as HistoricalReceivableRowFilter,
+    canImport, canApply, canAssign, canRollback,
+  }) : null;
 
-  const resolvedSearchParams = await searchParams;
-  const [data, importData] = await Promise.all([
-    getAdminAccountsReceivable(),
-    getHistoricalAccountsReceivableImportData({
-      batchId: resolvedSearchParams?.importBatch ?? null,
-      canImport,
-      canApply,
-      canAssign,
-      canRollback,
-    }),
-  ]);
-
-  return (
-    <AdminShell title="Cuentas por cobrar">
-      <div className="mb-5">
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-2 rounded-md border border-black/10 bg-white px-3 py-2 text-sm"
-        >
-          <ArrowLeft size={16} />
-          Panel administrativo
-        </Link>
-      </div>
-      <div className="mb-5">
-        <AccountsReceivableImportManager data={importData} />
-      </div>
-      <AccountsReceivableManager
-        rows={data.rows}
-        summary={data.summary}
-        canMarkPaid={canMarkPaid}
-        canExport={canExport}
-      />
-    </AdminShell>
-  );
+  return <AdminShell title="Cuentas por cobrar" description="Seguimiento de cartera, vencimientos, abonos y facturación" variant="wide" backHref="/admin" backLabel="Volver al inicio">
+    <AccountsReceivableTabs section={section} attentionCount={attentionCount}/>
+    {section === "summary" && accountsData ? <AccountsReceivableSummary summary={accountsData.summary}/> : null}
+    {section === "accounts" && accountsData ? <AccountsReceivableManager data={accountsData} canMarkPaid={canMarkPaid} canExport={canExport}/> : null}
+    {section === "import" && importData ? <AccountsReceivableImportManager data={importData}/> : null}
+  </AdminShell>;
 }

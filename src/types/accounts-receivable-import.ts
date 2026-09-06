@@ -69,6 +69,14 @@ export type HistoricalReceivableImportData = {
   batches: ImportBatch[];
   selectedBatch: ImportBatch | null;
   rows: ImportRow[];
+  selectedRow: ImportRow | null;
+  rowTotal: number;
+  rowPage: number;
+  rowPageSize: number;
+  rowTotalPages: number;
+  rowQuery: string;
+  rowFilter: HistoricalReceivableRowFilter;
+  rowCounts: Record<HistoricalReceivableRowFilter, number>;
   assignmentOptions: AssignmentSelectorOption[];
   preview: HistoricalReceivablePreviewSummary | null;
   canImport: boolean;
@@ -76,3 +84,5 @@ export type HistoricalReceivableImportData = {
   canAssign: boolean;
   canRollback: boolean;
 };
+
+export type HistoricalReceivableRowFilter = "all" | "valid" | "review" | "errors" | "applied" | "cancelled" | "rolled_back";

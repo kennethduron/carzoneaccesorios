@@ -85,14 +85,12 @@ assert.match(accountPage, /function ReceivablesList/);
 
 for (const label of [
   "Total de filas",
-  "Validadas",
-  "Pendientes de asignación",
-  "Pendientes de confirmación",
-  "Filas con errores",
-  "Listas para aplicar",
+  "Válidas",
+  "Revisión requerida",
+  "Con error",
   "Aplicadas",
   "Canceladas",
-  "Reversión disponible",
+  "Revertidas",
   "Acción",
   "Monto original",
   "Abonado",
@@ -121,10 +119,10 @@ assert.match(importLabels, /ready: "Listo para aplicar"/);
 assert.match(importLabels, /applied:/);
 assert.match(importLabels, /cancelled:/);
 assert.match(importLabels, /rolled_back:/);
-assert.match(importManager, /assignment_status === "suggested"/);
-assert.match(importManager, /assignment_status\)\) return "Pendiente de asignación"/);
-assert.match(importManager, /row\.apply_status === "applied"/);
-assert.match(importManager, /row\.apply_status !== "rolled_back"/);
+assert.match(importManager, /row\.assignment_status!=="confirmed"/);
+assert.match(importManager, /Revisión requerida/);
+assert.match(importManager, /row\.apply_status==="applied"/);
+assert.match(importManager, /row\.apply_status==="rolled_back"/);
 
 assert.match(accountingDispatcher, /order_id: string \| null;/);
 assert.match(accountingDispatcher, /historical_invoice_number: string \| null;/);

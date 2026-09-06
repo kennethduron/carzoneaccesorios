@@ -4,11 +4,19 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import type {
   AccountsReceivableRow,
   AccountsReceivablePaymentRow,
-  AdminAccountsReceivableRow,
+  AdminAccountsReceivablePage,
+  AdminReceivableFilter,
+  AdminReceivableSort,
+  AdminReceivableSortDirection,
   CustomerCreditAccount,
   ReceivablesSummary,
 } from "@/types/credit";
 import type { InvoiceStatus } from "@/types/invoices";
+import { filterAndSortReceivables } from "@/utils/receivables-query";
+
+export const RECEIVABLE_EXPORT_LIMIT = 5_000;
+const RECEIVABLE_READ_CHUNK = 500;
+const ACCOUNTING_LOOKUP_CHUNK = 200;
 
 export type CustomerCreditNotification = {
   id: string;
@@ -316,15 +324,23 @@ export async function getCustomerReceivables(customerId: string, limit = 50) {
   }));
 }
 
-export async function getAdminAccountsReceivable(): Promise<{
-  rows: AdminAccountsReceivableRow[];
-  summary: ReceivablesSummary;
-}> {
+export async function getAdminAccountsReceivable(input: {
+  filter?: AdminReceivableFilter;
+  query?: string;
+  sort?: AdminReceivableSort;
+  direction?: AdminReceivableSortDirection;
+  page?: number;
+  pageSize?: number;
+  exportAll?: boolean;
+} = {}): Promise<AdminAccountsReceivablePage> {
+  const filter = input.filter ?? "pending";
+  const query = input.query?.trim().slice(0, 120) ?? "";
+  const sort = input.sort ?? "created";
+  const direction = input.direction ?? "desc";
+  const requestedPage = Math.max(1, Math.floor(input.page ?? 1));
+  const pageSize = Math.min(100, Math.max(10, Math.floor(input.pageSize ?? 20)));
   const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("accounts_receivable")
-    .select(
-      `
+  const select = `
       id,
       customer_id,
       order_id,
@@ -345,15 +361,25 @@ export async function getAdminAccountsReceivable(): Promise<{
       customers(contact_name, business_name, email, phone),
       orders(order_number),
       invoices(invoice_number, status)
-    `,
-    )
-    .order("created_at", { ascending: false })
-    .order("due_date", { ascending: true })
-    .limit(500)
-    .returns<AdminReceivableQueryRow[]>();
-
-  if (error) {
-    throw new Error(error.message);
+    `;
+  const { count, error: countError } = await admin
+    .from("accounts_receivable")
+    .select("id", { count: "exact", head: true });
+  if (countError) throw new Error(countError.message);
+  const truncated = Number(count ?? 0) > RECEIVABLE_EXPORT_LIMIT;
+  const rowsToRead = Math.min(Number(count ?? 0), RECEIVABLE_EXPORT_LIMIT);
+  const data: AdminReceivableQueryRow[] = [];
+  for (let offset = 0; offset < rowsToRead; offset += RECEIVABLE_READ_CHUNK) {
+    const { data: chunk, error } = await admin
+      .from("accounts_receivable")
+      .select(select)
+      .order("created_at", { ascending: false })
+      .order("due_date", { ascending: true })
+      .order("id", { ascending: false })
+      .range(offset, Math.min(offset + RECEIVABLE_READ_CHUNK - 1, rowsToRead - 1))
+      .returns<AdminReceivableQueryRow[]>();
+    if (error) throw new Error(error.message);
+    data.push(...(chunk ?? []));
   }
 
   const baseRows = (data ?? []).map((row) => {
@@ -369,31 +395,25 @@ export async function getAdminAccountsReceivable(): Promise<{
     };
   });
   const paymentIds = baseRows.flatMap((row) => row.payments.map((payment) => payment.id));
-  const [{ data: eventRows, error: eventsError }, { data: outboxRows, error: outboxError }] = paymentIds.length > 0
-    ? await Promise.all([
-        admin
-          .from("financial_events")
-          .select("id, source_id, status, journal_entry_id, journal_entries(id, entry_number, status)")
-          .eq("source_type", "receivable_payment")
-          .eq("event_purpose", "receivable_payment")
-          .eq("posting_version", "v1")
-          .in("source_id", paymentIds),
-        admin
-          .from("accounting_outbox")
-          .select("id, source_id, status, attempts")
-          .eq("source_type", "receivable_payment")
-          .eq("event_purpose", "receivable_payment")
-          .eq("posting_version", "v1")
-          .in("source_id", paymentIds),
-      ])
-    : [{ data: [], error: null }, { data: [], error: null }];
+  const eventRows: Array<{ id: string; source_id: string; status: string; journal_entry_id: string | null; journal_entries: { entry_number: string | null; status: string | null } | Array<{ entry_number: string | null; status: string | null }> | null }> = [];
+  const outboxRows: Array<{ id: string; source_id: string; status: "queued" | "processing" | "completed" | "failed"; attempts: number }> = [];
+  for (let offset = 0; offset < paymentIds.length; offset += ACCOUNTING_LOOKUP_CHUNK) {
+    const ids = paymentIds.slice(offset, offset + ACCOUNTING_LOOKUP_CHUNK);
+    const [events, outbox] = await Promise.all([
+      admin.from("financial_events").select("id, source_id, status, journal_entry_id, journal_entries(id, entry_number, status)")
+        .eq("source_type", "receivable_payment").eq("event_purpose", "receivable_payment").eq("posting_version", "v1").in("source_id", ids),
+      admin.from("accounting_outbox").select("id, source_id, status, attempts")
+        .eq("source_type", "receivable_payment").eq("event_purpose", "receivable_payment").eq("posting_version", "v1").in("source_id", ids),
+    ]);
+    if (events.error) throw new Error(events.error.message);
+    if (outbox.error) throw new Error(outbox.error.message);
+    eventRows.push(...((events.data ?? []) as typeof eventRows));
+    outboxRows.push(...((outbox.data ?? []) as typeof outboxRows));
+  }
 
-  if (eventsError) throw new Error(eventsError.message);
-  if (outboxError) throw new Error(outboxError.message);
-
-  const eventByPayment = new Map((eventRows ?? []).map((event) => [event.source_id, event]));
-  const outboxByPayment = new Map((outboxRows ?? []).map((outbox) => [outbox.source_id, outbox]));
-  const rows = baseRows.map((row) => ({
+  const eventByPayment = new Map(eventRows.map((event) => [event.source_id, event]));
+  const outboxByPayment = new Map(outboxRows.map((outbox) => [outbox.source_id, outbox]));
+  const allRows = baseRows.map((row) => ({
     ...row,
     payments: row.payments.map((payment) => {
       const event = eventByPayment.get(payment.id);
@@ -414,13 +434,14 @@ export async function getAdminAccountsReceivable(): Promise<{
       };
     }),
   }));
-  const pendingRows = rows.filter((row) => row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0);
+  const boundedRows = allRows;
+  const pendingRows = boundedRows.filter((row) => row.status !== "paid" && row.status !== "cancelled" && row.balance_due > 0);
   const uniqueCustomers = new Set(pendingRows.map((row) => row.customer_id));
   const today = tegucigalpaDate();
   const inSevenDays = tegucigalpaDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
   const currentMonth = today.slice(0, 7);
   const overdueRows = pendingRows.filter((row) => row.status === "overdue" || row.due_date < today);
-  const activePayments = rows.flatMap((row) => row.payments.filter((payment) => !payment.voided_at));
+  const activePayments = boundedRows.flatMap((row) => row.payments.filter((payment) => !payment.voided_at));
   const topDebtorsByCustomer = new Map<string, { customerId: string; customerName: string; balanceDue: number }>();
 
   for (const row of pendingRows) {
@@ -433,9 +454,7 @@ export async function getAdminAccountsReceivable(): Promise<{
     topDebtorsByCustomer.set(row.customer_id, debtor);
   }
 
-  return {
-    rows,
-    summary: {
+  const summary: ReceivablesSummary = {
       totalPending: pendingRows.reduce((sum, row) => sum + row.balance_due, 0),
       overdueBalance: overdueRows.reduce((sum, row) => sum + row.balance_due, 0),
       collectedToday: activePayments
@@ -459,7 +478,24 @@ export async function getAdminAccountsReceivable(): Promise<{
           dueDate: row.due_date,
         })),
       topDebtors: [...topDebtorsByCustomer.values()].sort((left, right) => right.balanceDue - left.balanceDue).slice(0, 5),
-    },
+  };
+  const filteredRows = filterAndSortReceivables(boundedRows, { filter, query, sort, direction });
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const pageRows = input.exportAll ? filteredRows : filteredRows.slice((page - 1) * pageSize, page * pageSize);
+
+  return {
+    rows: pageRows,
+    summary,
+    total: filteredRows.length,
+    page,
+    pageSize,
+    totalPages,
+    truncated,
+    filter,
+    query,
+    sort,
+    direction,
   };
 }
 

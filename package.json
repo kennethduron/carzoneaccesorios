@@ -113,6 +113,7 @@
     "test:contact-settings": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-contact-settings.mjs",
     "test:payment-reservations:remote": "node scripts/test-payment-reservation-workflow-remote.mjs",
     "test:commercial-credit": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-commercial-credit-structure.mjs",
+    "test:cxc-redesign": "node --conditions=react-server --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-cxc-redesign-contract.mjs",
     "test:cxc-fiscal-traceability": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-cxc-fiscal-invoice-traceability.mjs",
     "test:direct-receivable-import": "node scripts/test-direct-receivable-import-structure.mjs",
     "test:commercial-credit:remote": "node scripts/test-commercial-credit-remote.mjs",
