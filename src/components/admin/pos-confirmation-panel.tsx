@@ -91,6 +91,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
   const requestKey = useRef<string | null>(null);
+  const submitting = useRef(false);
 
   const cashChange = useMemo(() => {
     const received = Number(amountTendered);
@@ -120,8 +121,9 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
 
   async function confirm(overdueOverrideReason?: string) {
     const usingOverdueOverride = Boolean(overdueOverrideReason?.trim());
-    if (pending || disabled || !accepted || (!paymentReady && !usingOverdueOverride)) return;
+    if (submitting.current || pending || disabled || !accepted || (!paymentReady && !usingOverdueOverride)) return;
     if (usingOverdueOverride && !overdueOverrideApplicable) return;
+    submitting.current = true;
     setPending(true);
     setConfirmationError(null);
     setInventoryConflicts([]);
@@ -166,6 +168,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
         message: error instanceof Error ? error.message : "No se pudo confirmar la venta.",
       });
     } finally {
+      submitting.current = false;
       setPending(false);
     }
   }
@@ -219,7 +222,7 @@ export function PosConfirmationPanel({ draft, customer, disabled, onConfirmed, o
       </div>) : inventoryConflicts.length > 1 ? <ul className="mt-2 space-y-1">{inventoryConflicts.map((conflict) => <li key={conflict.productId}><strong>{conflict.productName}</strong> — disponibles {conflict.availableStock} / solicitadas {conflict.requestedQuantity}{conflict.hasActiveReservations ? <button type="button" onClick={() => onViewReservations(conflict)} className="ml-2 min-h-11 font-semibold underline underline-offset-4">Ver pedidos</button> : null}</li>)}</ul> : <p className="mt-2">Las existencias se actualizaron. Revise las cantidades del carrito.</p>}
       <p className="mt-2">Ajuste la cantidad para continuar.</p>
     </div> : confirmationError ? <p role="alert" data-error-code={confirmationError.code} className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{confirmationError.message}</p> : null}
-    <button type="button" disabled={disabled || pending || !accepted || !paymentReady || !invoiceDate} onClick={() => void confirm()} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? <LoaderCircle className="animate-spin motion-reduce:animate-none" size={19} /> : <CheckCircle2 size={19} />} Confirmar venta por {formatCurrency(draft.grandTotal)}</button>
+    <button type="button" disabled={disabled || pending || !accepted || !paymentReady || !invoiceDate} aria-busy={pending || undefined} onClick={() => void confirm()} className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e4252c] px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{pending ? <><LoaderCircle aria-hidden className="animate-spin motion-reduce:animate-none" size={19} /><span role="status" aria-live="polite">Confirmando venta…</span></> : <><CheckCircle2 aria-hidden size={19} /> Confirmar venta por {formatCurrency(draft.grandTotal)}</>}</button>
     {overrideDialogOpen ? <PosCreditOverdueOverrideDialog customerName={customer.displayName} saleTotal={draft.grandTotal} creditLimit={customer.credit.creditLimit} openBalance={customer.credit.openBalance} availableCredit={customer.credit.availableCredit} overdueBalance={customer.credit.overdueBalance} reason={overrideReason} pending={pending} error={confirmationError?.message} onReasonChange={(value) => { setOverrideReason(value); setConfirmationError(null); requestKey.current = null; }} onCancel={() => { if (!pending) setOverrideDialogOpen(false); }} onConfirm={() => void confirm(overrideReason)} /> : null}
   </section>;
 }

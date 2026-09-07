@@ -2697,7 +2697,7 @@ function ProductEditor({
   function handleDialogKeyDown(event: React.KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      if (!pending) onClose();
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
@@ -2748,6 +2748,7 @@ function ProductEditor({
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-editor-title"
+        aria-busy={pending || undefined}
         tabIndex={-1}
         onKeyDown={handleDialogKeyDown}
         className="mx-auto my-4 max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-lg bg-white text-[#080808] outline-none sm:my-6"
@@ -2757,7 +2758,7 @@ function ProductEditor({
             <p className="text-sm text-black/50">{product.id ? "Editar producto" : "Crear producto"}</p>
             <h2 id="product-editor-title" className="text-xl font-semibold">{product.name || "Nuevo producto"}</h2>
           </div>
-          <button ref={closeButtonRef} onClick={onClose} className="grid size-11 place-items-center rounded-md border border-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c]" aria-label="Cerrar editor de producto">
+          <button ref={closeButtonRef} onClick={onClose} disabled={pending} className="grid size-11 place-items-center rounded-md border border-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4252c] disabled:opacity-50" aria-label="Cerrar editor de producto">
             <X size={18} />
           </button>
         </div>
@@ -3349,6 +3350,7 @@ function ProductEditor({
                   <label
                     role="button"
                     tabIndex={0}
+                    aria-busy={isUploadPending || undefined}
                     aria-label={image.public_url ? `Cambiar ${imageTitle.toLowerCase()}` : uploadLabel}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => {
@@ -3363,7 +3365,7 @@ function ProductEditor({
                     }}
                     className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-black/20 bg-[#f4f4f5] px-3 py-4 text-center text-sm font-medium"
                   >
-                    {isUploadPending ? <Loader2 size={18} className="animate-spin" /> : <FileImage size={18} />}
+                    {isUploadPending ? <Loader2 aria-hidden size={18} className="animate-spin motion-reduce:animate-none" /> : <FileImage aria-hidden size={18} />}
                     <span>{isUploadPending ? "Subiendo imagen..." : image.public_url ? "Cambiar imagen" : uploadLabel}</span>
                     <span className="text-xs font-normal text-black/50">También puedes arrastrar la imagen aquí.</span>
                     <span className="text-xs font-normal text-black/50">{productImageHelpText}</span>
@@ -3464,18 +3466,20 @@ function ProductEditor({
               {imageSaveBlockReason}
             </p>
           ) : null}
-          <Button onClick={onClose} variant="ghost" className="min-h-11">
+          <Button onClick={onClose} variant="ghost" className="min-h-11" disabled={pending}>
             Cancelar
           </Button>
           <Button
             onClick={onSubmit}
-            disabled={pending || Boolean(imageSaveBlockReason)}
+            disabled={Boolean(imageSaveBlockReason)}
+            pending={pending}
+            pendingLabel="Guardando producto…"
             aria-describedby={imageSaveBlockReason ? "product-image-save-block-reason" : undefined}
             variant="dark"
             className="min-h-11"
           >
             <Save size={17} />
-            {pending ? "Guardando producto..." : "Guardar producto"}
+            Guardar producto
           </Button>
         </div>
       </section>

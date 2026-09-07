@@ -7,7 +7,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, Download, Filter, PlusCircle, 
 import { markCreditReceivablePaidAction, registerCreditReceivablePaymentAction } from "@/app/admin/pedidos/actions";
 import { AccountsReceivableSummary } from "@/components/admin/accounts-receivable-summary";
 import { AccessibleSheet } from "@/components/admin/accessible-sheet";
-import { Button } from "@/components/ui";
+import { AsyncDownloadLink, Button } from "@/components/ui";
 import { useToast } from "@/contexts/toast-context";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import type { AdminAccountsReceivablePage, AdminAccountsReceivableRow, CommercialCreditPaymentReceivedMethod } from "@/types/credit";
@@ -59,6 +59,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
   const [detailMobile, setDetailMobile] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isRefreshing, startRefresh] = useTransition();
   const submitting = useRef(false);
 
   useEffect(() => {
@@ -71,7 +72,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
     const params = new URLSearchParams(searchParams.toString());
     if (debouncedQuery) params.set("q", debouncedQuery); else params.delete("q");
     params.set("page", "1");
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    startRefresh(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }));
   }, [data.query, debouncedQuery, pathname, router, searchParams]);
   const selected = useMemo(() => {
     if (selectedId === null) return null;
@@ -80,7 +81,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
   const setParams = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(updates).forEach(([key, value]) => value ? params.set(key, value) : params.delete(key));
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    startRefresh(() => router.push(`${pathname}?${params.toString()}`, { scroll: false }));
   };
   const openDetail = (row: AdminAccountsReceivableRow) => { setSelectedId(row.id); if (isMobile) setDetailMobile(true); };
   const closeDesktopDetail = () => {
@@ -122,7 +123,8 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
     <section aria-labelledby="accounts-title">
       <div className="mb-2"><h2 id="accounts-title" className="text-2xl font-bold">Cuentas</h2><p className="text-sm text-black/50">Gestiona saldos, vencimientos y abonos.</p></div>
       <div className={`grid min-w-0 gap-3 ${selected ? "xl:grid-cols-[minmax(0,1fr)_clamp(320px,26vw,360px)]" : "grid-cols-1"}`}>
-        <div className="min-w-0 rounded-xl border border-black/10 bg-white shadow-sm">
+        <div className="relative min-w-0 rounded-xl border border-black/10 bg-white shadow-sm" aria-busy={isRefreshing || undefined}>
+          {isRefreshing ? <p role="status" aria-live="polite" className="absolute inset-x-0 top-0 z-10 bg-red-50 px-3 py-1 text-center text-xs font-semibold text-[#b91c25]">Actualizando cuentas…</p> : null}
           <div className="space-y-2 border-b border-black/10 p-3">
             <label className="relative block"><span className="sr-only">Buscar cuentas por cobrar</span><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-black/40" size={18}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente, pedido, factura o referencia" className="min-h-11 w-full rounded-lg border border-black/10 pl-10 pr-3 text-sm focus:border-[#e30613] focus:outline-none"/></label>
             <div className="flex flex-wrap items-center gap-2">
@@ -132,7 +134,7 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
             </div>
             <p className="text-xs text-black/50">{data.total.toLocaleString("es-HN")} cuentas encontradas</p>
           </div>
-          <div role="table" aria-label="Cuentas por cobrar" className="min-w-0">
+          <div role="table" aria-label="Cuentas por cobrar" className={`min-w-0 transition-opacity ${isRefreshing ? "pointer-events-none opacity-60" : ""}`}>
             <div role="row" className="hidden grid-cols-[minmax(0,1.2fr)_minmax(0,.95fr)_minmax(0,1.1fr)_minmax(112px,1fr)_minmax(0,.9fr)_minmax(0,.8fr)_minmax(0,.8fr)_minmax(94px,.9fr)] gap-2 border-b border-black/10 bg-black/[.025] px-3 py-2 text-xs font-semibold lg:grid"><span role="columnheader" className="min-w-0 truncate">Cliente</span><span role="columnheader" className="min-w-0 truncate">Factura</span><span role="columnheader" className="min-w-0 truncate">Pedido</span><span role="columnheader" className="min-w-0 truncate">Saldo</span><span role="columnheader" className="min-w-0 truncate">Vencimiento</span><span role="columnheader" className="min-w-0 truncate">Estado</span><span role="columnheader" className="min-w-0 truncate">Último abono</span><span role="columnheader" className="min-w-0 truncate">Acción</span></div>
             {data.rows.length ? data.rows.map((row) => {
               const latest = row.payments.filter((payment) => !payment.voided_at).sort((a,b) => b.received_at.localeCompare(a.received_at))[0];
@@ -155,13 +157,13 @@ export function AccountsReceivableManager({ data, canMarkPaid, canExport }: { da
       </div>
     </section>
     {isMobile && detailMobile && selected ? <AccessibleSheet title="Detalle de cuenta" description={selected.customer_name} onClose={closeMobileDetail} returnFocusId={`cxc-detail-${selected.id}`} footer={<DetailActions rowId={selected.id} canCollect={canCollect(selected)} onPayment={() => openAction("payment")} onMarkPaid={() => openAction("mark-paid")}/>}><ReceivableDetailContent row={selected}/></AccessibleSheet> : null}
-    {actionMode && draft && selected ? <AccessibleSheet title={actionMode === "payment" ? "Registrar abono" : "Marcar como pagado"} description={`${selected.customer_name} · Saldo ${formatCurrency(selected.balance_due)}`} onClose={closeAction} returnFocusId={`cxc-${actionMode}-${selected.id}`} footer={<div className="flex gap-2"><Button variant="ghost" onClick={closeAction} disabled={isPending} className="min-h-11 flex-1">Cancelar</Button><Button onClick={submitAction} disabled={isPending} className="min-h-11 flex-1">{isPending ? "Procesando…" : actionMode === "payment" ? "Registrar abono" : "Confirmar pago total"}</Button></div>}><PaymentFields mode={actionMode} draft={draft} setDraft={setDraft}/></AccessibleSheet> : null}
+    {actionMode && draft && selected ? <AccessibleSheet title={actionMode === "payment" ? "Registrar abono" : "Marcar como pagado"} description={`${selected.customer_name} · Saldo ${formatCurrency(selected.balance_due)}`} onClose={closeAction} returnFocusId={`cxc-${actionMode}-${selected.id}`} footer={<div className="flex gap-2"><Button variant="ghost" onClick={closeAction} disabled={isPending} className="min-h-11 flex-1">Cancelar</Button><Button onClick={submitAction} pending={isPending} pendingLabel={actionMode === "payment" ? "Registrando abono…" : "Marcando como pagado…"} className="min-h-11 flex-1">{actionMode === "payment" ? "Registrar abono" : "Confirmar pago total"}</Button></div>}><PaymentFields mode={actionMode} draft={draft} setDraft={setDraft}/></AccessibleSheet> : null}
   </div>;
 }
 
 function ExportLink({ format, data, children }: { format: "csv"|"xlsx"; data: AdminAccountsReceivablePage; children: React.ReactNode }) {
   const params = new URLSearchParams({ format, status: data.filter, q: data.query, sort: data.sort, direction: data.direction });
-  return <a href={`/api/admin/cuentas-por-cobrar/export?${params}`} className="block min-h-11 rounded-md px-3 py-3 text-sm hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-[#e30613]">{children}</a>;
+  return <AsyncDownloadLink href={`/api/admin/cuentas-por-cobrar/export?${params}`} pendingLabel={`Generando ${format.toUpperCase()}…`} className="w-full justify-start px-3 py-3 text-sm hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-[#e30613]">{children}</AsyncDownloadLink>;
 }
 function Pagination({ page, totalPages, pageSize, onPage, onSize }: { page:number; totalPages:number; pageSize:number; onPage:(v:number)=>void; onSize:(v:number)=>void }) {
   return <div aria-label="Paginación de cuentas" className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 p-3"><label className="text-sm"><span className="sr-only">Filas por página</span><select value={pageSize} onChange={(e)=>onSize(Number(e.target.value))} className="min-h-11 rounded-lg border border-black/10 px-2"><option value={10}>10 por página</option><option value={20}>20 por página</option><option value={50}>50 por página</option></select></label><div className="flex items-center gap-1"><button className="min-h-11 rounded-lg border px-3 disabled:opacity-40" disabled={page<=1} onClick={()=>onPage(page-1)}>Anterior</button><span className="px-2 text-sm">{page} de {totalPages}</span><button className="min-h-11 rounded-lg border px-3 disabled:opacity-40" disabled={page>=totalPages} onClick={()=>onPage(page+1)}>Siguiente</button></div></div>;

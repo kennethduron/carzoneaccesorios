@@ -1115,10 +1115,12 @@ export function SupplierMultiPaymentWizard({
                     <Button
                       type="button"
                       onClick={submit}
-                      disabled={!applicationsValid || totalCents <= 0 || isPending}
+                      disabled={!applicationsValid || totalCents <= 0}
+                      pending={isPending}
+                      pendingLabel="Registrando pago…"
                     >
-                      {isPending ? <Loader2 className="animate-spin" size={17} /> : <FileCheck2 size={17} />}
-                      {isPending ? "Confirmando…" : "Confirmar pago"}
+                      <FileCheck2 size={17} />
+                      Confirmar pago
                     </Button>
                   )}
                 </div>
@@ -1182,8 +1184,8 @@ export function SupplierMultiPaymentWizard({
           />
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={() => setVoidingId(null)} disabled={isPending}>Regresar</Button>
-            <Button type="button" onClick={submitVoid} disabled={voidReason.trim().length < 3 || isPending}>
-              {isPending ? "Anulando…" : "Confirmar anulación completa"}
+            <Button type="button" onClick={submitVoid} disabled={voidReason.trim().length < 3} pending={isPending} pendingLabel="Anulando pago…">
+              Confirmar anulación completa
             </Button>
           </div>
         </div>

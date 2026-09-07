@@ -539,7 +539,7 @@ export function PurchaseCreateEditWorkspace({ mode, draft, suppliers, pending, d
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="ghost" onClick={onBack} disabled={pending} className="min-h-11">Cancelar</Button>
-            <Button type="submit" disabled={pending} className="min-h-11">{pending ? "Guardando…" : "Guardar compra"}</Button>
+            <Button type="submit" pending={pending} pendingLabel="Guardando compra…" className="min-h-11">Guardar compra</Button>
           </div>
         </div>
       </form>
@@ -586,7 +586,7 @@ export function SupplierReturnWorkspace({ purchase, draft, pending, dirty, headi
         </div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" onClick={onBack} disabled={pending} className="min-h-11">No registrar</Button>
-          <Button type="submit" disabled={pending} className="min-h-11"><RotateCcw size={17} /> {pending ? "Registrando…" : "Registrar devolución"}</Button>
+          <Button type="submit" pending={pending} pendingLabel="Registrando devolución…" className="min-h-11"><RotateCcw size={17} /> Registrar devolución</Button>
         </div>
       </form>
     </section>

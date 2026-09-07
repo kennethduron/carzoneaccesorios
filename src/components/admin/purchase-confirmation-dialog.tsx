@@ -176,7 +176,7 @@ export function PurchaseConfirmationDialog({
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="ghost" onClick={onCancel} disabled={pending} className="min-h-11">Revisar compra</Button>
-            <Button type="submit" disabled={pending || !condition} className="min-h-11">{pending ? "Confirmando…" : "Confirmar y registrar CxP"}</Button>
+            <Button type="submit" disabled={!condition} pending={pending} pendingLabel="Confirmando compra…" className="min-h-11">Confirmar y registrar CxP</Button>
           </div>
         </form>
       </div>

@@ -140,6 +140,9 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
   const [reversalEffectiveDate, setReversalEffectiveDate] = useState("");
   const [reversalRequestKey, setReversalRequestKey] = useState("");
   const [reversalReviewConfirmed, setReversalReviewConfirmed] = useState(false);
+  const [postingEntryId, setPostingEntryId] = useState<string | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [recalculatingEntryId, setRecalculatingEntryId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const canWriteAccounts = canManage || canCreate;
@@ -208,28 +211,33 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
   function saveDraft() {
     const lines = normalizeJournalLines(journalForm.lines);
 
+    setSavingDraft(true);
     startTransition(async () => {
-      const result = await saveJournalDraftAction({
-        id: journalForm.id || undefined,
-        entry_date: journalForm.entry_date,
-        description: journalForm.description,
-        source_type: journalForm.source_type || null,
-        source_id: journalForm.source_id || null,
-        lines,
-      });
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-        setJournalForm({
-          id: "",
-          entry_date: todayKey(),
-          description: "",
-          source_type: "",
-          source_id: "",
-          lines: [emptyLine(), emptyLine()],
+      try {
+        const result = await saveJournalDraftAction({
+          id: journalForm.id || undefined,
+          entry_date: journalForm.entry_date,
+          description: journalForm.description,
+          source_type: journalForm.source_type || null,
+          source_id: journalForm.source_id || null,
+          lines,
         });
-      } else {
-        toast.error(result.message);
+        setMessage(result.message);
+        if (result.ok) {
+          toast.success(result.message);
+          setJournalForm({
+            id: "",
+            entry_date: todayKey(),
+            description: "",
+            source_type: "",
+            source_id: "",
+            lines: [emptyLine(), emptyLine()],
+          });
+        } else {
+          toast.error(result.message);
+        }
+      } finally {
+        setSavingDraft(false);
       }
     });
   }
@@ -240,13 +248,15 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
     );
     if (!confirmed) return;
 
+    setPostingEntryId(entryId);
     startTransition(async () => {
-      const result = await postJournalEntryAction(entryId, expectedVersion);
-      setMessage(result.message);
-      if (result.ok) {
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
+      try {
+        const result = await postJournalEntryAction(entryId, expectedVersion);
+        setMessage(result.message);
+        if (result.ok) toast.success(result.message);
+        else toast.error(result.message);
+      } finally {
+        setPostingEntryId(null);
       }
     });
   }
@@ -319,11 +329,16 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
       toast.error("Ingresa un motivo de recálculo de al menos 10 caracteres.");
       return;
     }
+    setRecalculatingEntryId(entryId);
     startTransition(async () => {
-      const result = await recalculateJournalDraftFromSourceAction(entryId, expectedVersion, reason);
-      setMessage(result.message);
-      if (result.ok) toast.success(result.message);
-      else toast.error(result.message);
+      try {
+        const result = await recalculateJournalDraftFromSourceAction(entryId, expectedVersion, reason);
+        setMessage(result.message);
+        if (result.ok) toast.success(result.message);
+        else toast.error(result.message);
+      } finally {
+        setRecalculatingEntryId(null);
+      }
     });
   }
 
@@ -610,7 +625,7 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
                     <Plus size={16} />
                     Agregar línea
                   </Button>
-                  <Button className="w-full sm:w-auto" onClick={saveDraft} disabled={isPending} variant="dark">
+                  <Button className="w-full sm:w-auto" onClick={saveDraft} disabled={isPending} pending={savingDraft} pendingLabel="Guardando partida…" variant="dark">
                     <Save size={16} />
                     Guardar borrador
                   </Button>
@@ -650,6 +665,8 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
             onReverse={reverseEntry}
             onClose={onCloseFocusedEntry}
             isPending={isPending}
+            postingEntryId={postingEntryId}
+            recalculatingEntryId={recalculatingEntryId}
           />
         ) : null}
         <JournalEntries
@@ -664,6 +681,8 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
           onReverse={reverseEntry}
           onCloseFocusedEntry={onCloseFocusedEntry}
           isPending={isPending}
+          postingEntryId={postingEntryId}
+          recalculatingEntryId={recalculatingEntryId}
         />
         <div className="mt-4">
           <PaginationControls
@@ -715,7 +734,7 @@ export function AccountingManager({ data, canManage, canCreate, canEdit, canPost
             ) : null}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" disabled={isPending} onClick={closeReversalDialog}>Cancelar</Button>
-              <Button type="button" variant="dark" disabled={isPending || !reversalEffectiveDate || reversalReason.trim().length < 10} onClick={confirmReversal}><RotateCcw size={16} />{isPending ? "Reversando…" : reversalReviewConfirmed ? "Confirmar reversión" : "Revisar reversión"}</Button>
+              <Button type="button" variant="dark" disabled={!reversalEffectiveDate || reversalReason.trim().length < 10} pending={isPending} pendingLabel="Reversando partida…" onClick={confirmReversal}><RotateCcw size={16} />{reversalReviewConfirmed ? "Confirmar reversión" : "Revisar reversión"}</Button>
             </div>
           </section>
         </div>
@@ -825,6 +844,8 @@ function FocusedJournalEntry({
   onReverse,
   onClose,
   isPending,
+  postingEntryId,
+  recalculatingEntryId,
 }: {
   viewerData: JournalEntryViewerData;
   canEdit: boolean;
@@ -835,6 +856,8 @@ function FocusedJournalEntry({
   onReverse: (entry: JournalEntry) => void;
   onClose?: () => void;
   isPending: boolean;
+  postingEntryId: string | null;
+  recalculatingEntryId: string | null;
 }) {
   const containerRef = useRef<HTMLElement>(null);
   const entry = viewerData.entry;
@@ -903,7 +926,7 @@ function FocusedJournalEntry({
         </aside>
       ) : null}
       <JournalEntryLines entry={entry} className="mt-4" />
-      <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
+      <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} postingEntryId={postingEntryId} recalculatingEntryId={recalculatingEntryId} />
     </article>
   );
 }
@@ -950,6 +973,8 @@ function JournalEntries({
   onReverse,
   onCloseFocusedEntry,
   isPending,
+  postingEntryId,
+  recalculatingEntryId,
 }: {
   entries: JournalEntry[];
   focusedEntryData: JournalEntryViewerData | null;
@@ -962,6 +987,8 @@ function JournalEntries({
   onReverse: (entry: JournalEntry) => void;
   onCloseFocusedEntry?: () => void;
   isPending: boolean;
+  postingEntryId: string | null;
+  recalculatingEntryId: string | null;
 }) {
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(focusedEntryId);
   const mobileFocusedRef = useRef<HTMLElement>(null);
@@ -1068,7 +1095,7 @@ function JournalEntries({
                 </tbody>
               </table>
             </div>
-            <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} />
+            <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} postingEntryId={postingEntryId} recalculatingEntryId={recalculatingEntryId} />
           </article>
           );
         })}
@@ -1124,7 +1151,7 @@ function JournalEntries({
                           {focused && expanded ? <X size={15} /> : <Eye size={15} />}
                           {focused && expanded ? "Cerrar detalle" : "Ver"}
                         </Button>
-                        <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} compact />
+                        <EntryActions entry={entry} canEdit={canEdit} canPost={canPost} canReverse={canReverse} onPost={onPost} onRecalculate={onRecalculate} onReverse={onReverse} isPending={isPending} postingEntryId={postingEntryId} recalculatingEntryId={recalculatingEntryId} compact />
                       </div>
                     </td>
                   </tr>
@@ -1176,6 +1203,8 @@ function EntryActions({
   onRecalculate,
   onReverse,
   isPending,
+  postingEntryId,
+  recalculatingEntryId,
   compact = false,
 }: {
   entry: JournalEntry;
@@ -1186,6 +1215,8 @@ function EntryActions({
   onRecalculate: (entryId: string, expectedVersion: number) => void;
   onReverse: (entry: JournalEntry) => void;
   isPending: boolean;
+  postingEntryId: string | null;
+  recalculatingEntryId: string | null;
   compact?: boolean;
 }) {
   return (
@@ -1209,13 +1240,13 @@ function EntryActions({
         </Link>
       ) : null}
       {canEdit && entry.status === "borrador" && entry.source_type === "financial_event" && entry.source_id ? (
-        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="ghost" onClick={() => onRecalculate(entry.id, entry.version)}>
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} pending={recalculatingEntryId === entry.id} pendingLabel="Recalculando…" variant="ghost" onClick={() => onRecalculate(entry.id, entry.version)}>
           <RefreshCw size={15} />
           Recalcular desde origen
         </Button>
       ) : null}
       {canPost && entry.status === "borrador" ? (
-        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} variant="dark" onClick={() => onPost(entry.id, entry.version)}>
+        <Button className={compact ? "px-3 py-1.5" : ""} disabled={isPending} pending={postingEntryId === entry.id} pendingLabel="Publicando partida…" variant="dark" onClick={() => onPost(entry.id, entry.version)}>
           <CheckCircle2 size={16} />
           Publicar
         </Button>

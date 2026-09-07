@@ -27,6 +27,11 @@ type CloseResult = {
   validation?: AccountingPeriodCloseValidation;
 };
 
+type PendingPeriodAction = {
+  kind: "validate" | "close";
+  periodId: string;
+};
+
 const statusLabels = { open: "Abierto", closed: "Cerrado", reopened: "Reabierto" } satisfies Record<AccountingPeriod["status"], string>;
 const statusClasses = {
   open: "bg-[#edf7ed] text-[#2f6f3e]",
@@ -80,6 +85,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
   const [closeResult, setCloseResult] = useState<CloseResult | null>(null);
   const [reopenTarget, setReopenTarget] = useState<AccountingPeriod | null>(null);
   const [reopenReason, setReopenReason] = useState("");
+  const [pendingPeriodAction, setPendingPeriodAction] = useState<PendingPeriodAction | null>(null);
   const [isPending, startTransition] = useTransition();
   const toast = useToast();
   const editingPeriod = useMemo(() => periods.find((period) => period.id === form.id) ?? null, [form.id, periods]);
@@ -117,27 +123,34 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
 
   function validateClose(period: AccountingPeriod) {
     if (!canClose || !isCloseableStatus(period.status)) return;
+    setPendingPeriodAction({ kind: "validate", periodId: period.id });
     startTransition(async () => {
-      const result = await validateAccountingPeriodCloseAction(period.id);
-      setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
-      if (result.ok) {
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
+      try {
+        const result = await validateAccountingPeriodCloseAction(period.id);
+        setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
+        if (result.ok) toast.success(result.message);
+        else toast.error(result.message);
+      } finally {
+        setPendingPeriodAction(null);
       }
     });
   }
 
   function closePeriod(period: AccountingPeriod) {
     if (!canClose || !isCloseableStatus(period.status) || closeResult?.periodId !== period.id || !closeResult.validation?.ready) return;
+    setPendingPeriodAction({ kind: "close", periodId: period.id });
     startTransition(async () => {
-      const result = await closeAccountingPeriodAction(period.id);
-      setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
-      if (result.ok) {
-        toast.success(result.message);
-        resetForm();
-      } else {
-        toast.error(result.message);
+      try {
+        const result = await closeAccountingPeriodAction(period.id);
+        setCloseResult({ periodId: period.id, message: result.message, validation: result.validation });
+        if (result.ok) {
+          toast.success(result.message);
+          resetForm();
+        } else {
+          toast.error(result.message);
+        }
+      } finally {
+        setPendingPeriodAction(null);
       }
     });
   }
@@ -219,9 +232,9 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
           </Field>
           <div className="flex items-end md:col-span-2 xl:col-span-6">
             {canManage ? (
-              <Button type="button" onClick={submit} disabled={!canSubmit || isPending} variant="dark" className="w-full sm:w-auto">
+              <Button type="button" onClick={submit} disabled={!canSubmit || isPending} pending={isPending && !pendingPeriodAction && !reopenTarget} pendingLabel={form.id ? "Guardando período…" : "Creando período…"} variant="dark" className="w-full sm:w-auto">
                 <Save size={16} />
-                {isPending ? "Guardando..." : form.id ? "Guardar período" : "Crear período"}
+                {form.id ? "Guardar período" : "Crear período"}
               </Button>
             ) : null}
           </div>
@@ -250,6 +263,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
             canReopen={canReopen}
             isPending={isPending}
             closeResult={closeResult}
+            pendingAction={pendingPeriodAction}
             onEdit={(period) => setForm(toInput(period))}
             onValidate={validateClose}
             onClose={closePeriod}
@@ -276,7 +290,7 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
             </label>
             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="ghost" onClick={cancelReopen} disabled={isPending}>Cancelar</Button>
-              <Button type="button" variant="dark" onClick={confirmReopen} disabled={isPending || !reopenReason.trim()}>
+              <Button type="button" variant="dark" onClick={confirmReopen} disabled={!reopenReason.trim()} pending={isPending} pendingLabel="Reabriendo período…">
                 <RotateCcw size={16} />
                 Reabrir período
               </Button>
@@ -288,13 +302,14 @@ export function AccountingPeriodsManager({ periods, currentPeriod, canManage, ca
   );
 }
 
-function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeResult, onEdit, onValidate, onClose, onReopen }: {
+function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeResult, pendingAction, onEdit, onValidate, onClose, onReopen }: {
   periods: AccountingPeriod[];
   canManage: boolean;
   canClose: boolean;
   canReopen: boolean;
   isPending: boolean;
   closeResult: CloseResult | null;
+  pendingAction: PendingPeriodAction | null;
   onEdit: (period: AccountingPeriod) => void;
   onValidate: (period: AccountingPeriod) => void;
   onClose: (period: AccountingPeriod) => void;
@@ -313,7 +328,7 @@ function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeR
               <StatusBadge status={period.status} />
             </div>
             <PeriodMetadata period={period} mobile />
-            <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} mobile />
+            <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} pendingAction={pendingAction} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} mobile />
             {closeResult?.periodId === period.id ? <ValidationPanel result={closeResult} /> : null}
           </article>
         ))}
@@ -344,7 +359,7 @@ function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeR
                 <td className="px-3 py-3">{formatHnDateTime(period.updated_at)}</td>
                 {canManage || canClose || canReopen ? (
                   <td className="px-3 py-3">
-                    <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} />
+                    <PeriodActions period={period} canManage={canManage} canClose={canClose} canReopen={canReopen} isPending={isPending} closeResult={closeResult} pendingAction={pendingAction} onEdit={onEdit} onValidate={onValidate} onClose={onClose} onReopen={onReopen} />
                   </td>
                 ) : null}
               </tr>
@@ -357,13 +372,14 @@ function PeriodList({ periods, canManage, canClose, canReopen, isPending, closeR
   );
 }
 
-function PeriodActions({ period, canManage, canClose, canReopen, isPending, closeResult, onEdit, onValidate, onClose, onReopen, mobile = false }: {
+function PeriodActions({ period, canManage, canClose, canReopen, isPending, closeResult, pendingAction, onEdit, onValidate, onClose, onReopen, mobile = false }: {
   period: AccountingPeriod;
   canManage: boolean;
   canClose: boolean;
   canReopen: boolean;
   isPending: boolean;
   closeResult: CloseResult | null;
+  pendingAction: PendingPeriodAction | null;
   onEdit: (period: AccountingPeriod) => void;
   onValidate: (period: AccountingPeriod) => void;
   onClose: (period: AccountingPeriod) => void;
@@ -371,6 +387,8 @@ function PeriodActions({ period, canManage, canClose, canReopen, isPending, clos
   mobile?: boolean;
 }) {
   const validationReady = closeResult?.periodId === period.id && closeResult.validation?.ready;
+  const validating = pendingAction?.kind === "validate" && pendingAction.periodId === period.id;
+  const closing = pendingAction?.kind === "close" && pendingAction.periodId === period.id;
   const closeable = isCloseableStatus(period.status);
   const baseClass = mobile ? "mt-3 grid gap-2 sm:grid-cols-2" : "flex flex-wrap gap-2";
 
@@ -398,11 +416,11 @@ function PeriodActions({ period, canManage, canClose, canReopen, isPending, clos
       ) : null}
       {canClose && closeable ? (
         <>
-          <Button type="button" variant="ghost" onClick={() => onValidate(period)} disabled={isPending} className={mobile ? "w-full" : ""}>
+          <Button type="button" variant="ghost" onClick={() => onValidate(period)} disabled={isPending} pending={validating} pendingLabel="Validando cierre…" className={mobile ? "w-full" : ""}>
             <ShieldCheck size={16} />
             Validar cierre
           </Button>
-          <Button type="button" variant="dark" onClick={() => onClose(period)} disabled={isPending || !validationReady} className={mobile ? "w-full" : ""}>
+          <Button type="button" variant="dark" onClick={() => onClose(period)} disabled={!validationReady || isPending} pending={closing} pendingLabel="Cerrando período…" className={mobile ? "w-full" : ""}>
             <LockKeyhole size={16} />
             Cerrar período
           </Button>

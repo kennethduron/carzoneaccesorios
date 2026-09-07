@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { ArrowLeft, FileSpreadsheet, FileText, Printer, Search } from "lucide-react";
+import { ArrowLeft, FileText, Search } from "lucide-react";
 import { PaginationControls } from "@/components/admin/pagination-controls";
 import { AccountingReportAccountFilter } from "@/components/admin/accounting-report-account-filter";
-import { Input } from "@/components/ui";
+import { AsyncDownloadLink, Input } from "@/components/ui";
 import { buildAccountingReportParams } from "@/services/supabase/accounting-reports.service";
 import type { AccountingAccountType } from "@/types/accounting";
 import type { AccountingReportFilters, BalanceSheetReportData, FinancialStatementSection, GeneralLedgerReportData, IncomeStatementReportData, TrialBalanceReportData } from "@/types/accounting-reports";
@@ -134,14 +134,8 @@ function ExportPanel({ canExport, pdfHref, excelHref }: { canExport: boolean; pd
           <p className="mt-1 text-sm leading-6 text-black/55">PDF y Excel se generan desde las mismas partidas contabilizadas del reporte filtrado, incluidas originales reversadas y sus contrapartidas. La exportación CSV no está disponible para este reporte.</p>
         </div>
         <div className="grid gap-2 sm:flex sm:flex-wrap">
-          <a href={excelHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold ${canExport ? "border-black/10 bg-white text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]" : "pointer-events-none border-black/10 bg-[#f4f4f5] text-black/35"}`}>
-            <FileSpreadsheet size={16} />
-            Exportar Excel
-          </a>
-          <a href={pdfHref} download aria-disabled={!canExport} className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${canExport ? "bg-[#080808] text-white hover:bg-[#1f1f1f]" : "pointer-events-none bg-[#f4f4f5] text-black/35"}`}>
-            <Printer size={16} />
-            Exportar PDF
-          </a>
+          <AsyncDownloadLink href={excelHref} disabled={!canExport} pendingLabel="Generando Excel…" className="border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-[#080808] hover:border-[#e4252c]/35 hover:bg-[#fff1f2]">Exportar Excel</AsyncDownloadLink>
+          <AsyncDownloadLink href={pdfHref} disabled={!canExport} pendingLabel="Generando PDF…" className="bg-[#080808] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f1f1f]">Exportar PDF</AsyncDownloadLink>
         </div>
       </div>
       {!canExport ? <p className="mt-3 text-sm text-[#7c2d12]">Tu rol puede revisar reportes contables, pero no exportarlos.</p> : null}
