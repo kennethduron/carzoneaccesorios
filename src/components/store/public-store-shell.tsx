@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from "react";
 import { getPublicAccountMenuStateAction, type PublicAccountMenuState } from "@/app/actions/account-menu";
 import { markWholesaleApprovedNoticeSeenAction } from "@/app/actions/wholesale";
 import { SocialLinks } from "@/components/store/social-links";
+import { AdminPriceViewSelector } from "@/components/store/admin-price-view-selector";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { useAdminPriceView } from "@/contexts/admin-price-view-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { getPublicCompanySettingsClient } from "@/services/supabase/company-settings-client.service";
@@ -49,9 +51,14 @@ const guestAccountState: PublicAccountMenuState = {
 export function PublicStoreShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const adminPriceView = useAdminPriceView();
   const [open, setOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [accountState, setAccountState] = useState<PublicAccountMenuState>(guestAccountState);
+  const [accountState, setAccountState] = useState<PublicAccountMenuState>(() =>
+    adminPriceView.eligible
+      ? { isAuthenticated: true, role: null, hasAdminAccess: true }
+      : guestAccountState,
+  );
   const [showWholesaleApprovedNotice, setShowWholesaleApprovedNotice] = useState(false);
   const [cartPulse, setCartPulse] = useState(false);
   const [companySettings, setCompanySettings] = useState<PublicCompanySettings | null>(null);
@@ -262,7 +269,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
               </button>
 
               {userMenuOpen ? (
-                <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-md border border-black/10 bg-white py-2 shadow-xl">
+                <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-black/10 bg-white py-2 shadow-xl">
                   {accountState.isAuthenticated ? (
                     <>
                       {accountState.hasAdminAccess ? (
@@ -284,6 +291,7 @@ export function PublicStoreShell({ children }: { children: React.ReactNode }) {
                           {label}
                         </Link>
                       ))}
+                      <AdminPriceViewSelector />
                       <div className="mt-2 border-t border-black/10 pt-2">
                         <form action="/auth/logout" method="post">
                           <button type="submit" className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-[#f4f4f5]">

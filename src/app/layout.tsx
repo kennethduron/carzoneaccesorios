@@ -3,6 +3,7 @@ import { Rajdhani, Titillium_Web } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
 import { defaultOgImageUrl, siteName, siteUrl } from "@/lib/seo";
 import { getPortalCommercialContextV2 } from "@/services/supabase/portal-commercial-context.service";
+import { getAdminPriceViewState } from "@/services/supabase/admin-price-view.service";
 import "./globals.css";
 
 const rajdhani = Rajdhani({
@@ -99,11 +100,16 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const commercialContext = await getPortalCommercialContextV2();
+  const [commercialContext, adminPriceView] = await Promise.all([
+    getPortalCommercialContextV2(),
+    getAdminPriceViewState(),
+  ]);
   return (
     <html lang="es" className={`${rajdhani.variable} ${titillium.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
-        <AppProviders initialCommercialContext={commercialContext}>{children}</AppProviders>
+        <AppProviders initialCommercialContext={commercialContext} initialAdminPriceView={adminPriceView}>
+          {children}
+        </AppProviders>
       </body>
     </html>
   );

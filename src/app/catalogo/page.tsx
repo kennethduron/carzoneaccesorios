@@ -4,6 +4,7 @@ import { CatalogBrowser } from "@/components/store/catalog-browser";
 import { WholesaleRequirementSummary } from "@/components/store/wholesale-program-info";
 import { getWholesaleAccessStateAction } from "@/app/actions/wholesale";
 import { getCatalogProducts, getCategorySummaries } from "@/services/supabase/products.service";
+import { getAdminWholesalePricesByProductId } from "@/services/supabase/admin-price-view.service";
 import { createPublicMetadata } from "@/lib/seo";
 import { normalizeProductCategorySlug } from "@/lib/product-categories";
 import { normalizeVehicleBrand, normalizeVehicleModel } from "@/utils/vehicle-compatibility";
@@ -95,6 +96,7 @@ export default async function CatalogoPage({
     availability: params.disponibilidad,
     priceMode,
   });
+  const adminWholesalePrices = await getAdminWholesalePricesByProductId(catalog.products.map((product) => product.id));
 
   return (
     <PublicStoreShell>
@@ -132,6 +134,7 @@ export default async function CatalogoPage({
         vehicleYear={params.anio_carro ?? ""}
         availability={params.disponibilidad ?? ""}
         filterOptions={catalog.filterOptions}
+        adminWholesalePricesByProductId={adminWholesalePrices}
       />
     </PublicStoreShell>
   );

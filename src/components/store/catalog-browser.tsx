@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Car, Search, SlidersHorizontal, X } from "lucide-react";
 import type { Product } from "@/types/commerce";
+import type { AdminWholesalePricesByProductId } from "@/types/admin-price-view";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { WholesaleCodePanel } from "@/components/store/wholesale-code-panel";
 import { useProductRegistry } from "@/contexts/product-registry-context";
+import { useAdminPriceView } from "@/contexts/admin-price-view-context";
 
 type CatalogBrowserProps = {
   products: Product[];
@@ -33,6 +35,7 @@ type CatalogBrowserProps = {
       vehicleYearEnd: number | null;
     }>;
   };
+  adminWholesalePricesByProductId: AdminWholesalePricesByProductId;
 };
 
 function uniqueSorted(values: string[]) {
@@ -123,6 +126,7 @@ export function CatalogBrowser({
   vehicleYear,
   availability,
   filterOptions,
+  adminWholesalePricesByProductId,
 }: CatalogBrowserProps) {
   const [search, setSearch] = useState(query);
   const [selectedCategory, setSelectedCategory] = useState(category);
@@ -134,6 +138,7 @@ export function CatalogBrowser({
   const [selectedAvailability, setSelectedAvailability] = useState(availability);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const { registerProducts } = useProductRegistry();
+  const adminPriceView = useAdminPriceView();
   const totalPages = Math.ceil(total / pageSize);
   const currentPage = totalPages > 0 ? Math.min(Math.max(page, 1), totalPages) : 1;
   const hasPreviousPage = currentPage > 1;
@@ -351,7 +356,11 @@ export function CatalogBrowser({
           <div className="hidden md:block">{filterControls}</div>
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-black/50">
             <SlidersHorizontal size={14} />
-            <span>El filtro de precio usa el precio disponible según tu acceso.</span>
+            <span>
+              {adminPriceView.eligible
+                ? "El filtro de precio conserva la tarifa comercial; la vista administrativa solo cambia los importes mostrados."
+                : "El filtro de precio usa el precio disponible según tu acceso."}
+            </span>
             <Car size={14} />
             <span>Compatibilidad por marca, modelo y año del vehículo.</span>
           </div>
@@ -428,7 +437,12 @@ export function CatalogBrowser({
         ) : (
           <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-3 lg:pr-20 xl:grid-cols-4 2xl:pr-0">
             {products.map((product, index) => (
-              <CatalogProductCard key={product.id} product={product} eagerImage={index < 4} />
+              <CatalogProductCard
+                key={product.id}
+                product={product}
+                eagerImage={index < 4}
+                adminWholesalePrice={adminWholesalePricesByProductId[product.id]?.wholesalePrice}
+              />
             ))}
           </div>
         )}

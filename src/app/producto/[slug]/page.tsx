@@ -6,6 +6,7 @@ import { getOfficialProductCategory } from "@/lib/product-categories";
 import { absoluteUrl, getProductImageAlt, serializeJsonLd, siteName, siteUrl } from "@/lib/seo";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getProductBySlug, getRelatedProducts } from "@/services/supabase/products.service";
+import { getAdminWholesalePricesByProductId } from "@/services/supabase/admin-price-view.service";
 import { getPreferredWhatsAppUrl } from "@/utils/contact-settings";
 import { getProductMetaDescription } from "@/utils/product-content";
 
@@ -64,6 +65,10 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
     getRelatedProducts(product),
     getPublicCompanySettings(),
   ]);
+  const adminWholesalePrices = await getAdminWholesalePricesByProductId([
+    product.id,
+    ...relatedProducts.map((relatedProduct) => relatedProduct.id),
+  ]);
   const canonical = `${siteUrl}/producto/${product.slug}`;
   const category = getOfficialProductCategory(product.category)?.name ?? null;
   const productSchema = {
@@ -120,6 +125,7 @@ export default async function ProductoPage({ params }: { params: Promise<{ slug:
         relatedProducts={relatedProducts}
         whatsappUrl={getPreferredWhatsAppUrl(companySettings)}
         productUrl={canonical}
+        adminWholesalePricesByProductId={adminWholesalePrices}
       />
     </PublicStoreShell>
   );

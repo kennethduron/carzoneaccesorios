@@ -5,7 +5,9 @@ import Link from "next/link";
 import { PackageCheck, ShieldCheck, ShoppingCart, Truck } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import type { Product } from "@/types/commerce";
+import type { AdminWholesalePricesByProductId } from "@/types/admin-price-view";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { useAdminPriceView } from "@/contexts/admin-price-view-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { useProductRegistry } from "@/contexts/product-registry-context";
 import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
@@ -15,19 +17,23 @@ import { ProductImageGallery } from "@/components/store/product-image-gallery";
 import { CatalogProductCard } from "@/components/store/catalog-product-card";
 import { buildWhatsAppMessageUrl } from "@/utils/contact-settings";
 import { ProductShareButton } from "@/components/store/product-share-button";
+import { resolveAdminDisplayPrice } from "@/utils/admin-price-view";
 
 export function ProductDetail({
   product,
   relatedProducts = [],
   whatsappUrl = "",
   productUrl,
+  adminWholesalePricesByProductId,
 }: {
   product: Product;
   relatedProducts?: Product[];
   whatsappUrl?: string;
   productUrl: string;
+  adminWholesalePricesByProductId: AdminWholesalePricesByProductId;
 }) {
   const { priceMode } = usePriceMode();
+  const adminPriceView = useAdminPriceView();
   const { addToCart, cartMessage } = useShoppingCart();
   const { registerProducts } = useProductRegistry();
   const compatibility = formatCompatibility(product);
@@ -40,11 +46,30 @@ export function ProductDetail({
     : `Hola, estoy interesado en este producto: ${product.name} - ${productUrl}`;
   const productWhatsappUrl = buildWhatsAppMessageUrl(whatsappUrl, whatsappMessage);
   const hasWholesalePrice = hasValidWholesalePrice(product);
-  const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const commercialPrice = getProductPrice(product, priceMode);
+  const displayResolution = resolveAdminDisplayPrice({
+    eligible: adminPriceView.eligible,
+    mode: adminPriceView.mode,
+    retailPrice: product.retail_price,
+    commercialPrice,
+    adminWholesalePrice: adminWholesalePricesByProductId[product.id]?.wholesalePrice,
+  });
+  const isCommercialWholesaleVisible =
+    displayResolution.kind === "commercial" && priceMode === "wholesale" && hasWholesalePrice;
+  const isAdminWholesaleVisible = displayResolution.kind === "admin-wholesale";
   const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
-  const displayPrice = getProductPrice(product, priceMode);
-  const priceLabel =
-    priceMode === "wholesale" ? (hasWholesalePrice ? "Precio mayorista" : "Precio disponible") : getProductPriceLabel(product, priceMode);
+  const displayPrice = displayResolution.price;
+  const priceLabel = adminPriceView.eligible
+    ? isAdminWholesaleVisible
+      ? "Vista mayorista administrativa"
+      : displayResolution.kind === "admin-fallback"
+        ? "Vista detalle (sin tarifa mayorista)"
+        : "Vista detalle administrativa"
+    : priceMode === "wholesale"
+      ? hasWholesalePrice
+        ? "Precio mayorista"
+        : "Precio disponible"
+      : getProductPriceLabel(product, priceMode);
 
   useEffect(() => {
     registerProducts([product, ...relatedProducts]);
@@ -65,8 +90,10 @@ export function ProductDetail({
               {product.is_new ? (
                 <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold uppercase text-black/70">Nuevo</span>
               ) : null}
-              {isWholesalePriceVisible ? (
-                <span className="rounded-md bg-[#080808] px-2 py-1 text-xs font-semibold uppercase text-white">Precio mayorista</span>
+              {isAdminWholesaleVisible || isCommercialWholesaleVisible ? (
+                <span className="rounded-md bg-[#080808] px-2 py-1 text-xs font-semibold uppercase text-white">
+                  {isAdminWholesaleVisible ? "Vista mayorista" : "Precio mayorista"}
+                </span>
               ) : null}
             </div>
             <h1 className="mt-3 text-3xl font-semibold leading-tight md:text-5xl">{product.name}</h1>
@@ -77,14 +104,30 @@ export function ProductDetail({
             <div className="rounded-lg border border-black/10 bg-white p-4">
               <p className="text-sm text-black/45">{priceLabel}</p>
               <p className="mt-1 text-3xl font-semibold">{formatCurrency(displayPrice)}</p>
-              {!isWholesalePriceVisible && priceMode === "retail" ? (
+              {!adminPriceView.eligible && !isCommercialWholesaleVisible && priceMode === "retail" ? (
                 <p className="mt-1 text-sm text-black/55">Precio público del catálogo</p>
               ) : null}
-              {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
+              {isCommercialWholesaleVisible && wholesaleMinimumQuantity > 1 ? (
                 <p className="mt-2 text-sm font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
               ) : null}
             </div>
-            {isWholesalePriceVisible ? (
+            {adminPriceView.eligible ? (
+              <div className="rounded-lg border border-[#e4252c]/20 bg-[#fff1f2] p-4">
+                <p className="text-sm text-black/45">Preferencia administrativa</p>
+                <p className="mt-1 text-lg font-semibold">
+                  {isAdminWholesaleVisible
+                    ? "Mostrando tarifa mayorista"
+                    : displayResolution.kind === "admin-fallback"
+                      ? "Tarifa mayorista no disponible"
+                      : "Mostrando tarifa detalle"}
+                </p>
+                <p className="mt-2 text-sm text-black/55">
+                  {displayResolution.kind === "admin-fallback"
+                    ? "Se muestra Detalle para este producto. La preferencia no cambia ventas ni condiciones comerciales."
+                    : "Esta vista es informativa y no cambia carrito, checkout ni condiciones comerciales."}
+                </p>
+              </div>
+            ) : isCommercialWholesaleVisible ? (
               <div className="rounded-lg border border-black/10 bg-white p-4">
                 <p className="text-sm text-black/45">Mayoreo activo</p>
                 <p className="mt-1 text-lg font-semibold">Precio especial aplicado</p>
@@ -131,7 +174,7 @@ export function ProductDetail({
               className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#080808] px-4 py-3 text-sm font-semibold text-white hover:bg-[#e4252c] disabled:cursor-not-allowed disabled:bg-black/20 disabled:text-black/45"
             >
               <ShoppingCart size={18} />
-              {product.stock <= 0 ? "Sin stock" : `Agregar - ${formatCurrency(displayPrice)}`}
+              {product.stock <= 0 ? "Sin stock" : `Agregar - ${formatCurrency(commercialPrice)}`}
             </button>
             {productWhatsappUrl ? (
               <a
@@ -199,7 +242,11 @@ export function ProductDetail({
           </div>
           <div className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
             {relatedProducts.map((item) => (
-              <CatalogProductCard key={item.id} product={item} />
+              <CatalogProductCard
+                key={item.id}
+                product={item}
+                adminWholesalePrice={adminWholesalePricesByProductId[item.id]?.wholesalePrice}
+              />
             ))}
           </div>
         </section>

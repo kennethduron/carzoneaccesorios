@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:admin-price-view": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-admin-price-view.mjs",
     "backup:v2:simplified:first-real-sql": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/backup-v2-simplified-first-real-sql.mjs",
     "backup:v2:simplified:scheduled": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/backup-v2-simplified-scheduled.mjs",
     "backup:v2:operational:test": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-loader ./scripts/ts-path-loader.mjs scripts/test-backup-v2-operational.mjs && powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-backup-v2-windows-runtime.ps1",

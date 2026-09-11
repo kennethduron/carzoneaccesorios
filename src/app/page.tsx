@@ -28,6 +28,7 @@ import { SocialLinks, hasSocialLinks } from "@/components/store/social-links";
 import { getActiveHolidayBanners } from "@/services/supabase/holiday-banners.service";
 import { getPublicCompanySettings } from "@/services/supabase/company-settings.service";
 import { getCategorySummaries, getCompatibilityBrandSummaries, getFeaturedProducts } from "@/services/supabase/products.service";
+import { getAdminWholesalePricesByProductId } from "@/services/supabase/admin-price-view.service";
 import { createPublicMetadata, defaultOgImageUrl, serializeJsonLd, siteName, siteUrl } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ export default async function HomePage() {
     getCompatibilityBrandSummaries(9),
   ]);
   const featuredCategories = categories.slice(0, 8);
+  const adminWholesalePrices = await getAdminWholesalePricesByProductId(featuredProducts.map((product) => product.id));
   const brandTiles = compatibilityBrands.length > 0 ? compatibilityBrands : fallbackCompatibilityBrands;
   const sameAs = [
     companySettings.facebook_url,
@@ -284,7 +286,11 @@ export default async function HomePage() {
           </div>
           <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-3">
             {featuredProducts.map((product) => (
-              <CatalogProductCard key={product.id} product={product} />
+              <CatalogProductCard
+                key={product.id}
+                product={product}
+                adminWholesalePrice={adminWholesalePrices[product.id]?.wholesalePrice}
+              />
             ))}
           </div>
         </div>

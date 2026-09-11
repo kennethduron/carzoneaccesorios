@@ -6,25 +6,55 @@ import { Eye, ImageOff, Plus } from "lucide-react";
 import { useState } from "react";
 import type { Product } from "@/types/commerce";
 import { usePriceMode } from "@/contexts/price-mode-context";
+import { useAdminPriceView } from "@/contexts/admin-price-view-context";
 import { useShoppingCart } from "@/contexts/cart-context";
 import { getProductThumbnailUrl, isCloudinaryImageUrl } from "@/utils/image-optimization";
 import { getProductImageAlt } from "@/lib/seo";
 import { formatCurrency, getProductPrice, getProductPriceLabel, hasValidWholesalePrice } from "@/utils/pricing";
 import { getProductCardDescription } from "@/utils/product-content";
 import { getWholesaleMinimumQuantity } from "@/utils/wholesale-quantity";
+import { resolveAdminDisplayPrice } from "@/utils/admin-price-view";
 
-export function CatalogProductCard({ product, eagerImage = false }: { product: Product; eagerImage?: boolean }) {
+export function CatalogProductCard({
+  product,
+  eagerImage = false,
+  adminWholesalePrice,
+}: {
+  product: Product;
+  eagerImage?: boolean;
+  adminWholesalePrice?: number | null;
+}) {
   const { priceMode } = usePriceMode();
+  const adminPriceView = useAdminPriceView();
   const { addToCart, cartMessage } = useShoppingCart();
   const primaryImage = product.images.find((image) => image.angle === "frontal") ?? product.images[0];
   const imageUrl = getProductThumbnailUrl(primaryImage?.url ?? product.image);
   const [imageFailed, setImageFailed] = useState(false);
   const hasWholesalePrice = hasValidWholesalePrice(product);
-  const isWholesalePriceVisible = priceMode === "wholesale" && hasWholesalePrice;
+  const commercialPrice = getProductPrice(product, priceMode);
+  const displayResolution = resolveAdminDisplayPrice({
+    eligible: adminPriceView.eligible,
+    mode: adminPriceView.mode,
+    retailPrice: product.retail_price,
+    commercialPrice,
+    adminWholesalePrice,
+  });
+  const isCommercialWholesaleVisible =
+    displayResolution.kind === "commercial" && priceMode === "wholesale" && hasWholesalePrice;
+  const isAdminWholesaleVisible = displayResolution.kind === "admin-wholesale";
   const wholesaleMinimumQuantity = getWholesaleMinimumQuantity(product);
-  const displayPrice = getProductPrice(product, priceMode);
-  const priceLabel =
-    priceMode === "wholesale" ? (hasWholesalePrice ? "Precio mayorista" : "Precio disponible") : getProductPriceLabel(product, priceMode);
+  const displayPrice = displayResolution.price;
+  const priceLabel = adminPriceView.eligible
+    ? displayResolution.kind === "admin-wholesale"
+      ? "Vista mayorista administrativa"
+      : displayResolution.kind === "admin-fallback"
+        ? "Vista detalle (sin tarifa mayorista)"
+        : "Vista detalle administrativa"
+    : priceMode === "wholesale"
+      ? hasWholesalePrice
+        ? "Precio mayorista"
+        : "Precio disponible"
+      : getProductPriceLabel(product, priceMode);
   const isLowStock = product.stock > 0 && product.stock <= 3;
   const cardDescription = getProductCardDescription(product);
 
@@ -40,8 +70,10 @@ export function CatalogProductCard({ product, eagerImage = false }: { product: P
             ) : isLowStock ? (
               <span className="rounded-md bg-[#fff1f2] px-2 py-1 text-[10px] font-semibold uppercase text-[#b91c25]">Últimos</span>
             ) : null}
-            {isWholesalePriceVisible ? (
-              <span className="rounded-md bg-[#e4252c] px-2 py-1 text-[10px] font-semibold uppercase text-white">Precio mayorista</span>
+            {isAdminWholesaleVisible || isCommercialWholesaleVisible ? (
+              <span className="rounded-md bg-[#e4252c] px-2 py-1 text-[10px] font-semibold uppercase text-white">
+                {isAdminWholesaleVisible ? "Vista mayorista" : "Precio mayorista"}
+              </span>
             ) : null}
           </div>
           {imageFailed ? (
@@ -79,7 +111,7 @@ export function CatalogProductCard({ product, eagerImage = false }: { product: P
             <div>
               <p className="text-xs text-black/45">{priceLabel}</p>
               <p className="text-lg font-semibold sm:text-2xl">{formatCurrency(displayPrice)}</p>
-              {isWholesalePriceVisible && wholesaleMinimumQuantity > 1 ? (
+              {isCommercialWholesaleVisible && wholesaleMinimumQuantity > 1 ? (
                 <p className="mt-1 text-xs font-semibold text-[#9b341b]">Mínimo mayorista: {wholesaleMinimumQuantity} unidades</p>
               ) : null}
             </div>
